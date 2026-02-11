@@ -1,0 +1,475 @@
+<!doctype html>
+<html lang="en">
+    <head>
+        <meta charset="UTF-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+        <title>AdLands - Humanity's Second Chance™</title>
+
+        <!-- Game Styles -->
+        <link rel="stylesheet" href="css/main.css" />
+    </head>
+    <body>
+        <!-- SVG filters for pixel-art outlines (replaces 8-chain drop-shadow for perf) -->
+        <svg
+            width="0"
+            height="0"
+            style="position: absolute"
+            aria-hidden="true"
+        >
+            <defs>
+                <!-- 2-layer pixel outline: 1px light inner + 2px dark outer -->
+                <filter
+                    id="pixel-outline-2"
+                    x="-10%"
+                    y="-10%"
+                    width="120%"
+                    height="120%"
+                    color-interpolation-filters="sRGB"
+                >
+                    <feMorphology
+                        operator="dilate"
+                        radius="2"
+                        in="SourceAlpha"
+                        result="outerExpand"
+                    />
+                    <feFlood
+                        flood-color="#333333"
+                        flood-opacity="1"
+                        result="darkColor"
+                    />
+                    <feComposite
+                        in="darkColor"
+                        in2="outerExpand"
+                        operator="in"
+                        result="darkOutline"
+                    />
+                    <feMorphology
+                        operator="dilate"
+                        radius="1"
+                        in="SourceAlpha"
+                        result="innerExpand"
+                    />
+                    <feFlood
+                        flood-color="#ffffff"
+                        flood-opacity="0.15"
+                        result="lightColor"
+                    />
+                    <feComposite
+                        in="lightColor"
+                        in2="innerExpand"
+                        operator="in"
+                        result="lightOutline"
+                    />
+                    <feMerge>
+                        <feMergeNode in="darkOutline" />
+                        <feMergeNode in="lightOutline" />
+                        <feMergeNode in="SourceGraphic" />
+                    </feMerge>
+                </filter>
+                <!-- 1-layer pixel outline: 2px dark only (for chat bubbles) -->
+                <filter
+                    id="pixel-outline-1"
+                    x="-10%"
+                    y="-10%"
+                    width="120%"
+                    height="120%"
+                    color-interpolation-filters="sRGB"
+                >
+                    <feMorphology
+                        operator="dilate"
+                        radius="2"
+                        in="SourceAlpha"
+                        result="expand"
+                    />
+                    <feFlood
+                        flood-color="#333333"
+                        flood-opacity="1"
+                        result="darkColor"
+                    />
+                    <feComposite
+                        in="darkColor"
+                        in2="expand"
+                        operator="in"
+                        result="outline"
+                    />
+                    <feMerge>
+                        <feMergeNode in="outline" />
+                        <feMergeNode in="SourceGraphic" />
+                    </feMerge>
+                </filter>
+            </defs>
+        </svg>
+
+        <!-- Loading Screen -->
+        <div id="loading-screen">
+            <div class="loading-content">
+                <div class="loading-title">AdLands</div>
+                <div class="loading-percent">0%</div>
+                <div class="loading-bar-container">
+                    <div class="loading-bar-fill"></div>
+                </div>
+                <div class="loading-text">initializing...</div>
+            </div>
+        </div>
+
+        <div id="fps-counter">-- FPS</div>
+        <div id="signal-lost-overlay" style="display: none">
+            <div id="signal-lost-terminal">
+                <div class="terminal-line" id="term-line-os"></div>
+                <div class="terminal-line">&nbsp;</div>
+                <div class="terminal-line" id="term-line-signal"></div>
+                <div class="terminal-line">&nbsp;</div>
+                <div class="terminal-line" id="term-line-cloning"></div>
+                <div class="terminal-line" id="term-line-standby"></div>
+                <div class="terminal-line">&nbsp;</div>
+                <div class="terminal-line" id="term-line-bar">
+                    <span class="progress-bracket">[</span
+                    ><span class="progress-track"
+                        ><span
+                            class="progress-fill"
+                            id="term-progress-fill"
+                        ></span></span
+                    ><span class="progress-bracket">]</span>
+                </div>
+                <div class="terminal-line">&nbsp;</div>
+                <div class="terminal-line" id="term-line-complete"></div>
+                <span id="signal-lost-cursor"></span>
+            </div>
+        </div>
+        <div id="player-count">Players: 0</div>
+
+        <!-- Territory Control Ring (80% screen centered donut chart) -->
+        <div id="territory-ring-container">
+            <canvas id="territory-ring"></canvas>
+        </div>
+
+        <!-- Ping Marker Arrows (inside territory ring) -->
+        <div id="ping-arrows-container"></div>
+
+        <!-- Left Panel Stack -->
+        <div id="left-panel-stack">
+            <div id="capture-status">
+                <strong>Territory Control</strong>
+                <div id="cluster-info">Cluster: --</div>
+
+                <!-- Compact info panel (momentum + tanks) -->
+                <div id="ring-info-panel">
+                    <div id="ring-momentum">
+                        <span class="momentum rust" id="momentum-rust">—</span>
+                        <span class="momentum cobalt" id="momentum-cobalt"
+                            >—</span
+                        >
+                        <span class="momentum viridian" id="momentum-viridian"
+                            >—</span
+                        >
+                    </div>
+                    <div id="ring-tanks">
+                        <span class="faction-tanks rust"
+                            ><span id="tanks-rust">0</span></span
+                        >
+                        <span class="faction-tanks cobalt"
+                            ><span id="tanks-cobalt">0</span></span
+                        >
+                        <span class="faction-tanks viridian"
+                            ><span id="tanks-viridian">0</span></span
+                        >
+                    </div>
+                </div>
+
+                <!-- Status Badge -->
+                <div id="battle-status">
+                    <span id="owner-badge" class="owner-badge hidden"
+                        >UNCLAIMED</span
+                    >
+                    <span id="contested-badge" class="hidden">CONTESTED</span>
+                    <span id="progress-info">--</span>
+                </div>
+            </div>
+
+            <!-- Controls Hint Panel -->
+            <div id="controls-hint-panel" class="ui-panel">
+                <strong>Controls</strong>
+                <div class="controls-section">
+                    <div class="control-group">
+                        <span class="control-label">Movement:</span>
+                        <span class="control-keys">WASD</span>
+                    </div>
+                    <div class="control-group">
+                        <span class="control-label">Sprint:</span>
+                        <span class="control-keys">Shift</span>
+                    </div>
+                    <div class="control-group">
+                        <span class="control-label">Aim:</span>
+                        <span class="control-keys">Mouse</span>
+                    </div>
+                    <div class="control-group">
+                        <span class="control-label">Fire:</span>
+                        <span class="control-keys">Hold LClick</span>
+                    </div>
+                    <div class="control-group">
+                        <span class="control-label">Camera:</span>
+                        <span class="control-keys">Scroll</span>
+                    </div>
+                    <div class="control-group">
+                        <span class="control-label">Fast Travel:</span>
+                        <span class="control-keys">E</span>
+                    </div>
+                    <div class="control-group">
+                        <span class="control-label">Territory Info:</span>
+                        <span class="control-keys">RClick</span>
+                    </div>
+                    <div class="control-group">
+                        <span class="control-label">Toggle HUD:</span>
+                        <span class="control-keys">H</span>
+                    </div>
+                    <div class="control-group">
+                        <span class="control-label">Global Control Chart:</span>
+                        <span class="control-keys">Hold Tab</span>
+                    </div>
+                    <div class="control-group">
+                        <span class="control-label">Faction Chat:</span>
+                        <span class="control-keys">Enter</span>
+                    </div>
+                    <div class="control-group">
+                        <span class="control-label">Lobby Chat:</span>
+                        <span class="control-keys">Shift+Enter</span>
+                    </div>
+                    <div class="control-group">
+                        <span class="control-label">Squad Chat:</span>
+                        <span class="control-keys">Alt+Enter</span>
+                    </div>
+                    <div class="control-group">
+                        <span class="control-label">Screenshot:</span>
+                        <span class="control-keys">F12</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Global Control Fullscreen Overlay (Tab key) -->
+        <div id="global-control-overlay" class="hidden">
+            <canvas id="global-control-canvas"></canvas>
+            <div id="global-control-stats"></div>
+        </div>
+
+        <!-- Fast Travel UI -->
+        <div id="fast-travel-ui" class="hidden">
+            <div id="fast-travel-controls">
+                <button id="abort-travel-btn" class="fast-travel-btn abort">
+                    Abort Travel
+                </button>
+                <div class="travel-hint fast-travel-hint">
+                    Click on a portal beam to preview destination
+                </div>
+            </div>
+            <div id="preview-controls" class="hidden">
+                <div class="preview-buttons">
+                    <button id="travel-btn" class="fast-travel-btn travel">
+                        Confirm Fast Travel!
+                    </button>
+                    <button id="go-back-btn" class="fast-travel-btn back">
+                        Choose Different Destination!
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Portal Entry Prompt -->
+        <div id="portal-prompt" class="travel-hint hidden">
+            Press <strong>E</strong> to Fast Travel
+        </div>
+
+        <!-- Chat Window (right side) -->
+        <div id="chat-window">
+            <div class="chat-section squad">
+                <div class="chat-section-header" id="chat-header-squad">
+                    SQUAD
+                </div>
+                <div class="chat-section-messages" id="chat-squad"></div>
+            </div>
+            <div
+                class="chat-resize-handle"
+                data-above="squad"
+                data-below="faction"
+            ></div>
+            <div class="chat-section faction">
+                <div class="chat-section-header" id="chat-header-faction">
+                    FACTION
+                </div>
+                <div class="chat-section-messages" id="chat-faction"></div>
+            </div>
+            <div
+                class="chat-resize-handle"
+                data-above="faction"
+                data-below="lobby"
+            ></div>
+            <div class="chat-section lobby">
+                <div class="chat-section-header" id="chat-header-lobby">
+                    GLOBAL
+                </div>
+                <div class="chat-section-messages" id="chat-lobby"></div>
+            </div>
+        </div>
+
+        <!-- Territory Intel Popup -->
+        <div id="territory-intel-popup" class="hidden">
+            <div class="intel-header card-header-row">
+                <img
+                    id="intel-logo"
+                    class="card-header-image"
+                    src=""
+                    alt="Logo"
+                />
+                <div class="intel-title-group card-header-info">
+                    <h3 id="intel-name" class="card-header-name"></h3>
+                    <p id="intel-tagline" class="card-header-subtitle"></p>
+                </div>
+                <button id="intel-close-btn" class="card-close-x"></button>
+            </div>
+
+            <div class="intel-section" id="intel-url-section">
+                <a
+                    id="intel-url"
+                    href=""
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    >Visit Website</a
+                >
+            </div>
+
+            <div class="intel-section intel-stats">
+                <div class="stat-row">
+                    <span class="stat-label">Cluster Size:</span>
+                    <span id="intel-hex-count" class="stat-value"></span>
+                </div>
+                <div class="stat-row">
+                    <span class="stat-label">Current Owner:</span>
+                    <span id="intel-faction" class="stat-value"></span>
+                </div>
+                <div class="stat-row">
+                    <span class="stat-label">Hold Duration:</span>
+                    <span id="intel-duration" class="stat-value"></span>
+                </div>
+                <div class="stat-row">
+                    <span class="stat-label">Joined:</span>
+                    <span id="intel-joined" class="stat-value"></span>
+                </div>
+            </div>
+
+            <div class="intel-section">
+                <h4>Activity</h4>
+                <div class="intel-line-graph-container">
+                    <canvas
+                        id="intel-line-graph"
+                        width="260"
+                        height="80"
+                    ></canvas>
+                </div>
+                <div id="intel-graph-legend"></div>
+            </div>
+
+            <div class="intel-section">
+                <h4>Rewards</h4>
+                <ul id="intel-rewards-list"></ul>
+            </div>
+        </div>
+
+        <!-- External Dependencies -->
+        <script src="https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js"></script>
+        <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/build/three.min.js"></script>
+        <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/postprocessing/Pass.js"></script>
+        <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/shaders/CopyShader.js"></script>
+        <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/shaders/LuminosityHighPassShader.js"></script>
+        <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/postprocessing/ShaderPass.js"></script>
+        <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/postprocessing/EffectComposer.js"></script>
+        <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/postprocessing/RenderPass.js"></script>
+        <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/postprocessing/UnrealBloomPass.js"></script>
+        <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/GLTFLoader.js"></script>
+        <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/DRACOLoader.js"></script>
+        <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/lines/LineSegmentsGeometry.js"></script>
+        <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/lines/LineMaterial.js"></script>
+        <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/lines/LineSegments2.js"></script>
+        <script src="hexasphere.js"></script>
+
+        <!-- Utilities -->
+        <script src="js/utils/mathUtils.js"></script>
+        <script src="js/utils/factionColors.js"></script>
+
+        <!-- Core -->
+        <script src="js/core/Planet.js"></script>
+        <script src="js/core/TerrainElevation.js"></script>
+        <script src="js/core/AsteroidBelt.js"></script>
+        <script src="js/core/environment.js"></script>
+        <script src="js/core/camera.js"></script>
+
+        <!-- Effects -->
+        <script src="js/effects/shaders/LensDirtShader.js"></script>
+        <script src="js/effects/shaders/VignetteShader.js"></script>
+        <script src="js/effects/shaders/ChromaticAberrationShader.js"></script>
+        <script src="js/effects/shaders/DamageEffectsShader.js"></script>
+        <script src="js/effects/VisualEffectsManager.js"></script>
+        <script src="js/effects/DustShockwave.js"></script>
+        <script src="js/effects/CapturePulse.js"></script>
+        <script src="js/effects/TreadDust.js"></script>
+        <script src="js/effects/TreadTracks.js"></script>
+        <script src="js/effects/TankHeadlights.js"></script>
+
+        <!-- Tank -->
+        <script src="js/tank/Tank.js"></script>
+        <script src="js/tank/BotPathfinder.js"></script>
+        <script src="js/tank/BotTanks.js"></script>
+        <script src="js/tank/TankCollision.js"></script>
+        <script src="js/tank/TankDamageEffects.js"></script>
+
+        <!-- Combat -->
+        <script src="js/combat/ObjectPools.js"></script>
+        <script src="js/combat/CannonSystem.js"></script>
+
+        <!-- Progression -->
+        <script src="js/progression/CryptoSystem.js"></script>
+        <script src="js/progression/CryptoVisuals.js"></script>
+        <script src="js/progression/BadgeSystem.js"></script>
+        <script src="js/progression/TitleSystem.js"></script>
+
+        <!-- UI -->
+        <script src="js/ui/PlayerTags.js"></script>
+        <script src="js/ui/ProximityChat.js"></script>
+        <script src="js/ui/ProfileCard.js"></script>
+        <script src="js/ui/ScreenshotSystem.js"></script>
+        <script src="js/ui/Dashboard.js"></script>
+
+        <!-- Travel -->
+        <script src="js/travel/SkyBeams.js"></script>
+        <script src="js/travel/FastTravel.js"></script>
+
+        <!-- Misc -->
+        <script src="js/misc/SettingsManager.js"></script>
+        <script src="js/misc/PresenceTracker.js"></script>
+        <script src="js/misc/TuskCommentary.js"></script>
+        <script src="js/misc/TankLODInteraction.js"></script>
+
+        <!-- Commander System -->
+        <script src="js/commander/CommanderSystem.js"></script>
+        <script src="js/commander/CommanderSkin.js"></script>
+        <script src="js/commander/CommanderBodyguards.js"></script>
+        <script src="js/commander/CommanderDrawing.js"></script>
+        <script src="js/commander/CommanderTipSystem.js"></script>
+        <script src="js/commander/PingMarkerSystem.js"></script>
+
+        <!-- Sponsor Storage (shared with admin portal) -->
+        <script src="js/admin/sponsorStorage.js"></script>
+
+        <!-- Multiplayer -->
+        <script src="/socket.io/socket.io.js" onerror="console.log('[Multiplayer] Socket.IO not available, offline mode')"></script>
+        <script src="server/shared/physics.js"></script>
+        <script src="js/tank/RemoteTank.js"></script>
+        <script src="js/tank/RemoteBodyguard.js"></script>
+        <script src="js/core/NetworkManager.js"></script>
+
+        <!-- Main Entry Point -->
+        <script src="js/core/main.js"></script>
+
+        <!-- Multiplayer Client (hooks into main.js globals) -->
+        <script src="js/core/MultiplayerClient.js"></script>
+    </body>
+</html>

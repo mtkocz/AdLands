@@ -1,0 +1,878 @@
+/**
+ * AdLands - Shared Design Tokens
+ * CSS custom properties for consistent pixel-art styling across all interfaces
+ */
+
+/* Spleen 16x32 header font */
+@font-face {
+    font-family: "Spleen 16x32";
+    src: url("../assets/fonts/spleen-16x32.otf") format("opentype");
+    font-weight: normal;
+    font-style: normal;
+    font-display: swap;
+}
+
+/* Atari ST 8x16 body font */
+@font-face {
+    font-family: "Atari ST 8x16";
+    src: url("../assets/fonts/AtariST8x16SystemFont.otf") format("opentype");
+    font-weight: normal;
+    font-style: normal;
+    font-display: swap;
+}
+
+/* Native 12px bitmap font (SIL Open Font License) */
+@font-face {
+    font-family: "Ark Pixel 12px";
+    src: url("../assets/fonts/ark-pixel-12px-monospaced-latin.otf")
+        format("opentype");
+    font-weight: normal;
+    font-style: normal;
+    font-display: swap;
+}
+
+/* Reset heading font-weight to remove browser bold defaults */
+h1,
+h2,
+h3,
+h4,
+h5,
+h6 {
+    font-weight: normal;
+}
+
+/* Disable anti-aliasing globally for pixel-perfect bitmap fonts */
+* {
+    -webkit-font-smoothing: none;
+    -moz-osx-font-smoothing: unset;
+    text-rendering: optimizeSpeed;
+}
+
+:root {
+    /* Faction colors (--rust, --cobalt, --viridian + light/dark variants) */
+    /* are injected from FACTION_COLORS in planet.js */
+
+    /* ========================================
+       PIXEL-PERFECT 4px GRID SYSTEM
+       All measurements must be multiples of 4px
+       (2px allowed for micro adjustments)
+       ======================================== */
+
+    /* Grid Units */
+    --grid: 4px;
+    --grid-half: 2px;
+
+    /* Font Stack - 3-tier hierarchy (native bitmap sizes) */
+    --font-header: "Spleen 16x32", monospace; /* Headers @ 32px native */
+    --font-body: "Atari ST 8x16", monospace; /* Body @ 16px */
+    --font-small:
+        "Ark Pixel 12px", monospace; /* Small @ 12px - native 12px bitmap */
+
+    /* Font Sizes (4px-aligned) */
+    --font-size-header: 32px; /* 8 grid units - Spleen 16x32 native 1x */
+    --font-size-body: 16px; /* 4 grid units - Atari ST 8x16 native 1x */
+    --font-size-small: 12px; /* 3 grid units */
+
+    /* Header text outline (1px, same color as text) */
+    --header-text-shadow:
+        -1px -1px 0 currentColor, 1px -1px 0 currentColor,
+        -1px 1px 0 currentColor, 1px 1px 0 currentColor;
+
+    /* Header padding (for bitmap font alignment) */
+    --header-padding-top: 16px;
+    --header-padding-bottom: 0px;
+    --header-margin-bottom: 0px;
+
+    /* Body text padding (for bitmap font alignment) */
+    --body-padding-top: 0px;
+    --body-margin-top: 0px;
+
+    /* Spacing (4px increments) */
+    --space-xxs: 2px; /* half grid - micro only */
+    --space-xs: 4px; /* 1 grid unit */
+    --space-sm: 8px; /* 2 grid units */
+    --space-md: 12px; /* 3 grid units */
+    --space-lg: 16px; /* 4 grid units */
+    --space-xl: 20px; /* 5 grid units */
+    --space-2xl: 24px; /* 6 grid units */
+    --space-3xl: 32px; /* 8 grid units */
+
+    /* Element Sizes (4px-aligned) */
+    --panel-width: 320px; /* 80 grid units */
+    --icon-xs: 12px; /* 3 grid units */
+    --icon-sm: 16px; /* 4 grid units */
+    --icon-md: 20px; /* 5 grid units */
+    --icon-lg: 24px; /* 6 grid units */
+    --icon-xl: 32px; /* 8 grid units */
+    --avatar-size: 64px; /* 16 grid units */
+    --badge-size: 12px; /* 3 grid units */
+    --bar-height: 8px; /* 2 grid units */
+
+    /* Borders (pixel-perfect) */
+    --border-width: 2px; /* minimum visible at 4px grid */
+    --border-width-thick: 4px; /* 1 grid unit */
+
+    /* UI Colors */
+    --bg-panel: #1a1a1a;
+    --bg-panel-light: #252525;
+    --bg-highlight: #333333;
+    --accent-gold: #ffd700;
+    --accent-yellow: var(--accent-gold); /* Unified to gold */
+    --accent-gold-light: #fde68a;
+    --accent-gold-dim: #92722a;
+    --accent-cyan: #00ffff; /* Hot cyan - game accent (Elon, loading, portals) */
+    --accent-magenta: #ff00ff;
+    --text-primary: #ffffff;
+    --text-secondary: #aaaaaa;
+    --text-muted: #666666;
+    --text-dim: #334155;
+    --border-dark: #333333;
+    --border-light: rgba(255, 255, 255, 0.2);
+    --unclaimed: #666666;
+
+    /* Status Colors */
+    --success: #22c55e;
+    --warning: #facc15;
+    --danger: #ef4444;
+    --rust: #cc4444;
+    --rust-light: #ff6b6b;
+    --viridian: #4ade80;
+    --viridian-light: #86efac;
+    --cobalt: #3b82f6;
+    --cobalt-light: #60a5fa;
+
+    /* Legacy aliases (for gradual migration) */
+    --padding-sm: var(--space-sm);
+    --padding-md: var(--space-lg);
+    --padding-lg: var(--space-2xl);
+    --gap-sm: var(--space-xs);
+    --gap-md: var(--space-sm);
+    --gap-lg: var(--space-lg);
+    --radius-sm: 0;
+    --radius-md: 0;
+    --radius-lg: 0;
+
+    /* ========================================
+       BRESENHAM PIXEL-ART CIRCLES (2px grid)
+       Full circles using Bresenham's algorithm with 2px steps.
+       ======================================== */
+
+    /* Pixelated circle (24px) - Bresenham r=12: for level badges */
+    --clip-circle-24: polygon(
+        /* Top edge */ 8px 0%,
+        16px 0%,
+        /* Top-right arc: Bresenham pattern */ 16px 0%,
+        18px 0%,
+        18px 2px,
+        20px 2px,
+        20px 4px,
+        22px 4px,
+        22px 8px,
+        24px 8px,
+        /* Right edge */ 24px 16px,
+        /* Bottom-right arc */ 24px 16px,
+        22px 16px,
+        22px 20px,
+        20px 20px,
+        20px 22px,
+        18px 22px,
+        18px 24px,
+        16px 24px,
+        /* Bottom edge */ 8px 24px,
+        /* Bottom-left arc */ 8px 24px,
+        6px 24px,
+        6px 22px,
+        4px 22px,
+        4px 20px,
+        2px 20px,
+        2px 16px,
+        0px 16px,
+        /* Left edge */ 0px 8px,
+        /* Top-left arc */ 0px 8px,
+        2px 8px,
+        2px 4px,
+        4px 4px,
+        4px 2px,
+        6px 2px,
+        6px 0%,
+        8px 0%
+    );
+
+    /* Pixelated circle (32px) - Bresenham r=16: for tag avatars */
+    --clip-circle-32: polygon(
+        /* Top edge */ 10px 0%,
+        22px 0%,
+        /* Top-right arc: Bresenham pattern */ 22px 0%,
+        24px 0%,
+        24px 2px,
+        26px 2px,
+        26px 4px,
+        28px 4px,
+        28px 6px,
+        30px 6px,
+        30px 10px,
+        32px 10px,
+        /* Right edge */ 32px 22px,
+        /* Bottom-right arc */ 32px 22px,
+        30px 22px,
+        30px 26px,
+        28px 26px,
+        28px 28px,
+        26px 28px,
+        26px 30px,
+        24px 30px,
+        24px 32px,
+        22px 32px,
+        /* Bottom edge */ 10px 32px,
+        /* Bottom-left arc */ 10px 32px,
+        8px 32px,
+        8px 30px,
+        6px 30px,
+        6px 28px,
+        4px 28px,
+        4px 26px,
+        2px 26px,
+        2px 22px,
+        0px 22px,
+        /* Left edge */ 0px 10px,
+        /* Top-left arc */ 0px 10px,
+        2px 10px,
+        2px 6px,
+        4px 6px,
+        4px 4px,
+        6px 4px,
+        6px 2px,
+        8px 2px,
+        8px 0%,
+        10px 0%
+    );
+
+    /* Pixelated full circle (48px) - Bresenham r=24: for avatars */
+    --clip-circle-48: polygon(
+        /* Top edge */ 18px 0%,
+        30px 0%,
+        /* Top-right arc: Bresenham r=24 pattern */ 30px 0%,
+        32px 0%,
+        32px 2px,
+        36px 2px,
+        36px 4px,
+        38px 4px,
+        38px 6px,
+        40px 6px,
+        40px 8px,
+        42px 8px,
+        42px 10px,
+        44px 12px,
+        44px 14px,
+        46px 16px,
+        46px 18px,
+        48px 18px,
+        /* Right edge */ 48px 30px,
+        /* Bottom-right arc */ 48px 30px,
+        46px 30px,
+        46px 32px,
+        44px 34px,
+        44px 36px,
+        42px 38px,
+        42px 40px,
+        40px 40px,
+        40px 42px,
+        38px 42px,
+        38px 44px,
+        36px 44px,
+        36px 46px,
+        32px 46px,
+        32px 48px,
+        30px 48px,
+        /* Bottom edge */ 18px 48px,
+        /* Bottom-left arc */ 18px 48px,
+        16px 48px,
+        16px 46px,
+        12px 46px,
+        12px 44px,
+        10px 44px,
+        10px 42px,
+        8px 42px,
+        8px 40px,
+        6px 40px,
+        6px 38px,
+        4px 36px,
+        4px 34px,
+        2px 32px,
+        2px 30px,
+        0px 30px,
+        /* Left edge */ 0px 18px,
+        /* Top-left arc */ 0px 18px,
+        2px 18px,
+        2px 16px,
+        4px 14px,
+        4px 12px,
+        6px 10px,
+        6px 8px,
+        8px 8px,
+        8px 6px,
+        10px 6px,
+        10px 4px,
+        12px 4px,
+        12px 2px,
+        16px 2px,
+        16px 0%,
+        18px 0%
+    );
+
+    /* Pixelated circle (64px) - Bresenham r=32: for large avatars */
+    --clip-circle-64: polygon(
+        /* Top edge - wider flat section */ 24px 0px,
+        40px 0px,
+        /* Top-right arc: Bresenham r=32 */ 40px 0px,
+        42px 0px,
+        42px 2px,
+        46px 2px,
+        46px 4px,
+        48px 4px,
+        48px 6px,
+        52px 6px,
+        52px 8px,
+        54px 8px,
+        54px 10px,
+        56px 12px,
+        56px 14px,
+        58px 14px,
+        58px 18px,
+        60px 18px,
+        60px 22px,
+        62px 22px,
+        62px 24px,
+        64px 24px,
+        /* Right edge */ 64px 40px,
+        /* Bottom-right arc */ 64px 40px,
+        62px 40px,
+        62px 42px,
+        60px 42px,
+        60px 46px,
+        58px 46px,
+        58px 50px,
+        56px 50px,
+        56px 52px,
+        54px 54px,
+        54px 56px,
+        52px 56px,
+        52px 58px,
+        48px 58px,
+        48px 60px,
+        46px 60px,
+        46px 62px,
+        42px 62px,
+        42px 64px,
+        40px 64px,
+        /* Bottom edge */ 24px 64px,
+        /* Bottom-left arc */ 24px 64px,
+        22px 64px,
+        22px 62px,
+        18px 62px,
+        18px 60px,
+        16px 60px,
+        16px 58px,
+        12px 58px,
+        12px 56px,
+        10px 56px,
+        10px 54px,
+        8px 52px,
+        8px 50px,
+        6px 50px,
+        6px 46px,
+        4px 46px,
+        4px 42px,
+        2px 42px,
+        2px 40px,
+        0px 40px,
+        /* Left edge */ 0px 24px,
+        /* Top-left arc */ 0px 24px,
+        2px 24px,
+        2px 22px,
+        4px 22px,
+        4px 18px,
+        6px 18px,
+        6px 14px,
+        8px 14px,
+        8px 12px,
+        10px 10px,
+        10px 8px,
+        12px 8px,
+        12px 6px,
+        16px 6px,
+        16px 4px,
+        18px 4px,
+        18px 2px,
+        22px 2px,
+        22px 0px,
+        24px 0px
+    );
+
+    /* Pixelated pill (48px height) - Bresenham r=24 semicircle caps */
+    --clip-pill-48: polygon(
+        /* Top edge */ 24px 0px,
+        calc(100% - 24px) 0px,
+        /* Right cap - top arc (Bresenham r=24, descending from top) */
+        calc(100% - 22px) 0px,
+        calc(100% - 20px) 2px,
+        calc(100% - 18px) 2px,
+        calc(100% - 16px) 4px,
+        calc(100% - 14px) 4px,
+        calc(100% - 12px) 6px,
+        calc(100% - 10px) 8px,
+        calc(100% - 8px) 10px,
+        calc(100% - 6px) 12px,
+        calc(100% - 4px) 14px,
+        calc(100% - 4px) 16px,
+        calc(100% - 2px) 18px,
+        calc(100% - 2px) 20px,
+        calc(100% - 0px) 22px,
+        /* Right cap - rightmost point */ calc(100% - 0px) 24px,
+        /* Right cap - bottom arc */ calc(100% - 0px) 26px,
+        calc(100% - 2px) 28px,
+        calc(100% - 2px) 30px,
+        calc(100% - 4px) 32px,
+        calc(100% - 4px) 34px,
+        calc(100% - 6px) 36px,
+        calc(100% - 8px) 38px,
+        calc(100% - 10px) 40px,
+        calc(100% - 12px) 42px,
+        calc(100% - 14px) 44px,
+        calc(100% - 16px) 44px,
+        calc(100% - 18px) 46px,
+        calc(100% - 20px) 46px,
+        calc(100% - 22px) 48px,
+        calc(100% - 24px) 48px,
+        /* Bottom edge */ 24px 48px,
+        /* Left cap - bottom arc (Bresenham r=24, ascending from bottom) */ 22px
+            48px,
+        20px 46px,
+        18px 46px,
+        16px 44px,
+        14px 44px,
+        12px 42px,
+        10px 40px,
+        8px 38px,
+        6px 36px,
+        4px 34px,
+        4px 32px,
+        2px 30px,
+        2px 28px,
+        0px 26px,
+        /* Left cap - leftmost point */ 0px 24px,
+        /* Left cap - top arc */ 0px 22px,
+        2px 20px,
+        2px 18px,
+        4px 16px,
+        4px 14px,
+        6px 12px,
+        8px 10px,
+        10px 8px,
+        12px 6px,
+        14px 4px,
+        16px 4px,
+        18px 2px,
+        20px 2px,
+        22px 0px,
+        24px 0px
+    );
+
+    /* Pixelated pill (32px height) - Bresenham r=16 semicircle caps
+       True Bresenham circle r=16 on 2px grid: consistent stair-stepping */
+    --clip-pill-32: polygon(
+        /* Top edge */ 10px 0px,
+        calc(100% - 10px) 0px,
+        /* Right cap - top arc (from top center, clockwise) */ calc(100% - 10px)
+            0px,
+        calc(100% - 6px) 0px,
+        calc(100% - 6px) 2px,
+        calc(100% - 4px) 2px,
+        calc(100% - 4px) 4px,
+        calc(100% - 2px) 4px,
+        calc(100% - 2px) 6px,
+        calc(100% - 0px) 6px,
+        calc(100% - 0px) 10px,
+        /* Right cap - rightmost point to bottom */ calc(100% - 0px) 22px,
+        calc(100% - 2px) 22px,
+        calc(100% - 2px) 26px,
+        calc(100% - 4px) 26px,
+        calc(100% - 4px) 28px,
+        calc(100% - 6px) 28px,
+        calc(100% - 6px) 30px,
+        calc(100% - 10px) 30px,
+        calc(100% - 10px) 32px,
+        /* Bottom edge */ 10px 32px,
+        /* Left cap - bottom arc (from bottom center, clockwise) */ 10px 32px,
+        10px 30px,
+        6px 30px,
+        6px 28px,
+        4px 28px,
+        4px 26px,
+        2px 26px,
+        2px 22px,
+        0px 22px,
+        0px 10px,
+        /* Left cap - leftmost point to top */ 2px 10px,
+        2px 6px,
+        4px 6px,
+        4px 4px,
+        6px 4px,
+        6px 2px,
+        10px 2px,
+        10px 0px
+    );
+
+    /* Pixelated pill (28px height) - Bresenham r=14 semicircle caps
+       For use as inner fill element in 32px pill with 2px border */
+    --clip-pill-28: polygon(
+        /* Top edge */ 8px 0px,
+        calc(100% - 8px) 0px,
+        /* Right cap - top arc (Bresenham r=14) */ calc(100% - 8px) 0px,
+        calc(100% - 4px) 0px,
+        calc(100% - 4px) 2px,
+        calc(100% - 2px) 2px,
+        calc(100% - 2px) 4px,
+        calc(100% - 0px) 4px,
+        calc(100% - 0px) 8px,
+        /* Right cap - right edge to bottom */ calc(100% - 0px) 20px,
+        calc(100% - 2px) 20px,
+        calc(100% - 2px) 24px,
+        calc(100% - 4px) 24px,
+        calc(100% - 4px) 26px,
+        calc(100% - 8px) 26px,
+        calc(100% - 8px) 28px,
+        /* Bottom edge */ 8px 28px,
+        /* Left cap - bottom arc */ 8px 28px,
+        8px 26px,
+        4px 26px,
+        4px 24px,
+        2px 24px,
+        2px 20px,
+        0px 20px,
+        0px 8px,
+        /* Left cap - left edge to top */ 2px 8px,
+        2px 4px,
+        4px 4px,
+        4px 2px,
+        8px 2px,
+        8px 0px
+    );
+
+    /* ========================
+       BRESENHAM PIXEL-ART CORNERS (2px grid)
+       Based on classic Bresenham circle algorithm for rounded corners.
+       Step sizes vary to approximate circular arcs (not 45° diagonals).
+       ======================== */
+
+    /* Pixelated pill (8px corners) - Bresenham r=4 pattern: [4,2],[2,4] */
+    --clip-pill: polygon(
+        /* Top edge */ 8px 0%,
+        calc(100% - 8px) 0%,
+        /* Top-right corner: Bresenham circle arc 1px steps */ calc(100% - 4px)
+            0%,
+        calc(100% - 4px) 1px,
+        calc(100% - 3px) 1px,
+        calc(100% - 3px) 2px,
+        calc(100% - 2px) 2px,
+        calc(100% - 2px) 3px,
+        calc(100% - 1px) 3px,
+        calc(100% - 1px) 4px,
+        100% 4px,
+        100% 8px,
+        /* Right edge */ 100% calc(100% - 8px),
+        /* Bottom-right corner */ 100% calc(100% - 4px),
+        calc(100% - 1px) calc(100% - 4px),
+        calc(100% - 1px) calc(100% - 3px),
+        calc(100% - 2px) calc(100% - 3px),
+        calc(100% - 2px) calc(100% - 2px),
+        calc(100% - 3px) calc(100% - 2px),
+        calc(100% - 3px) calc(100% - 1px),
+        calc(100% - 4px) calc(100% - 1px),
+        calc(100% - 4px) 100%,
+        calc(100% - 8px) 100%,
+        /* Bottom edge */ 8px 100%,
+        /* Bottom-left corner */ 4px 100%,
+        4px calc(100% - 1px),
+        3px calc(100% - 1px),
+        3px calc(100% - 2px),
+        2px calc(100% - 2px),
+        2px calc(100% - 3px),
+        1px calc(100% - 3px),
+        1px calc(100% - 4px),
+        0% calc(100% - 4px),
+        0% calc(100% - 8px),
+        /* Left edge */ 0% 8px,
+        /* Top-left corner */ 0% 4px,
+        1px 4px,
+        1px 3px,
+        2px 3px,
+        2px 2px,
+        3px 2px,
+        3px 1px,
+        4px 1px,
+        4px 0%
+    );
+
+    /* Pixelated pill (16px corners) - Bresenham r=8: 1px steps */
+    --clip-pill-16: polygon(
+        /* Top edge */ 16px 0%,
+        calc(100% - 16px) 0%,
+        /* Top-right corner: Bresenham circle arc */ calc(100% - 6px) 0%,
+        calc(100% - 6px) 1px,
+        calc(100% - 4px) 1px,
+        calc(100% - 4px) 2px,
+        calc(100% - 3px) 2px,
+        calc(100% - 3px) 3px,
+        calc(100% - 2px) 3px,
+        calc(100% - 2px) 4px,
+        calc(100% - 1px) 4px,
+        calc(100% - 1px) 6px,
+        100% 6px,
+        100% 16px,
+        /* Right edge */ 100% calc(100% - 16px),
+        /* Bottom-right corner */ 100% calc(100% - 6px),
+        calc(100% - 1px) calc(100% - 6px),
+        calc(100% - 1px) calc(100% - 4px),
+        calc(100% - 2px) calc(100% - 4px),
+        calc(100% - 2px) calc(100% - 3px),
+        calc(100% - 3px) calc(100% - 3px),
+        calc(100% - 3px) calc(100% - 2px),
+        calc(100% - 4px) calc(100% - 2px),
+        calc(100% - 4px) calc(100% - 1px),
+        calc(100% - 6px) calc(100% - 1px),
+        calc(100% - 6px) 100%,
+        calc(100% - 16px) 100%,
+        /* Bottom edge */ 16px 100%,
+        /* Bottom-left corner */ 6px 100%,
+        6px calc(100% - 1px),
+        4px calc(100% - 1px),
+        4px calc(100% - 2px),
+        3px calc(100% - 2px),
+        3px calc(100% - 3px),
+        2px calc(100% - 3px),
+        2px calc(100% - 4px),
+        1px calc(100% - 4px),
+        1px calc(100% - 6px),
+        0% calc(100% - 6px),
+        0% calc(100% - 16px),
+        /* Left edge */ 0% 16px,
+        /* Top-left corner */ 0% 6px,
+        1px 6px,
+        1px 4px,
+        2px 4px,
+        2px 3px,
+        3px 3px,
+        3px 2px,
+        4px 2px,
+        4px 1px,
+        6px 1px,
+        6px 0%
+    );
+
+    /* Pixelated rounded corners (4px) - Bresenham r=4: 1px steps */
+    --clip-rounded-4: polygon(
+        /* Top edge */ 4px 0%,
+        calc(100% - 4px) 0%,
+        /* Top-right corner */ calc(100% - 2px) 0%,
+        calc(100% - 2px) 1px,
+        calc(100% - 1px) 1px,
+        calc(100% - 1px) 2px,
+        100% 2px,
+        100% 4px,
+        /* Right edge */ 100% calc(100% - 4px),
+        /* Bottom-right corner */ 100% calc(100% - 2px),
+        calc(100% - 1px) calc(100% - 2px),
+        calc(100% - 1px) calc(100% - 1px),
+        calc(100% - 2px) calc(100% - 1px),
+        calc(100% - 2px) 100%,
+        calc(100% - 4px) 100%,
+        /* Bottom edge */ 4px 100%,
+        /* Bottom-left corner */ 2px 100%,
+        2px calc(100% - 1px),
+        1px calc(100% - 1px),
+        1px calc(100% - 2px),
+        0% calc(100% - 2px),
+        0% calc(100% - 4px),
+        /* Left edge */ 0% 4px,
+        /* Top-left corner */ 0% 2px,
+        1px 2px,
+        1px 1px,
+        2px 1px,
+        2px 0%
+    );
+
+    /* Pixelated rounded corners (8px) - Bresenham r=8: 1px steps */
+    --clip-rounded-8: polygon(
+        /* Top edge */ 8px 0%,
+        calc(100% - 8px) 0%,
+        /* Top-right corner: Bresenham circle arc */ calc(100% - 4px) 0%,
+        calc(100% - 4px) 1px,
+        calc(100% - 3px) 1px,
+        calc(100% - 3px) 2px,
+        calc(100% - 2px) 2px,
+        calc(100% - 2px) 3px,
+        calc(100% - 1px) 3px,
+        calc(100% - 1px) 4px,
+        100% 4px,
+        100% 8px,
+        /* Right edge */ 100% calc(100% - 8px),
+        /* Bottom-right corner */ 100% calc(100% - 4px),
+        calc(100% - 1px) calc(100% - 4px),
+        calc(100% - 1px) calc(100% - 3px),
+        calc(100% - 2px) calc(100% - 3px),
+        calc(100% - 2px) calc(100% - 2px),
+        calc(100% - 3px) calc(100% - 2px),
+        calc(100% - 3px) calc(100% - 1px),
+        calc(100% - 4px) calc(100% - 1px),
+        calc(100% - 4px) 100%,
+        calc(100% - 8px) 100%,
+        /* Bottom edge */ 8px 100%,
+        /* Bottom-left corner */ 4px 100%,
+        4px calc(100% - 1px),
+        3px calc(100% - 1px),
+        3px calc(100% - 2px),
+        2px calc(100% - 2px),
+        2px calc(100% - 3px),
+        1px calc(100% - 3px),
+        1px calc(100% - 4px),
+        0% calc(100% - 4px),
+        0% calc(100% - 8px),
+        /* Left edge */ 0% 8px,
+        /* Top-left corner */ 0% 4px,
+        1px 4px,
+        1px 3px,
+        2px 3px,
+        2px 2px,
+        3px 2px,
+        3px 1px,
+        4px 1px,
+        4px 0%
+    );
+
+    /* Pixelated rounded corners (12px) - Bresenham r=12: 1px steps */
+    --clip-rounded-12: polygon(
+        /* Top edge */ 12px 0%,
+        calc(100% - 12px) 0%,
+        /* Top-right corner: Bresenham circle arc */ calc(100% - 6px) 0%,
+        calc(100% - 6px) 1px,
+        calc(100% - 4px) 1px,
+        calc(100% - 4px) 2px,
+        calc(100% - 3px) 2px,
+        calc(100% - 3px) 3px,
+        calc(100% - 2px) 3px,
+        calc(100% - 2px) 4px,
+        calc(100% - 1px) 4px,
+        calc(100% - 1px) 6px,
+        100% 6px,
+        100% 12px,
+        /* Right edge */ 100% calc(100% - 12px),
+        /* Bottom-right corner */ 100% calc(100% - 6px),
+        calc(100% - 1px) calc(100% - 6px),
+        calc(100% - 1px) calc(100% - 4px),
+        calc(100% - 2px) calc(100% - 4px),
+        calc(100% - 2px) calc(100% - 3px),
+        calc(100% - 3px) calc(100% - 3px),
+        calc(100% - 3px) calc(100% - 2px),
+        calc(100% - 4px) calc(100% - 2px),
+        calc(100% - 4px) calc(100% - 1px),
+        calc(100% - 6px) calc(100% - 1px),
+        calc(100% - 6px) 100%,
+        calc(100% - 12px) 100%,
+        /* Bottom edge */ 12px 100%,
+        /* Bottom-left corner */ 6px 100%,
+        6px calc(100% - 1px),
+        4px calc(100% - 1px),
+        4px calc(100% - 2px),
+        3px calc(100% - 2px),
+        3px calc(100% - 3px),
+        2px calc(100% - 3px),
+        2px calc(100% - 4px),
+        1px calc(100% - 4px),
+        1px calc(100% - 6px),
+        0% calc(100% - 6px),
+        0% calc(100% - 12px),
+        /* Left edge */ 0% 12px,
+        /* Top-left corner */ 0% 6px,
+        1px 6px,
+        1px 4px,
+        2px 4px,
+        2px 3px,
+        3px 3px,
+        3px 2px,
+        4px 2px,
+        4px 1px,
+        6px 1px,
+        6px 0%
+    );
+
+    /* Pixelated rounded corners (16px) - Bresenham r=16: 1px steps */
+    --clip-rounded-16: polygon(
+        /* Top edge */ 16px 0%,
+        calc(100% - 16px) 0%,
+        /* Top-right corner: Bresenham circle arc */ calc(100% - 8px) 0%,
+        calc(100% - 8px) 1px,
+        calc(100% - 5px) 1px,
+        calc(100% - 5px) 2px,
+        calc(100% - 4px) 2px,
+        calc(100% - 4px) 3px,
+        calc(100% - 3px) 3px,
+        calc(100% - 3px) 4px,
+        calc(100% - 2px) 4px,
+        calc(100% - 2px) 5px,
+        calc(100% - 1px) 5px,
+        calc(100% - 1px) 8px,
+        100% 8px,
+        100% 16px,
+        /* Right edge */ 100% calc(100% - 16px),
+        /* Bottom-right corner */ 100% calc(100% - 8px),
+        calc(100% - 1px) calc(100% - 8px),
+        calc(100% - 1px) calc(100% - 5px),
+        calc(100% - 2px) calc(100% - 5px),
+        calc(100% - 2px) calc(100% - 4px),
+        calc(100% - 3px) calc(100% - 4px),
+        calc(100% - 3px) calc(100% - 3px),
+        calc(100% - 4px) calc(100% - 3px),
+        calc(100% - 4px) calc(100% - 2px),
+        calc(100% - 5px) calc(100% - 2px),
+        calc(100% - 5px) calc(100% - 1px),
+        calc(100% - 8px) calc(100% - 1px),
+        calc(100% - 8px) 100%,
+        calc(100% - 16px) 100%,
+        /* Bottom edge */ 16px 100%,
+        /* Bottom-left corner */ 8px 100%,
+        8px calc(100% - 1px),
+        5px calc(100% - 1px),
+        5px calc(100% - 2px),
+        4px calc(100% - 2px),
+        4px calc(100% - 3px),
+        3px calc(100% - 3px),
+        3px calc(100% - 4px),
+        2px calc(100% - 4px),
+        2px calc(100% - 5px),
+        1px calc(100% - 5px),
+        1px calc(100% - 8px),
+        0% calc(100% - 8px),
+        0% calc(100% - 16px),
+        /* Left edge */ 0% 16px,
+        /* Top-left corner */ 0% 8px,
+        1px 8px,
+        1px 5px,
+        2px 5px,
+        2px 4px,
+        3px 4px,
+        3px 3px,
+        4px 3px,
+        4px 2px,
+        5px 2px,
+        5px 1px,
+        8px 1px,
+        8px 0%
+    );
+
+    /* Avatar clip-paths now use full circles - use --clip-circle-24, --clip-circle-32, --clip-circle-64 */
+    /* Legacy aliases for backwards compatibility */
+    --clip-avatar-24: var(--clip-circle-24);
+    --clip-avatar-32: var(--clip-circle-32);
+    --clip-avatar-64: var(--clip-circle-64);
+}

@@ -1,0 +1,4727 @@
+/**
+ * AdLands - Planet Module
+ * Hexasphere planet with cluster territories and patterns
+ *
+ * Dependencies: THREE.js, hexasphere.js, js/utils/factionColors.js
+ */
+
+// Border band configuration for faction territory visualization
+const BORDER_GLOW_CONFIG = {
+  glowWidth: 11.0, // 20x thicker band (was 0.55)
+  baseOpacity: 0.9, // Near-solid at edge
+  fadeExponent: 1.2, // Smooth fade inward
+  zOffset: 0.012, // Above terrain, below cluster outlines
+};
+
+// Cluster overlay opacity for faction territory coloring
+const CLUSTER_OVERLAY_OPACITY = 0.5;
+
+// Crust thickness for visible side walls at polar openings
+const CRUST_THICKNESS = 6;
+
+// World units per rock texture tile (controls texture density on cliff/polar walls)
+const ROCK_TEXTURE_WORLD_SIZE = 7;
+
+class Planet {
+  constructor(scene, radius = 5, subdivisions = 22) {
+    this.scene = scene;
+    this.radius = radius;
+    this.subdivisions = subdivisions;
+
+    // Groups
+    this.hexGroup = new THREE.Group();
+    this.outlineGroup = new THREE.Group();
+
+    // Cluster outline tracking (clusterId → THREE.LineSegments2)
+    this.clusterOutlines = new Map();
+
+    // Shared LineMaterial for screen-space pixel-width outlines (never dispose)
+    this._outlineMaterial = new THREE.LineMaterial({
+      color: 0x000000,
+      linewidth: 1,
+      resolution: new THREE.Vector2(window.innerWidth, window.innerHeight),
+      polygonOffset: true,
+      polygonOffsetFactor: -1,
+      polygonOffsetUnits: -1,
+    });
+
+    // Cluster data
+    this.tileClusterMap = new Map();
+    this.clusterData = [];
+    this.clusterColors = new Map();
+    this.clusterPatterns = new Map();
+    this.clusterTextures = new Map();
+
+    // Seeded RNG for consistent generation
+    this.random = this._createSeededRandom(42);
+
+    // Territory ownership and capture state
+    this.clusterOwnership = new Map(); // clusterId → faction name ('rust', 'cobalt', 'viridian', or null)
+    this.clusterCaptureState = new Map(); // clusterId → { tics: number, owner: string|null }
+
+    // Tile center positions for tank-cluster detection
+    this.tileCenters = []; // Array of { position: Vector3, tileIndex: number }
+
+    // Portal tiles (neutral spawn points)
+    this.portalTileIndices = new Set(); // All portal-related tiles (centers + borders)
+    this.portalCenterIndices = new Set(); // Just the 8 actual portal centers (black)
+
+    // Polar tile indices (deleted - hollow poles)
+    this.polarTileIndices = new Set();
+
+    // Sponsor clusters
+    this.sponsorClusters = new Map(); // sponsorId → { sponsor, clusterId, tileIndices }
+    this.sponsorHoldTimers = new Map(); // sponsorId → { owner, capturedAt, holdDuration }
+    this.sponsorTileIndices = new Set(); // All tiles belonging to any sponsor cluster
+    this._sponsorTextureCache = new Map(); // patternImage dataUrl → THREE.Texture
+
+    // Historical occupancy tracking for pie charts
+    this.clusterOccupancyHistory = new Map(); // clusterId → { rust: ms, cobalt: ms, viridian: ms, unclaimed: ms }
+
+    // Faction territory outlines (merged across adjacent same-faction clusters)
+    this._clusterAdjacencyMap = new Map(); // clusterId → Set<neighboring clusterIds>
+    this.factionOutlines = new Map(); // 'rust'/'cobalt'/'viridian' → THREE.LineSegments
+    this._dirtyFactionOutlines = new Set(); // factions needing outline regeneration
+    this._lastOutlineUpdate = 0; // timestamp of last outline update (for debouncing)
+    this._factionBoundaryEdges = new Map(); // faction → Set of edge keys on faction boundary
+
+    // Inner glow overlays for captured clusters
+    this.clusterGlowOverlays = new Map(); // clusterId → THREE.Mesh (glow overlay)
+
+    // Territory transition animations
+    this._overlayAnimations = []; // Active overlay animations
+
+    // Weak territories (about to be recaptured) - flickering effect
+    this._weakTerritories = new Map(); // clusterId → attacking faction name
+
+    // Border glow meshes for faction territories (replaces color overlay)
+    this.factionBorderGlows = new Map(); // 'rust'/'cobalt'/'viridian' → THREE.Mesh (ribbon mesh)
+    this._dirtyFactionBorderGlows = new Set(); // factions needing border glow regeneration
+    this._borderGlowAnimations = []; // Active border glow animations
+
+    // Volumetric light cones at polar openings
+    this._volLightMeshes = [];
+    this._volLightTime = 0;
+
+    // Preallocated temp objects for visibility culling (avoid GC pressure)
+    this._cullTemp = {
+      cameraWorldPos: new THREE.Vector3(),
+      tileWorldPos: new THREE.Vector3(),
+      tileNormal: new THREE.Vector3(),
+      tileToCamera: new THREE.Vector3(),
+    };
+
+    // Pattern types
+    this.PATTERNS = [
+      "stripes_h",
+      "stripes_v",
+      "stripes_d1",
+      "stripes_d2",
+      "dots",
+      "dots_sparse",
+      "checkerboard",
+      "crosshatch",
+      "grid",
+      "waves",
+      "zigzag",
+      "diamonds",
+      "triangles",
+      "circles",
+    ];
+
+    this._generate();
+
+    scene.add(this.hexGroup);
+    scene.add(this.outlineGroup);
+  }
+
+  /**
+   * Build a single merged BufferGeometry from hex tile faces + polar crust walls.
+   * Used as a bloom-pass occluder so bloom occlusion matches the actual hull.
+   */
+  createHullOccluderGeometry() {
+    const allPositions = [];
+    const allIndices = [];
+    let vertexOffset = 0;
+
+    // 1. Hex tile faces (outer surface, elevation-aware)
+    this._tiles.forEach((tile, index) => {
+      if (this.polarTileIndices.has(index)) return;
+      const boundary = tile.boundary;
+      const n = boundary.length;
+      const es = 1; // Base radius — watertight shell for bloom occlusion
+
+      for (let i = 0; i < n; i++) {
+        allPositions.push(
+          parseFloat(boundary[i].x) * es,
+          parseFloat(boundary[i].y) * es,
+          parseFloat(boundary[i].z) * es,
+        );
+      }
+      for (let i = 1; i < n - 1; i++) {
+        allIndices.push(vertexOffset, vertexOffset + i, vertexOffset + i + 1);
+      }
+      vertexOffset += n;
+    });
+
+    // 2. Polar crust walls (rim of polar openings)
+    const edges = this._findPolarBoundaryEdges(this._tiles);
+    const scale = (this.radius - CRUST_THICKNESS) / this.radius;
+    for (const edge of edges) {
+      const ox1 = edge.v1.x, oy1 = edge.v1.y, oz1 = edge.v1.z;
+      const ox2 = edge.v2.x, oy2 = edge.v2.y, oz2 = edge.v2.z;
+      const ix1 = ox1 * scale, iy1 = oy1 * scale, iz1 = oz1 * scale;
+      const ix2 = ox2 * scale, iy2 = oy2 * scale, iz2 = oz2 * scale;
+
+      allPositions.push(
+        ox1, oy1, oz1,
+        ox2, oy2, oz2,
+        ix2, iy2, iz2,
+        ix1, iy1, iz1,
+      );
+      // Both winding orders so it occludes from either side
+      allIndices.push(
+        vertexOffset, vertexOffset + 1, vertexOffset + 2,
+        vertexOffset, vertexOffset + 2, vertexOffset + 3,
+        vertexOffset, vertexOffset + 2, vertexOffset + 1,
+        vertexOffset, vertexOffset + 3, vertexOffset + 2,
+      );
+      vertexOffset += 4;
+    }
+
+    // 3. Inner crust faces (inward-facing hex tiles at reduced radius)
+    this._tiles.forEach((tile, index) => {
+      if (this.polarTileIndices.has(index)) return;
+      const boundary = tile.boundary;
+      const n = boundary.length;
+
+      for (let i = 0; i < n; i++) {
+        allPositions.push(
+          parseFloat(boundary[i].x) * scale,
+          parseFloat(boundary[i].y) * scale,
+          parseFloat(boundary[i].z) * scale,
+        );
+      }
+      for (let i = 1; i < n - 1; i++) {
+        allIndices.push(vertexOffset, vertexOffset + i + 1, vertexOffset + i);
+      }
+      vertexOffset += n;
+    });
+
+    const geometry = new THREE.BufferGeometry();
+    geometry.setAttribute(
+      "position",
+      new THREE.Float32BufferAttribute(allPositions, 3),
+    );
+    geometry.setIndex(allIndices);
+    return geometry;
+  }
+
+  _createSeededRandom(seed) {
+    let state = seed;
+    return () => {
+      state = (state * 1103515245 + 12345) & 0x7fffffff;
+      return state / 0x7fffffff;
+    };
+  }
+
+  _generate() {
+    if (typeof Hexasphere === "undefined") {
+      console.warn("Hexasphere.js not loaded, using fallback");
+      this._generateFallback();
+      return;
+    }
+
+    const hexasphere = new Hexasphere(this.radius, this.subdivisions, 1.0);
+
+    this._storeTileCenters(hexasphere.tiles);
+    this._markPortalTiles(hexasphere.tiles);
+    const adjacencyMap = this._generateClusters(hexasphere.tiles);
+    this._adjacencyMap = adjacencyMap; // Store for portal neighbor lookups
+    this._tiles = hexasphere.tiles; // Store for sponsor outline creation
+    this._initializeCaptureState();
+
+    // Generate terrain elevation (raised hex plateaus)
+    if (typeof TerrainElevation !== "undefined") {
+      this.terrainElevation = new TerrainElevation(this, 73);
+      this.terrainElevation.generate(
+        hexasphere.tiles,
+        adjacencyMap,
+        this.portalTileIndices,
+        this.polarTileIndices,
+      );
+    }
+
+    this._createTileMeshes(hexasphere.tiles);
+
+    // Generate shared rock texture for cliff walls and polar opening walls
+    this._createRockWallTexture();
+
+    // Create cliff wall geometry for terrain elevation transitions
+    if (this.terrainElevation) {
+      try {
+        this.terrainElevation.createCliffWalls(hexasphere.tiles, adjacencyMap);
+      } catch (e) {
+        console.error("[Planet] createCliffWalls failed:", e);
+      }
+    }
+
+    this._createPolarWalls(hexasphere.tiles);
+    this._createPolarVolumetricLights(hexasphere.tiles);
+    this._createClusterOutlines(hexasphere.tiles, adjacencyMap);
+    this._clusterAdjacencyMap = this._buildClusterAdjacencyMap();
+  }
+
+  _generateFallback() {
+    const geometry = new THREE.IcosahedronGeometry(this.radius, 5);
+    const material = new THREE.MeshStandardMaterial({
+      color: 0x808080,
+      flatShading: true,
+      roughness: 0.8,
+      metalness: 0.2,
+      side: THREE.FrontSide,
+    });
+    const mesh = new THREE.Mesh(geometry, material);
+    mesh.castShadow = true;
+    mesh.receiveShadow = true;
+    this.hexGroup.add(mesh);
+  }
+
+  _isPolarTile(tile, radius) {
+    const y = parseFloat(tile.centerPoint.y);
+    const phi = Math.acos(y / radius);
+    // 80° from equator = 10° from pole
+    const polarThreshold = (10 * Math.PI) / 180;
+    return phi < polarThreshold || phi > Math.PI - polarThreshold;
+  }
+
+  _findClosestTileIndex(position) {
+    let closestIndex = -1;
+    let closestDist = Infinity;
+    for (const tile of this.tileCenters) {
+      const dist = position.distanceToSquared(tile.position);
+      if (dist < closestDist) {
+        closestDist = dist;
+        closestIndex = tile.tileIndex;
+      }
+    }
+    return closestIndex;
+  }
+
+  _markPortalTiles(tiles) {
+    // Pentagons (12 total on hexasphere at icosahedron vertices) are the portals
+    tiles.forEach((tile, index) => {
+      if (tile.boundary.length === 5) {
+        this.portalCenterIndices.add(index);
+        this.portalTileIndices.add(index);
+      }
+    });
+  }
+
+  isPortalTile(tileIndex) {
+    return this.portalTileIndices.has(tileIndex);
+  }
+
+  _expandPortalBorders(adjacencyMap) {
+    // Add the 6 neighboring tiles around each portal as neutral territory
+    const portalBorders = new Set();
+    for (const portalIndex of this.portalTileIndices) {
+      const neighbors = adjacencyMap.get(portalIndex) || [];
+      for (const neighborIndex of neighbors) {
+        if (!this.portalTileIndices.has(neighborIndex)) {
+          portalBorders.add(neighborIndex);
+        }
+      }
+    }
+    // Add borders to portal set
+    for (const borderIndex of portalBorders) {
+      this.portalTileIndices.add(borderIndex);
+    }
+  }
+
+  _generateClusters(tiles) {
+    const numTiles = tiles.length;
+    const assigned = new Array(numTiles).fill(false);
+    const adjacencyMap = this._buildAdjacencyMap(tiles);
+
+    // Expand portal tiles to include their neighbors
+    this._expandPortalBorders(adjacencyMap);
+
+    // Mark polar tiles (deleted from rendering - hollow poles)
+    let polarCount = 0;
+    for (let i = 0; i < numTiles; i++) {
+      if (this._isPolarTile(tiles[i], this.radius)) {
+        assigned[i] = true;
+        this.polarTileIndices.add(i);
+        polarCount++;
+      }
+    }
+
+    // Mark portal tiles as neutral (not assignable to clusters)
+    let portalCount = 0;
+    for (const portalIndex of this.portalTileIndices) {
+      if (!assigned[portalIndex]) {
+        assigned[portalIndex] = true;
+        portalCount++;
+      }
+    }
+
+    // Mark sponsor tiles as protected (not assignable to procedural clusters)
+    let sponsorCount = 0;
+    for (const sponsorTileIndex of this.sponsorTileIndices) {
+      if (!assigned[sponsorTileIndex]) {
+        assigned[sponsorTileIndex] = true;
+        sponsorCount++;
+      }
+    }
+    // Plan cluster sizes
+    const clusterSizes = [];
+    let remaining = numTiles - polarCount - portalCount - sponsorCount;
+    console.log(`[Planet] Total tiles: ${numTiles} | Polar: ${polarCount} | Portal+neutral: ${portalCount} | Sponsor: ${sponsorCount} | RENTABLE: ${remaining - sponsorCount}`);
+    const maxSize = 100;
+
+    while (remaining > 0) {
+      const rand = this.random();
+      let size;
+      if (rand < 0.3) size = Math.floor(this.random() * 5) + 1;
+      else if (rand < 0.6) size = Math.floor(this.random() * 10) + 6;
+      else if (rand < 0.85) size = Math.floor(this.random() * 25) + 16;
+      else size = Math.floor(this.random() * 60) + 41;
+
+      size = Math.min(size, maxSize, remaining);
+      clusterSizes.push(size);
+      remaining -= size;
+    }
+
+    // Grow clusters
+    let clusterId = 0;
+    let clusterIndex = 0;
+
+    const getTileCenter = (idx) => {
+      const cp = tiles[idx].centerPoint;
+      return new THREE.Vector3(
+        parseFloat(cp.x),
+        parseFloat(cp.y),
+        parseFloat(cp.z),
+      );
+    };
+
+    for (let i = 0; i < numTiles && clusterIndex < clusterSizes.length; i++) {
+      if (assigned[i]) continue;
+
+      const targetSize = clusterSizes[clusterIndex];
+      const clusterTiles = [];
+      const frontier = new Map();
+      const seedCenter = getTileCenter(i);
+
+      assigned[i] = true;
+      clusterTiles.push(i);
+      this.tileClusterMap.set(i, clusterId);
+
+      // Add seed neighbors to frontier
+      for (const neighbor of adjacencyMap.get(i) || []) {
+        if (!assigned[neighbor]) {
+          frontier.set(
+            neighbor,
+            getTileCenter(neighbor).distanceTo(seedCenter),
+          );
+        }
+      }
+
+      // Grow by picking closest tile
+      while (clusterTiles.length < targetSize && frontier.size > 0) {
+        let closest = -1;
+        let closestDist = Infinity;
+
+        for (const [idx, dist] of frontier) {
+          if (dist < closestDist) {
+            closestDist = dist;
+            closest = idx;
+          }
+        }
+
+        if (closest === -1) break;
+
+        frontier.delete(closest);
+        if (assigned[closest]) continue;
+
+        assigned[closest] = true;
+        clusterTiles.push(closest);
+        this.tileClusterMap.set(closest, clusterId);
+
+        for (const neighbor of adjacencyMap.get(closest) || []) {
+          if (!assigned[neighbor] && !frontier.has(neighbor)) {
+            frontier.set(
+              neighbor,
+              getTileCenter(neighbor).distanceTo(seedCenter),
+            );
+          }
+        }
+      }
+
+      this.clusterData.push({ id: clusterId, tiles: clusterTiles });
+
+      // Assign color (40-50% gray)
+      const gray = Math.floor(102 + this.random() * 26);
+      this.clusterColors.set(clusterId, (gray << 16) | (gray << 8) | gray);
+
+      // Assign pattern with randomized material properties
+      const patternIdx = Math.floor(this.random() * this.PATTERNS.length);
+      // Randomize roughness: 50% - 100%
+      const roughness = 0.5 + this.random() * 0.5;
+      // Randomize metalness: 0% - 30%
+      const metalness = this.random() * 0.3;
+      this.clusterPatterns.set(clusterId, {
+        type: this.PATTERNS[patternIdx],
+        grayValue: gray,
+        roughness: roughness,
+        metalness: metalness,
+      });
+
+      clusterId++;
+      clusterIndex++;
+    }
+
+    // Assign remaining tiles
+    for (let i = 0; i < numTiles; i++) {
+      if (assigned[i]) continue;
+
+      for (const neighbor of adjacencyMap.get(i) || []) {
+        if (assigned[neighbor]) {
+          const cid = this.tileClusterMap.get(neighbor);
+          // Skip if neighbor is neutral (portal/polar) with no cluster
+          if (cid === undefined) continue;
+          this.tileClusterMap.set(i, cid);
+          this.clusterData[cid].tiles.push(i);
+          assigned[i] = true;
+          break;
+        }
+      }
+
+      if (!assigned[i]) {
+        this.tileClusterMap.set(i, clusterId);
+        this.clusterData.push({ id: clusterId, tiles: [i] });
+        clusterId++;
+      }
+    }
+
+    return adjacencyMap;
+  }
+
+  _storeTileCenters(tiles) {
+    tiles.forEach((tile, index) => {
+      const cp = tile.centerPoint;
+      this.tileCenters.push({
+        position: new THREE.Vector3(
+          parseFloat(cp.x),
+          parseFloat(cp.y),
+          parseFloat(cp.z),
+        ),
+        tileIndex: index,
+      });
+    });
+  }
+
+  _initializeCaptureState() {
+    this.clusterData.forEach((cluster) => {
+      const capacity = cluster.tiles.length * 5;
+      this.clusterCaptureState.set(cluster.id, {
+        tics: { rust: 0, cobalt: 0, viridian: 0 },
+        owner: null,
+        capacity: capacity,
+        momentum: { rust: 0, cobalt: 0, viridian: 0 },
+      });
+    });
+  }
+
+  _buildAdjacencyMap(tiles) {
+    const adjacencyMap = new Map();
+    const vertexToTiles = new Map();
+
+    tiles.forEach((tile, idx) => {
+      adjacencyMap.set(idx, []);
+      tile.boundary.forEach((v) => {
+        const key = `${v.x},${v.y},${v.z}`;
+        if (!vertexToTiles.has(key)) vertexToTiles.set(key, []);
+        vertexToTiles.get(key).push(idx);
+      });
+    });
+
+    tiles.forEach((tile, idx) => {
+      const neighbors = new Set();
+      tile.boundary.forEach((v) => {
+        const key = `${v.x},${v.y},${v.z}`;
+        (vertexToTiles.get(key) || []).forEach((other) => {
+          if (other !== idx) neighbors.add(other);
+        });
+      });
+      adjacencyMap.set(idx, Array.from(neighbors));
+    });
+
+    return adjacencyMap;
+  }
+
+  /**
+   * Apply server-authoritative world data (clusters, terrain, portals).
+   * Overrides locally generated data to guarantee server/client consistency.
+   * Called by MultiplayerClient on connect.
+   */
+  applyServerWorld(world) {
+    // Override cluster mapping
+    this.tileClusterMap.clear();
+    for (let i = 0; i < world.tileClusterMap.length; i++) {
+      if (world.tileClusterMap[i] >= 0) {
+        this.tileClusterMap.set(i, world.tileClusterMap[i]);
+      }
+    }
+
+    // Override cluster data
+    this.clusterData = world.clusters.map((c) => ({
+      id: c.id,
+      tiles: c.tiles,
+    }));
+
+    // Override cluster visuals
+    this.clusterColors.clear();
+    this.clusterPatterns.clear();
+    for (const [cid, vis] of Object.entries(world.clusterVisuals)) {
+      const id = parseInt(cid);
+      this.clusterColors.set(id, vis.color);
+      this.clusterPatterns.set(id, vis.pattern);
+    }
+
+    // Override portal/polar indices
+    this.portalCenterIndices = new Set(world.portalCenterIndices);
+    this.portalTileIndices = new Set(world.portalTileIndices);
+    this.polarTileIndices = new Set(world.polarTileIndices);
+
+    // Override terrain elevation
+    if (this.terrainElevation && world.tileElevation) {
+      this.terrainElevation.tileElevation.clear();
+      this.terrainElevation.elevatedTileSet.clear();
+      for (let i = 0; i < world.tileElevation.length; i++) {
+        if (world.tileElevation[i] > 0) {
+          this.terrainElevation.tileElevation.set(i, world.tileElevation[i]);
+          this.terrainElevation.elevatedTileSet.add(i);
+        }
+      }
+    }
+
+    // Re-initialize capture state from server clusters
+    this.clusterCaptureState.clear();
+    this.clusterOwnership.clear();
+    this._initializeCaptureState();
+
+    console.log(
+      `[Planet] Applied server world: ${this.clusterData.length} clusters, ` +
+      `${this.portalTileIndices.size} portal tiles, ` +
+      `${this.terrainElevation ? this.terrainElevation.elevatedTileSet.size : 0} elevated tiles`
+    );
+  }
+
+  /**
+   * Apply a territory state update from the server.
+   * Called when server broadcasts ownership changes.
+   */
+  applyTerritoryState(clusterId, owner, tics) {
+    const state = this.clusterCaptureState.get(clusterId);
+    if (!state) return;
+
+    state.tics = tics;
+    state.owner = owner;
+    this.updateClusterVisual(clusterId);
+  }
+
+  /**
+   * Build a map of which clusters neighbor each other
+   * Two clusters are neighbors if any of their tiles share an edge
+   */
+  _buildClusterAdjacencyMap() {
+    const clusterAdj = new Map();
+
+    // Initialize empty sets for all clusters
+    for (const cluster of this.clusterData) {
+      clusterAdj.set(cluster.id, new Set());
+    }
+
+    // For each cluster, check if any of its tiles neighbor tiles from other clusters
+    for (const cluster of this.clusterData) {
+      for (const tileIdx of cluster.tiles) {
+        const neighborTiles = this._adjacencyMap.get(tileIdx) || [];
+        for (const neighborTileIdx of neighborTiles) {
+          const neighborClusterId = this.tileClusterMap.get(neighborTileIdx);
+          // Skip if neighbor is neutral (no cluster) or same cluster
+          if (
+            neighborClusterId === undefined ||
+            neighborClusterId === cluster.id
+          )
+            continue;
+
+          // These two clusters are adjacent
+          clusterAdj.get(cluster.id).add(neighborClusterId);
+        }
+      }
+    }
+
+    return clusterAdj;
+  }
+
+  _createPatternTexture(type, baseGray) {
+    const size = 128; // Half resolution for crispier PS1 look
+    const canvas = document.createElement("canvas");
+    canvas.width = size;
+    canvas.height = size;
+    const ctx = canvas.getContext("2d");
+
+    // Base fill
+    ctx.fillStyle = `rgb(${baseGray},${baseGray},${baseGray})`;
+    ctx.fillRect(0, 0, size, size);
+
+    // Pattern (scaled down proportionally)
+    const patternGray = baseGray - 25;
+    ctx.strokeStyle =
+      ctx.fillStyle = `rgb(${patternGray},${patternGray},${patternGray})`;
+    ctx.lineWidth = 8; // Halved from 16
+
+    switch (type) {
+      case "stripes_h":
+        for (let y = 0; y < size; y += 16) {
+          ctx.beginPath();
+          ctx.moveTo(0, y);
+          ctx.lineTo(size, y);
+          ctx.stroke();
+        }
+        break;
+      case "stripes_v":
+        for (let x = 0; x < size; x += 16) {
+          ctx.beginPath();
+          ctx.moveTo(x, 0);
+          ctx.lineTo(x, size);
+          ctx.stroke();
+        }
+        break;
+      case "stripes_d1":
+        for (let i = -size; i < size * 2; i += 16) {
+          ctx.beginPath();
+          ctx.moveTo(i, 0);
+          ctx.lineTo(i + size, size);
+          ctx.stroke();
+        }
+        break;
+      case "stripes_d2":
+        for (let i = -size; i < size * 2; i += 16) {
+          ctx.beginPath();
+          ctx.moveTo(i, size);
+          ctx.lineTo(i + size, 0);
+          ctx.stroke();
+        }
+        break;
+      case "dots":
+        for (let x = 16; x < size; x += 32) {
+          for (let y = 16; y < size; y += 32) {
+            ctx.beginPath();
+            ctx.arc(x, y, 10, 0, Math.PI * 2);
+            ctx.fill();
+          }
+        }
+        break;
+      case "dots_sparse":
+        for (let x = 32; x < size; x += 64) {
+          for (let y = 32; y < size; y += 64) {
+            ctx.beginPath();
+            ctx.arc(x, y, 12, 0, Math.PI * 2);
+            ctx.fill();
+          }
+        }
+        break;
+      case "checkerboard":
+        for (let x = 0; x < size; x += 16) {
+          for (let y = 0; y < size; y += 16) {
+            if ((x / 16 + y / 16) % 2 === 0) ctx.fillRect(x, y, 16, 16);
+          }
+        }
+        break;
+      case "crosshatch":
+        ctx.lineWidth = 6;
+        for (let i = -size; i < size * 2; i += 16) {
+          ctx.beginPath();
+          ctx.moveTo(i, 0);
+          ctx.lineTo(i + size, size);
+          ctx.stroke();
+          ctx.beginPath();
+          ctx.moveTo(i, size);
+          ctx.lineTo(i + size, 0);
+          ctx.stroke();
+        }
+        break;
+      case "grid":
+        for (let i = 0; i < size; i += 32) {
+          ctx.beginPath();
+          ctx.moveTo(i, 0);
+          ctx.lineTo(i, size);
+          ctx.stroke();
+          ctx.beginPath();
+          ctx.moveTo(0, i);
+          ctx.lineTo(size, i);
+          ctx.stroke();
+        }
+        break;
+      case "waves":
+        const freq = (Math.PI * 2) / size;
+        for (let y = 16; y < size; y += 32) {
+          ctx.beginPath();
+          for (let x = 0; x <= size; x += 2) {
+            const wy = y + Math.sin(x * freq * 4) * 12;
+            x === 0 ? ctx.moveTo(x, wy) : ctx.lineTo(x, wy);
+          }
+          ctx.stroke();
+        }
+        break;
+      case "zigzag":
+        for (let y = 10; y < size; y += 32) {
+          ctx.beginPath();
+          for (let x = 0; x <= size; x += 16) {
+            const zy = y + ((x / 16) % 2 === 0 ? 0 : 12);
+            x === 0 ? ctx.moveTo(x, zy) : ctx.lineTo(x, zy);
+          }
+          ctx.stroke();
+        }
+        break;
+      case "diamonds":
+        for (let x = 0; x < size; x += 32) {
+          for (let y = 0; y < size; y += 32) {
+            const cx = x + 16,
+              cy = y + 16;
+            ctx.beginPath();
+            ctx.moveTo(cx, cy - 16);
+            ctx.lineTo(cx + 16, cy);
+            ctx.lineTo(cx, cy + 16);
+            ctx.lineTo(cx - 16, cy);
+            ctx.closePath();
+            ctx.stroke();
+          }
+        }
+        break;
+      case "triangles":
+        for (let x = 0; x < size; x += 32) {
+          for (let y = 0; y < size; y += 32) {
+            ctx.beginPath();
+            ctx.moveTo(x + 16, y + 4);
+            ctx.lineTo(x + 28, y + 28);
+            ctx.lineTo(x + 4, y + 28);
+            ctx.closePath();
+            ctx.stroke();
+          }
+        }
+        break;
+      case "circles":
+        for (let x = 0; x < size; x += 32) {
+          for (let y = 0; y < size; y += 32) {
+            ctx.beginPath();
+            ctx.arc(x + 16, y + 16, 11, 0, Math.PI * 2);
+            ctx.stroke();
+          }
+        }
+        break;
+      case "solid":
+        // No pattern - just base color
+        break;
+    }
+
+    const texture = new THREE.CanvasTexture(canvas);
+    texture.wrapS = texture.wrapT = THREE.RepeatWrapping;
+    texture.minFilter = THREE.NearestFilter;
+    texture.magFilter = THREE.NearestFilter;
+    return texture;
+  }
+
+  _createTileMeshes(tiles) {
+    tiles.forEach((tile, index) => {
+      if (this.polarTileIndices.has(index)) return;
+      const boundary = tile.boundary;
+      const n = boundary.length;
+      const vertices = [];
+      const uvs = [];
+
+      // Terrain elevation: scale vertices radially outward for raised tiles
+      const extrusionScale = this.terrainElevation
+        ? this.terrainElevation.getExtrusion(
+            this.terrainElevation.getElevationAtTileIndex(index),
+          )
+        : 1;
+
+      for (let i = 0; i < n; i++) {
+        const origX = parseFloat(boundary[i].x);
+        const origY = parseFloat(boundary[i].y);
+        const origZ = parseFloat(boundary[i].z);
+
+        // Apply extrusion scale for elevated tiles
+        const vx = origX * extrusionScale;
+        const vy = origY * extrusionScale;
+        const vz = origZ * extrusionScale;
+        vertices.push(vx, vy, vz);
+
+        // UVs from ORIGINAL position so textures stay undistorted
+        const r = Math.sqrt(origX * origX + origY * origY + origZ * origZ);
+        const theta = Math.atan2(origZ, origX);
+        const phi = Math.acos(origY / r);
+        const scale = 60.0;
+        uvs.push((theta / Math.PI + 1) * 0.5 * scale, (phi / Math.PI) * scale);
+      }
+
+      const indices = [];
+      for (let i = 1; i < n - 1; i++) {
+        indices.push(0, i, i + 1);
+      }
+
+      const geometry = new THREE.BufferGeometry();
+      geometry.setAttribute(
+        "position",
+        new THREE.Float32BufferAttribute(vertices, 3),
+      );
+      geometry.setAttribute("uv", new THREE.Float32BufferAttribute(uvs, 2));
+      geometry.setIndex(indices);
+      geometry.computeVertexNormals();
+
+      const clusterId = this.tileClusterMap.get(index);
+
+      let material;
+
+      if (this.portalCenterIndices.has(index)) {
+        if (!this._portalTexture) {
+          this._portalTexture = this._createPatternTexture("solid", 0);
+        }
+        material = new THREE.MeshStandardMaterial({
+          map: this._portalTexture,
+          flatShading: true,
+          roughness: 0.9,
+          metalness: 0.2,
+          side: THREE.FrontSide,
+        });
+      } else if (clusterId === undefined) {
+        if (!this._neutralTexture) {
+          this._neutralTexture = this._createPatternTexture("solid", 58);
+        }
+        material = new THREE.MeshStandardMaterial({
+          map: this._neutralTexture,
+          flatShading: true,
+          roughness: 0.8,
+          metalness: 0.1,
+          side: THREE.FrontSide,
+        });
+      } else {
+        const pattern = this.clusterPatterns.get(clusterId);
+        if (!this.clusterTextures.has(clusterId)) {
+          this.clusterTextures.set(
+            clusterId,
+            this._createPatternTexture(pattern.type, pattern.grayValue),
+          );
+        }
+        material = new THREE.MeshStandardMaterial({
+          map: this.clusterTextures.get(clusterId),
+          flatShading: true,
+          roughness: pattern.roughness,
+          metalness: pattern.metalness,
+          side: THREE.FrontSide,
+        });
+      }
+
+      const mesh = new THREE.Mesh(geometry, material);
+      mesh.userData = { tileIndex: index, clusterId };
+      mesh.receiveShadow = true;
+      mesh.castShadow = true;
+      this.hexGroup.add(mesh);
+    });
+  }
+
+  _createRockWallTexture() {
+    const size = 8;
+    const canvas = document.createElement("canvas");
+    canvas.width = size;
+    canvas.height = size;
+    const ctx = canvas.getContext("2d");
+
+    const rng = this._createSeededRandom(999);
+
+    // Per-pixel random noise — each pixel gets an independent gray value
+    for (let y = 0; y < size; y++) {
+      for (let x = 0; x < size; x++) {
+        const v = Math.floor(150 + rng() * 105);
+        ctx.fillStyle = `rgb(${v}, ${v}, ${v})`;
+        ctx.fillRect(x, y, 1, 1);
+      }
+    }
+
+    const texture = new THREE.CanvasTexture(canvas);
+    texture.wrapS = THREE.RepeatWrapping;
+    texture.wrapT = THREE.RepeatWrapping;
+    texture.minFilter = THREE.NearestFilter;
+    texture.magFilter = THREE.NearestFilter;
+
+    this._rockWallTexture = texture;
+  }
+
+  _findPolarBoundaryEdges(tiles) {
+    const edges = [];
+    const seenEdges = new Set();
+
+    for (const tileIdx of this.polarTileIndices) {
+      const neighbors = this._adjacencyMap.get(tileIdx) || [];
+      for (const neighborIdx of neighbors) {
+        if (this.polarTileIndices.has(neighborIdx)) continue;
+
+        const polarBoundary = tiles[tileIdx].boundary;
+        const neighborBoundary = tiles[neighborIdx].boundary;
+
+        for (let i = 0; i < neighborBoundary.length; i++) {
+          const nv1 = neighborBoundary[i];
+          const nv2 = neighborBoundary[(i + 1) % neighborBoundary.length];
+          const nk1 = `${nv1.x},${nv1.y},${nv1.z}`;
+          const nk2 = `${nv2.x},${nv2.y},${nv2.z}`;
+
+          for (let j = 0; j < polarBoundary.length; j++) {
+            const pv1 = polarBoundary[j];
+            const pv2 = polarBoundary[(j + 1) % polarBoundary.length];
+            const pk1 = `${pv1.x},${pv1.y},${pv1.z}`;
+            const pk2 = `${pv2.x},${pv2.y},${pv2.z}`;
+
+            if (
+              (nk1 === pk1 && nk2 === pk2) ||
+              (nk1 === pk2 && nk2 === pk1)
+            ) {
+              const edgeKey =
+                nk1 < nk2 ? `${nk1}|${nk2}` : `${nk2}|${nk1}`;
+              if (!seenEdges.has(edgeKey)) {
+                seenEdges.add(edgeKey);
+                edges.push({
+                  v1: {
+                    x: parseFloat(nv1.x),
+                    y: parseFloat(nv1.y),
+                    z: parseFloat(nv1.z),
+                  },
+                  v2: {
+                    x: parseFloat(nv2.x),
+                    y: parseFloat(nv2.y),
+                    z: parseFloat(nv2.z),
+                  },
+                });
+              }
+            }
+          }
+        }
+      }
+    }
+
+    return edges;
+  }
+
+  _createPolarWalls(tiles) {
+    const thickness = CRUST_THICKNESS;
+    const edges = this._findPolarBoundaryEdges(tiles);
+    if (edges.length === 0) return;
+
+    const positions = [];
+    const normals = [];
+    const colors = [];
+    const uvs = [];
+    const indices = [];
+    const scale = (this.radius - thickness) / this.radius;
+
+    const _outerA = new THREE.Vector3();
+    const _outerB = new THREE.Vector3();
+    const _innerA = new THREE.Vector3();
+    const _innerB = new THREE.Vector3();
+    const _edgeDir = new THREE.Vector3();
+    const _midpoint = new THREE.Vector3();
+    const _radialDir = new THREE.Vector3();
+    const _wallNormal = new THREE.Vector3();
+    const _towardPole = new THREE.Vector3();
+
+    for (const edge of edges) {
+      _outerA.set(edge.v1.x, edge.v1.y, edge.v1.z);
+      _outerB.set(edge.v2.x, edge.v2.y, edge.v2.z);
+      _innerA.copy(_outerA).multiplyScalar(scale);
+      _innerB.copy(_outerB).multiplyScalar(scale);
+
+      const baseIndex = positions.length / 3;
+
+      positions.push(
+        _outerA.x, _outerA.y, _outerA.z,
+        _outerB.x, _outerB.y, _outerB.z,
+        _innerB.x, _innerB.y, _innerB.z,
+        _innerA.x, _innerA.y, _innerA.z,
+      );
+
+      // UV tiling: U along edge, V along wall depth
+      const edgeLen = _outerA.distanceTo(_outerB);
+      const wallDepth = _outerA.distanceTo(_innerA);
+      const uTile = edgeLen / ROCK_TEXTURE_WORLD_SIZE;
+      const vTile = wallDepth / ROCK_TEXTURE_WORLD_SIZE;
+      uvs.push(
+        0,     0,      // outerA
+        uTile, 0,      // outerB
+        uTile, vTile,  // innerB
+        0,     vTile,  // innerA
+      );
+
+      _edgeDir.subVectors(_outerB, _outerA).normalize();
+      _midpoint.addVectors(_outerA, _outerB).multiplyScalar(0.5);
+      _radialDir.copy(_midpoint).normalize();
+      _wallNormal.crossVectors(_edgeDir, _radialDir).normalize();
+
+      // Orient normal away from the pole (outward from the hole)
+      const poleY = _midpoint.y > 0 ? this.radius : -this.radius;
+      _towardPole.set(0, poleY, 0).sub(_midpoint).normalize();
+
+      if (_wallNormal.dot(_towardPole) > 0) {
+        _wallNormal.negate();
+        indices.push(
+          baseIndex, baseIndex + 2, baseIndex + 1,
+          baseIndex, baseIndex + 3, baseIndex + 2,
+        );
+      } else {
+        indices.push(
+          baseIndex, baseIndex + 1, baseIndex + 2,
+          baseIndex, baseIndex + 2, baseIndex + 3,
+        );
+      }
+
+      for (let i = 0; i < 4; i++) {
+        normals.push(_wallNormal.x, _wallNormal.y, _wallNormal.z);
+      }
+
+      // Slight per-quad color variation for rocky appearance
+      const baseR = 0.23,
+        baseG = 0.18,
+        baseB = 0.16;
+      const variation = (this.random() - 0.5) * 0.06;
+      const r = baseR + variation;
+      const g = baseG + variation * 0.8;
+      const b = baseB + variation * 0.6;
+      for (let i = 0; i < 4; i++) {
+        colors.push(r, g, b);
+      }
+    }
+
+    // Wall mesh — lit, receives light
+    const wallGeometry = new THREE.BufferGeometry();
+    wallGeometry.setAttribute(
+      "position",
+      new THREE.Float32BufferAttribute(positions, 3),
+    );
+    wallGeometry.setAttribute(
+      "normal",
+      new THREE.Float32BufferAttribute(normals, 3),
+    );
+    wallGeometry.setAttribute(
+      "color",
+      new THREE.Float32BufferAttribute(colors, 3),
+    );
+    wallGeometry.setAttribute(
+      "uv",
+      new THREE.Float32BufferAttribute(uvs, 2),
+    );
+    wallGeometry.setIndex(indices);
+
+    const wallMaterial = new THREE.MeshStandardMaterial({
+      vertexColors: true,
+      roughness: 0.95,
+      metalness: 0.05,
+      flatShading: true,
+      side: THREE.FrontSide,
+      map: this._rockWallTexture,
+    });
+
+    const wallMesh = new THREE.Mesh(wallGeometry, wallMaterial);
+    wallMesh.castShadow = true;
+    wallMesh.receiveShadow = true;
+    wallMesh.userData = { isPolarWall: true };
+    this.hexGroup.add(wallMesh);
+    this._polarWallMesh = wallMesh;
+
+    // Inner crust faces — unlit, dark gray hexagons
+    const innerPositions = [];
+    const innerNormals = [];
+    const innerColors = [];
+    const innerIndices = [];
+
+    tiles.forEach((tile, index) => {
+      if (this.polarTileIndices.has(index)) return;
+      const boundary = tile.boundary;
+      const n = boundary.length;
+      const vertexOffset = innerPositions.length / 3;
+
+      // Random gray per tile: 3%–8%
+      const gray = 0.03 + this.random() * 0.05;
+
+      for (let i = 0; i < n; i++) {
+        const vx = parseFloat(boundary[i].x) * scale;
+        const vy = parseFloat(boundary[i].y) * scale;
+        const vz = parseFloat(boundary[i].z) * scale;
+        innerPositions.push(vx, vy, vz);
+
+        const len = Math.sqrt(vx * vx + vy * vy + vz * vz);
+        innerNormals.push(-vx / len, -vy / len, -vz / len);
+
+        innerColors.push(gray, gray, gray);
+      }
+
+      // Reversed winding for inward-facing triangles
+      for (let i = 1; i < n - 1; i++) {
+        innerIndices.push(vertexOffset, vertexOffset + i + 1, vertexOffset + i);
+      }
+    });
+
+    const innerGeometry = new THREE.BufferGeometry();
+    innerGeometry.setAttribute(
+      "position",
+      new THREE.Float32BufferAttribute(innerPositions, 3),
+    );
+    innerGeometry.setAttribute(
+      "normal",
+      new THREE.Float32BufferAttribute(innerNormals, 3),
+    );
+    innerGeometry.setAttribute(
+      "color",
+      new THREE.Float32BufferAttribute(innerColors, 3),
+    );
+    innerGeometry.setIndex(innerIndices);
+
+    const innerMaterial = new THREE.MeshBasicMaterial({
+      vertexColors: true,
+      side: THREE.FrontSide,
+    });
+
+    const innerMesh = new THREE.Mesh(innerGeometry, innerMaterial);
+    innerMesh.userData = { isPolarWall: true };
+    this.hexGroup.add(innerMesh);
+    this._innerCrustMesh = innerMesh;
+  }
+
+  // ── Polar volumetric light ───────────────────────────────────────────
+
+  _chainBoundaryEdges(edges) {
+    if (edges.length === 0) return [];
+
+    // Build adjacency: vertexKey → [edgeIndex, ...]
+    const vertexToEdges = new Map();
+    const keyOf = (v) =>
+      `${v.x.toFixed(6)},${v.y.toFixed(6)},${v.z.toFixed(6)}`;
+
+    for (let i = 0; i < edges.length; i++) {
+      const k1 = keyOf(edges[i].v1);
+      const k2 = keyOf(edges[i].v2);
+      if (!vertexToEdges.has(k1)) vertexToEdges.set(k1, []);
+      if (!vertexToEdges.has(k2)) vertexToEdges.set(k2, []);
+      vertexToEdges.get(k1).push(i);
+      vertexToEdges.get(k2).push(i);
+    }
+
+    // Walk the chain starting from edge 0
+    const ring = [];
+    const visited = new Set();
+    visited.add(0);
+    ring.push(
+      new THREE.Vector3(edges[0].v1.x, edges[0].v1.y, edges[0].v1.z),
+    );
+
+    const startKey = keyOf(edges[0].v1);
+    let currentKey = keyOf(edges[0].v2);
+    ring.push(
+      new THREE.Vector3(edges[0].v2.x, edges[0].v2.y, edges[0].v2.z),
+    );
+
+    while (currentKey !== startKey && visited.size < edges.length) {
+      const candidates = vertexToEdges.get(currentKey);
+      let nextIdx = -1;
+      for (const idx of candidates) {
+        if (!visited.has(idx)) {
+          nextIdx = idx;
+          break;
+        }
+      }
+      if (nextIdx === -1) break;
+      visited.add(nextIdx);
+
+      const nextEdge = edges[nextIdx];
+      const k1 = keyOf(nextEdge.v1);
+      const k2 = keyOf(nextEdge.v2);
+
+      if (k1 === currentKey) {
+        currentKey = k2;
+        ring.push(
+          new THREE.Vector3(nextEdge.v2.x, nextEdge.v2.y, nextEdge.v2.z),
+        );
+      } else {
+        currentKey = k1;
+        ring.push(
+          new THREE.Vector3(nextEdge.v1.x, nextEdge.v1.y, nextEdge.v1.z),
+        );
+      }
+    }
+
+    // Remove duplicate closing vertex
+    if (ring.length > 1 && ring[0].distanceTo(ring[ring.length - 1]) < 0.01) {
+      ring.pop();
+    }
+
+    return ring;
+  }
+
+  _buildVolLightGeometry(ring, reach, interiorCount) {
+    const n = ring.length;
+    const _dir = new THREE.Vector3();
+    const totalDist = this.radius + reach; // 780
+    const rimH = this.radius / totalDist;  // ~0.615
+
+    const posArr = [];
+    const htArr = [];
+    const idxArr = [];
+
+    // Helper: add a single vertex, return its index
+    const addVert = (x, y, z, h) => {
+      const vi = posArr.length / 3;
+      posArr.push(x, y, z);
+      htArr.push(h);
+      return vi;
+    };
+
+    // 0. Apex vertex at origin (height = 0, brightest)
+    const apex = addVert(0, 0, 0, 0.0);
+
+    // 1. Rim + outer tip ring vertices
+    const rimIdx = []; // indices of rim vertices
+    const tipIdx = []; // indices of outer tip vertices
+    for (let i = 0; i < n; i++) {
+      const r = ring[i];
+      rimIdx.push(addVert(r.x, r.y, r.z, rimH));
+      _dir.copy(r).normalize();
+      tipIdx.push(addVert(
+        r.x + _dir.x * reach,
+        r.y + _dir.y * reach,
+        r.z + _dir.z * reach,
+        1.0,
+      ));
+    }
+
+    // 2. Inner cone: triangle fan from apex to rim ring
+    for (let i = 0; i < n; i++) {
+      const next = (i + 1) % n;
+      idxArr.push(apex, rimIdx[i], rimIdx[next]);
+    }
+
+    // 3. Outer tube: quad strip from rim to outer tips
+    for (let i = 0; i < n; i++) {
+      const next = (i + 1) % n;
+      idxArr.push(rimIdx[i], rimIdx[next], tipIdx[next]);
+      idxArr.push(rimIdx[i], tipIdx[next], tipIdx[i]);
+    }
+
+    // 4. Interior fins: triangular slices from apex through random rim arcs to tips
+    for (let i = 0; i < interiorCount; i++) {
+      const riA = Math.floor(this.random() * n);
+      const span = 1 + Math.floor(this.random() * 3);
+      for (let s = 0; s < span; s++) {
+        const rj = (riA + s) % n;
+        const rk = (riA + s + 1) % n;
+        // Inner triangle: apex → two rim vertices
+        idxArr.push(apex, rimIdx[rj], rimIdx[rk]);
+        // Outer quad: two rim vertices → two tip vertices
+        idxArr.push(rimIdx[rj], rimIdx[rk], tipIdx[rk]);
+        idxArr.push(rimIdx[rj], tipIdx[rk], tipIdx[rj]);
+      }
+    }
+
+    const geometry = new THREE.BufferGeometry();
+    geometry.setAttribute(
+      "position",
+      new THREE.Float32BufferAttribute(posArr, 3),
+    );
+    geometry.setAttribute("height", new THREE.Float32BufferAttribute(htArr, 1));
+    geometry.setIndex(idxArr);
+    geometry.computeVertexNormals();
+    return geometry;
+  }
+
+  _createPolarVolumetricLights(tiles) {
+    const allEdges = this._findPolarBoundaryEdges(tiles);
+    if (allEdges.length === 0) return;
+
+    // Separate north / south by midpoint Y sign
+    const northEdges = [];
+    const southEdges = [];
+    for (const edge of allEdges) {
+      const midY = (edge.v1.y + edge.v2.y) / 2;
+      if (midY > 0) northEdges.push(edge);
+      else southEdges.push(edge);
+    }
+
+    const reach = 150;
+
+    const vertexShader = `
+      attribute float height;
+      varying float vHeight;
+      varying vec3 vPos;
+      void main() {
+        vHeight = height;
+        vPos = position;
+        gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+      }
+    `;
+
+    const fragmentShader = `
+      uniform float uTime;
+      varying float vHeight;
+      varying vec3 vPos;
+      void main() {
+        // Angular coord around pole axis for curtain variation
+        float angle = atan(vPos.z, vPos.x);
+
+        // Layered sine waves — traveling outward (core → space)
+        float w1 = sin(vHeight * 30.0 - uTime * 0.8 + angle * 6.0) * 0.5 + 0.5;
+        float w2 = sin(vHeight * 20.0 - uTime * 0.5 + angle * 10.0 + 1.5) * 0.5 + 0.5;
+        float w3 = sin(vHeight * 50.0 - uTime * 1.2 + angle * 4.0 + 3.0) * 0.5 + 0.5;
+        float pattern = w1 * 0.5 + w2 * 0.3 + w3 * 0.2;
+
+        // Aurora spectrum: cyan (core) → green (mid) → purple (outer)
+        float colorT = clamp(vHeight + pattern * 0.4 - 0.2, 0.0, 1.0);
+        vec3 cCyan   = vec3(0.4, 0.9, 1.0);
+        vec3 cGreen  = vec3(0.2, 0.9, 0.3);
+        vec3 cPurple = vec3(0.6, 0.3, 0.8);
+        vec3 color = colorT < 0.5
+          ? mix(cCyan, cGreen, colorT * 2.0)
+          : mix(cGreen, cPurple, (colorT - 0.5) * 2.0);
+
+        // Height fade + curtain modulation
+        float alpha = pow(1.0 - vHeight, 1.2) * 0.5;
+        alpha *= pattern * pattern;
+
+        if (alpha < 0.005) discard;
+        gl_FragColor = vec4(color, alpha);
+      }
+    `;
+
+    for (const edges of [northEdges, southEdges]) {
+      if (edges.length === 0) continue;
+
+      const ring = this._chainBoundaryEdges(edges);
+      if (ring.length < 3) continue;
+
+      const geometry = this._buildVolLightGeometry(ring, reach, 20);
+
+      const material = new THREE.ShaderMaterial({
+        uniforms: {
+          uTime: { value: 0.0 },
+        },
+        vertexShader,
+        fragmentShader,
+        side: THREE.DoubleSide,
+        blending: THREE.AdditiveBlending,
+        transparent: true,
+        depthWrite: false,
+      });
+
+      const mesh = new THREE.Mesh(geometry, material);
+      mesh.userData = { isVolumetricLight: true };
+      this.hexGroup.add(mesh);
+      this._volLightMeshes.push(mesh);
+    }
+  }
+
+  updateVolumetricLights(dt) {
+    if (this._volLightMeshes.length === 0) return;
+    this._volLightTime += dt;
+    for (const mesh of this._volLightMeshes) {
+      mesh.material.uniforms.uTime.value = this._volLightTime;
+    }
+  }
+
+  _createClusterOutlines(tiles, adjacencyMap) {
+    this.clusterData.forEach((cluster) => {
+      this._createOutlineForCluster(
+        cluster.id,
+        tiles,
+        cluster.tiles,
+        adjacencyMap,
+      );
+    });
+  }
+
+  _createOutlineForCluster(clusterId, tiles, clusterTiles, adjacencyMap) {
+    // Remove existing outline for this cluster if it exists
+    if (this.clusterOutlines.has(clusterId)) {
+      const oldOutline = this.clusterOutlines.get(clusterId);
+      this.outlineGroup.remove(oldOutline);
+      oldOutline.geometry.dispose();
+      this.clusterOutlines.delete(clusterId);
+    }
+
+    const edges = this._findBoundaryEdges(tiles, clusterTiles, adjacencyMap);
+    if (edges.length === 0) return null;
+
+    const geometry = new THREE.LineSegmentsGeometry();
+    geometry.setPositions(edges);
+    const outline = new THREE.LineSegments2(geometry, this._outlineMaterial);
+    outline.frustumCulled = false;
+    this.outlineGroup.add(outline);
+    this.clusterOutlines.set(clusterId, outline);
+    return outline;
+  }
+
+  _findBoundaryEdges(tiles, clusterTiles, adjacencyMap) {
+    const edges = [];
+    const clusterSet = new Set(clusterTiles);
+    const te = this.terrainElevation;
+
+    for (const tileIdx of clusterTiles) {
+      const boundary = tiles[tileIdx].boundary;
+
+      for (let i = 0; i < boundary.length; i++) {
+        const v1 = boundary[i];
+        const v2 = boundary[(i + 1) % boundary.length];
+        const key1 = `${v1.x},${v1.y},${v1.z}`;
+        const key2 = `${v2.x},${v2.y},${v2.z}`;
+
+        let isBoundary = true;
+        for (const neighborIdx of adjacencyMap.get(tileIdx) || []) {
+          if (!clusterSet.has(neighborIdx)) continue;
+
+          const neighborBoundary = tiles[neighborIdx].boundary;
+          for (let j = 0; j < neighborBoundary.length; j++) {
+            const nv1 = neighborBoundary[j];
+            const nv2 = neighborBoundary[(j + 1) % neighborBoundary.length];
+            const nk1 = `${nv1.x},${nv1.y},${nv1.z}`;
+            const nk2 = `${nv2.x},${nv2.y},${nv2.z}`;
+
+            if (
+              (key1 === nk1 && key2 === nk2) ||
+              (key1 === nk2 && key2 === nk1)
+            ) {
+              isBoundary = false;
+              break;
+            }
+          }
+          if (!isBoundary) break;
+        }
+
+        if (isBoundary) {
+          // Use max elevation of this tile and its cross-boundary neighbor
+          // so the outline sits on top of cliff edges and isn't occluded
+          let es = 1;
+          if (te) {
+            let maxElev = te.getElevationAtTileIndex(tileIdx);
+            for (const neighborIdx of adjacencyMap.get(tileIdx) || []) {
+              if (clusterSet.has(neighborIdx)) continue;
+              const nb = tiles[neighborIdx].boundary;
+              for (let j = 0; j < nb.length; j++) {
+                const nv1 = nb[j];
+                const nv2 = nb[(j + 1) % nb.length];
+                if (
+                  (key1 === `${nv1.x},${nv1.y},${nv1.z}` &&
+                    key2 === `${nv2.x},${nv2.y},${nv2.z}`) ||
+                  (key1 === `${nv2.x},${nv2.y},${nv2.z}` &&
+                    key2 === `${nv1.x},${nv1.y},${nv1.z}`)
+                ) {
+                  const nElev = te.getElevationAtTileIndex(neighborIdx);
+                  if (nElev > maxElev) maxElev = nElev;
+                  break;
+                }
+              }
+            }
+            es = te.getExtrusion(maxElev);
+          }
+
+          const v1x = parseFloat(v1.x) * es,
+            v1y = parseFloat(v1.y) * es,
+            v1z = parseFloat(v1.z) * es;
+          const v2x = parseFloat(v2.x) * es,
+            v2y = parseFloat(v2.y) * es,
+            v2z = parseFloat(v2.z) * es;
+
+          const center = new THREE.Vector3(
+            (v1x + v2x) / 2,
+            (v1y + v2y) / 2,
+            (v1z + v2z) / 2,
+          );
+          const normal = center.clone().normalize();
+          const offset = 0.005; // Minimal offset to prevent z-fighting
+
+          edges.push(
+            v1x + normal.x * offset,
+            v1y + normal.y * offset,
+            v1z + normal.z * offset,
+            v2x + normal.x * offset,
+            v2y + normal.y * offset,
+            v2z + normal.z * offset,
+          );
+        }
+      }
+    }
+
+    return edges;
+  }
+
+  // ========================
+  // FACTION TERRITORY OUTLINES
+  // ========================
+
+  /**
+   * Create a faction-colored outline around all territory owned by a faction
+   * Merges all owned clusters into a single outline at the faction's outer boundary
+   * @param {string} faction - 'rust', 'cobalt', or 'viridian'
+   */
+  _createFactionOutline(faction) {
+    // Remove existing faction outline if present
+    if (this.factionOutlines.has(faction)) {
+      const oldOutline = this.factionOutlines.get(faction);
+      this.outlineGroup.remove(oldOutline);
+      oldOutline.geometry.dispose();
+      this.factionOutlines.delete(faction);
+    }
+
+    // Collect all tiles owned by this faction
+    const factionTiles = new Set();
+    for (const [clusterId, owner] of this.clusterOwnership) {
+      if (owner === faction) {
+        const cluster = this.clusterData[clusterId];
+        if (cluster && cluster.tiles) {
+          for (const tileIdx of cluster.tiles) {
+            factionTiles.add(tileIdx);
+          }
+        }
+      }
+    }
+
+    if (factionTiles.size === 0) {
+      return;
+    }
+
+    // Find boundary edges - edges where one side is faction-owned and the other is not
+    const edges = this._findFactionBoundaryEdges(factionTiles);
+    if (edges.length === 0) {
+      return;
+    }
+
+    // Create geometry for faction outline
+    // Note: Faction outlines are drawn INWARD from the boundary, so they don't
+    // overlap with black cluster outlines. No need to exclude black outlines.
+    const geometry = new THREE.LineSegmentsGeometry();
+    geometry.setPositions(edges);
+    const outline = new THREE.LineSegments2(geometry, this._outlineMaterial);
+    outline.frustumCulled = false;
+    this.outlineGroup.add(outline);
+    this.factionOutlines.set(faction, outline);
+  }
+
+  /**
+   * Find boundary edges for a faction's territory
+   * Returns edges that separate faction-owned tiles from non-faction tiles
+   * Edges are offset INWARD toward the tile center, creating a "double outline" effect
+   * where each faction's outline is inside its own territory
+   * @param {Set<number>} factionTiles - Set of tile indices owned by the faction
+   * @returns {number[]} Array of edge vertex positions [x1,y1,z1, x2,y2,z2, ...]
+   */
+  _findFactionBoundaryEdges(factionTiles) {
+    const edges = [];
+    const inwardOffset = 0.03; // How far inward to push the outline
+
+    for (const tileIdx of factionTiles) {
+      const tile = this._tiles[tileIdx];
+      if (!tile) continue;
+
+      const boundary = tile.boundary;
+
+      // Calculate tile center for inward offset direction
+      const tileCenter = new THREE.Vector3(
+        parseFloat(tile.centerPoint.x),
+        parseFloat(tile.centerPoint.y),
+        parseFloat(tile.centerPoint.z),
+      );
+
+      for (let i = 0; i < boundary.length; i++) {
+        const v1 = boundary[i];
+        const v2 = boundary[(i + 1) % boundary.length];
+
+        // Check if this edge borders a non-faction tile
+        let isBoundaryEdge = true;
+        const neighbors = this._adjacencyMap.get(tileIdx) || [];
+
+        for (const neighborIdx of neighbors) {
+          // If neighbor is also faction-owned, check if they share this edge
+          if (factionTiles.has(neighborIdx)) {
+            const neighborBoundary = this._tiles[neighborIdx].boundary;
+            const key1 = `${v1.x},${v1.y},${v1.z}`;
+            const key2 = `${v2.x},${v2.y},${v2.z}`;
+
+            for (let j = 0; j < neighborBoundary.length; j++) {
+              const nv1 = neighborBoundary[j];
+              const nv2 = neighborBoundary[(j + 1) % neighborBoundary.length];
+              const nk1 = `${nv1.x},${nv1.y},${nv1.z}`;
+              const nk2 = `${nv2.x},${nv2.y},${nv2.z}`;
+
+              if (
+                (key1 === nk1 && key2 === nk2) ||
+                (key1 === nk2 && key2 === nk1)
+              ) {
+                isBoundaryEdge = false;
+                break;
+              }
+            }
+            if (!isBoundaryEdge) break;
+          }
+        }
+
+        if (isBoundaryEdge) {
+          // Use original boundary coords (ground level, no elevation scaling)
+          const v1x = parseFloat(v1.x),
+            v1y = parseFloat(v1.y),
+            v1z = parseFloat(v1.z);
+          const v2x = parseFloat(v2.x),
+            v2y = parseFloat(v2.y),
+            v2z = parseFloat(v2.z);
+
+          // Calculate edge midpoint
+          const edgeMid = new THREE.Vector3(
+            (v1x + v2x) / 2,
+            (v1y + v2y) / 2,
+            (v1z + v2z) / 2,
+          );
+
+          // Direction from edge midpoint toward tile center (inward direction)
+          const elevatedCenter = tileCenter.clone();
+          const inwardDir = elevatedCenter.sub(edgeMid).normalize();
+
+          // Also need surface normal for z-offset to prevent z-fighting
+          const surfaceNormal = edgeMid.clone().normalize();
+          const zOffset = 0.005;
+
+          // Offset each vertex inward and slightly above surface
+          const p1 = new THREE.Vector3(v1x, v1y, v1z);
+          const p2 = new THREE.Vector3(v2x, v2y, v2z);
+
+          p1.add(inwardDir.clone().multiplyScalar(inwardOffset));
+          p1.add(surfaceNormal.clone().multiplyScalar(zOffset));
+
+          p2.add(inwardDir.clone().multiplyScalar(inwardOffset));
+          p2.add(surfaceNormal.clone().multiplyScalar(zOffset));
+
+          edges.push(p1.x, p1.y, p1.z, p2.x, p2.y, p2.z);
+        }
+      }
+    }
+
+    return edges;
+  }
+
+  /**
+   * Check if an edge is shared with another tile in the given set
+   */
+  _isEdgeSharedWithTileSet(tileIdx, v1, v2, tileSet) {
+    const key1 = `${v1.x},${v1.y},${v1.z}`;
+    const key2 = `${v2.x},${v2.y},${v2.z}`;
+
+    const neighbors = this._adjacencyMap.get(tileIdx) || [];
+    for (const neighborIdx of neighbors) {
+      if (!tileSet.has(neighborIdx)) continue;
+
+      const neighborBoundary = this._tiles[neighborIdx].boundary;
+      for (let j = 0; j < neighborBoundary.length; j++) {
+        const nv1 = neighborBoundary[j];
+        const nv2 = neighborBoundary[(j + 1) % neighborBoundary.length];
+        const nk1 = `${nv1.x},${nv1.y},${nv1.z}`;
+        const nk2 = `${nv2.x},${nv2.y},${nv2.z}`;
+
+        // Check if edges match (in either direction)
+        if ((key1 === nk1 && key2 === nk2) || (key1 === nk2 && key2 === nk1)) {
+          return true;
+        }
+      }
+    }
+    return false;
+  }
+
+  /**
+   * Regenerate cluster outlines for clusters owned by a faction,
+   * excluding edges that are on the faction's outer boundary
+   * @param {string} faction - The faction whose clusters need outline regeneration
+   */
+  _regenerateOwnedClusterOutlines(faction) {
+    const factionBoundaryEdges = this._factionBoundaryEdges.get(faction);
+    if (!factionBoundaryEdges) return;
+
+    // Find all clusters owned by this faction
+    for (const [clusterId, owner] of this.clusterOwnership) {
+      if (owner !== faction) continue;
+
+      const cluster = this.clusterData[clusterId];
+      if (!cluster || !cluster.tiles) continue;
+
+      // Remove existing outline
+      if (this.clusterOutlines.has(clusterId)) {
+        const oldOutline = this.clusterOutlines.get(clusterId);
+        this.outlineGroup.remove(oldOutline);
+        oldOutline.geometry.dispose();
+        this.clusterOutlines.delete(clusterId);
+      }
+
+      // Find boundary edges, excluding those on faction boundary
+      const edges = this._findClusterEdgesExcludingFactionBoundary(
+        cluster.tiles,
+        factionBoundaryEdges,
+      );
+
+      if (edges.length === 0) continue;
+
+      // Create new outline
+      const geometry = new THREE.LineSegmentsGeometry();
+      geometry.setPositions(edges);
+      const outline = new THREE.LineSegments2(geometry, this._outlineMaterial);
+      outline.frustumCulled = false;
+      this.outlineGroup.add(outline);
+      this.clusterOutlines.set(clusterId, outline);
+    }
+  }
+
+  /**
+   * Find cluster boundary edges, excluding those that are on the faction boundary
+   * @param {number[]} clusterTiles - Tile indices in the cluster
+   * @param {Set<string>} factionBoundaryEdges - Set of edge keys on faction boundary
+   * @returns {number[]} Edge vertex positions
+   */
+  _findClusterEdgesExcludingFactionBoundary(
+    clusterTiles,
+    factionBoundaryEdges,
+  ) {
+    const edges = [];
+    const clusterSet = new Set(clusterTiles);
+
+    for (const tileIdx of clusterTiles) {
+      const tile = this._tiles[tileIdx];
+      if (!tile) continue;
+
+      const boundary = tile.boundary;
+
+      for (let i = 0; i < boundary.length; i++) {
+        const v1 = boundary[i];
+        const v2 = boundary[(i + 1) % boundary.length];
+        const key1 = `${v1.x},${v1.y},${v1.z}`;
+        const key2 = `${v2.x},${v2.y},${v2.z}`;
+
+        // Check if shared with another tile in the same cluster
+        let isSharedWithCluster = false;
+        for (const neighborIdx of this._adjacencyMap.get(tileIdx) || []) {
+          if (!clusterSet.has(neighborIdx)) continue;
+
+          const neighborBoundary = this._tiles[neighborIdx].boundary;
+          for (let j = 0; j < neighborBoundary.length; j++) {
+            const nv1 = neighborBoundary[j];
+            const nv2 = neighborBoundary[(j + 1) % neighborBoundary.length];
+            const nk1 = `${nv1.x},${nv1.y},${nv1.z}`;
+            const nk2 = `${nv2.x},${nv2.y},${nv2.z}`;
+
+            if (
+              (key1 === nk1 && key2 === nk2) ||
+              (key1 === nk2 && key2 === nk1)
+            ) {
+              isSharedWithCluster = true;
+              break;
+            }
+          }
+          if (isSharedWithCluster) break;
+        }
+
+        // Skip if shared with cluster (internal edge)
+        if (isSharedWithCluster) continue;
+
+        // This is a cluster boundary edge - compute offset position
+        // Apply terrain elevation scaling
+        const es = this.terrainElevation
+          ? this.terrainElevation.getExtrusion(
+              this.terrainElevation.getElevationAtTileIndex(tileIdx),
+            )
+          : 1;
+        const v1x = parseFloat(v1.x) * es,
+          v1y = parseFloat(v1.y) * es,
+          v1z = parseFloat(v1.z) * es;
+        const v2x = parseFloat(v2.x) * es,
+          v2y = parseFloat(v2.y) * es,
+          v2z = parseFloat(v2.z) * es;
+
+        const center = new THREE.Vector3(
+          (v1x + v2x) / 2,
+          (v1y + v2y) / 2,
+          (v1z + v2z) / 2,
+        );
+        const normal = center.clone().normalize();
+        const offset = 0.005; // Same as other outlines
+
+        const ox1 = v1x + normal.x * offset;
+        const oy1 = v1y + normal.y * offset;
+        const oz1 = v1z + normal.z * offset;
+        const ox2 = v2x + normal.x * offset;
+        const oy2 = v2y + normal.y * offset;
+        const oz2 = v2z + normal.z * offset;
+
+        // Check if this edge is on the faction boundary
+        const edgeKey = `${ox1.toFixed(3)},${oy1.toFixed(3)},${oz1.toFixed(3)}|${ox2.toFixed(3)},${oy2.toFixed(3)},${oz2.toFixed(3)}`;
+
+        if (factionBoundaryEdges.has(edgeKey)) {
+          // Skip - this edge will be drawn by the faction outline
+          continue;
+        }
+
+        // Add edge
+        edges.push(ox1, oy1, oz1, ox2, oy2, oz2);
+      }
+    }
+
+    return edges;
+  }
+
+  /**
+   * Regenerate outlines for all factions marked as dirty
+   * Call this once per update cycle, not per-cluster change
+   * Debounced to max once per 1 second and deferred to idle time for performance
+   */
+  updateDirtyFactionOutlines() {
+    if (this._dirtyFactionOutlines.size === 0) return;
+
+    // Debounce: skip if updated too recently (1 second)
+    const now = performance.now();
+    if (now - this._lastOutlineUpdate < 1000) return;
+
+    // Copy dirty factions and clear immediately to avoid race conditions
+    const factionsToUpdate = Array.from(this._dirtyFactionOutlines);
+    this._dirtyFactionOutlines.clear();
+    this._lastOutlineUpdate = now;
+
+    // Defer heavy work to idle time to avoid frame drops
+    const doUpdate = () => {
+      for (const faction of factionsToUpdate) {
+        this._createFactionOutline(faction);
+      }
+    };
+
+    if (typeof requestIdleCallback !== "undefined") {
+      requestIdleCallback(doUpdate, { timeout: 500 });
+    } else {
+      setTimeout(doUpdate, 0);
+    }
+  }
+
+  _createPolarOverlay() {
+    const geometry = new THREE.SphereGeometry(this.radius + 1.92, 64, 64);
+    const material = new THREE.ShaderMaterial({
+      uniforms: {
+        toxicColor: { value: new THREE.Color(0xc4b800) },
+        fadeStart: { value: 0.7 },
+        fadeEnd: { value: 1.0 },
+        sunDirection: { value: new THREE.Vector3(1, 0, 0) },
+        sunColor: { value: new THREE.Color(0xffdc9b) },
+        sunIntensity: { value: 1.2 },
+        fillLightDirection: { value: new THREE.Vector3(-1, 0, 0) },
+        fillLightColor: { value: new THREE.Color(0x6b8e99) },
+        fillLightIntensity: { value: 0.5 },
+        ambientIntensity: { value: 0.15 },
+      },
+      vertexShader: `
+                varying vec3 vPosition;
+                varying vec3 vWorldNormal;
+                void main() {
+                    vPosition = position;
+                    vWorldNormal = normalize(mat3(modelMatrix) * normal);
+                    gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+                }
+            `,
+      fragmentShader: `
+                uniform vec3 toxicColor;
+                uniform float fadeStart, fadeEnd;
+                uniform vec3 sunDirection, sunColor;
+                uniform float sunIntensity;
+                uniform vec3 fillLightDirection, fillLightColor;
+                uniform float fillLightIntensity, ambientIntensity;
+                varying vec3 vPosition;
+                varying vec3 vWorldNormal;
+                void main() {
+                    float latitude = abs(normalize(vPosition).y);
+                    float polarIntensity = smoothstep(fadeStart, fadeEnd, latitude);
+                    vec3 normal = normalize(vWorldNormal);
+                    vec3 lighting = vec3(ambientIntensity);
+                    lighting += sunColor * sunIntensity * max(dot(normal, sunDirection), 0.0);
+                    lighting += fillLightColor * fillLightIntensity * max(dot(normal, fillLightDirection), 0.0);
+                    gl_FragColor = vec4(toxicColor * lighting, polarIntensity * 0.6);
+                }
+            `,
+      side: THREE.FrontSide,
+      blending: THREE.NormalBlending,
+      transparent: true,
+      depthWrite: false,
+    });
+
+    this.hexGroup.add(new THREE.Mesh(geometry, material));
+  }
+
+  setRotation(rotation) {
+    this.hexGroup.rotation.y = rotation;
+    this.outlineGroup.rotation.y = rotation;
+  }
+
+  updateOutlineResolution(width, height) {
+    this._outlineMaterial.resolution.set(width, height);
+  }
+
+  /**
+   * Update visibility culling for terrain tiles based on camera position
+   * Hides tiles on the far side of the planet (backface culling) and outside frustum
+   * @param {THREE.Camera} camera - The camera to cull against
+   * @param {THREE.Frustum} frustum - Optional frustum for additional culling
+   */
+  updateVisibility(camera, frustum = null) {
+    if (!camera) return;
+
+    // Use preallocated temp objects to avoid GC pressure
+    const temp = this._cullTemp;
+    camera.getWorldPosition(temp.cameraWorldPos);
+
+    // Pre-compute hexGroup world matrix for transforming tile positions
+    this.hexGroup.updateMatrixWorld();
+    const hexGroupMatrix = this.hexGroup.matrixWorld;
+
+    // Backface + frustum cull hex tiles
+    this.hexGroup.children.forEach((child) => {
+      if (!child.isMesh) return;
+      if (child.userData?.tileIndex === undefined) return;
+
+      const tileIndex = child.userData.tileIndex;
+      const tileData = this.tileCenters[tileIndex];
+      if (!tileData) return;
+
+      temp.tileWorldPos.copy(tileData.position).applyMatrix4(hexGroupMatrix);
+      temp.tileNormal.copy(temp.tileWorldPos).normalize();
+      temp.tileToCamera
+        .copy(temp.cameraWorldPos)
+        .sub(temp.tileWorldPos)
+        .normalize();
+      const dot = temp.tileNormal.dot(temp.tileToCamera);
+
+      // Backface cull first, then frustum cull if still visible
+      child.visible = dot > -0.15;
+      if (child.visible && frustum) {
+        child.visible = frustum.intersectsObject(child);
+      }
+    });
+
+    // Build cluster lookup map once (avoids O(n) .find() per outline child)
+    if (!this._clusterByIdMap) {
+      this._clusterByIdMap = new Map();
+      for (const cluster of this.clusterData) {
+        this._clusterByIdMap.set(cluster.id, cluster);
+      }
+    }
+
+    // Cull outline group children (tighter threshold to hide from inside pole holes)
+    this.outlineGroup.children.forEach((child) => {
+      if (!child.userData?.clusterId) return;
+
+      const cluster = this._clusterByIdMap.get(child.userData.clusterId);
+      if (!cluster || cluster.tiles.length === 0) return;
+
+      const firstTileIndex = cluster.tiles[0];
+      const tileData = this.tileCenters[firstTileIndex];
+      if (!tileData) return;
+
+      temp.tileWorldPos.copy(tileData.position).applyMatrix4(hexGroupMatrix);
+      temp.tileNormal.copy(temp.tileWorldPos).normalize();
+      temp.tileToCamera
+        .copy(temp.cameraWorldPos)
+        .sub(temp.tileWorldPos)
+        .normalize();
+      const dot = temp.tileNormal.dot(temp.tileToCamera);
+
+      child.visible = dot > 0.05;
+
+      // Additional frustum culling for outlines (if still visible after backface culling)
+      if (child.visible && frustum) {
+        child.visible = frustum.intersectsObject(child);
+      }
+    });
+  }
+
+  /**
+   * Regenerate procedural clusters with a new seed while preserving sponsor clusters
+   * @param {number} seed - New seed for random generation
+   */
+  scrambleClusters(seed) {
+    // Store sponsor cluster data before regeneration
+    const sponsorData = [];
+    for (const data of this.sponsorClusters.values()) {
+      sponsorData.push({
+        sponsor: data.sponsor,
+        tileIndices: data.tileIndices.slice(),
+      });
+    }
+
+    // Clear procedural cluster outlines (keep sponsor outlines)
+    for (const [clusterId, outline] of this.clusterOutlines) {
+      const cluster = this.clusterData[clusterId];
+      if (cluster && !cluster.isSponsorCluster) {
+        this.outlineGroup.remove(outline);
+        outline.geometry.dispose();
+        this.clusterOutlines.delete(clusterId);
+      }
+    }
+
+    // Reset cluster data but preserve sponsor clusters
+    const sponsorClustersBackup = [];
+    for (const cluster of this.clusterData) {
+      if (cluster.isSponsorCluster) {
+        sponsorClustersBackup.push(cluster);
+      }
+    }
+
+    // Clear procedural cluster assignments from tileClusterMap (keep sponsor assignments)
+    for (const tileIndex of this.tileClusterMap.keys()) {
+      if (!this.sponsorTileIndices.has(tileIndex)) {
+        this.tileClusterMap.delete(tileIndex);
+      }
+    }
+
+    // Reset non-sponsor data
+    this.clusterData = [];
+    this.clusterColors.clear();
+    this.clusterPatterns.clear();
+
+    // Dispose old procedural textures
+    for (const [clusterId, texture] of this.clusterTextures) {
+      const wasSponsored = sponsorClustersBackup.some(
+        (c) => c.id === clusterId,
+      );
+      if (!wasSponsored) {
+        texture.dispose();
+        this.clusterTextures.delete(clusterId);
+      }
+    }
+
+    // Create new seeded RNG
+    this.random = this._createSeededRandom(seed);
+
+    // Regenerate procedural clusters (sponsor tiles are protected via sponsorTileIndices)
+    this._generateClusters(this._tiles);
+
+    // Re-add sponsor clusters with new IDs
+    for (const backup of sponsorClustersBackup) {
+      const newClusterId = this.clusterData.length;
+      backup.id = newClusterId;
+      this.clusterData.push(backup);
+
+      // Update tileClusterMap for sponsor tiles
+      for (const tileIndex of backup.tiles) {
+        this.tileClusterMap.set(tileIndex, newClusterId);
+      }
+
+      // Update sponsorClusters map
+      const sponsorClusterData = this.sponsorClusters.get(backup.sponsorId);
+      if (sponsorClusterData) {
+        sponsorClusterData.clusterId = newClusterId;
+      }
+    }
+
+    // Update tile mesh materials for procedural clusters
+    this._updateProceduralTileMaterials();
+
+    // Regenerate all outlines
+    this._regenerateAllOutlines();
+
+    // Reset capture state for procedural clusters
+    this._initializeCaptureState();
+  }
+
+  /**
+   * Update materials for procedural (non-sponsor) tiles after scramble
+   */
+  _updateProceduralTileMaterials() {
+    this.hexGroup.children.forEach((mesh) => {
+      if (!mesh.userData || mesh.userData.isSponsorTile) return;
+
+      const tileIndex = mesh.userData.tileIndex;
+      if (tileIndex === undefined) return;
+      if (this.sponsorTileIndices.has(tileIndex)) return;
+
+      const clusterId = this.tileClusterMap.get(tileIndex);
+      if (clusterId === undefined) return;
+
+      const pattern = this.clusterPatterns.get(clusterId);
+      if (!pattern) return;
+
+      if (!this.clusterTextures.has(clusterId)) {
+        this.clusterTextures.set(
+          clusterId,
+          this._createPatternTexture(pattern.type, pattern.grayValue),
+        );
+      }
+
+      mesh.material.dispose();
+      mesh.material = new THREE.MeshStandardMaterial({
+        map: this.clusterTextures.get(clusterId),
+        flatShading: true,
+        roughness: 0.8,
+        metalness: 0.1,
+        side: THREE.FrontSide,
+      });
+      mesh.userData.clusterId = clusterId;
+    });
+  }
+
+  /**
+   * Regenerate all cluster outlines
+   */
+  _regenerateAllOutlines() {
+    // Clear all existing cluster outlines
+    for (const outline of this.clusterOutlines.values()) {
+      this.outlineGroup.remove(outline);
+      outline.geometry.dispose();
+    }
+    this.clusterOutlines.clear();
+
+    // Clear all faction outlines
+    for (const outline of this.factionOutlines.values()) {
+      this.outlineGroup.remove(outline);
+      outline.geometry.dispose();
+    }
+    this.factionOutlines.clear();
+    this._dirtyFactionOutlines.clear();
+
+    // Rebuild cluster adjacency map with new clusters
+    this._clusterAdjacencyMap = this._buildClusterAdjacencyMap();
+
+    // Regenerate outlines for all clusters
+    this._createClusterOutlines(this._tiles, this._adjacencyMap);
+  }
+
+  // ========================
+  // TERRITORY CAPTURE
+  // ========================
+
+  getTicsRequired(clusterId) {
+    const state = this.clusterCaptureState.get(clusterId);
+    return state ? state.capacity : 0;
+  }
+
+  getCaptureProgress(clusterId) {
+    const state = this.clusterCaptureState.get(clusterId);
+    if (!state) return null;
+    return {
+      tics: { ...state.tics },
+      owner: state.owner,
+      capacity: state.capacity,
+      momentum: { ...state.momentum },
+    };
+  }
+
+  getClusterIdAtPosition(worldPosition) {
+    // Find the closest tile center to the given world position
+    // Account for planet rotation by transforming position into hexGroup local space
+    const localPos = worldPosition.clone();
+    this.hexGroup.worldToLocal(localPos);
+    return this._getClusterIdAtLocalPosition(localPos);
+  }
+
+  getClusterIdAtLocalPosition(localPosition) {
+    // For objects already in hexGroup's local coordinate space
+    return this._getClusterIdAtLocalPosition(localPosition);
+  }
+
+  _getClusterIdAtLocalPosition(localPos) {
+    let closestTileIndex = -1;
+    let closestDist = Infinity;
+
+    for (const tile of this.tileCenters) {
+      const dist = localPos.distanceToSquared(tile.position);
+      if (dist < closestDist) {
+        closestDist = dist;
+        closestTileIndex = tile.tileIndex;
+      }
+    }
+
+    if (closestTileIndex >= 0) {
+      return this.tileClusterMap.get(closestTileIndex);
+    }
+    return undefined;
+  }
+
+  updateClusterVisual(clusterId) {
+    const state = this.clusterCaptureState.get(clusterId);
+    if (!state) return;
+
+    const previousOwner = this.clusterOwnership.get(clusterId) || null;
+    const newOwner = state.owner;
+
+    // Update ownership tracking
+    if (newOwner) {
+      this.clusterOwnership.set(clusterId, newOwner);
+    } else {
+      this.clusterOwnership.delete(clusterId);
+    }
+
+    // Cluster outlines stay visible regardless of ownership
+    // Faction outlines are additive (shown in addition to cluster outlines)
+
+    // Only process visual changes when ownership actually changes
+    if (previousOwner !== newOwner) {
+      // Mark affected factions as needing outline regeneration
+      if (previousOwner) {
+        this._dirtyFactionOutlines.add(previousOwner);
+      }
+      if (newOwner) {
+        this._dirtyFactionOutlines.add(newOwner);
+      }
+
+      // Apply inner glow effect with transition animation (using light shade for visibility)
+      const previousColor =
+        previousOwner && FACTION_COLORS[previousOwner]
+          ? FACTION_COLORS[previousOwner].threeLight
+          : null;
+      if (newOwner && FACTION_COLORS[newOwner]) {
+        this.applyInnerGlowToCluster(
+          clusterId,
+          FACTION_COLORS[newOwner].threeLight,
+          previousColor,
+        );
+      } else {
+        this.applyInnerGlowToCluster(clusterId, null, previousColor);
+      }
+    }
+  }
+
+  // ========================
+  // PORTAL HELPERS
+  // ========================
+
+  getPortalPosition(portalIndex) {
+    const tile = this.tileCenters.find((tc) => tc.tileIndex === portalIndex);
+    return tile ? tile.position.clone() : null;
+  }
+
+  getPortalNormal(portalIndex) {
+    const position = this.getPortalPosition(portalIndex);
+    return position ? position.normalize() : null;
+  }
+
+  getPortalNeighbors(portalIndex) {
+    // Return adjacent tile indices for a portal
+    if (!this._adjacencyMap) return [];
+    return this._adjacencyMap.get(portalIndex) || [];
+  }
+
+  getPortalNeutralNeighbors(portalIndex) {
+    // Return only the neutral territory tiles adjacent to a portal
+    const neighbors = this.getPortalNeighbors(portalIndex);
+    return neighbors.filter(
+      (idx) =>
+        this.portalTileIndices.has(idx) && !this.portalCenterIndices.has(idx),
+    );
+  }
+
+  getTileIndexAtPosition(worldPosition) {
+    // Find the closest tile to a world position
+    const localPos = worldPosition.clone();
+    this.hexGroup.worldToLocal(localPos);
+
+    let closestTileIndex = -1;
+    let closestDist = Infinity;
+
+    for (const tile of this.tileCenters) {
+      const dist = localPos.distanceToSquared(tile.position);
+      if (dist < closestDist) {
+        closestDist = dist;
+        closestTileIndex = tile.tileIndex;
+      }
+    }
+    return closestTileIndex;
+  }
+
+  isOnPortal(worldPosition) {
+    const tileIndex = this.getTileIndexAtPosition(worldPosition);
+    return this.portalCenterIndices.has(tileIndex) ? tileIndex : null;
+  }
+
+  getAllPortalCenters() {
+    return Array.from(this.portalCenterIndices);
+  }
+
+  // ========================
+  // SPONSOR CLUSTERS
+  // ========================
+
+  /**
+   * Apply a sponsor configuration to create a sponsor cluster
+   * This removes the selected tiles from their original clusters and creates a new sponsor cluster
+   * @param {Object} sponsor - Sponsor configuration from storage
+   */
+  applySponsorCluster(sponsor) {
+    if (!sponsor || !sponsor.cluster || !sponsor.cluster.tileIndices) {
+      console.warn("Invalid sponsor configuration");
+      return;
+    }
+
+    const tileIndices = sponsor.cluster.tileIndices;
+    if (tileIndices.length === 0) return;
+
+    // Create a new cluster ID for this sponsor
+    const sponsorClusterId = this.clusterData.length;
+
+    // Track which original clusters are affected
+    const affectedClusters = new Set();
+
+    // Remove tiles from original clusters and reassign to sponsor cluster
+    for (const tileIndex of tileIndices) {
+      const originalClusterId = this.tileClusterMap.get(tileIndex);
+      if (originalClusterId !== undefined) {
+        affectedClusters.add(originalClusterId);
+
+        // Remove from original cluster's tile list
+        const originalCluster = this.clusterData[originalClusterId];
+        if (originalCluster) {
+          originalCluster.tiles = originalCluster.tiles.filter(
+            (t) => t !== tileIndex,
+          );
+        }
+      }
+
+      // Assign to sponsor cluster
+      this.tileClusterMap.set(tileIndex, sponsorClusterId);
+      // Mark as protected sponsor tile
+      this.sponsorTileIndices.add(tileIndex);
+
+      // Update the mesh's userData.clusterId so raycasting finds the sponsor
+      const mesh = this.hexGroup.children.find(
+        (m) => m.userData?.tileIndex === tileIndex,
+      );
+      if (mesh) {
+        mesh.userData.clusterId = sponsorClusterId;
+      }
+    }
+
+    // Create new cluster entry for sponsor
+    this.clusterData.push({
+      id: sponsorClusterId,
+      tiles: tileIndices.slice(),
+      isSponsorCluster: true,
+      sponsorId: sponsor.id,
+    });
+
+    // Initialize capture state for sponsor cluster
+    const capacity = tileIndices.length * 5;
+    this.clusterCaptureState.set(sponsorClusterId, {
+      tics: { rust: 0, cobalt: 0, viridian: 0 },
+      owner: null,
+      capacity: capacity,
+      momentum: { rust: 0, cobalt: 0, viridian: 0 },
+    });
+
+    // Store sponsor cluster data
+    this.sponsorClusters.set(sponsor.id, {
+      sponsor: sponsor,
+      clusterId: sponsorClusterId,
+      tileIndices: tileIndices,
+    });
+
+    // Initialize hold timer
+    this.sponsorHoldTimers.set(sponsor.id, {
+      owner: null,
+      capturedAt: null,
+      holdDuration: 0,
+    });
+
+    // Apply sponsor pattern texture to tiles
+    this._applySponsorTexture(sponsor, tileIndices);
+
+    // Regenerate outlines for affected clusters and create sponsor cluster outline
+    if (this._tiles && this._adjacencyMap) {
+      // Regenerate outlines for clusters that lost tiles
+      for (const affectedClusterId of affectedClusters) {
+        const affectedCluster = this.clusterData[affectedClusterId];
+        if (affectedCluster && affectedCluster.tiles.length > 0) {
+          this._createOutlineForCluster(
+            affectedClusterId,
+            this._tiles,
+            affectedCluster.tiles,
+            this._adjacencyMap,
+          );
+        } else if (this.clusterOutlines.has(affectedClusterId)) {
+          // Cluster is now empty, remove its outline
+          const oldOutline = this.clusterOutlines.get(affectedClusterId);
+          this.outlineGroup.remove(oldOutline);
+          oldOutline.geometry.dispose();
+          this.clusterOutlines.delete(affectedClusterId);
+        }
+      }
+      // Create outline for the new sponsor cluster
+      this._createOutlineForCluster(
+        sponsorClusterId,
+        this._tiles,
+        tileIndices,
+        this._adjacencyMap,
+      );
+    }
+  }
+
+  /**
+   * Clear all sponsor-specific state so sponsors can be cleanly re-applied.
+   * Called before applyServerWorld() + applySponsorVisuals() during live reload.
+   */
+  clearSponsorData() {
+    this.sponsorClusters.clear();
+    this.sponsorHoldTimers.clear();
+    this.sponsorTileIndices.clear();
+  }
+
+  /**
+   * Apply sponsor visuals from server-provided data.
+   * Unlike applySponsorCluster(), this does NOT create new clusters or
+   * reassign tiles — that's already done by applyServerWorld().
+   * It only marks sponsor metadata, initializes hold timers, and applies textures.
+   * @param {Array} sponsors - Array of sponsor objects with clusterId from server
+   */
+  applySponsorVisuals(sponsors) {
+    for (const sponsor of sponsors) {
+      if (!sponsor.cluster || !sponsor.cluster.tileIndices || sponsor.cluster.tileIndices.length === 0) continue;
+      const clusterId = sponsor.clusterId;
+      if (clusterId === undefined || clusterId === null) continue;
+
+      const tileIndices = sponsor.cluster.tileIndices;
+
+      // Mark tiles as sponsor tiles
+      for (const tileIndex of tileIndices) {
+        this.sponsorTileIndices.add(tileIndex);
+
+        // Update mesh userData for raycasting
+        const mesh = this.hexGroup.children.find(
+          (m) => m.userData?.tileIndex === tileIndex,
+        );
+        if (mesh) {
+          mesh.userData.clusterId = clusterId;
+        }
+      }
+
+      // Mark cluster data entry as sponsor cluster
+      if (this.clusterData[clusterId]) {
+        this.clusterData[clusterId].isSponsorCluster = true;
+        this.clusterData[clusterId].sponsorId = sponsor.id;
+      }
+
+      // Store sponsor tracking data
+      this.sponsorClusters.set(sponsor.id, {
+        sponsor: sponsor,
+        clusterId: clusterId,
+        tileIndices: tileIndices,
+      });
+
+      // Initialize hold timer
+      this.sponsorHoldTimers.set(sponsor.id, {
+        owner: null,
+        capturedAt: null,
+        holdDuration: 0,
+      });
+
+      // Apply sponsor pattern texture to tiles (Three.js visuals)
+      this._applySponsorTexture(sponsor, tileIndices);
+    }
+
+    // Regenerate all cluster outlines so sponsor clusters get outlines
+    // and adjacent procedural clusters that lost tiles get updated outlines
+    if (this._tiles && this._adjacencyMap) {
+      this._regenerateAllOutlines();
+    }
+  }
+
+  /**
+   * Remove terrain elevation from all sponsor tiles, fix mesh geometry,
+   * and rebuild cliff walls. Called after all sponsors have been applied.
+   */
+  deElevateSponsorTiles() {
+    if (!this.terrainElevation || this.sponsorTileIndices.size === 0) return;
+
+    // Clear elevation data for sponsor tiles (needed for offline mode
+    // where data hasn't been cleared yet; no-op in multiplayer since
+    // server already de-elevated before serializing the world payload)
+    this.terrainElevation.clearElevationForTiles(this.sponsorTileIndices);
+
+    // Rebuild meshes at ground level for ALL sponsor tiles.
+    // In multiplayer, applyServerWorld() updates elevation data but not
+    // the 3D meshes, so they remain elevated from local generation.
+    let rebuilt = 0;
+    for (const tileIndex of this.sponsorTileIndices) {
+      const meshIdx = this.hexGroup.children.findIndex(
+        (m) => m.userData?.tileIndex === tileIndex,
+      );
+      if (meshIdx === -1) continue;
+
+      const oldMesh = this.hexGroup.children[meshIdx];
+      const oldMaterial = oldMesh.material;
+      const oldUserData = { ...oldMesh.userData };
+
+      oldMesh.geometry.dispose();
+      this.hexGroup.remove(oldMesh);
+
+      // Rebuild at ground level (extrusionScale = 1)
+      const tile = this._tiles[tileIndex];
+      const boundary = tile.boundary;
+      const n = boundary.length;
+      const vertices = [];
+      const uvs = [];
+
+      for (let i = 0; i < n; i++) {
+        const origX = parseFloat(boundary[i].x);
+        const origY = parseFloat(boundary[i].y);
+        const origZ = parseFloat(boundary[i].z);
+        vertices.push(origX, origY, origZ);
+
+        const r = Math.sqrt(origX * origX + origY * origY + origZ * origZ);
+        const theta = Math.atan2(origZ, origX);
+        const phi = Math.acos(origY / r);
+        const scale = 60.0;
+        uvs.push((theta / Math.PI + 1) * 0.5 * scale, (phi / Math.PI) * scale);
+      }
+
+      const indices = [];
+      for (let i = 1; i < n - 1; i++) {
+        indices.push(0, i, i + 1);
+      }
+
+      const geometry = new THREE.BufferGeometry();
+      geometry.setAttribute(
+        "position",
+        new THREE.Float32BufferAttribute(vertices, 3),
+      );
+      geometry.setAttribute("uv", new THREE.Float32BufferAttribute(uvs, 2));
+      geometry.setIndex(indices);
+      geometry.computeVertexNormals();
+
+      const newMesh = new THREE.Mesh(geometry, oldMaterial);
+      newMesh.userData = oldUserData;
+      newMesh.receiveShadow = true;
+      newMesh.castShadow = true;
+      this.hexGroup.add(newMesh);
+      rebuilt++;
+    }
+
+    // Rebuild cliff walls with updated elevation data
+    this.terrainElevation.rebuildCliffWalls(this._tiles, this._adjacencyMap);
+
+    if (rebuilt > 0) {
+      console.log(`[Planet] De-elevated ${rebuilt} sponsor tiles from terrain`);
+    }
+  }
+
+  /**
+   * Preload all sponsor pattern images into the texture cache.
+   * Returns a Promise that resolves when all textures are decoded and ready.
+   * @param {Array} sponsors - Array of sponsor objects with patternImage fields
+   * @returns {Promise<void>}
+   */
+  preloadSponsorTextures(sponsors) {
+    const loads = [];
+    for (const sponsor of sponsors) {
+      if (!sponsor.patternImage) continue;
+      if (this._sponsorTextureCache.has(sponsor.patternImage)) continue;
+
+      const p = new Promise((resolve) => {
+        const img = new Image();
+        img.onload = () => {
+          const texture = new THREE.Texture(img);
+          texture.wrapS = texture.wrapT = THREE.RepeatWrapping;
+          texture.minFilter = THREE.NearestFilter;
+          texture.magFilter = THREE.NearestFilter;
+          texture.needsUpdate = true;
+          this._sponsorTextureCache.set(sponsor.patternImage, texture);
+          resolve();
+        };
+        img.onerror = () => {
+          console.warn(`[Planet] Failed to preload sponsor texture for ${sponsor.name || sponsor.id}`);
+          resolve(); // Don't block on failures — fallback pattern will be used
+        };
+        img.src = sponsor.patternImage;
+      });
+      loads.push(p);
+    }
+    if (loads.length === 0) return Promise.resolve();
+    console.log(`[Planet] Preloading ${loads.length} sponsor texture(s)...`);
+    return Promise.all(loads).then(() => {
+      console.log(`[Planet] Sponsor textures preloaded (${this._sponsorTextureCache.size} cached)`);
+    });
+  }
+
+  /**
+   * Apply sponsor pattern texture to tiles with spherical projection
+   * The image top points north (toward +Y axis)
+   * @param {Object} sponsor
+   * @param {number[]} tileIndices
+   */
+  _applySponsorTexture(sponsor, tileIndices) {
+    if (sponsor.patternImage) {
+      // Use cached texture if available (preloaded during loading screen)
+      const cached = this._sponsorTextureCache.get(sponsor.patternImage);
+      if (cached) {
+        // Defer to microtask: callers run deElevateSponsorTiles() after this,
+        // which rebuilds meshes. UV mapping must target the rebuilt meshes.
+        Promise.resolve().then(() => {
+          this._updateSponsorTileMaterialsTiled(tileIndices, cached, sponsor);
+        });
+        return;
+      }
+
+      // Fallback: async load (shouldn't happen if preloadSponsorTextures was called)
+      const img = new Image();
+      img.onload = () => {
+        const texture = new THREE.Texture(img);
+        texture.wrapS = texture.wrapT = THREE.RepeatWrapping;
+        texture.minFilter = THREE.NearestFilter;
+        texture.magFilter = THREE.NearestFilter;
+        texture.needsUpdate = true;
+
+        this._sponsorTextureCache.set(sponsor.patternImage, texture);
+        // Update materials with tiled spherical UV projection
+        this._updateSponsorTileMaterialsTiled(tileIndices, texture, sponsor);
+      };
+      img.src = sponsor.patternImage;
+    } else {
+      // Use a default sponsor pattern (distinct cyan/teal color)
+      const canvas = document.createElement("canvas");
+      canvas.width = 256;
+      canvas.height = 256;
+      const ctx = canvas.getContext("2d");
+
+      // Teal base with diagonal stripes
+      ctx.fillStyle = "#1a4a4a";
+      ctx.fillRect(0, 0, 256, 256);
+
+      ctx.strokeStyle = "#2a6a6a";
+      ctx.lineWidth = 16;
+      for (let i = -256; i < 512; i += 32) {
+        ctx.beginPath();
+        ctx.moveTo(i, 0);
+        ctx.lineTo(i + 256, 256);
+        ctx.stroke();
+      }
+
+      const texture = new THREE.CanvasTexture(canvas);
+      texture.wrapS = texture.wrapT = THREE.RepeatWrapping;
+      texture.minFilter = THREE.NearestFilter;
+      texture.magFilter = THREE.NearestFilter;
+
+      this._updateSponsorTileMaterialsTiled(tileIndices, texture, sponsor);
+    }
+  }
+
+  /**
+   * Update materials for sponsor tiles with tiled UV projection
+   * Uses global spherical mapping for consistent textures across the planet
+   * Top of image points north, textures tile seamlessly
+   * @param {number[]} tileIndices
+   * @param {THREE.Texture} texture
+   * @param {Object} sponsor
+   */
+  _updateSponsorTileMaterialsTiled(tileIndices, texture, sponsor) {
+    const tileSet = new Set(tileIndices);
+
+    // Get pattern adjustment values (defaults if not set)
+    const adjustment = sponsor.patternAdjustment || {};
+    const scale = adjustment.scale || 1.0;
+    const offsetX = adjustment.offsetX || 0;
+    const offsetY = adjustment.offsetY || 0;
+
+    // Calculate cluster center and tangent basis for local projection
+    const clusterCenter = this._calculateClusterCenter(tileIndices);
+    const { tanU, tanV } = this._calculateClusterTangentBasis(clusterCenter);
+    const bounds = this._calculateClusterTangentBounds(tileIndices, tanU, tanV);
+
+    const clusterWidth = bounds.maxU - bounds.minU;
+    const clusterHeight = bounds.maxV - bounds.minV;
+
+    // Get texture dimensions for aspect ratio calculation
+    const textureWidth = texture.image ? texture.image.width : 256;
+    const textureHeight = texture.image ? texture.image.height : 256;
+    const textureAspect = textureWidth / textureHeight;
+
+    // Calculate uniform scale factor for "contain" mode
+    // Use the larger dimension to ensure the full texture fits without distortion
+    // Texture tiles via RepeatWrapping to fill remaining space
+    const uniformScale = Math.max(clusterWidth, clusterHeight * textureAspect);
+
+    // Center the texture within the cluster bounds
+    const centerU = (bounds.minU + bounds.maxU) / 2;
+    const centerV = (bounds.minV + bounds.maxV) / 2;
+
+    // Scale factor: at scale=1, texture fills the cluster once
+    const uvScale = 1.0 / scale;
+
+    // Generate randomized material properties once for the entire cluster
+    // Roughness: 50% - 100%, Metalness: 0% - 30%
+    // Use seeded random for reproducibility (same as procedural clusters)
+    const clusterRoughness = 0.5 + this.random() * 0.5;
+    const clusterMetalness = this.random() * 0.3;
+
+    // Create a single shared material for all tiles in this cluster
+    const sharedMaterial = this._createHSVMaterial(
+      texture,
+      adjustment,
+      clusterRoughness,
+      clusterMetalness,
+    );
+
+    let tilesUpdated = 0;
+
+    this.hexGroup.children.forEach((mesh) => {
+      if (!mesh.userData || !tileSet.has(mesh.userData.tileIndex)) return;
+      if (!mesh.geometry || !mesh.geometry.attributes.position) return;
+
+      tilesUpdated++;
+      const positions = mesh.geometry.attributes.position.array;
+      const newUvs = [];
+
+      for (let i = 0; i < positions.length; i += 3) {
+        const x = positions[i];
+        const y = positions[i + 1];
+        const z = positions[i + 2];
+
+        // Project onto cluster's tangent plane
+        const localU = x * tanU.x + y * tanU.y + z * tanU.z;
+        const localV = x * tanV.x + y * tanV.y + z * tanV.z;
+
+        // Normalize using uniform scaling (contain mode - no distortion)
+        // The texture fits entirely within bounds and tiles to fill extra space
+        // NOTE: Swap u/v assignments - texture U maps to North (localV), texture V maps to East (localU)
+        let u = ((localV - centerV) / uniformScale + 0.5) * uvScale;
+        let v =
+          (((localU - centerU) / uniformScale) * textureAspect + 0.5) * uvScale;
+
+        // Apply offset
+        u += offsetX * 0.5;
+        v += offsetY * 0.5;
+
+        newUvs.push(u, v);
+      }
+
+      // Update the geometry's UV attribute
+      mesh.geometry.setAttribute(
+        "uv",
+        new THREE.Float32BufferAttribute(newUvs, 2),
+      );
+      mesh.geometry.attributes.uv.needsUpdate = true;
+
+      // Use shared material for all tiles in this cluster
+      mesh.material.dispose();
+      mesh.material = sharedMaterial;
+      mesh.userData.sponsorId = sponsor.id;
+      mesh.userData.isSponsorTile = true;
+    });
+  }
+
+  /**
+   * Create a MeshStandardMaterial with Photoshop-style levels adjustment
+   * Pre-processes the texture on a canvas to apply input/output levels + gamma
+   * @param {THREE.Texture} texture
+   * @param {Object} adjustment - { inputBlack, inputGamma, inputWhite, outputBlack, outputWhite }
+   * @param {number} roughness - Material roughness (0.5-1.0)
+   * @param {number} metalness - Material metalness (0-0.3)
+   * @returns {THREE.MeshStandardMaterial}
+   */
+  _createHSVMaterial(
+    texture,
+    adjustment = {},
+    roughness = 0.8,
+    metalness = 0.1,
+  ) {
+    // Apply levels adjustment then pixel art filter
+    let finalTexture = texture;
+    if (texture.image) {
+      // Apply full Photoshop-style levels adjustment
+      const levelsTexture = this._applyLevelsAdjustment(
+        texture.image,
+        adjustment,
+      );
+      // Then apply pixel art filter for retro look
+      finalTexture = this._applyPixelArtFilter(levelsTexture.image);
+      finalTexture.wrapS = texture.wrapS;
+      finalTexture.wrapT = texture.wrapT;
+    }
+
+    return new THREE.MeshStandardMaterial({
+      map: finalTexture,
+      flatShading: true,
+      roughness: roughness,
+      metalness: metalness,
+      side: THREE.FrontSide,
+    });
+  }
+
+  /**
+   * Apply Photoshop-style levels adjustment and saturation to an image
+   * @param {HTMLImageElement|HTMLCanvasElement} image
+   * @param {Object} adjustment - { inputBlack, inputGamma, inputWhite, outputBlack, outputWhite, saturation }
+   * @returns {THREE.CanvasTexture}
+   */
+  _applyLevelsAdjustment(image, adjustment = {}) {
+    // Get adjustment values with defaults
+    const inputBlack = (adjustment.inputBlack ?? 0) / 255; // 0-1
+    const inputWhite = (adjustment.inputWhite ?? 255) / 255; // 0-1
+    const gamma = adjustment.inputGamma ?? 1.0; // 0.1-3.0
+    const outputBlack = (adjustment.outputBlack ?? 0) / 255; // 0-1
+    const outputWhite = (adjustment.outputWhite ?? 255) / 255; // 0-1
+    const saturation = adjustment.saturation ?? 1.0; // 0-2 (1.0 = normal)
+
+    // If all defaults, skip processing
+    if (
+      inputBlack === 0 &&
+      inputWhite === 1 &&
+      gamma === 1.0 &&
+      outputBlack === 0 &&
+      outputWhite === 1 &&
+      saturation === 1.0
+    ) {
+      // Return a canvas texture of the original
+      const canvas = document.createElement("canvas");
+      canvas.width = image.width || 256;
+      canvas.height = image.height || 256;
+      const ctx = canvas.getContext("2d");
+      ctx.drawImage(image, 0, 0);
+      const tex = new THREE.CanvasTexture(canvas);
+      tex.minFilter = THREE.NearestFilter;
+      tex.magFilter = THREE.NearestFilter;
+      return tex;
+    }
+
+    const canvas = document.createElement("canvas");
+    canvas.width = image.width || 256;
+    canvas.height = image.height || 256;
+    const ctx = canvas.getContext("2d");
+
+    // Draw original image
+    ctx.drawImage(image, 0, 0);
+
+    // Get image data
+    const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+    const data = imageData.data;
+
+    // Input range
+    const inputRange = Math.max(0.001, inputWhite - inputBlack);
+    // Output range
+    const outputRange = outputWhite - outputBlack;
+    // Gamma (inverted for correction)
+    const gammaInv = 1 / gamma;
+
+    // Process each pixel with Photoshop levels formula + saturation
+    for (let i = 0; i < data.length; i += 4) {
+      let r = data[i] / 255;
+      let g = data[i + 1] / 255;
+      let b = data[i + 2] / 255;
+
+      // Step 1: Apply input levels (remap inputBlack-inputWhite to 0-1)
+      r = Math.max(0, Math.min(1, (r - inputBlack) / inputRange));
+      g = Math.max(0, Math.min(1, (g - inputBlack) / inputRange));
+      b = Math.max(0, Math.min(1, (b - inputBlack) / inputRange));
+
+      // Step 2: Apply gamma correction
+      r = Math.pow(r, gammaInv);
+      g = Math.pow(g, gammaInv);
+      b = Math.pow(b, gammaInv);
+
+      // Step 3: Apply output levels (remap 0-1 to outputBlack-outputWhite)
+      r = outputBlack + r * outputRange;
+      g = outputBlack + g * outputRange;
+      b = outputBlack + b * outputRange;
+
+      // Step 4: Apply saturation adjustment
+      // Convert to grayscale luminance (perceptual weights)
+      const luma = 0.299 * r + 0.587 * g + 0.114 * b;
+      // Interpolate between grayscale and color based on saturation
+      r = luma + saturation * (r - luma);
+      g = luma + saturation * (g - luma);
+      b = luma + saturation * (b - luma);
+
+      // Clamp and write back
+      data[i] = Math.max(0, Math.min(255, r * 255));
+      data[i + 1] = Math.max(0, Math.min(255, g * 255));
+      data[i + 2] = Math.max(0, Math.min(255, b * 255));
+    }
+
+    ctx.putImageData(imageData, 0, 0);
+
+    const processedTexture = new THREE.CanvasTexture(canvas);
+    processedTexture.minFilter = THREE.NearestFilter;
+    processedTexture.magFilter = THREE.NearestFilter;
+    processedTexture.needsUpdate = true;
+    return processedTexture;
+  }
+
+  /**
+   * Apply pixel art filter: reduce resolution, limit to 16 colors, apply dithering
+   * @param {HTMLImageElement|HTMLCanvasElement} image
+   * @returns {THREE.CanvasTexture}
+   */
+  _applyPixelArtFilter(image) {
+    const targetShortSide = 128; // Doubled from 64 for higher resolution
+    const maxColors = 8; // Limit to 8-color palette for retro look
+    const ditherIntensity = 32;
+
+    // Calculate target dimensions (short side = 64, long side scales proportionally)
+    const srcWidth = image.width || 256;
+    const srcHeight = image.height || 256;
+    const aspect = srcWidth / srcHeight;
+
+    let targetWidth, targetHeight;
+    if (srcWidth <= srcHeight) {
+      targetWidth = targetShortSide;
+      targetHeight = Math.round(targetShortSide / aspect);
+    } else {
+      targetHeight = targetShortSide;
+      targetWidth = Math.round(targetShortSide * aspect);
+    }
+
+    // Step 1: Downscale with no antialiasing
+    const downCanvas = document.createElement("canvas");
+    downCanvas.width = targetWidth;
+    downCanvas.height = targetHeight;
+    const downCtx = downCanvas.getContext("2d");
+    downCtx.imageSmoothingEnabled = false;
+    downCtx.drawImage(image, 0, 0, targetWidth, targetHeight);
+
+    const imageData = downCtx.getImageData(0, 0, targetWidth, targetHeight);
+    const data = imageData.data;
+
+    // Step 2: Extract palette from most frequent colors in the image
+    // Group similar colors into buckets, then pick representative color from each bucket
+    const colorBuckets = new Map(); // quantized key → { count, sumR, sumG, sumB }
+    for (let i = 0; i < data.length; i += 4) {
+      // Quantize to group similar colors (bucket size = 32 for better grouping)
+      const qr = Math.floor(data[i] / 32) * 32;
+      const qg = Math.floor(data[i + 1] / 32) * 32;
+      const qb = Math.floor(data[i + 2] / 32) * 32;
+      const key = `${qr},${qg},${qb}`;
+
+      const bucket = colorBuckets.get(key) || {
+        count: 0,
+        sumR: 0,
+        sumG: 0,
+        sumB: 0,
+      };
+      bucket.count++;
+      bucket.sumR += data[i];
+      bucket.sumG += data[i + 1];
+      bucket.sumB += data[i + 2];
+      colorBuckets.set(key, bucket);
+    }
+
+    // Sort buckets by frequency and take top colors
+    // Use average color of each bucket for better accuracy
+    const palette = Array.from(colorBuckets.values())
+      .sort((a, b) => b.count - a.count)
+      .slice(0, maxColors)
+      .map((bucket) => [
+        Math.round(bucket.sumR / bucket.count),
+        Math.round(bucket.sumG / bucket.count),
+        Math.round(bucket.sumB / bucket.count),
+      ]);
+
+    if (palette.length === 0) palette.push([128, 128, 128]);
+
+    // Step 3: Apply ordered dithering and map to palette
+    const bayerMatrix4x4 = [
+      [0, 8, 2, 10],
+      [12, 4, 14, 6],
+      [3, 11, 1, 9],
+      [15, 7, 13, 5],
+    ];
+
+    for (let y = 0; y < targetHeight; y++) {
+      for (let x = 0; x < targetWidth; x++) {
+        const i = (y * targetWidth + x) * 4;
+        const threshold =
+          (bayerMatrix4x4[y % 4][x % 4] / 16.0 - 0.5) * ditherIntensity;
+
+        const r = Math.max(0, Math.min(255, data[i] + threshold));
+        const g = Math.max(0, Math.min(255, data[i + 1] + threshold));
+        const b = Math.max(0, Math.min(255, data[i + 2] + threshold));
+
+        // Find closest palette color
+        let minDist = Infinity;
+        let closest = palette[0];
+        for (const color of palette) {
+          const dr = r - color[0];
+          const dg = g - color[1];
+          const db = b - color[2];
+          const dist = dr * dr * 0.299 + dg * dg * 0.587 + db * db * 0.114;
+          if (dist < minDist) {
+            minDist = dist;
+            closest = color;
+          }
+        }
+
+        data[i] = closest[0];
+        data[i + 1] = closest[1];
+        data[i + 2] = closest[2];
+      }
+    }
+
+    downCtx.putImageData(imageData, 0, 0);
+
+    // Step 4: Scale back up to original size with nearest-neighbor (crisp pixels)
+    const finalCanvas = document.createElement("canvas");
+    finalCanvas.width = srcWidth;
+    finalCanvas.height = srcHeight;
+    const finalCtx = finalCanvas.getContext("2d");
+    finalCtx.imageSmoothingEnabled = false;
+    finalCtx.drawImage(downCanvas, 0, 0, srcWidth, srcHeight);
+
+    const processedTexture = new THREE.CanvasTexture(finalCanvas);
+    processedTexture.magFilter = THREE.NearestFilter;
+    processedTexture.minFilter = THREE.NearestFilter;
+    processedTexture.needsUpdate = true;
+    return processedTexture;
+  }
+
+  /**
+   * Process an image with saturation and output levels adjustments
+   * @param {HTMLImageElement|HTMLCanvasElement} image
+   * @param {number} saturation - 0 to 2 (1 = normal)
+   * @param {number} outputBlack - 0 to 1 (output black point)
+   * @param {number} outputWhite - 0 to 1 (output white point)
+   * @returns {THREE.CanvasTexture}
+   */
+  _processTextureWithColorAdjustments(
+    image,
+    saturation,
+    outputBlack,
+    outputWhite,
+  ) {
+    const canvas = document.createElement("canvas");
+    canvas.width = image.width || 256;
+    canvas.height = image.height || 256;
+    const ctx = canvas.getContext("2d");
+
+    // Draw original image
+    ctx.drawImage(image, 0, 0);
+
+    // Get image data
+    const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+    const data = imageData.data;
+
+    // Process each pixel
+    for (let i = 0; i < data.length; i += 4) {
+      let r = data[i] / 255;
+      let g = data[i + 1] / 255;
+      let b = data[i + 2] / 255;
+
+      // Apply saturation
+      const luminance = 0.299 * r + 0.587 * g + 0.114 * b;
+      r = luminance + (r - luminance) * saturation;
+      g = luminance + (g - luminance) * saturation;
+      b = luminance + (b - luminance) * saturation;
+
+      // Apply output levels
+      const range = outputWhite - outputBlack;
+      r = outputBlack + r * range;
+      g = outputBlack + g * range;
+      b = outputBlack + b * range;
+
+      // Clamp and write back
+      data[i] = Math.max(0, Math.min(255, r * 255));
+      data[i + 1] = Math.max(0, Math.min(255, g * 255));
+      data[i + 2] = Math.max(0, Math.min(255, b * 255));
+    }
+
+    // Apply PS1-style ordered dithering for retro pixelated look
+    const bayerMatrix4x4 = [
+      [0, 8, 2, 10],
+      [12, 4, 14, 6],
+      [3, 11, 1, 9],
+      [15, 7, 13, 5],
+    ];
+
+    const ditherIntensity = 32; // Controls dither strength (higher = more visible)
+    const colorDepth = 32; // 5 bits per channel (2^5 = 32 levels) for PS1 look
+
+    for (let y = 0; y < canvas.height; y++) {
+      for (let x = 0; x < canvas.width; x++) {
+        const i = (y * canvas.width + x) * 4;
+
+        // Get Bayer matrix threshold value (0-15) normalized to -0.5 to 0.5
+        const threshold =
+          (bayerMatrix4x4[y % 4][x % 4] / 16.0 - 0.5) * ditherIntensity;
+
+        // Apply ordered dithering and reduce color depth for each channel
+        for (let c = 0; c < 3; c++) {
+          // R, G, B channels
+          const value = data[i + c] + threshold;
+          // Quantize to reduced color depth
+          data[i + c] =
+            Math.floor((value / 255) * (colorDepth - 1)) *
+            (255 / (colorDepth - 1));
+          // Clamp to valid range
+          data[i + c] = Math.max(0, Math.min(255, data[i + c]));
+        }
+      }
+    }
+
+    ctx.putImageData(imageData, 0, 0);
+
+    const processedTexture = new THREE.CanvasTexture(canvas);
+    processedTexture.minFilter = THREE.NearestFilter;
+    processedTexture.magFilter = THREE.NearestFilter;
+    processedTexture.needsUpdate = true;
+    return processedTexture;
+  }
+
+  /**
+   * Calculate the center point of a cluster of tiles
+   * @param {number[]} tileIndices
+   * @returns {THREE.Vector3}
+   */
+  _calculateClusterCenter(tileIndices) {
+    const tileSet = new Set(tileIndices);
+    let sumX = 0,
+      sumY = 0,
+      sumZ = 0;
+    let count = 0;
+
+    this.hexGroup.children.forEach((mesh) => {
+      if (!mesh.userData || mesh.userData.tileIndex === undefined) return;
+      if (!tileSet.has(mesh.userData.tileIndex)) return;
+      if (!mesh.geometry || !mesh.geometry.attributes.position) return;
+
+      const positions = mesh.geometry.attributes.position.array;
+      let tileX = 0,
+        tileY = 0,
+        tileZ = 0;
+      const vertCount = positions.length / 3;
+
+      for (let j = 0; j < positions.length; j += 3) {
+        tileX += positions[j];
+        tileY += positions[j + 1];
+        tileZ += positions[j + 2];
+      }
+
+      sumX += tileX / vertCount;
+      sumY += tileY / vertCount;
+      sumZ += tileZ / vertCount;
+      count++;
+    });
+
+    if (count === 0) {
+      return new THREE.Vector3(0, 1, 0).multiplyScalar(this.radius);
+    }
+
+    const center = new THREE.Vector3(sumX / count, sumY / count, sumZ / count);
+    center.normalize().multiplyScalar(this.radius);
+    return center;
+  }
+
+  /**
+   * Calculate tangent basis vectors for a cluster
+   * tanU points East, tanV points North
+   * @param {THREE.Vector3} center - Cluster center point
+   * @returns {{ tanU: THREE.Vector3, tanV: THREE.Vector3 }}
+   */
+  _calculateClusterTangentBasis(center) {
+    // Normal at cluster center (pointing outward from sphere)
+    const normal = center.clone().normalize();
+
+    // "Up" direction (toward north pole)
+    const up = new THREE.Vector3(0, 1, 0);
+
+    // tanV = North direction (perpendicular to both normal and up)
+    let tanV = new THREE.Vector3().crossVectors(up, normal);
+    if (tanV.lengthSq() < 0.001) {
+      // Cluster is near a pole, use a different reference
+      tanV = new THREE.Vector3(1, 0, 0);
+    }
+    tanV.normalize();
+
+    // tanU = East direction (perpendicular to normal and tanV)
+    const tanU = new THREE.Vector3().crossVectors(normal, tanV);
+    tanU.normalize();
+
+    return { tanU, tanV };
+  }
+
+  /**
+   * Calculate the bounding box of the cluster in tangent space
+   * @param {number[]} tileIndices
+   * @param {THREE.Vector3} tanU - East tangent vector
+   * @param {THREE.Vector3} tanV - North tangent vector
+   * @returns {{ minU: number, maxU: number, minV: number, maxV: number }}
+   */
+  _calculateClusterTangentBounds(tileIndices, tanU, tanV) {
+    const tileSet = new Set(tileIndices);
+    let minU = Infinity,
+      maxU = -Infinity;
+    let minV = Infinity,
+      maxV = -Infinity;
+
+    this.hexGroup.children.forEach((mesh) => {
+      if (!mesh.userData || mesh.userData.tileIndex === undefined) return;
+      if (!tileSet.has(mesh.userData.tileIndex)) return;
+      if (!mesh.geometry || !mesh.geometry.attributes.position) return;
+
+      const positions = mesh.geometry.attributes.position.array;
+      for (let i = 0; i < positions.length; i += 3) {
+        const x = positions[i],
+          y = positions[i + 1],
+          z = positions[i + 2];
+        const localU = x * tanU.x + y * tanU.y + z * tanU.z;
+        const localV = x * tanV.x + y * tanV.y + z * tanV.z;
+        minU = Math.min(minU, localU);
+        maxU = Math.max(maxU, localU);
+        minV = Math.min(minV, localV);
+        maxV = Math.max(maxV, localV);
+      }
+    });
+
+    // Add small padding to prevent edge artifacts
+    const padU = (maxU - minU) * 0.02;
+    const padV = (maxV - minV) * 0.02;
+
+    return {
+      minU: minU - padU,
+      maxU: maxU + padU,
+      minV: minV - padV,
+      maxV: maxV + padV,
+    };
+  }
+
+  /**
+   * Update sponsor cluster visual based on capture state
+   * Uses inner glow effect from edges toward center with transition animations
+   * @param {string} sponsorId
+   * @param {string|null} previousOwner - The previous owner (for transition animations)
+   */
+  updateSponsorClusterVisual(sponsorId, previousOwner = null) {
+    const sponsorCluster = this.sponsorClusters.get(sponsorId);
+    if (!sponsorCluster) return;
+
+    const state = this.clusterCaptureState.get(sponsorCluster.clusterId);
+    if (!state) return;
+
+    const newOwner = state.owner;
+
+    // Only process visual changes when ownership actually changes
+    if (previousOwner !== newOwner) {
+      // Apply inner glow effect with transition animation (using light shade for visibility)
+      const previousColor =
+        previousOwner && FACTION_COLORS[previousOwner]
+          ? FACTION_COLORS[previousOwner].threeLight
+          : null;
+      if (newOwner && FACTION_COLORS[newOwner]) {
+        this.applyInnerGlowToCluster(
+          sponsorCluster.clusterId,
+          FACTION_COLORS[newOwner].threeLight,
+          previousColor,
+        );
+      } else {
+        this.applyInnerGlowToCluster(
+          sponsorCluster.clusterId,
+          null,
+          previousColor,
+        );
+      }
+    }
+  }
+
+  /**
+   * Update hold timer for a sponsor cluster
+   * Called every second from the capture update loop
+   * @param {string} sponsorId
+   * @param {string|null} currentOwner
+   */
+  updateSponsorHoldTimer(sponsorId, currentOwner) {
+    const timer = this.sponsorHoldTimers.get(sponsorId);
+    if (!timer) return;
+
+    if (currentOwner && currentOwner === timer.owner) {
+      // Same owner - increment hold duration
+      timer.holdDuration += 1000; // 1 second in ms
+    } else if (currentOwner && currentOwner !== timer.owner) {
+      // New owner - reset timer
+      timer.owner = currentOwner;
+      timer.capturedAt = Date.now();
+      timer.holdDuration = 0;
+    } else if (!currentOwner && timer.owner) {
+      // Lost ownership
+      timer.owner = null;
+      timer.capturedAt = null;
+      timer.holdDuration = 0;
+    }
+  }
+
+  /**
+   * Get hold duration for a sponsor cluster
+   * @param {string} sponsorId
+   * @returns {{ owner: string|null, holdDuration: number, capturedAt: number|null }}
+   */
+  getSponsorHoldStatus(sponsorId) {
+    return (
+      this.sponsorHoldTimers.get(sponsorId) || {
+        owner: null,
+        holdDuration: 0,
+        capturedAt: null,
+      }
+    );
+  }
+
+  /**
+   * Check if any reward milestones have been reached for a sponsor
+   * @param {string} sponsorId
+   * @returns {Object[]} Array of triggered rewards
+   */
+  checkSponsorRewardMilestones(sponsorId) {
+    const sponsorCluster = this.sponsorClusters.get(sponsorId);
+    if (!sponsorCluster) return [];
+
+    const timer = this.sponsorHoldTimers.get(sponsorId);
+    if (!timer || !timer.owner) return [];
+
+    const sponsor = sponsorCluster.sponsor;
+    if (!sponsor.rewards) return [];
+
+    const holdMs = timer.holdDuration;
+    const triggeredRewards = [];
+
+    // Hold duration milestones in milliseconds
+    const holdMilestones = {
+      hold_1m: 60 * 1000,
+      hold_5m: 5 * 60 * 1000,
+      hold_10m: 10 * 60 * 1000,
+      hold_1h: 60 * 60 * 1000,
+      hold_6h: 6 * 60 * 60 * 1000,
+      hold_12h: 12 * 60 * 60 * 1000,
+      hold_24h: 24 * 60 * 60 * 1000,
+    };
+
+    for (const reward of sponsor.rewards) {
+      if (reward.accomplishment === "capture") {
+        // Capture reward triggers immediately on capture
+        // Would need separate tracking for "first capture" logic
+        continue;
+      }
+
+      const requiredMs = holdMilestones[reward.accomplishment];
+      if (requiredMs && holdMs >= requiredMs) {
+        triggeredRewards.push({
+          sponsorId: sponsorId,
+          sponsorName: sponsor.name,
+          reward: reward,
+          holdDuration: holdMs,
+          owner: timer.owner,
+        });
+      }
+    }
+
+    return triggeredRewards;
+  }
+
+  /**
+   * Get sponsor cluster ID from sponsor ID
+   * @param {string} sponsorId
+   * @returns {number|null}
+   */
+  getSponsorClusterId(sponsorId) {
+    const sponsorCluster = this.sponsorClusters.get(sponsorId);
+    return sponsorCluster ? sponsorCluster.clusterId : null;
+  }
+
+  /**
+   * Get sponsor info for a cluster
+   * @param {number} clusterId
+   * @returns {Object|null}
+   */
+  getSponsorForCluster(clusterId) {
+    const cluster = this.clusterData[clusterId];
+    if (!cluster || !cluster.isSponsorCluster) return null;
+
+    const sponsorCluster = this.sponsorClusters.get(cluster.sponsorId);
+    return sponsorCluster ? sponsorCluster.sponsor : null;
+  }
+
+  /**
+   * Get all sponsor clusters
+   * @returns {Map}
+   */
+  getAllSponsorClusters() {
+    return this.sponsorClusters;
+  }
+
+  /**
+   * Initialize occupancy history for a cluster
+   * @param {number} clusterId
+   */
+  initializeOccupancyHistory(clusterId) {
+    if (!this.clusterOccupancyHistory.has(clusterId)) {
+      this.clusterOccupancyHistory.set(clusterId, {
+        rust: 0,
+        cobalt: 0,
+        viridian: 0,
+        unclaimed: 0,
+      });
+    }
+  }
+
+  /**
+   * Update occupancy history for a cluster (call every second)
+   * @param {number} clusterId
+   * @param {string|null} currentOwner - 'rust', 'cobalt', 'viridian', or null
+   * @param {number} deltaMs - Time elapsed in milliseconds (default 1000)
+   */
+  updateOccupancyHistory(clusterId, currentOwner, deltaMs = 1000) {
+    this.initializeOccupancyHistory(clusterId);
+    const history = this.clusterOccupancyHistory.get(clusterId);
+
+    if (currentOwner && history[currentOwner] !== undefined) {
+      history[currentOwner] += deltaMs;
+    } else {
+      history.unclaimed += deltaMs;
+    }
+  }
+
+  /**
+   * Get occupancy history for a cluster
+   * @param {number} clusterId
+   * @returns {{ rust: number, cobalt: number, viridian: number, unclaimed: number }}
+   */
+  getOccupancyHistory(clusterId) {
+    return (
+      this.clusterOccupancyHistory.get(clusterId) || {
+        rust: 0,
+        cobalt: 0,
+        viridian: 0,
+        unclaimed: 0,
+      }
+    );
+  }
+
+  // ========================
+  // INNER GLOW EFFECT (Overlay Approach)
+  // ========================
+
+  /**
+   * Calculate the boundary edges of a cluster (edges not shared with other cluster tiles)
+   * @param {number[]} tileIndices - Array of tile indices in the cluster
+   * @returns {Array<{v1: THREE.Vector3, v2: THREE.Vector3}>} Array of boundary edges
+   */
+  _calculateClusterBoundaryEdges(tileIndices) {
+    const tileSet = new Set(tileIndices);
+    const boundaryEdges = [];
+
+    for (const tileIdx of tileIndices) {
+      const tile = this._tiles[tileIdx];
+      if (!tile) continue;
+
+      const boundary = tile.boundary;
+
+      for (let i = 0; i < boundary.length; i++) {
+        const v1 = boundary[i];
+        const v2 = boundary[(i + 1) % boundary.length];
+
+        // Check if this edge is shared with another tile in the cluster
+        const isShared = this._isEdgeSharedWithTileSet(
+          tileIdx,
+          v1,
+          v2,
+          tileSet,
+        );
+
+        if (!isShared) {
+          // This is a boundary edge - apply terrain elevation scaling
+          const es = this.terrainElevation
+            ? this.terrainElevation.getExtrusion(
+                this.terrainElevation.getElevationAtTileIndex(tileIdx),
+              )
+            : 1;
+          boundaryEdges.push({
+            v1: new THREE.Vector3(
+              parseFloat(v1.x) * es,
+              parseFloat(v1.y) * es,
+              parseFloat(v1.z) * es,
+            ),
+            v2: new THREE.Vector3(
+              parseFloat(v2.x) * es,
+              parseFloat(v2.y) * es,
+              parseFloat(v2.z) * es,
+            ),
+          });
+        }
+      }
+    }
+
+    return boundaryEdges;
+  }
+
+  /**
+   * Calculate the minimum distance from a point to any boundary edge
+   * @param {THREE.Vector3} point - The point to measure from
+   * @param {Array<{v1: THREE.Vector3, v2: THREE.Vector3}>} boundaryEdges - Cluster boundary edges
+   * @returns {number} Minimum distance to boundary
+   */
+  _distanceToNearestBoundaryEdge(point, boundaryEdges) {
+    let minDist = Infinity;
+
+    for (const edge of boundaryEdges) {
+      const dist = this._distanceToLineSegment(point, edge.v1, edge.v2);
+      minDist = Math.min(minDist, dist);
+    }
+
+    return minDist;
+  }
+
+  /**
+   * Calculate distance from a point to a line segment
+   * @param {THREE.Vector3} point
+   * @param {THREE.Vector3} lineStart
+   * @param {THREE.Vector3} lineEnd
+   * @returns {number}
+   */
+  _distanceToLineSegment(point, lineStart, lineEnd) {
+    const line = lineEnd.clone().sub(lineStart);
+    const lineLength = line.length();
+
+    if (lineLength < 0.0001) {
+      return point.distanceTo(lineStart);
+    }
+
+    const lineDir = line.normalize();
+    const toPoint = point.clone().sub(lineStart);
+
+    // Project point onto line
+    let t = toPoint.dot(lineDir);
+    t = Math.max(0, Math.min(lineLength, t)); // Clamp to segment
+
+    // Closest point on segment
+    const closest = lineStart.clone().add(lineDir.multiplyScalar(t));
+    return point.distanceTo(closest);
+  }
+
+  /**
+   * Calculate the maximum distance any vertex can be from the boundary (cluster "radius")
+   * @param {number[]} tileIndices
+   * @param {Array<{v1: THREE.Vector3, v2: THREE.Vector3}>} boundaryEdges
+   * @returns {number}
+   */
+  _calculateClusterMaxBoundaryDistance(tileIndices, boundaryEdges) {
+    const tileSet = new Set(tileIndices);
+    let maxDist = 0;
+
+    this.hexGroup.children.forEach((mesh) => {
+      if (!mesh.userData || !tileSet.has(mesh.userData.tileIndex)) return;
+      if (!mesh.geometry || !mesh.geometry.attributes.position) return;
+
+      const positions = mesh.geometry.attributes.position.array;
+      for (let i = 0; i < positions.length; i += 3) {
+        const point = new THREE.Vector3(
+          positions[i],
+          positions[i + 1],
+          positions[i + 2],
+        );
+        const dist = this._distanceToNearestBoundaryEdge(point, boundaryEdges);
+        maxDist = Math.max(maxDist, dist);
+      }
+    });
+
+    return maxDist;
+  }
+
+  // ========================================================================
+  // BORDER GLOW SYSTEM - Faction territory visualization with fading border
+  // ========================================================================
+
+  /**
+   * Create shader material for border band effect
+   * Uses distance-from-edge attribute to fade the band inward
+   * @param {THREE.Color} factionColor - The faction's base color
+   * @returns {THREE.ShaderMaterial}
+   */
+  _createBorderGlowMaterial(factionColor) {
+    // Use faction color directly (no modification)
+    const bandColor = factionColor.clone();
+
+    return new THREE.ShaderMaterial({
+      uniforms: {
+        bandColor: { value: bandColor },
+        opacity: { value: BORDER_GLOW_CONFIG.baseOpacity },
+        fadeExponent: { value: BORDER_GLOW_CONFIG.fadeExponent },
+        time: { value: 0 },
+        pulseIntensity: { value: 0 },
+      },
+      vertexShader: `
+                attribute float distanceFromEdge;
+                varying float vDistance;
+
+                void main() {
+                    vDistance = distanceFromEdge;
+                    gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+                }
+            `,
+      fragmentShader: `
+                uniform vec3 bandColor;
+                uniform float opacity;
+                uniform float fadeExponent;
+                uniform float time;
+                uniform float pulseIntensity;
+
+                varying float vDistance;
+
+                void main() {
+                    // Smooth fade: solid at edge (0), transparent at inner (1)
+                    float fade = 1.0 - pow(vDistance, fadeExponent);
+                    fade = clamp(fade, 0.0, 1.0);
+
+                    // Pulse animation: bright flash + rapid shimmer on capture pulse
+                    float pulse = 1.0 + pulseIntensity * (0.3 + 0.2 * sin(time * 8.0));
+
+                    // Alpha fades smoothly to 0 at inner edge
+                    float alpha = fade * opacity * pulse;
+
+                    gl_FragColor = vec4(bandColor, alpha);
+                }
+            `,
+      transparent: true,
+      side: THREE.DoubleSide,
+      depthWrite: false,
+      blending: THREE.NormalBlending, // Normal blend for solid faction color
+    });
+  }
+
+  /**
+   * Check if an edge is on the faction boundary (borders non-faction territory)
+   * @param {number} tileIdx - The tile index
+   * @param {Object} v1 - First vertex of edge
+   * @param {Object} v2 - Second vertex of edge
+   * @param {Set<number>} factionTiles - Set of tile indices owned by the faction
+   * @returns {boolean}
+   */
+  _isEdgeFactionBoundary(tileIdx, v1, v2, factionTiles) {
+    const key1 = `${v1.x},${v1.y},${v1.z}`;
+    const key2 = `${v2.x},${v2.y},${v2.z}`;
+
+    const neighbors = this._adjacencyMap.get(tileIdx) || [];
+    for (const neighborIdx of neighbors) {
+      // If neighbor is also faction-owned, check if they share this edge
+      if (factionTiles.has(neighborIdx)) {
+        const neighborBoundary = this._tiles[neighborIdx].boundary;
+        for (let j = 0; j < neighborBoundary.length; j++) {
+          const nv1 = neighborBoundary[j];
+          const nv2 = neighborBoundary[(j + 1) % neighborBoundary.length];
+          const nk1 = `${nv1.x},${nv1.y},${nv1.z}`;
+          const nk2 = `${nv2.x},${nv2.y},${nv2.z}`;
+
+          if (
+            (key1 === nk1 && key2 === nk2) ||
+            (key1 === nk2 && key2 === nk1)
+          ) {
+            return false; // Shared with faction neighbor, not a boundary
+          }
+        }
+      }
+    }
+    return true; // No faction neighbor shares this edge = boundary
+  }
+
+  /**
+   * Build ribbon geometry for border glow effect
+   * Creates quads along boundary edges that fade inward
+   * @param {Set<number>} factionTiles - Set of tile indices owned by the faction
+   * @returns {THREE.BufferGeometry|null}
+   */
+  _buildBorderRibbonGeometry(factionTiles) {
+    const glowWidth = BORDER_GLOW_CONFIG.glowWidth;
+    const zOffset = BORDER_GLOW_CONFIG.zOffset;
+
+    const positions = [];
+    const distanceAttrib = []; // 0 at edge, 1 at inner boundary
+    const indices = [];
+    let vertexIndex = 0;
+
+    // For each boundary edge, create a ribbon quad
+    for (const tileIdx of factionTiles) {
+      const tile = this._tiles[tileIdx];
+      if (!tile) continue;
+
+      const boundary = tile.boundary;
+      const tileCenter = new THREE.Vector3(
+        parseFloat(tile.centerPoint.x),
+        parseFloat(tile.centerPoint.y),
+        parseFloat(tile.centerPoint.z),
+      );
+
+      for (let i = 0; i < boundary.length; i++) {
+        const v1 = boundary[i];
+        const v2 = boundary[(i + 1) % boundary.length];
+
+        // Check if this edge is on the faction boundary
+        if (this._isEdgeFactionBoundary(tileIdx, v1, v2, factionTiles)) {
+          // Apply terrain elevation scaling
+          const es = this.terrainElevation
+            ? this.terrainElevation.getExtrusion(
+                this.terrainElevation.getElevationAtTileIndex(tileIdx),
+              )
+            : 1;
+          const p1 = new THREE.Vector3(
+            parseFloat(v1.x) * es,
+            parseFloat(v1.y) * es,
+            parseFloat(v1.z) * es,
+          );
+          const p2 = new THREE.Vector3(
+            parseFloat(v2.x) * es,
+            parseFloat(v2.y) * es,
+            parseFloat(v2.z) * es,
+          );
+
+          // Calculate inward direction (toward elevated tile center)
+          const edgeMid = p1.clone().add(p2).multiplyScalar(0.5);
+          const elevatedCenter = tileCenter.clone().multiplyScalar(es);
+          const inwardDir = elevatedCenter.sub(edgeMid).normalize();
+
+          // Surface normal for z-offset
+          const surfaceNormal = edgeMid.clone().normalize();
+
+          // Create 4 vertices for ribbon quad:
+          // outer1, outer2 (at boundary edge, distance=0)
+          // inner1, inner2 (offset inward, distance=1)
+
+          const outer1 = p1
+            .clone()
+            .add(surfaceNormal.clone().multiplyScalar(zOffset));
+          const outer2 = p2
+            .clone()
+            .add(surfaceNormal.clone().multiplyScalar(zOffset));
+
+          const inner1 = p1
+            .clone()
+            .add(inwardDir.clone().multiplyScalar(glowWidth))
+            .add(surfaceNormal.clone().multiplyScalar(zOffset));
+          const inner2 = p2
+            .clone()
+            .add(inwardDir.clone().multiplyScalar(glowWidth))
+            .add(surfaceNormal.clone().multiplyScalar(zOffset));
+
+          // Add vertices: outer1, outer2, inner1, inner2
+          positions.push(
+            outer1.x,
+            outer1.y,
+            outer1.z,
+            outer2.x,
+            outer2.y,
+            outer2.z,
+            inner1.x,
+            inner1.y,
+            inner1.z,
+            inner2.x,
+            inner2.y,
+            inner2.z,
+          );
+
+          // Distance attribute: 0 at edge, 1 at inner
+          distanceAttrib.push(0, 0, 1, 1);
+
+          // Two triangles for the quad
+          indices.push(
+            vertexIndex,
+            vertexIndex + 1,
+            vertexIndex + 2,
+            vertexIndex + 1,
+            vertexIndex + 3,
+            vertexIndex + 2,
+          );
+
+          vertexIndex += 4;
+        }
+      }
+    }
+
+    if (positions.length === 0) return null;
+
+    const geometry = new THREE.BufferGeometry();
+    geometry.setAttribute(
+      "position",
+      new THREE.Float32BufferAttribute(positions, 3),
+    );
+    geometry.setAttribute(
+      "distanceFromEdge",
+      new THREE.Float32BufferAttribute(distanceAttrib, 1),
+    );
+    geometry.setIndex(indices);
+    geometry.computeVertexNormals();
+
+    return geometry;
+  }
+
+  /**
+   * Create or update the border glow for a faction's territory
+   * @param {string} faction - 'rust', 'cobalt', or 'viridian'
+   */
+  _createFactionBorderGlow(faction) {
+    // Remove existing border glow for this faction
+    this._removeFactionBorderGlow(faction);
+
+    // Collect all tiles owned by this faction
+    const factionTiles = new Set();
+    for (const [clusterId, owner] of this.clusterOwnership) {
+      if (owner === faction) {
+        const cluster = this.clusterData[clusterId];
+        if (cluster && cluster.tiles) {
+          for (const tileIdx of cluster.tiles) {
+            factionTiles.add(tileIdx);
+          }
+        }
+      }
+    }
+
+    if (factionTiles.size === 0) {
+      return;
+    }
+
+    // Build ribbon geometry from boundary edges
+    const geometry = this._buildBorderRibbonGeometry(factionTiles);
+    if (!geometry) return;
+
+    // Create material with faction color
+    const factionColor = FACTION_COLORS[faction].threeLight;
+    const material = this._createBorderGlowMaterial(factionColor);
+
+    const mesh = new THREE.Mesh(geometry, material);
+    mesh.renderOrder = 2; // Above terrain overlays
+    this.hexGroup.add(mesh);
+    this.factionBorderGlows.set(faction, mesh);
+  }
+
+  /**
+   * Remove the border glow for a faction
+   * @param {string} faction - 'rust', 'cobalt', or 'viridian'
+   */
+  _removeFactionBorderGlow(faction) {
+    const glow = this.factionBorderGlows.get(faction);
+    if (glow) {
+      this.hexGroup.remove(glow);
+      glow.geometry.dispose();
+      glow.material.dispose();
+      this.factionBorderGlows.delete(faction);
+    }
+  }
+
+  /**
+   * Animate border glow appearing (fade-in with pulse)
+   * @param {string} faction - The faction
+   */
+  _animateBorderGlowAppear(faction) {
+    const startTime = performance.now();
+    const duration = 1200;
+
+    // Cancel existing animations for this faction
+    this._borderGlowAnimations = this._borderGlowAnimations.filter(
+      (a) => a.faction !== faction,
+    );
+
+    this._borderGlowAnimations.push({
+      faction,
+      startTime,
+      duration,
+      type: "appear",
+    });
+  }
+
+  /**
+   * Animate border glow disappearing (fade-out)
+   * @param {string} faction - The faction
+   */
+  _animateBorderGlowDisappear(faction) {
+    const startTime = performance.now();
+    const duration = 800;
+
+    // Cancel existing animations for this faction
+    this._borderGlowAnimations = this._borderGlowAnimations.filter(
+      (a) => a.faction !== faction,
+    );
+
+    this._borderGlowAnimations.push({
+      faction,
+      startTime,
+      duration,
+      type: "disappear",
+    });
+  }
+
+  /**
+   * Update border glow animations each frame
+   * @param {number} now - Current timestamp from performance.now()
+   */
+  _updateBorderGlowAnimations(now) {
+    const completed = [];
+
+    for (let i = 0; i < this._borderGlowAnimations.length; i++) {
+      const anim = this._borderGlowAnimations[i];
+      const elapsed = now - anim.startTime;
+      const t = Math.min(elapsed / anim.duration, 1);
+
+      const glow = this.factionBorderGlows.get(anim.faction);
+      if (!glow || !glow.material || !glow.material.uniforms) {
+        completed.push(i);
+        continue;
+      }
+
+      const material = glow.material;
+
+      if (anim.type === "appear") {
+        // Fade in with pulse
+        if (t < 0.4) {
+          const fadeT = t / 0.4;
+          material.uniforms.opacity.value =
+            BORDER_GLOW_CONFIG.baseOpacity * fadeT;
+          material.uniforms.pulseIntensity.value = (1 - fadeT) * 0.5;
+        } else {
+          material.uniforms.opacity.value = BORDER_GLOW_CONFIG.baseOpacity;
+          material.uniforms.pulseIntensity.value = 0;
+        }
+      } else if (anim.type === "disappear") {
+        // Fade out
+        material.uniforms.opacity.value =
+          BORDER_GLOW_CONFIG.baseOpacity * (1 - t);
+      }
+
+      // Update time uniform for any ongoing effects
+      material.uniforms.time.value = now * 0.001;
+
+      if (t >= 1) {
+        completed.push(i);
+        if (anim.type === "disappear") {
+          this._removeFactionBorderGlow(anim.faction);
+        }
+      }
+    }
+
+    // Remove completed animations (in reverse order to preserve indices)
+    for (let i = completed.length - 1; i >= 0; i--) {
+      this._borderGlowAnimations.splice(completed[i], 1);
+    }
+  }
+
+  /**
+   * Trigger a capture pulse glow on a faction's border ribbon.
+   * Called by CapturePulse when a wave reaches the cluster boundary.
+   * @param {string} faction - 'rust', 'cobalt', or 'viridian'
+   */
+  triggerCapturePulse(faction) {
+    const glow = this.factionBorderGlows.get(faction);
+    if (!glow || !glow.material || !glow.material.uniforms) return;
+
+    if (!this._capturePulseDecays) this._capturePulseDecays = [];
+
+    // Replace any existing decay for this faction
+    for (let i = this._capturePulseDecays.length - 1; i >= 0; i--) {
+      if (this._capturePulseDecays[i].faction === faction) {
+        this._capturePulseDecays.splice(i, 1);
+      }
+    }
+
+    glow.material.uniforms.pulseIntensity.value = 1.0;
+    this._capturePulseDecays.push({ faction, intensity: 1.0 });
+  }
+
+  /**
+   * Decay capture pulse glow intensities each frame.
+   * @param {number} deltaTime - Seconds since last frame
+   */
+  updateCapturePulseDecays(deltaTime) {
+    if (!this._capturePulseDecays || this._capturePulseDecays.length === 0)
+      return;
+
+    for (let i = this._capturePulseDecays.length - 1; i >= 0; i--) {
+      const decay = this._capturePulseDecays[i];
+      // Exponential decay: ~0.5s to near-zero
+      decay.intensity *= Math.pow(0.05, deltaTime);
+
+      const glow = this.factionBorderGlows.get(decay.faction);
+      if (glow && glow.material && glow.material.uniforms) {
+        glow.material.uniforms.pulseIntensity.value = decay.intensity;
+        glow.material.uniforms.time.value = performance.now() * 0.001;
+      }
+
+      if (decay.intensity < 0.01) {
+        if (glow && glow.material && glow.material.uniforms) {
+          glow.material.uniforms.pulseIntensity.value = 0;
+        }
+        this._capturePulseDecays.splice(i, 1);
+      }
+    }
+  }
+
+  /**
+   * Update dirty border glows (debounced)
+   */
+  _updateDirtyBorderGlows() {
+    if (this._dirtyFactionBorderGlows.size === 0) return;
+
+    const now = performance.now();
+    if (now - this._lastOutlineUpdate < 200) return; // Reuse debounce timing
+
+    for (const faction of this._dirtyFactionBorderGlows) {
+      this._createFactionBorderGlow(faction);
+    }
+    this._dirtyFactionBorderGlows.clear();
+  }
+
+  // ========================================================================
+  // END BORDER GLOW SYSTEM
+  // ========================================================================
+
+  /**
+   * Create a lighting-aware overlay material that adapts visibility based on surface lighting
+   * Boosts opacity and saturation on bright (sun-lit) areas so colors remain visible
+   * @param {THREE.Color} overlayColor - The base overlay color
+   * @returns {THREE.ShaderMaterial}
+   */
+  _createLightingAwareOverlayMaterial(overlayColor) {
+    // Overlay blend mode: boosts contrast, tints mid-tones
+    // Result = Src × DstColor + Dst × SrcColor
+    return new THREE.ShaderMaterial({
+      uniforms: {
+        overlayColor: { value: overlayColor.clone() },
+        opacity: { value: CLUSTER_OVERLAY_OPACITY },
+      },
+      vertexShader: `
+                void main() {
+                    gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+                }
+            `,
+      fragmentShader: `
+                uniform vec3 overlayColor;
+                uniform float opacity;
+
+                void main() {
+                    // Mix overlay color with neutral gray based on opacity
+                    // At 0% opacity: outputs gray (no effect)
+                    // At 100% opacity: outputs full overlay color
+                    vec3 blendedColor = mix(vec3(0.5), overlayColor, opacity);
+
+                    gl_FragColor = vec4(blendedColor, 1.0);
+                }
+            `,
+      transparent: true,
+      side: THREE.DoubleSide,
+      depthWrite: false,
+      // Overlay blend: Result = Src × DstColor + Dst × SrcColor
+      blending: THREE.CustomBlending,
+      blendEquation: THREE.AddEquation,
+      blendSrc: THREE.DstColorFactor,
+      blendDst: THREE.SrcColorFactor,
+    });
+  }
+
+  /**
+   * Create a simple color overlay mesh for a captured cluster
+   * @param {number} clusterId - The cluster ID
+   * @param {THREE.Color} overlayColor - The overlay color
+   */
+  _createClusterColorOverlay(clusterId, overlayColor) {
+    const cluster = this.clusterData[clusterId];
+    if (!cluster) return;
+
+    const tileIndices = cluster.tiles;
+    const tileSet = new Set(tileIndices);
+
+    // Collect all vertices for overlay geometry
+    const positions = [];
+    const indices = [];
+    let vertexOffset = 0;
+
+    this.hexGroup.children.forEach((mesh) => {
+      if (!mesh.userData || !tileSet.has(mesh.userData.tileIndex)) return;
+      if (!mesh.geometry || !mesh.geometry.attributes.position) return;
+
+      const pos = mesh.geometry.attributes.position.array;
+      const idx = mesh.geometry.index ? mesh.geometry.index.array : null;
+
+      // Add vertices with slight offset outward from planet center
+      for (let i = 0; i < pos.length; i += 3) {
+        const x = pos[i],
+          y = pos[i + 1],
+          z = pos[i + 2];
+        const len = Math.sqrt(x * x + y * y + z * z);
+        const offset = 0.01; // Slight offset to prevent z-fighting
+        positions.push(
+          x + (x / len) * offset,
+          y + (y / len) * offset,
+          z + (z / len) * offset,
+        );
+      }
+
+      // Add indices (triangles)
+      if (idx) {
+        for (let i = 0; i < idx.length; i++) {
+          indices.push(idx[i] + vertexOffset);
+        }
+      } else {
+        const vertCount = pos.length / 3;
+        for (let i = 1; i < vertCount - 1; i++) {
+          indices.push(vertexOffset, vertexOffset + i, vertexOffset + i + 1);
+        }
+      }
+
+      vertexOffset += pos.length / 3;
+    });
+
+    if (positions.length === 0) return;
+
+    // Create geometry
+    const geometry = new THREE.BufferGeometry();
+    geometry.setAttribute(
+      "position",
+      new THREE.Float32BufferAttribute(positions, 3),
+    );
+    geometry.setIndex(indices);
+    geometry.computeVertexNormals();
+
+    // Lighting-aware color overlay for occupied territory
+    // Boosts visibility on bright (sun-lit) areas
+    const material = this._createLightingAwareOverlayMaterial(overlayColor);
+
+    const mesh = new THREE.Mesh(geometry, material);
+    mesh.renderOrder = 1;
+    this.hexGroup.add(mesh);
+    this.clusterGlowOverlays.set(clusterId, mesh);
+  }
+
+  /**
+   * Remove the color overlay for a cluster
+   * @param {number} clusterId
+   */
+  _removeClusterColorOverlay(clusterId) {
+    const overlay = this.clusterGlowOverlays.get(clusterId);
+    if (overlay) {
+      this.hexGroup.remove(overlay);
+      overlay.geometry.dispose();
+      overlay.material.dispose();
+      this.clusterGlowOverlays.delete(clusterId);
+    }
+  }
+
+  /**
+   * Apply or remove color overlay to a cluster with transition animation
+   * @param {number} clusterId - The cluster ID
+   * @param {THREE.Color|null} overlayColor - The overlay color (null to remove)
+   * @param {THREE.Color|null} previousColor - The previous color for transitions
+   */
+  applyInnerGlowToCluster(clusterId, overlayColor, previousColor = null) {
+    const existingOverlay = this.clusterGlowOverlays.get(clusterId);
+
+    if (overlayColor) {
+      if (existingOverlay) {
+        // Faction-to-faction transition: pulse effect
+        this._animateOverlayTransition(
+          clusterId,
+          existingOverlay,
+          previousColor,
+          overlayColor,
+        );
+      } else {
+        // Unclaimed-to-faction: create with flash-in effect
+        this._createClusterColorOverlay(clusterId, overlayColor);
+        const newOverlay = this.clusterGlowOverlays.get(clusterId);
+        if (newOverlay) {
+          this._animateOverlayAppear(clusterId, newOverlay, overlayColor);
+        }
+      }
+    } else {
+      // Remove overlay (faction-to-unclaimed)
+      if (existingOverlay) {
+        this._animateOverlayDisappear(clusterId, existingOverlay);
+      }
+    }
+  }
+
+  /**
+   * Animate overlay appearing (unclaimed → faction)
+   * DRAMATIC: Blinding flash, multiple pulses, then settle
+   */
+  _animateOverlayAppear(clusterId, overlay, targetColor) {
+    const startTime = performance.now();
+    const duration = 1200; // Longer for drama
+    const material = overlay.material;
+
+    // Cancel any existing animations for this cluster
+    this._overlayAnimations = this._overlayAnimations.filter(
+      (a) => a.clusterId !== clusterId,
+    );
+
+    // Stop any weak territory flickering for this cluster
+    this._weakTerritories.delete(clusterId);
+
+    // Start with intense white flash
+    this._setOverlayColor(material, 1, 1, 1);
+    this._setOverlayOpacity(material, 1.0);
+
+    this._overlayAnimations.push({
+      clusterId,
+      overlay,
+      startTime,
+      duration,
+      type: "appear",
+      targetColor: targetColor.clone(),
+    });
+  }
+
+  /**
+   * Animate overlay disappearing (faction → unclaimed)
+   * DRAMATIC: Flicker and shatter effect
+   */
+  _animateOverlayDisappear(clusterId, overlay) {
+    const startTime = performance.now();
+    const duration = 800;
+    const material = overlay.material;
+
+    // Cancel any existing animations for this cluster
+    this._overlayAnimations = this._overlayAnimations.filter(
+      (a) => a.clusterId !== clusterId,
+    );
+
+    // Stop any weak territory flickering for this cluster
+    this._weakTerritories.delete(clusterId);
+
+    this._overlayAnimations.push({
+      clusterId,
+      overlay,
+      startTime,
+      duration,
+      type: "disappear",
+      startOpacity: this._getOverlayOpacity(material),
+      startColor: this._getOverlayColor(material),
+    });
+  }
+
+  /**
+   * Animate overlay transition (faction → faction)
+   * DRAMATIC: Explosion of old color, shockwave, new color emerges
+   */
+  _animateOverlayTransition(clusterId, overlay, fromColor, toColor) {
+    const startTime = performance.now();
+    const duration = 1500; // Long dramatic transition
+
+    // Cancel any existing animations for this cluster to prevent color blending issues
+    this._overlayAnimations = this._overlayAnimations.filter(
+      (a) => a.clusterId !== clusterId,
+    );
+
+    // Stop any weak territory flickering for this cluster
+    this._weakTerritories.delete(clusterId);
+
+    // Use the provided fromColor (original owner's color), not the current material color
+    // This prevents blended colors when transitions are interrupted
+    const safeFromColor = fromColor ? fromColor.clone() : toColor.clone();
+
+    // Immediately set the material to the true fromColor to clear any blended state
+    // This ensures the transition starts from the correct color, not a flickered blend
+    this._copyOverlayColor(overlay.material, safeFromColor);
+    this._setOverlayOpacity(overlay.material, 0.35);
+
+    this._overlayAnimations.push({
+      clusterId,
+      overlay,
+      startTime,
+      duration,
+      type: "transition",
+      fromColor: safeFromColor,
+      toColor: toColor.clone(),
+    });
+  }
+
+  /**
+   * Helper: Set overlay material color (works with both ShaderMaterial and MeshBasicMaterial)
+   */
+  _setOverlayColor(material, r, g, b) {
+    if (material.uniforms && material.uniforms.overlayColor) {
+      material.uniforms.overlayColor.value.setRGB(r, g, b);
+    } else if (material.color) {
+      material.color.setRGB(r, g, b);
+    }
+  }
+
+  /**
+   * Helper: Copy color to overlay material
+   */
+  _copyOverlayColor(material, color) {
+    if (material.uniforms && material.uniforms.overlayColor) {
+      material.uniforms.overlayColor.value.copy(color);
+    } else if (material.color) {
+      material.color.copy(color);
+    }
+  }
+
+  /**
+   * Helper: Set overlay material opacity (works with both ShaderMaterial and MeshBasicMaterial)
+   */
+  _setOverlayOpacity(material, opacity) {
+    if (material.uniforms && material.uniforms.opacity) {
+      material.uniforms.opacity.value = opacity;
+    } else if (material.uniforms && material.uniforms.baseOpacity) {
+      material.uniforms.baseOpacity.value = opacity;
+    } else {
+      material.opacity = opacity;
+    }
+  }
+
+  /**
+   * Helper: Get overlay material opacity
+   */
+  _getOverlayOpacity(material) {
+    if (material.uniforms && material.uniforms.opacity) {
+      return material.uniforms.opacity.value;
+    }
+    if (material.uniforms && material.uniforms.baseOpacity) {
+      return material.uniforms.baseOpacity.value;
+    }
+    return material.opacity || 0.25;
+  }
+
+  /**
+   * Helper: Get overlay material color
+   */
+  _getOverlayColor(material) {
+    if (material.uniforms && material.uniforms.overlayColor) {
+      return material.uniforms.overlayColor.value.clone();
+    }
+    return material.color ? material.color.clone() : new THREE.Color(1, 1, 1);
+  }
+
+  /**
+   * Update overlay animations - call this in your render loop
+   */
+  updateOverlayAnimations() {
+    const now = performance.now();
+    const completed = [];
+
+    for (let i = 0; i < this._overlayAnimations.length; i++) {
+      const anim = this._overlayAnimations[i];
+      const elapsed = now - anim.startTime;
+      const t = Math.min(elapsed / anim.duration, 1);
+
+      if (!anim.overlay || !anim.overlay.material) {
+        completed.push(i);
+        continue;
+      }
+
+      const material = anim.overlay.material;
+
+      if (anim.type === "appear") {
+        // CAPTURE: Gentle glow-in with subtle pulse
+        // Phase 1 (0-0.3): Slow fade in
+        // Phase 2 (0.3-0.6): Subtle pulse
+        // Phase 3 (0.6-1.0): Settle to final state
+
+        if (t < 0.3) {
+          // Gradual fade in - soft and subtle
+          const fadeT = t / 0.3;
+          const easeOut = 1 - Math.pow(1 - fadeT, 2);
+          this._setOverlayOpacity(material, easeOut * CLUSTER_OVERLAY_OPACITY);
+          // Subtle color warmth during fade-in
+          this._setOverlayColor(
+            material,
+            Math.min(1, anim.targetColor.r + (1 - easeOut) * 0.08),
+            Math.min(1, anim.targetColor.g + (1 - easeOut) * 0.08),
+            Math.min(1, anim.targetColor.b + (1 - easeOut) * 0.08),
+          );
+        } else if (t < 0.6) {
+          // Subtle pulse - gentle brightness swell
+          const pulseT = (t - 0.3) / 0.3;
+          const pulse = Math.sin(pulseT * Math.PI); // 0 -> 1 -> 0
+          this._setOverlayOpacity(
+            material,
+            CLUSTER_OVERLAY_OPACITY * (1 + pulse * 0.3),
+          );
+          // Slight color boost during pulse
+          this._setOverlayColor(
+            material,
+            Math.min(1, anim.targetColor.r + pulse * 0.06),
+            Math.min(1, anim.targetColor.g + pulse * 0.06),
+            Math.min(1, anim.targetColor.b + pulse * 0.06),
+          );
+        } else {
+          // Gentle settle to final state
+          const settleT = (t - 0.6) / 0.4;
+          const easeOut = 1 - Math.pow(1 - settleT, 2);
+          this._setOverlayOpacity(material, CLUSTER_OVERLAY_OPACITY);
+          this._copyOverlayColor(material, anim.targetColor);
+        }
+      } else if (anim.type === "disappear") {
+        // LOSS: Flicker, desaturate, fade
+        // Phase 1 (0-0.3): Subtle flickering
+        // Phase 2 (0.3-0.6): Desaturate to gray
+        // Phase 3 (0.6-1.0): Fade out
+
+        if (t < 0.3) {
+          // Flickering phase - territory is unstable
+          const flickerT = t / 0.3;
+          const flicker = Math.sin(flickerT * Math.PI * 8) * 0.5 + 0.5;
+          this._setOverlayOpacity(
+            material,
+            anim.startOpacity * (0.6 + flicker * 0.4),
+          );
+          // Occasional lightened flash (not pure white)
+          if (Math.sin(flickerT * Math.PI * 12) > 0.9) {
+            this._setOverlayColor(
+              material,
+              Math.min(1, anim.startColor.r + 0.3),
+              Math.min(1, anim.startColor.g + 0.3),
+              Math.min(1, anim.startColor.b + 0.3),
+            );
+          } else {
+            this._copyOverlayColor(material, anim.startColor);
+          }
+        } else if (t < 0.6) {
+          // Desaturate - life draining away
+          const desatT = (t - 0.3) / 0.3;
+          const gray =
+            (anim.startColor.r + anim.startColor.g + anim.startColor.b) / 3;
+          this._setOverlayColor(
+            material,
+            anim.startColor.r + (gray - anim.startColor.r) * desatT,
+            anim.startColor.g + (gray - anim.startColor.g) * desatT,
+            anim.startColor.b + (gray - anim.startColor.b) * desatT,
+          );
+          this._setOverlayOpacity(
+            material,
+            anim.startOpacity * (1 - desatT * 0.3),
+          );
+        } else {
+          // Final fade
+          const fadeT = (t - 0.6) / 0.4;
+          const easeIn = fadeT * fadeT;
+          this._setOverlayOpacity(
+            material,
+            anim.startOpacity * 0.7 * (1 - easeIn),
+          );
+        }
+      } else if (anim.type === "transition") {
+        // FLIP: Color crossfade with DOUBLE PULSE at end
+        // Phase 1 (0-0.2): Old color fades slightly
+        // Phase 2 (0.2-0.5): Smooth color blend
+        // Phase 3 (0.5-0.7): First pulse in new color
+        // Phase 4 (0.7-0.9): Second pulse (stronger)
+        // Phase 5 (0.9-1.0): Settle to final state
+
+        if (t < 0.2) {
+          // Old color fades slightly
+          const fadeT = t / 0.2;
+          const easeOut = 1 - Math.pow(1 - fadeT, 2);
+          this._setOverlayOpacity(
+            material,
+            CLUSTER_OVERLAY_OPACITY * (1 - easeOut * 0.15),
+          );
+          this._copyOverlayColor(material, anim.fromColor);
+        } else if (t < 0.5) {
+          // Smooth color blend
+          const blendT = (t - 0.2) / 0.3;
+          const easeInOut =
+            blendT < 0.5
+              ? 2 * blendT * blendT
+              : 1 - Math.pow(-2 * blendT + 2, 2) / 2;
+
+          // Blend colors smoothly
+          this._setOverlayColor(
+            material,
+            anim.fromColor.r + (anim.toColor.r - anim.fromColor.r) * easeInOut,
+            anim.fromColor.g + (anim.toColor.g - anim.fromColor.g) * easeInOut,
+            anim.fromColor.b + (anim.toColor.b - anim.fromColor.b) * easeInOut,
+          );
+          this._setOverlayOpacity(
+            material,
+            CLUSTER_OVERLAY_OPACITY * (0.85 + easeInOut * 0.15),
+          );
+        } else if (t < 0.7) {
+          // First pulse in new color
+          const pulseT = (t - 0.5) / 0.2;
+          const pulse = Math.sin(pulseT * Math.PI); // 0 -> 1 -> 0
+          this._setOverlayOpacity(
+            material,
+            CLUSTER_OVERLAY_OPACITY * (1 + pulse * 0.4),
+          );
+          // Color boost during pulse
+          this._setOverlayColor(
+            material,
+            Math.min(1, anim.toColor.r + pulse * 0.1),
+            Math.min(1, anim.toColor.g + pulse * 0.1),
+            Math.min(1, anim.toColor.b + pulse * 0.1),
+          );
+        } else if (t < 0.9) {
+          // Second pulse (stronger for emphasis)
+          const pulseT = (t - 0.7) / 0.2;
+          const pulse = Math.sin(pulseT * Math.PI); // 0 -> 1 -> 0
+          this._setOverlayOpacity(
+            material,
+            CLUSTER_OVERLAY_OPACITY * (1 + pulse * 0.6),
+          );
+          // Stronger color boost on second pulse
+          this._setOverlayColor(
+            material,
+            Math.min(1, anim.toColor.r + pulse * 0.15),
+            Math.min(1, anim.toColor.g + pulse * 0.15),
+            Math.min(1, anim.toColor.b + pulse * 0.15),
+          );
+        } else {
+          // Settle to final state
+          const settleT = (t - 0.9) / 0.1;
+          const easeOut = 1 - Math.pow(1 - settleT, 2);
+
+          this._copyOverlayColor(material, anim.toColor);
+          this._setOverlayOpacity(material, CLUSTER_OVERLAY_OPACITY);
+        }
+      }
+
+      if (t >= 1) {
+        completed.push(i);
+
+        // Ensure final state is exactly correct - use current owner's true color
+        // This handles edge cases where ownership changed during animation
+        if (anim.type === "appear" || anim.type === "transition") {
+          const state = this.clusterCaptureState.get(anim.clusterId);
+          if (state && state.owner && FACTION_COLORS[state.owner]) {
+            // Use the TRUE current owner color, not the animation's target
+            // This ensures we never end up with a stale/blended color
+            this._copyOverlayColor(
+              material,
+              FACTION_COLORS[state.owner].threeLight,
+            );
+          } else if (anim.type === "appear") {
+            this._copyOverlayColor(material, anim.targetColor);
+          } else {
+            this._copyOverlayColor(material, anim.toColor);
+          }
+          this._setOverlayOpacity(material, CLUSTER_OVERLAY_OPACITY);
+        }
+
+        // Final cleanup for disappear animations
+        if (anim.type === "disappear") {
+          this._removeClusterColorOverlay(anim.clusterId);
+        }
+      }
+    }
+
+    // Remove completed animations (reverse order to preserve indices)
+    for (let i = completed.length - 1; i >= 0; i--) {
+      this._overlayAnimations.splice(completed[i], 1);
+    }
+
+    // Apply flicker effect to weak territories
+    this._updateWeakTerritoryFlicker(now);
+  }
+
+  /**
+   * Mark a territory as weak (about to be recaptured) - triggers flickering
+   * @param {number} clusterId
+   * @param {string|null} attackingFaction - faction name or null if not weak
+   */
+  setTerritoryWeak(clusterId, attackingFaction) {
+    if (attackingFaction) {
+      this._weakTerritories.set(clusterId, attackingFaction);
+    } else {
+      // Clear from map and restore the true owner color immediately
+      if (this._weakTerritories.has(clusterId)) {
+        this._weakTerritories.delete(clusterId);
+        this._restoreOwnerColor(clusterId);
+      }
+    }
+  }
+
+  /**
+   * Restore the true owner color to a cluster overlay (used after flickering ends)
+   */
+  _restoreOwnerColor(clusterId) {
+    const overlay = this.clusterGlowOverlays.get(clusterId);
+    if (!overlay || !overlay.material) return;
+
+    // Skip if there's an active animation (it will handle the color)
+    const hasActiveAnimation = this._overlayAnimations.some(
+      (a) => a.clusterId === clusterId,
+    );
+    if (hasActiveAnimation) return;
+
+    const state = this.clusterCaptureState.get(clusterId);
+    if (!state || !state.owner) return;
+
+    const ownerColor = FACTION_COLORS[state.owner]?.threeLight;
+    if (!ownerColor) return;
+
+    // Immediately restore the true owner color
+    this._copyOverlayColor(overlay.material, ownerColor);
+    this._setOverlayOpacity(overlay.material, CLUSTER_OVERLAY_OPACITY);
+  }
+
+  /**
+   * Apply flickering effect to weak territories - flickers between owner and attacker colors
+   */
+  _updateWeakTerritoryFlicker(now) {
+    for (const [clusterId, attackingFaction] of this._weakTerritories) {
+      const overlay = this.clusterGlowOverlays.get(clusterId);
+      if (!overlay || !overlay.material) continue;
+
+      // Skip if there's an active animation for this cluster
+      const hasActiveAnimation = this._overlayAnimations.some(
+        (a) => a.clusterId === clusterId,
+      );
+      if (hasActiveAnimation) continue;
+
+      // Get current owner from capture state
+      const state = this.clusterCaptureState.get(clusterId);
+      if (!state || !state.owner) continue;
+
+      // Skip if the "attacker" is now the owner (ownership changed, map is stale)
+      if (state.owner === attackingFaction) {
+        this._weakTerritories.delete(clusterId);
+        continue;
+      }
+
+      const ownerColor = FACTION_COLORS[state.owner]?.threeLight;
+      const attackerColor = FACTION_COLORS[attackingFaction]?.threeLight;
+      if (!ownerColor || !attackerColor) continue;
+
+      const material = overlay.material;
+      const t = now / 1000;
+
+      // Irregular flicker pattern - "dying bulb" feel
+      const slowWave = Math.sin(t * 3.5);
+      const fastWave = Math.sin(t * 12);
+      const veryFast = Math.sin(t * 47);
+
+      // Combine waves for irregular color blend factor (0 = owner, 1 = attacker)
+      const baseBlend =
+        (slowWave * 0.4 + fastWave * 0.3 + veryFast * 0.3) * 0.5 + 0.5;
+
+      // Random "stutter" moments - sudden jumps to attacker color
+      const stutterChance = Math.sin(t * 7.3) * Math.sin(t * 11.1);
+      const stutter = stutterChance > 0.7 ? 0.4 : 0;
+
+      // Occasional near-blackout flicker
+      const blackoutChance = Math.sin(t * 2.1) * Math.sin(t * 3.7);
+      const dimAmount = blackoutChance > 0.85 ? 0.15 : 0;
+
+      // Final blend factor clamped
+      const blend = Math.max(0, Math.min(1, baseBlend + stutter));
+
+      // Interpolate between owner and attacker colors
+      this._setOverlayColor(
+        material,
+        ownerColor.r + (attackerColor.r - ownerColor.r) * blend,
+        ownerColor.g + (attackerColor.g - ownerColor.g) * blend,
+        ownerColor.b + (attackerColor.b - ownerColor.b) * blend,
+      );
+
+      // Opacity flicker
+      const baseOpacity = CLUSTER_OVERLAY_OPACITY;
+      const opacityFlicker = slowWave * 0.1 + fastWave * 0.05 - dimAmount;
+      this._setOverlayOpacity(
+        material,
+        Math.max(
+          CLUSTER_OVERLAY_OPACITY * 0.4,
+          baseOpacity + opacityFlicker * CLUSTER_OVERLAY_OPACITY,
+        ),
+      );
+    }
+  }
+}

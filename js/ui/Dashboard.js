@@ -1,0 +1,2328 @@
+/**
+ * AdLands - Dashboard System
+ * Collapsible left-side dashboard with multiple panels
+ */
+
+// Upgrade definitions per category
+const UPGRADES = {
+  offense: [
+    { id: "cannon", name: "Cannon" },
+    { id: "gunner", name: "Gunner" },
+    { id: "50cal", name: "50 Cal" },
+    { id: "missile", name: "Missile" },
+    { id: "flamethrower", name: "Flame Thrower" },
+  ],
+  defense: [
+    { id: "shield", name: "Shield" },
+    { id: "flares", name: "Flares" },
+    { id: "barricades", name: "Barricades" },
+  ],
+  tactical: [
+    { id: "proximity_mine", name: "Proximity Mine" },
+    { id: "foot_soldiers", name: "Foot Soldiers" },
+    { id: "turrets", name: "Turrets" },
+    { id: "welding_gun", name: "Welding Gun" },
+  ],
+};
+
+// Slot unlock levels
+const SLOT_UNLOCKS = {
+  "offense-1": 1,
+  "defense-1": 3,
+  "tactical-1": 5,
+  "offense-2": 8,
+  "defense-2": 12,
+  "tactical-2": 15,
+};
+
+class Dashboard {
+  constructor() {
+    // Panel definitions in order (profile is now in header)
+    this.panels = [
+      "notifications",
+      "stats",
+      "loadout",
+      "social",
+      "messages",
+      "tasks",
+      "share",
+      "settings",
+    ];
+
+    // Panel metadata
+    this.panelMeta = {
+      notifications: { icon: "\u26A0", title: "Notifications", hasBadge: true },
+      stats: { icon: "\uD83D\uDCC8", title: "Stats", hasBadge: false },
+      loadout: { icon: "\u2699", title: "Loadout", hasBadge: false },
+      social: { icon: "\uD83D\uDC65", title: "Social", hasBadge: true },
+      messages: { icon: "\uD83D\uDCAC", title: "Messages", hasBadge: true },
+      tasks: { icon: "\uD83D\uDCCB", title: "Tasks", hasBadge: true },
+      share: { icon: "\uD83D\uDCF7", title: "Share", hasBadge: false },
+      settings: { icon: "\u2699", title: "Settings", hasBadge: false },
+    };
+
+    // State
+    this.isVisible = true;
+    this.panelStates = new Map();
+    this.badgeCounts = new Map();
+
+    // Loadout state
+    this.equippedUpgrades = {}; // slot -> upgradeId
+    this.loadoutInitialized = false;
+
+    // DOM references
+    this.container = null;
+    this.panelElements = new Map();
+
+    // External references (set by main.js)
+    this.cryptoSystem = null;
+    this.settingsManager = null;
+    this.playerData = null;
+
+    // Cached values for dirty-checking (skip DOM writes when unchanged)
+    this._cachedStats = { kills: null, deaths: null, kd: null, damage: null, tics: null, hexes: null, clusters: null };
+    this._cachedProfile = { level: null, crypto: null, rank: null };
+    this._formattedStrings = { damage: "", tics: "", crypto: "" };
+    this._serverCryptoMode = false; // When true, updateCrypto() owns the roller (skip updateProfile crypto)
+
+    // Slot-machine roller state
+    this._rollerColumns = [];
+    this._rollerPreviousString = "";
+    this._rollerContainer = null;
+
+    // Load persisted state
+    this._loadState();
+
+    // Create UI
+    this._createUI();
+
+    // Setup event listeners
+    this._setupEventListeners();
+
+    // Initialize loadout if panel was already expanded (persisted from previous session)
+    const loadoutState = this.panelStates.get("loadout");
+    if (loadoutState && loadoutState.expanded) {
+      // Defer initialization to ensure DOM is ready and playerLevel is set
+      setTimeout(() => {
+        this.initLoadout(this.playerLevel || 1);
+      }, 0);
+    }
+  }
+
+  // ========================
+  // UI CREATION
+  // ========================
+
+  _createUI() {
+    // Create dashboard container
+    this.container = document.createElement("div");
+    this.container.id = "dashboard-container";
+    this.container.className = "dashboard";
+
+    // Create header
+    const header = this._createHeader();
+    this.container.appendChild(header);
+
+    // Create scrollable panels container
+    const panelsContainer = document.createElement("div");
+    panelsContainer.className = "dashboard-panels";
+
+    // Create each panel
+    this.panels.forEach((panelId, index) => {
+      const panel = this._createPanel(panelId, index);
+      panelsContainer.appendChild(panel);
+      this.panelElements.set(panelId, panel);
+    });
+
+    this.container.appendChild(panelsContainer);
+    document.body.appendChild(this.container);
+
+    // Apply initial visibility state
+    if (!this.isVisible) {
+      this.container.classList.add("collapsed");
+    }
+
+    // Apply settings section collapsed states
+    this._applySectionStates();
+  }
+
+  _createHeader() {
+    const header = document.createElement("div");
+    header.className = "dashboard-header";
+    header.innerHTML = `
+            <div class="header-profile card-header-row">
+                <div class="header-avatar card-header-image" id="dashboard-avatar">
+                    <div class="avatar-inner" id="dashboard-avatar-inner"></div>
+                </div>
+                <div class="header-info card-header-info">
+                    <div class="header-name card-header-name" id="dashboard-player-name">Player</div>
+                    <div class="header-title-row">
+                        <div class="header-title card-header-subtitle" id="dashboard-player-title">Rookie Contractor</div>
+                        <div class="commander-resign-dropdown hidden" id="commander-resign-dropdown">
+                            <button class="resign-toggle" id="resign-toggle-btn">Resign ▼</button>
+                            <div class="resign-menu hidden" id="resign-menu">
+                                <div class="resign-header">Resign Command</div>
+                                <button class="resign-option" data-duration="60000">For 1 Minute</button>
+                                <button class="resign-option" data-duration="3600000">For 1 Hour</button>
+                                <button class="resign-option" data-duration="86400000">For 24 Hours</button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="header-crypto">
+                <div class="header-level" id="dashboard-level">1</div>
+                <div class="header-faction-rank" id="dashboard-faction-rank"></div>
+                <div class="header-crypto-amount">¢ <span id="dashboard-crypto-current">0</span></div>
+            </div>
+            <div class="header-badges" id="dashboard-badges">
+                <div class="header-badges-label">Badges (<span id="dashboard-badge-count">0</span>)</div>
+                <div class="header-badges-grid" id="dashboard-badges-grid"></div>
+            </div>
+        `;
+
+    // Setup resign dropdown after header is created
+    setTimeout(() => this._setupResignDropdown(), 0);
+
+    return header;
+  }
+
+  /**
+   * Setup the resign dropdown menu events
+   */
+  _setupResignDropdown() {
+    const toggleBtn = document.getElementById("resign-toggle-btn");
+    const menu = document.getElementById("resign-menu");
+
+    if (!toggleBtn || !menu) return;
+
+    // Toggle menu on button click
+    toggleBtn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      const wasHidden = menu.classList.contains("hidden");
+      menu.classList.toggle("hidden");
+
+      // Position menu below the toggle button when opening
+      if (wasHidden) {
+        const rect = toggleBtn.getBoundingClientRect();
+        menu.style.top = `${rect.bottom + 4}px`;
+        menu.style.left = `${rect.left}px`;
+      }
+    });
+
+    // Handle resign option clicks
+    menu.addEventListener("click", (e) => {
+      const option = e.target.closest(".resign-option");
+      if (option) {
+        const duration = parseInt(option.dataset.duration, 10);
+        this._handleResign(duration);
+        menu.classList.add("hidden");
+      }
+    });
+
+    // Close menu when clicking outside
+    document.addEventListener("click", (e) => {
+      if (!e.target.closest(".commander-resign-dropdown")) {
+        menu.classList.add("hidden");
+      }
+    });
+  }
+
+  /**
+   * Handle commander resignation
+   * @param {number} duration - Resignation duration in milliseconds
+   */
+  _handleResign(duration) {
+    if (!window.commanderSystem) return;
+
+    const durationText =
+      duration === 60000
+        ? "1 minute"
+        : duration === 3600000
+          ? "1 hour"
+          : "24 hours";
+
+    // Resign from commander role
+    window.commanderSystem.resignCommander(duration);
+
+    // Show Tusk commentary about resignation
+    if (window.tuskCommentary && window.tuskCommentary.onCommanderResign) {
+      window.tuskCommentary.onCommanderResign(durationText);
+    }
+  }
+
+  /**
+   * Update commander badge visibility and button state
+   * @param {boolean} isCommander - Whether the player is currently commander
+   */
+  updateCommanderStatus(isCommander) {
+    // Update resign dropdown visibility
+    const resignDropdown = document.getElementById("commander-resign-dropdown");
+    if (resignDropdown) {
+      if (isCommander) {
+        resignDropdown.classList.remove("hidden");
+      } else {
+        resignDropdown.classList.add("hidden");
+        // Close resign menu if open
+        const menu = document.getElementById("resign-menu");
+        if (menu) menu.classList.add("hidden");
+      }
+    }
+
+    // Update title to "Commander" (gold) or restore previous title
+    const titleEl = document.getElementById("dashboard-player-title");
+    if (titleEl) {
+      if (isCommander) {
+        // Store previous title for restoration
+        if (!this._previousTitle) {
+          this._previousTitle = titleEl.textContent;
+        }
+        titleEl.textContent = "Commander";
+        titleEl.classList.add("commander-title");
+      } else {
+        // Restore previous title (fallback to title system or default)
+        const restored = this._previousTitle
+          || (this.titleSystem && this.titleSystem.getTitle())
+          || "Contractor";
+        titleEl.textContent = restored;
+        this._previousTitle = null;
+        titleEl.classList.remove("commander-title");
+      }
+    }
+
+    // Update button state
+    this._updateBecomeCommanderButton(isCommander);
+  }
+
+  _createPanel(panelId, order) {
+    const state = this.panelStates.get(panelId) || { expanded: false, order };
+    const meta = this.panelMeta[panelId];
+
+    const panel = document.createElement("div");
+    panel.className = "dashboard-panel";
+    panel.dataset.panel = panelId;
+
+    // Create header
+    const header = document.createElement("div");
+    header.className = "panel-header";
+    header.dataset.expanded = state.expanded.toString();
+
+    const badgeCount = this.badgeCounts.get(panelId) || 0;
+    const badgeHidden = !meta.hasBadge || badgeCount <= 0;
+
+    header.innerHTML = `
+            <span class="panel-icon">${meta.icon}</span>
+            <span class="panel-title">${meta.title}</span>
+            <span class="panel-badge${badgeHidden ? " hidden" : ""}">${badgeCount}</span>
+            <span class="panel-chevron">\u25B6</span>
+        `;
+
+    // Create content
+    const content = document.createElement("div");
+    content.className = "panel-content";
+    content.innerHTML = this._buildPanelContent(panelId);
+
+    panel.appendChild(header);
+    panel.appendChild(content);
+
+    return panel;
+  }
+
+  _buildPanelContent(panelId) {
+    switch (panelId) {
+      case "notifications":
+        return this._buildNotificationsContent();
+      case "stats":
+        return this._buildStatsContent();
+      case "loadout":
+        return this._buildLoadoutContent();
+      case "social":
+        return this._buildSocialContent();
+      case "messages":
+        return this._buildMessagesContent();
+      case "tasks":
+        return this._buildTasksContent();
+      case "share":
+        return this._buildShareContent();
+      case "settings":
+        return this._buildSettingsContent();
+      default:
+        return '<div class="panel-inner"><p>Coming soon...</p></div>';
+    }
+  }
+
+  // ========================
+  // PANEL CONTENT BUILDERS
+  // ========================
+
+  _buildNotificationsContent() {
+    return `
+            <div class="panel-inner">
+                <div class="notification-list" id="notification-list">
+                    <div class="empty-state">No notifications</div>
+                </div>
+            </div>
+        `;
+  }
+
+  _buildStatsContent() {
+    return `
+            <div class="panel-inner">
+                <div class="stat-row">
+                    <span class="stat-label">Kills:</span>
+                    <span class="stat-value" id="dashboard-kills">0</span>
+                </div>
+                <div class="stat-row">
+                    <span class="stat-label">Deaths:</span>
+                    <span class="stat-value" id="dashboard-deaths">0</span>
+                </div>
+                <div class="stat-row">
+                    <span class="stat-label">K/D Ratio:</span>
+                    <span class="stat-value" id="dashboard-kd">0.00</span>
+                </div>
+                <div class="stat-row">
+                    <span class="stat-label">Damage Dealt:</span>
+                    <span class="stat-value" id="dashboard-damage">0</span>
+                </div>
+                <div class="stat-row">
+                    <span class="stat-label">Tics Contributed:</span>
+                    <span class="stat-value" id="dashboard-tics">0</span>
+                </div>
+                <div class="stat-row">
+                    <span class="stat-label">Hexes Captured:</span>
+                    <span class="stat-value" id="dashboard-hexes">0</span>
+                </div>
+                <div class="stat-row">
+                    <span class="stat-label">Clusters Captured:</span>
+                    <span class="stat-value" id="dashboard-clusters">0</span>
+                </div>
+            </div>
+        `;
+  }
+
+  _buildLoadoutContent() {
+    return `
+            <div class="panel-inner">
+                <div class="loadout-container">
+                    <!-- 3-Column Layout: Upgrades + Slots per category -->
+                    <div class="loadout-columns" id="loadout-columns">
+                        <!-- Rendered dynamically -->
+                    </div>
+
+                    <!-- Tank Preview (real-time 3D) -->
+                    <div class="loadout-tank-preview">
+                        <canvas id="tank-preview-canvas"></canvas>
+                    </div>
+                </div>
+            </div>
+        `;
+  }
+
+  _buildSocialContent() {
+    return `
+            <div class="panel-inner">
+                <div class="social-section">
+                    <div class="section-title">Friends (0)</div>
+                    <div class="social-search">
+                        <input type="text" class="social-search-input" id="friend-search" placeholder="Search players...">
+                    </div>
+                    <div class="friends-list" id="dashboard-friends">
+                        <div class="empty-state">No friends yet</div>
+                    </div>
+                </div>
+                <div class="social-section">
+                    <div class="section-title">Squad</div>
+                    <div class="squad-info" id="dashboard-squad">
+                        <div class="empty-state">Not in a squad</div>
+                    </div>
+                    <button class="squad-btn" id="btn-open-squad">Open a Squad</button>
+                </div>
+            </div>
+        `;
+  }
+
+  _buildMessagesContent() {
+    return `
+            <div class="panel-inner">
+                <div class="messages-tabs">
+                    <button class="msg-tab active" data-tab="dm">DMs</button>
+                    <button class="msg-tab" data-tab="faction">Faction</button>
+                    <button class="msg-tab" data-tab="global">Global</button>
+                </div>
+                <div class="messages-list" id="dashboard-messages">
+                    <div class="empty-state">No messages</div>
+                </div>
+            </div>
+        `;
+  }
+
+  _buildTasksContent() {
+    return `
+            <div class="panel-inner">
+                <div class="tasks-section">
+                    <div class="section-title">Daily Tasks</div>
+                    <div class="tasks-list" id="dashboard-daily-tasks">
+                        <div class="empty-state">No active tasks</div>
+                    </div>
+                </div>
+                <div class="tasks-section">
+                    <div class="section-title">Weekly Tasks</div>
+                    <div class="tasks-list" id="dashboard-weekly-tasks">
+                        <div class="empty-state">No active tasks</div>
+                    </div>
+                </div>
+            </div>
+        `;
+  }
+
+  _buildShareContent() {
+    return `
+            <div class="panel-inner">
+                <button class="share-btn" id="btn-screenshot">
+                    \uD83D\uDCF7 Take Screenshot (F12)
+                </button>
+                <div class="share-preview" id="share-preview">
+                    <div class="empty-state">No screenshot</div>
+                </div>
+                <div class="share-buttons">
+                    <button class="social-share-btn" data-platform="twitter" disabled>Twitter/X</button>
+                    <button class="social-share-btn" data-platform="reddit" disabled>Reddit</button>
+                    <button class="social-share-btn" data-platform="download" disabled>Download</button>
+                </div>
+            </div>
+        `;
+  }
+
+  _buildSettingsContent() {
+    return `
+            <div class="panel-inner settings-panel">
+                <!-- Graphics Section -->
+                <div class="settings-section" data-section="graphics">
+                    <div class="settings-section-header">
+                        <span class="settings-section-chevron">▶</span>
+                        <span class="settings-section-title">Graphics</span>
+                        <button class="reset-section-btn" data-section="graphics" title="Reset Graphics">↺</button>
+                    </div>
+                    <div class="settings-section-content">
+                        <div class="setting-row">
+                            <label>Shadows</label>
+                            <label class="toggle-switch">
+                                <input type="checkbox" id="setting-shadows" checked>
+                                <span class="toggle-slider"></span>
+                            </label>
+                        </div>
+                        <div class="setting-row">
+                            <label>Lens Dirt</label>
+                            <label class="toggle-switch">
+                                <input type="checkbox" id="setting-lens-dirt" checked>
+                                <span class="toggle-slider"></span>
+                            </label>
+                        </div>
+                        <div class="setting-row">
+                            <label>Vignette</label>
+                            <label class="toggle-switch">
+                                <input type="checkbox" id="setting-vignette" checked>
+                                <span class="toggle-slider"></span>
+                            </label>
+                        </div>
+                        <div class="setting-row">
+                            <label>Chromatic Aberration</label>
+                            <label class="toggle-switch">
+                                <input type="checkbox" id="setting-chromatic" checked>
+                                <span class="toggle-slider"></span>
+                            </label>
+                        </div>
+                        <div class="setting-row">
+                            <label>Damage Effects</label>
+                            <label class="toggle-switch">
+                                <input type="checkbox" id="setting-damage-effects" checked>
+                                <span class="toggle-slider"></span>
+                            </label>
+                        </div>
+                        <div class="setting-row sub-setting">
+                            <label>Scanlines</label>
+                            <label class="toggle-switch">
+                                <input type="checkbox" id="setting-damage-scanlines" checked>
+                                <span class="toggle-slider"></span>
+                            </label>
+                        </div>
+                        <div class="setting-row sub-setting">
+                            <label>Noise</label>
+                            <label class="toggle-switch">
+                                <input type="checkbox" id="setting-damage-noise" checked>
+                                <span class="toggle-slider"></span>
+                            </label>
+                        </div>
+                        <div class="setting-row sub-setting">
+                            <label>Glitch</label>
+                            <label class="toggle-switch">
+                                <input type="checkbox" id="setting-damage-glitch" checked>
+                                <span class="toggle-slider"></span>
+                            </label>
+                        </div>
+                        <div class="setting-row sub-setting">
+                            <label>Signal Loss</label>
+                            <label class="toggle-switch">
+                                <input type="checkbox" id="setting-damage-signal-loss" checked>
+                                <span class="toggle-slider"></span>
+                            </label>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Audio Section -->
+                <div class="settings-section" data-section="audio">
+                    <div class="settings-section-header">
+                        <span class="settings-section-chevron">▶</span>
+                        <span class="settings-section-title">Audio</span>
+                        <button class="reset-section-btn" data-section="audio" title="Reset Audio">↺</button>
+                    </div>
+                    <div class="settings-section-content">
+                        <div class="setting-row">
+                            <label>Master Volume</label>
+                            <input type="range" id="setting-master-volume"
+                                   min="0" max="1" step="0.1" value="0.8">
+                            <span class="setting-value" id="val-master-volume">80%</span>
+                        </div>
+                        <div class="setting-row">
+                            <label>SFX Volume</label>
+                            <input type="range" id="setting-sfx-volume"
+                                   min="0" max="1" step="0.1" value="0.8">
+                            <span class="setting-value" id="val-sfx-volume">80%</span>
+                        </div>
+                        <div class="setting-row">
+                            <label>Music Volume</label>
+                            <input type="range" id="setting-music-volume"
+                                   min="0" max="1" step="0.1" value="0.5">
+                            <span class="setting-value" id="val-music-volume">50%</span>
+                        </div>
+                        <div class="setting-row">
+                            <label>UI Sounds</label>
+                            <label class="toggle-switch">
+                                <input type="checkbox" id="setting-ui-sounds" checked>
+                                <span class="toggle-slider"></span>
+                            </label>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Controls Section -->
+                <div class="settings-section" data-section="controls">
+                    <div class="settings-section-header">
+                        <span class="settings-section-chevron">▶</span>
+                        <span class="settings-section-title">Controls</span>
+                        <button class="reset-section-btn" data-section="controls" title="Reset Controls">↺</button>
+                    </div>
+                    <div class="settings-section-content">
+                        <div class="setting-row">
+                            <label>Mouse Sensitivity</label>
+                            <input type="range" id="setting-mouse-sensitivity"
+                                   min="0.1" max="2" step="0.1" value="0.5">
+                            <span class="setting-value" id="val-mouse-sensitivity">0.50</span>
+                        </div>
+                        <div class="setting-row">
+                            <label>Invert Y Axis</label>
+                            <label class="toggle-switch">
+                                <input type="checkbox" id="setting-invert-y">
+                                <span class="toggle-slider"></span>
+                            </label>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Gameplay Section -->
+                <div class="settings-section" data-section="gameplay">
+                    <div class="settings-section-header">
+                        <span class="settings-section-chevron">▶</span>
+                        <span class="settings-section-title">Gameplay</span>
+                        <button class="reset-section-btn" data-section="gameplay" title="Reset Gameplay">↺</button>
+                    </div>
+                    <div class="settings-section-content">
+                        <div class="setting-row">
+                            <label>Crypto Popups</label>
+                            <label class="toggle-switch">
+                                <input type="checkbox" id="setting-crypto-popups" checked>
+                                <span class="toggle-slider"></span>
+                            </label>
+                        </div>
+                        <div class="setting-row">
+                            <label>Colorblind Mode</label>
+                            <select id="setting-colorblind">
+                                <option value="off">Off</option>
+                                <option value="deuteranopia">Deuteranopia</option>
+                                <option value="protanopia">Protanopia</option>
+                                <option value="tritanopia">Tritanopia</option>
+                            </select>
+                        </div>
+                        <div class="setting-row">
+                            <label>Tusk Commentary</label>
+                            <select id="setting-tusk-commentary">
+                                <option value="full">Full</option>
+                                <option value="important">Important Only</option>
+                                <option value="off">Off</option>
+                            </select>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Privacy Section -->
+                <div class="settings-section" data-section="privacy">
+                    <div class="settings-section-header">
+                        <span class="settings-section-chevron">▶</span>
+                        <span class="settings-section-title">Privacy</span>
+                        <button class="reset-section-btn" data-section="privacy" title="Reset Privacy">↺</button>
+                    </div>
+                    <div class="settings-section-content">
+                        <div class="setting-row">
+                            <label>Profile Visibility</label>
+                            <select id="setting-profile-visibility">
+                                <option value="public">Public</option>
+                                <option value="faction">Faction Only</option>
+                                <option value="friends">Friends Only</option>
+                            </select>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Developer Section -->
+                <div class="settings-section" data-section="developer">
+                    <div class="settings-section-header">
+                        <span class="settings-section-chevron">▶</span>
+                        <span class="settings-section-title">Developer</span>
+                        <button class="reset-section-btn" data-section="developer" title="Reset Developer">↺</button>
+                    </div>
+                    <div class="settings-section-content">
+                        <div class="setting-row">
+                            <label>Faction</label>
+                            <select id="setting-dev-faction" class="setting-select">
+                                <option value="rust">Rust</option>
+                                <option value="cobalt">Cobalt</option>
+                                <option value="viridian">Viridian</option>
+                            </select>
+                        </div>
+                        <div class="setting-row">
+                            <label>Become Commander</label>
+                            <button class="setting-btn" id="btn-become-commander">★ Activate</button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Reset All Button -->
+                <div class="settings-reset-all">
+                    <button id="reset-all-settings" class="reset-all-btn">Reset All Settings</button>
+                </div>
+            </div>
+        `;
+  }
+
+  // ========================
+  // EVENT HANDLING
+  // ========================
+
+  _setupEventListeners() {
+    // Panel header click to expand/collapse
+    this.container.addEventListener("click", (e) => {
+      const header = e.target.closest(".panel-header");
+      if (header) {
+        this._togglePanel(header);
+      }
+
+      // Settings section header click (but not on reset button)
+      const sectionHeader = e.target.closest(".settings-section-header");
+      if (sectionHeader && !e.target.closest(".reset-section-btn")) {
+        const section = sectionHeader.closest(".settings-section");
+        const sectionId = section.dataset.section;
+        section.classList.toggle("collapsed");
+
+        // Persist collapsed state
+        this._saveSectionState(
+          sectionId,
+          section.classList.contains("collapsed"),
+        );
+      }
+
+      // Reset section button click
+      const resetSectionBtn = e.target.closest(".reset-section-btn");
+      if (resetSectionBtn) {
+        e.stopPropagation();
+        const section = resetSectionBtn.dataset.section;
+        if (this.settingsManager && section) {
+          this.settingsManager.resetSection(section);
+        }
+      }
+
+      // Reset all settings button click
+      if (e.target.id === "reset-all-settings") {
+        if (this.settingsManager) {
+          this.settingsManager.resetAll();
+        }
+      }
+    });
+
+    // Become Commander button
+    this.container.addEventListener("click", (e) => {
+      if (e.target.id === "btn-become-commander") {
+        this._handleBecomeCommander();
+      }
+    });
+
+    // Note: H key toggle is handled by main.js to coordinate with chat window
+  }
+
+  /**
+   * Handle the "Become Commander" button click
+   */
+  _handleBecomeCommander() {
+    if (!window.commanderSystem) return;
+
+    // Check if already commander
+    if (window.commanderSystem.isHumanCommander()) {
+      return;
+    }
+
+    // Check if resigned
+    if (window.commanderSystem.isResigned()) {
+      window.commanderSystem.cancelResignation();
+    }
+
+    // In multiplayer, send to server only — server responds with commander-update
+    // which triggers applyServerCommander() → updateCommanderStatus()
+    if (window.networkManager) {
+      window.networkManager.sendCommanderOverride();
+      // Immediate visual feedback while waiting for server confirmation
+      const btn = document.getElementById("btn-become-commander");
+      if (btn) {
+        btn.textContent = "★ Requesting...";
+        btn.disabled = true;
+      }
+    } else {
+      // Single-player: apply locally
+      window.commanderSystem.setCommanderOverride(true);
+      this._updateBecomeCommanderButton(true);
+    }
+  }
+
+  /**
+   * Update the "Become Commander" button state
+   */
+  _updateBecomeCommanderButton(isCommander) {
+    const btn = document.getElementById("btn-become-commander");
+    if (!btn) return;
+
+    if (isCommander) {
+      btn.textContent = "★ Active";
+      btn.classList.add("active");
+      btn.disabled = true;
+    } else {
+      btn.textContent = "★ Activate";
+      btn.classList.remove("active");
+      btn.disabled = false;
+    }
+  }
+
+  _togglePanel(headerElement) {
+    const isExpanded = headerElement.dataset.expanded === "true";
+    headerElement.dataset.expanded = (!isExpanded).toString();
+
+    const panel = headerElement.closest(".dashboard-panel");
+    const panelId = panel.dataset.panel;
+
+    // Update state
+    const state = this.panelStates.get(panelId) || {
+      expanded: false,
+      order: 0,
+    };
+    state.expanded = !isExpanded;
+    this.panelStates.set(panelId, state);
+
+    // Initialize loadout when expanded
+    if (panelId === "loadout" && state.expanded) {
+      this.initLoadout(this.playerLevel || 1);
+    }
+
+    this._saveState();
+  }
+
+  // ========================
+  // VISIBILITY
+  // ========================
+
+  toggle() {
+    this.isVisible = !this.isVisible;
+    this.container.classList.toggle("collapsed", !this.isVisible);
+    this._saveState();
+  }
+
+  show() {
+    this.isVisible = true;
+    this.container.classList.remove("collapsed");
+
+    // Resume tank preview rendering
+    if (this.tankPreviewRenderer && !this.tankPreviewAnimationId) {
+      this._animateTankPreview();
+    }
+
+    this._saveState();
+  }
+
+  hide() {
+    this.isVisible = false;
+    this.container.classList.add("collapsed");
+
+    // Stop tank preview rendering to save GPU resources
+    if (this.tankPreviewAnimationId) {
+      cancelAnimationFrame(this.tankPreviewAnimationId);
+      this.tankPreviewAnimationId = null;
+    }
+
+    this._saveState();
+  }
+
+  // ========================
+  // STATE PERSISTENCE
+  // ========================
+
+  _loadState() {
+    try {
+      const saved = localStorage.getItem("adlands_dashboard_state");
+      if (saved) {
+        const data = JSON.parse(saved);
+        this.isVisible = data.visible !== false;
+        if (data.panels) {
+          Object.entries(data.panels).forEach(([id, state]) => {
+            this.panelStates.set(id, state);
+          });
+        }
+        // Load settings section states
+        if (data.settingsSections) {
+          this.settingsSectionStates = data.settingsSections;
+        } else {
+          this.settingsSectionStates = {};
+        }
+      }
+    } catch (e) {
+      console.warn("[Dashboard] Failed to load state:", e);
+    }
+  }
+
+  _saveSectionState(sectionId, isCollapsed) {
+    if (!this.settingsSectionStates) {
+      this.settingsSectionStates = {};
+    }
+    this.settingsSectionStates[sectionId] = isCollapsed;
+    this._saveState();
+  }
+
+  _applySectionStates() {
+    if (!this.settingsSectionStates) return;
+
+    Object.entries(this.settingsSectionStates).forEach(
+      ([sectionId, isCollapsed]) => {
+        const section = document.querySelector(
+          `.settings-section[data-section="${sectionId}"]`,
+        );
+        if (section) {
+          section.classList.toggle("collapsed", isCollapsed);
+        }
+      },
+    );
+  }
+
+  _saveState() {
+    try {
+      const panels = {};
+      this.panelStates.forEach((state, id) => {
+        panels[id] = state;
+      });
+
+      const data = {
+        visible: this.isVisible,
+        panels: panels,
+        settingsSections: this.settingsSectionStates || {},
+      };
+      localStorage.setItem("adlands_dashboard_state", JSON.stringify(data));
+    } catch (e) {
+      console.warn("[Dashboard] Failed to save state:", e);
+    }
+  }
+
+  // ========================
+  // DATA UPDATES
+  // ========================
+
+  /**
+   * Update stats panel with crypto system data
+   */
+  updateStats(stats) {
+    const els = {
+      kills: document.getElementById("dashboard-kills"),
+      deaths: document.getElementById("dashboard-deaths"),
+      kd: document.getElementById("dashboard-kd"),
+      damage: document.getElementById("dashboard-damage"),
+      tics: document.getElementById("dashboard-tics"),
+      hexes: document.getElementById("dashboard-hexes"),
+      clusters: document.getElementById("dashboard-clusters"),
+    };
+    const c = this._cachedStats;
+
+    if (els.kills && c.kills !== stats.kills) {
+      c.kills = stats.kills;
+      els.kills.textContent = stats.kills || 0;
+    }
+    if (els.deaths && c.deaths !== stats.deaths) {
+      c.deaths = stats.deaths;
+      els.deaths.textContent = stats.deaths || 0;
+    }
+    if (els.kd) {
+      const kd =
+        stats.deaths > 0
+          ? (stats.kills / stats.deaths).toFixed(2)
+          : stats.kills.toFixed(2);
+      if (c.kd !== kd) {
+        c.kd = kd;
+        els.kd.textContent = kd;
+      }
+    }
+    // Cache toLocaleString results (expensive locale-aware formatting)
+    const damageVal = Math.floor(stats.damageDealt || 0);
+    if (els.damage && c.damage !== damageVal) {
+      c.damage = damageVal;
+      this._formattedStrings.damage = damageVal.toLocaleString();
+      els.damage.textContent = this._formattedStrings.damage;
+    }
+    const ticsVal = Math.floor(stats.ticsContributed || 0);
+    if (els.tics && c.tics !== ticsVal) {
+      c.tics = ticsVal;
+      this._formattedStrings.tics = ticsVal.toLocaleString();
+      els.tics.textContent = this._formattedStrings.tics;
+    }
+    if (els.hexes && c.hexes !== stats.hexesCaptured) {
+      c.hexes = stats.hexesCaptured;
+      els.hexes.textContent = stats.hexesCaptured || 0;
+    }
+    if (els.clusters && c.clusters !== stats.clustersCaptured) {
+      c.clusters = stats.clustersCaptured;
+      els.clusters.textContent = stats.clustersCaptured || 0;
+    }
+  }
+
+  /**
+   * Update profile panel
+   */
+  updateProfile(data) {
+    const nameEl = document.getElementById("dashboard-player-name");
+    const titleEl = document.getElementById("dashboard-player-title");
+    const levelEl = document.getElementById("dashboard-level");
+    const cryptoCurrentEl = document.getElementById("dashboard-crypto-current");
+
+    if (nameEl && data.name) nameEl.textContent = data.name;
+    if (titleEl && data.title) titleEl.textContent = data.title;
+    if (data.faction) {
+      this._updateFactionDropdown(data.faction);
+    }
+    if (levelEl && data.level !== undefined && this._cachedProfile.level !== data.level) {
+      this._cachedProfile.level = data.level;
+      levelEl.textContent = data.level;
+    }
+    if (cryptoCurrentEl && data.crypto !== undefined && this._cachedProfile.crypto !== data.crypto && !this._serverCryptoMode) {
+      const oldCrypto = this._cachedProfile.crypto;
+      this._cachedProfile.crypto = data.crypto;
+      this._formattedStrings.crypto = Number(data.crypto).toLocaleString(undefined, {
+        minimumFractionDigits: 2,
+        maximumFractionDigits: 2,
+      });
+      if (oldCrypto === null) {
+        this._initRoller(this._formattedStrings.crypto);
+      } else {
+        this._updateRoller(this._formattedStrings.crypto, oldCrypto, data.crypto);
+      }
+    }
+
+    const rankEl = document.getElementById("dashboard-faction-rank");
+    if (rankEl && data.rank !== undefined && this._cachedProfile.rank !== data.rank) {
+      this._cachedProfile.rank = data.rank;
+      rankEl.textContent = `#${data.rank}`;
+    }
+  }
+
+  /**
+   * Update the crypto balance display (server-authoritative).
+   * Reuses the existing crypto roller element in the dashboard header.
+   */
+  updateCrypto(amount) {
+    this._serverCryptoMode = true; // Server owns the roller from now on
+    const formatted = Number(amount).toLocaleString(undefined, {
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
+    });
+    const oldCrypto = this._cachedProfile.crypto;
+    this._cachedProfile.crypto = amount;
+    this._formattedStrings.crypto = formatted;
+    if (oldCrypto === null) {
+      this._initRoller(formatted);
+    } else {
+      this._updateRoller(formatted, oldCrypto, amount);
+    }
+  }
+
+  /**
+   * Optimistic increment for immediate feedback (e.g. tic-crypto +10, damage/kill crypto).
+   * Server broadcast corrects to authoritative total every 5 seconds.
+   */
+  incrementCrypto(amount) {
+    if (this._serverCryptoMode) {
+      const newAmount = (this._cachedProfile.crypto || 0) + amount;
+      this.updateCrypto(newAmount);
+    } else if (this.cryptoSystem) {
+      // Client-mode: recompute level progress from CryptoSystem (already updated)
+      const stats = this.cryptoSystem.stats;
+      const level = stats.level || 1;
+      const totalCrypto = stats.totalCrypto || 0;
+      const currentLevelTotalCrypto = this.cryptoSystem.getTotalCryptoForLevel(level);
+      const cryptoIntoLevel = totalCrypto - currentLevelTotalCrypto;
+      const cryptoForNextLevel = this.cryptoSystem.getCryptoRequiredForLevel(level + 1);
+      const levelProgress = this.cryptoSystem.getLevelProgress();
+      this.updateProfile({
+        level,
+        crypto: Math.max(0, cryptoIntoLevel),
+        cryptoToNext: cryptoForNextLevel,
+        cryptoPercent: levelProgress * 100,
+      });
+    }
+  }
+
+  /**
+   * Set initial player info (name, faction, level, avatar color) and setup faction change handler
+   */
+  setPlayerInfo(name, faction, level, avatarColor, onFactionChange) {
+    this.playerName = name;
+    this.playerFaction = faction;
+    this.playerLevel = level;
+    this.avatarColor = avatarColor;
+    this.onFactionChange = onFactionChange;
+
+    // Update display
+    const nameEl = document.getElementById("dashboard-player-name");
+    const avatarInnerEl = document.getElementById("dashboard-avatar-inner");
+    const levelEl = document.getElementById("dashboard-level");
+
+    if (nameEl) nameEl.textContent = name;
+    if (levelEl) levelEl.textContent = level;
+
+    // Update avatar with the same random color used in player tag
+    if (avatarInnerEl && avatarColor) {
+      avatarInnerEl.style.background = avatarColor;
+    }
+
+    // Update avatar border color based on faction
+    this._updateAvatarFaction(faction);
+
+    // Setup custom faction dropdown
+    this._setupFactionDropdown(faction);
+  }
+
+  /**
+   * Setup faction selection (now only in Developer section)
+   */
+  _setupFactionDropdown(initialFaction) {
+    // Setup the developer section faction select
+    this._setupDevFactionSelect(initialFaction);
+  }
+
+  /**
+   * Update faction dropdown display (now only updates dev select)
+   */
+  _updateFactionDropdown(faction) {
+    // Update the developer section faction select
+    const devFactionSelect = document.getElementById("setting-dev-faction");
+    if (devFactionSelect) {
+      devFactionSelect.value = faction;
+      this._updateDevFactionSelectColor(devFactionSelect, faction);
+    }
+  }
+
+  /**
+   * Update the dev faction select background color based on faction
+   */
+  _updateDevFactionSelectColor(select, faction) {
+    const colors = {
+      rust: { bg: "rgba(180, 80, 60, 0.6)", border: "#b4503c" },
+      cobalt: { bg: "rgba(60, 100, 180, 0.6)", border: "#3c64b4" },
+      viridian: { bg: "rgba(60, 140, 80, 0.6)", border: "#3c8c50" },
+    };
+    const color = colors[faction] || colors.rust;
+    select.style.backgroundColor = color.bg;
+    select.style.borderColor = color.border;
+  }
+
+  /**
+   * Setup the developer faction select (in Developer settings section)
+   */
+  _setupDevFactionSelect(initialFaction) {
+    const select = document.getElementById("setting-dev-faction");
+    if (!select) return;
+
+    // Set initial value and color
+    select.value = initialFaction;
+    this._updateDevFactionSelectColor(select, initialFaction);
+
+    // Handle change
+    select.addEventListener("change", () => {
+      const newFaction = select.value;
+      this.playerFaction = newFaction;
+
+      // Update select color
+      this._updateDevFactionSelectColor(select, newFaction);
+
+      // Update avatar border color
+      this._updateAvatarFaction(newFaction);
+
+      // Update tank preview with new faction colors
+      this._updateTankPreview();
+
+      // Trigger callback (this updates the game state)
+      if (this.onFactionChange) {
+        this.onFactionChange(newFaction);
+      }
+    });
+  }
+
+  /**
+   * Update the player level in the dashboard (called when level changes)
+   */
+  setPlayerLevel(level) {
+    this.playerLevel = level;
+    const levelEl = document.getElementById("dashboard-level");
+    if (levelEl) levelEl.textContent = level;
+  }
+
+  /**
+   * Update avatar border color based on faction
+   */
+  _updateAvatarFaction(faction) {
+    const avatarEl = document.getElementById("dashboard-avatar");
+    if (!avatarEl) return;
+
+    // Remove existing faction classes
+    avatarEl.classList.remove("rust", "cobalt", "viridian");
+    // Add current faction class
+    avatarEl.classList.add(faction);
+  }
+
+  /**
+   * Update badge count on a panel
+   */
+  updateBadge(panelId, count) {
+    this.badgeCounts.set(panelId, count);
+
+    const panel = this.panelElements.get(panelId);
+    if (panel) {
+      const badge = panel.querySelector(".panel-badge");
+      if (badge) {
+        badge.textContent = count;
+        badge.classList.toggle("hidden", count <= 0);
+      }
+    }
+  }
+
+  /**
+   * Add a notification
+   */
+  addNotification(text, type = "info") {
+    const list = document.getElementById("notification-list");
+    if (!list) return;
+
+    // Remove empty state if present
+    const emptyState = list.querySelector(".empty-state");
+    if (emptyState) emptyState.remove();
+
+    const notification = document.createElement("div");
+    notification.className = `notification ${type}`;
+    notification.innerHTML = `
+            <span class="notification-text">${text}</span>
+            <button class="notification-dismiss">&times;</button>
+        `;
+
+    notification
+      .querySelector(".notification-dismiss")
+      .addEventListener("click", () => {
+        notification.remove();
+        this._updateNotificationBadge();
+        // Restore empty state if no notifications left
+        if (list.children.length === 0) {
+          list.innerHTML = '<div class="empty-state">No notifications</div>';
+        }
+      });
+
+    list.insertBefore(notification, list.firstChild);
+    this._updateNotificationBadge();
+  }
+
+  _updateNotificationBadge() {
+    const list = document.getElementById("notification-list");
+    if (!list) return;
+
+    const count = list.querySelectorAll(".notification").length;
+    this.updateBadge("notifications", count);
+  }
+
+  // ========================
+  // SYSTEM CONNECTIONS
+  // ========================
+
+  /**
+   * Set crypto system reference and start stats updates
+   */
+  setCryptoSystem(cryptoSystem) {
+    this.cryptoSystem = cryptoSystem;
+
+    // Update stats periodically (staggered 333ms from capture tick to avoid frame spike)
+    setTimeout(() => setInterval(() => {
+      if (!this.isVisible) return; // Skip updates when hidden
+      if (this.cryptoSystem && this.cryptoSystem.stats) {
+        const stats = this.cryptoSystem.stats;
+
+        this.updateStats({
+          kills: stats.kills || 0,
+          deaths: stats.deaths || 0,
+          damageDealt: stats.damageDealt || 0,
+          ticsContributed: stats.ticsContributed || 0,
+          hexesCaptured: stats.hexesCaptured || 0,
+          clustersCaptured: stats.clustersCaptured || 0,
+        });
+
+        // Calculate crypto progress for profile
+        const level = stats.level || 1;
+        const totalCrypto = stats.totalCrypto || 0;
+
+        // Get crypto within current level and crypto needed for next level
+        const currentLevelTotalCrypto = this.cryptoSystem.getTotalCryptoForLevel
+          ? this.cryptoSystem.getTotalCryptoForLevel(level)
+          : 0;
+        const cryptoIntoLevel = totalCrypto - currentLevelTotalCrypto;
+        const cryptoForNextLevel = this.cryptoSystem.getCryptoRequiredForLevel
+          ? this.cryptoSystem.getCryptoRequiredForLevel(level + 1)
+          : 10000;
+        const levelProgress = this.cryptoSystem.getLevelProgress
+          ? this.cryptoSystem.getLevelProgress()
+          : 0;
+
+        // Use server-authoritative faction rank
+        const factionRank = window.playerRank || null;
+
+        // Update profile crypto (show crypto into current level / crypto needed for level up)
+        this.updateProfile({
+          level: level,
+          crypto: Math.max(0, cryptoIntoLevel),
+          cryptoToNext: cryptoForNextLevel,
+          cryptoPercent: levelProgress * 100,
+          rank: factionRank,
+        });
+      }
+    }, 1000), 333);
+  }
+
+  /**
+   * Build a single roller column for the given character.
+   * Digit chars get a drum with 0-9 repeated 3× (30 spans) so the drum
+   * can always roll in the correct direction without wrapping artefacts.
+   * Home position for digit d is index d+10 (middle set).
+   * @returns {{element: HTMLSpanElement, type: string, char: string, drumEl: HTMLSpanElement|null, homeIndex: number}}
+   */
+  _buildRollerColumn(char) {
+    const col = document.createElement("span");
+    col.className = "crypto-roller-col";
+    col.setAttribute("data-char", char);
+
+    const isDigit = char >= "0" && char <= "9";
+    if (isDigit) {
+      const drum = document.createElement("span");
+      drum.className = "crypto-roller-drum";
+      for (let rep = 0; rep < 3; rep++) {
+        for (let d = 0; d < 10; d++) {
+          const digitSpan = document.createElement("span");
+          digitSpan.className = "crypto-roller-digit";
+          digitSpan.textContent = String(d);
+          drum.appendChild(digitSpan);
+        }
+      }
+      const digitIndex = parseInt(char, 10);
+      const homeIndex = digitIndex + 10; // middle set
+      drum.style.transform = `translateY(${-homeIndex * 16}px)`;
+      col.appendChild(drum);
+      return { element: col, type: "digit", char, drumEl: drum, homeIndex };
+    } else {
+      col.classList.add("crypto-roller-static");
+      col.textContent = char;
+      return { element: col, type: "static", char, drumEl: null, homeIndex: 0 };
+    }
+  }
+
+  /**
+   * Initialize the roller structure from scratch (no animation).
+   * Called on first render when _cachedProfile.crypto transitions from null.
+   */
+  _initRoller(formattedString) {
+    const container = document.getElementById("dashboard-crypto-current");
+    if (!container) return;
+
+    this._rollerContainer = container;
+    container.textContent = "";
+    container.classList.add("crypto-roller");
+
+    this._rollerColumns = [];
+    for (let i = 0; i < formattedString.length; i++) {
+      const colData = this._buildRollerColumn(formattedString[i]);
+      this._rollerColumns.push(colData);
+      container.appendChild(colData.element);
+    }
+    this._rollerPreviousString = formattedString;
+  }
+
+  /**
+   * Animate the roller from old value to new value.
+   * Diffs right-aligned, handles length changes, scales duration by delta.
+   */
+  _updateRoller(newString, oldCrypto, newCrypto) {
+    if (!this._rollerContainer) {
+      this._initRoller(newString);
+      return;
+    }
+
+    const oldString = this._rollerPreviousString;
+    if (oldString === newString) return;
+
+    const delta = Math.abs(newCrypto - oldCrypto);
+    const baseDuration = 300 + Math.min(500, Math.log10(delta + 1) * 167);
+
+    // Handle column count changes (right-aligned diff)
+    const addCount = Math.max(0, newString.length - this._rollerColumns.length);
+    const removeCount = Math.max(0, this._rollerColumns.length - newString.length);
+
+    // Remove excess leftmost columns
+    for (let i = 0; i < removeCount; i++) {
+      const col = this._rollerColumns.shift();
+      col.element.classList.add("crypto-col-exit");
+      col.element.addEventListener("animationend", () => col.element.remove(), { once: true });
+    }
+
+    // Add new leftmost columns
+    if (addCount > 0) {
+      const fragment = document.createDocumentFragment();
+      const newCols = [];
+      for (let i = 0; i < addCount; i++) {
+        const colData = this._buildRollerColumn(newString[i]);
+        colData.element.classList.add("crypto-col-enter");
+        newCols.push(colData);
+        fragment.appendChild(colData.element);
+      }
+      this._rollerContainer.insertBefore(fragment, this._rollerContainer.firstChild);
+      this._rollerColumns = newCols.concat(this._rollerColumns);
+    }
+
+    // Determine roll direction: value up → drum moves up, value down → drum moves down
+    const goingUp = newCrypto > oldCrypto;
+
+    // Animate each column to its new character
+    for (let i = 0; i < newString.length; i++) {
+      const newChar = newString[i];
+      const colData = this._rollerColumns[i];
+
+      if (colData.char === newChar) continue;
+
+      const newIsDigit = newChar >= "0" && newChar <= "9";
+
+      if (newIsDigit && colData.type === "digit") {
+        const oldDigit = parseInt(colData.char, 10);
+        const newDigit = parseInt(newChar, 10);
+        const newHome = newDigit + 10; // home position in middle set
+
+        // Pick a target index that guarantees correct roll direction.
+        // Drum has 3 sets of 0-9 (indices 0-29), home is in middle set (10-19).
+        // goingUp → drum moves up (more negative translateY) → target index > current
+        // goingDown → drum moves down (less negative translateY) → target index < current
+        let targetIndex;
+        if (goingUp) {
+          // Need target > oldHome. Use next set (d+20) if same-set would go wrong way.
+          targetIndex = newDigit > oldDigit ? newHome : newDigit + 20;
+        } else {
+          // Need target < oldHome. Use first set (d+0) if same-set would go wrong way.
+          targetIndex = newDigit < oldDigit ? newHome : newDigit;
+        }
+
+        const stagger = (newString.length - 1 - i) * 20;
+        const duration = baseDuration + stagger;
+        colData.drumEl.style.transitionDuration = `${duration}ms`;
+        colData.drumEl.style.transitionTimingFunction = "ease-out";
+        colData.drumEl.style.transform = `translateY(${-targetIndex * 16}px)`;
+        colData.char = newChar;
+        colData.homeIndex = newHome;
+
+        // After animation, snap back to home position (middle set) without transition
+        const drum = colData.drumEl;
+        const snapHome = () => {
+          drum.removeEventListener("transitionend", snapHome);
+          drum.style.transitionDuration = "0ms";
+          drum.style.transform = `translateY(${-newHome * 16}px)`;
+        };
+        drum.addEventListener("transitionend", snapHome, { once: true });
+      } else {
+        // Type changed — replace column entirely
+        const newColData = this._buildRollerColumn(newChar);
+        colData.element.replaceWith(newColData.element);
+        this._rollerColumns[i] = newColData;
+      }
+    }
+
+    this._rollerPreviousString = newString;
+  }
+
+  /**
+   * Flash the crypto bar when crypto is gained
+   * Intensity (flash brightness & shake) scales with crypto amount
+   * Shake only activates for 100+ crypto gains
+   * @param {number} amount - Crypto amount gained
+   */
+  flashCryptoBar(amount) {
+    const cryptoAmount = document.querySelector(".header-crypto-amount");
+    if (!cryptoAmount) return;
+
+    // Brief brightness flash scaled by amount
+    const intensity = Math.min(Math.log10(amount + 1) / 3, 1);
+    const duration = 200 + 800 * intensity;
+
+    cryptoAmount.classList.remove("crypto-flash");
+    void cryptoAmount.offsetWidth;
+    cryptoAmount.style.setProperty("--flash-duration", `${duration}ms`);
+    cryptoAmount.classList.add("crypto-flash");
+
+    setTimeout(() => {
+      cryptoAmount.classList.remove("crypto-flash");
+    }, duration);
+  }
+
+  /**
+   * Set settings manager reference and bind UI
+   */
+  setSettingsManager(settingsManager) {
+    this.settingsManager = settingsManager;
+
+    // Bind settings UI after a short delay to ensure DOM is ready
+    setTimeout(() => {
+      if (this.settingsManager) {
+        this.settingsManager.bindToUI();
+      }
+    }, 100);
+  }
+
+  /**
+   * Set badge system reference
+   */
+  setBadgeSystem(badgeSystem) {
+    this.badgeSystem = badgeSystem;
+
+    // Listen for badge unlocks
+    if (badgeSystem) {
+      badgeSystem.onBadgeUnlock = (badge) => {
+        this.addNotification(
+          `Badge Unlocked: ${badge.icon} ${badge.name}`,
+          "achievement",
+        );
+        // Update badge display when new badge unlocked
+        this.updateBadgesDisplay();
+      };
+      // Initial badge display update
+      this.updateBadgesDisplay();
+    }
+  }
+
+  /**
+   * Update the badges display in the dashboard header
+   */
+  updateBadgesDisplay() {
+    if (!this.badgeSystem) return;
+
+    const countEl = document.getElementById("dashboard-badge-count");
+    const gridEl = document.getElementById("dashboard-badges-grid");
+
+    if (!gridEl) return;
+
+    const unlockedBadges = this.badgeSystem.getUnlockedBadges();
+    const maxDisplay = 8;
+
+    // Update count
+    if (countEl) {
+      countEl.textContent = unlockedBadges.length;
+    }
+
+    // Build badge icons
+    gridEl.innerHTML = "";
+
+    if (unlockedBadges.length === 0) {
+      gridEl.innerHTML = '<span class="no-badges">None yet</span>';
+      return;
+    }
+
+    for (let i = 0; i < Math.min(unlockedBadges.length, maxDisplay); i++) {
+      const badge = unlockedBadges[i];
+      const color = this.badgeSystem.getRarityColor(badge.rarity);
+
+      const badgeEl = document.createElement("div");
+      badgeEl.className = "header-badge";
+      badgeEl.dataset.badgeId = badge.id;
+      badgeEl.style.color = color;
+      badgeEl.textContent = badge.icon;
+
+      // Attach floating tooltip events
+      this.badgeSystem.attachTooltipEvents(badgeEl, badge);
+
+      gridEl.appendChild(badgeEl);
+    }
+
+    // Show "+X more" if there are more badges
+    if (unlockedBadges.length > maxDisplay) {
+      const moreEl = document.createElement("div");
+      moreEl.className = "header-badge-more";
+      moreEl.textContent = `+${unlockedBadges.length - maxDisplay}`;
+      gridEl.appendChild(moreEl);
+    }
+  }
+
+  /**
+   * Set title system reference and start title updates
+   */
+  setTitleSystem(titleSystem) {
+    this.titleSystem = titleSystem;
+
+    // Self-correcting title updater: every 5 seconds, verify the dashboard
+    // title matches the actual commander state. Catches any desync from missed
+    // events or race conditions.
+    setInterval(() => {
+      const titleEl = document.getElementById("dashboard-player-title");
+      if (!titleEl) return;
+
+      const isCommander = window.commanderSystem?.isHumanCommander?.() || false;
+      if (isCommander) {
+        // Should be showing "Commander" — correct if not
+        if (!titleEl.classList.contains("commander-title")) {
+          if (!this._previousTitle) this._previousTitle = titleEl.textContent;
+          titleEl.textContent = "Commander";
+          titleEl.classList.add("commander-title");
+          this._updateBecomeCommanderButton(true);
+        }
+      } else {
+        // Should NOT be showing "Commander" — correct if stuck
+        if (titleEl.classList.contains("commander-title")) {
+          const restored = this._previousTitle
+            || (this.titleSystem && this.titleSystem.getTitle())
+            || "Contractor";
+          titleEl.textContent = restored;
+          titleEl.classList.remove("commander-title");
+          this._previousTitle = null;
+          this._updateBecomeCommanderButton(false);
+        } else if (this.titleSystem) {
+          // Normal title refresh
+          titleEl.textContent = this.titleSystem.getTitle();
+        }
+      }
+    }, 5000);
+  }
+
+  /**
+   * Set screenshot system reference and bind share panel
+   */
+  setScreenshotSystem(screenshotSystem) {
+    this.screenshotSystem = screenshotSystem;
+
+    if (screenshotSystem) {
+      // Bind to share panel
+      screenshotSystem.bindToDashboard();
+
+      // Listen for screenshots
+      screenshotSystem.onScreenshotTaken = (screenshot) => {
+        // Enable share buttons
+        const shareButtons = document.querySelectorAll(".social-share-btn");
+        shareButtons.forEach((btn) => {
+          btn.disabled = false;
+        });
+      };
+    }
+  }
+
+  /**
+   * Update the player's dynamic title display
+   */
+  updateTitle(title) {
+    const titleEl = document.getElementById("dashboard-player-title");
+    if (titleEl && title) {
+      titleEl.textContent = title;
+    }
+  }
+
+  // ========================
+  // LOADOUT SYSTEM
+  // ========================
+
+  /**
+   * Initialize the loadout panel after it's expanded for the first time
+   */
+  initLoadout(playerLevel = 1) {
+    if (this.loadoutInitialized) {
+      this.updateLoadout(playerLevel);
+      return;
+    }
+
+    this.loadoutInitialized = true;
+    this._renderUpgrades(playerLevel);
+    this._updateSlotStates(playerLevel);
+    this._initLoadoutDropdowns();
+    this._initTankPreview();
+  }
+
+  /**
+   * Render 3-column layout: Offense | Defense | Tactical
+   * Each column has: header and 2 dropdown slots stacked
+   */
+  _renderUpgrades(playerLevel) {
+    const container = document.getElementById("loadout-columns");
+    if (!container) return;
+
+    const categories = [
+      { key: "offense", label: "Offense", slots: ["offense-1", "offense-2"] },
+      { key: "defense", label: "Defense", slots: ["defense-1", "defense-2"] },
+      {
+        key: "tactical",
+        label: "Tactical",
+        slots: ["tactical-1", "tactical-2"],
+      },
+    ];
+
+    let html = "";
+    for (const cat of categories) {
+      const upgrades = UPGRADES[cat.key];
+
+      html += `
+                <div class="loadout-column" data-category="${cat.key}">
+                    <div class="column-header">${cat.label}</div>
+                    <div class="slot-stack">
+            `;
+
+      // Render 2 dropdown slots per column
+      for (const slotId of cat.slots) {
+        const isUnlocked = true; // DEBUG: all slots unlocked
+        const equippedId = this.equippedUpgrades[slotId];
+
+        // Build dropdown options
+        let options = `<option value="">-- Empty --</option>`;
+        for (const upgrade of upgrades) {
+          const selected = equippedId === upgrade.id ? " selected" : "";
+          // Disable if this upgrade is equipped in another slot of the same category
+          const equippedElsewhere =
+            !selected &&
+            Object.entries(this.equippedUpgrades).some(
+              ([slot, id]) => id === upgrade.id && slot !== slotId,
+            );
+          const disabled = equippedElsewhere ? " disabled" : "";
+          options += `<option value="${upgrade.id}"${selected}${disabled}>${upgrade.name}</option>`;
+        }
+
+        html += `
+                    <div class="loadout-slot unlocked"
+                         data-slot="${slotId}"
+                         data-type="${cat.key}">
+                        <select class="loadout-select" data-slot="${slotId}">
+                            ${options}
+                        </select>
+                    </div>
+                `;
+      }
+
+      html += `
+                    </div>
+                </div>
+            `;
+    }
+
+    container.innerHTML = html;
+  }
+
+  /**
+   * Update slot visual states based on player level
+   * Now just re-renders via _renderUpgrades since slots are inline
+   */
+  _updateSlotStates() {
+    // Slots are now rendered within _renderUpgrades
+    // This method is kept for API compatibility
+  }
+
+  /**
+   * Find an upgrade by ID across all categories
+   */
+  _findUpgrade(upgradeId) {
+    for (const category of ["offense", "defense", "tactical"]) {
+      const found = UPGRADES[category].find((u) => u.id === upgradeId);
+      if (found) return { ...found, category };
+    }
+    return null;
+  }
+
+  /**
+   * Initialize dropdown change listeners for the loadout system
+   */
+  _initLoadoutDropdowns() {
+    const columnsContainer = document.getElementById("loadout-columns");
+    if (!columnsContainer) return;
+
+    columnsContainer.addEventListener("change", (e) => {
+      const select = e.target.closest(".loadout-select");
+      if (!select) return;
+
+      const slotId = select.dataset.slot;
+      const upgradeId = select.value;
+
+      if (upgradeId) {
+        this._equipUpgrade(slotId, upgradeId);
+      } else {
+        this._unequipUpgrade(slotId);
+      }
+    });
+  }
+
+  /**
+   * Unequip an upgrade from a slot
+   */
+  _unequipUpgrade(slotId) {
+    const upgradeId = this.equippedUpgrades[slotId];
+    if (!upgradeId) return;
+
+    const upgrade = this._findUpgrade(upgradeId);
+    delete this.equippedUpgrades[slotId];
+
+    // Update visuals
+    this._renderUpgrades(this.playerLevel || 1);
+    this._updateTankPreview();
+  }
+
+  /**
+   * Equip an upgrade to a slot
+   */
+  _equipUpgrade(slotId, upgradeId) {
+    const upgrade = this._findUpgrade(upgradeId);
+    if (!upgrade) return;
+
+    // Remove from any other slot first
+    for (const [slot, id] of Object.entries(this.equippedUpgrades)) {
+      if (id === upgradeId) {
+        delete this.equippedUpgrades[slot];
+      }
+    }
+
+    // Equip to new slot
+    this.equippedUpgrades[slotId] = upgradeId;
+
+    // Update visuals
+    this._updateSlotStates(this.playerLevel || 1);
+    this._renderUpgrades(this.playerLevel || 1);
+    this._updateTankPreview();
+  }
+
+  /**
+   * Initialize real-time THREE.js tank preview with orbit controls
+   */
+  _initTankPreview() {
+    const canvas = document.getElementById("tank-preview-canvas");
+    if (!canvas) return;
+
+    const container = canvas.parentElement;
+    const rect = container.getBoundingClientRect();
+
+    // Create THREE.js renderer
+    this.tankPreviewRenderer = new THREE.WebGLRenderer({
+      canvas: canvas,
+      antialias: false,
+      alpha: true,
+    });
+    this.tankPreviewRenderer.setSize(rect.width, rect.height);
+    this.tankPreviewRenderer.setPixelRatio(
+      Math.min(window.devicePixelRatio, 2),
+    );
+    this.tankPreviewRenderer.setClearColor(0x000000, 0);
+
+    // Create scene
+    this.tankPreviewScene = new THREE.Scene();
+
+    // Create camera (closer to tank)
+    const aspect = rect.width / rect.height;
+    this.tankPreviewCamera = new THREE.PerspectiveCamera(35, aspect, 0.1, 100);
+    this.tankPreviewCamera.position.set(6, 4, 6);
+    this.tankPreviewCamera.lookAt(0, 0, 0);
+
+    // Add lighting
+    const ambientLight = new THREE.AmbientLight(0xffffff, 0.5);
+    this.tankPreviewScene.add(ambientLight);
+
+    const directionalLight = new THREE.DirectionalLight(0xffffff, 0.8);
+    directionalLight.position.set(5, 10, 5);
+    this.tankPreviewScene.add(directionalLight);
+
+    // Create tank group
+    this.tankPreviewGroup = new THREE.Group();
+    this.tankPreviewScene.add(this.tankPreviewGroup);
+
+    // Build initial tank
+    this._buildPreviewTank();
+
+    // Setup orbit controls (manual drag implementation)
+    this._setupTankPreviewOrbit(canvas);
+
+    // Start render loop
+    this._animateTankPreview();
+
+    // Handle resize
+    const resizeObserver = new ResizeObserver(() => {
+      const newRect = container.getBoundingClientRect();
+      if (newRect.width > 0 && newRect.height > 0) {
+        this.tankPreviewRenderer.setSize(newRect.width, newRect.height);
+        this.tankPreviewCamera.aspect = newRect.width / newRect.height;
+        this.tankPreviewCamera.updateProjectionMatrix();
+      }
+    });
+    resizeObserver.observe(container);
+  }
+
+  /**
+   * Setup manual orbit controls for tank preview (click and drag to rotate)
+   */
+  _setupTankPreviewOrbit(canvas) {
+    this.tankOrbit = {
+      isDragging: false,
+      hasBeenDragged: false, // Track if user has ever dragged
+      lastX: 0,
+      lastY: 0,
+      theta: Math.PI / 4, // Horizontal angle
+      phi: Math.PI / 3, // Vertical angle - lower camera (more side-on view)
+      radius: 9, // Distance from center (pulled back)
+      velocity: 0, // Angular velocity for momentum
+      lastMoveTime: 0, // Timestamp of last mouse move
+      friction: 0.95, // Friction coefficient (0-1, higher = slower decay)
+      autoSpinSpeed: 0.003, // Radians per frame for auto-spin
+    };
+
+    // Prevent context menu on canvas (right-click is used for orbit)
+    canvas.addEventListener("contextmenu", (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+    });
+
+    // Wheel = orbit (no device detection — unreliable on macOS)
+    canvas.addEventListener(
+      "wheel",
+      (e) => {
+        e.preventDefault();
+        if (e.ctrlKey) return; // Ignore pinch gesture
+
+        this.tankOrbit.hasBeenDragged = true;
+        const sensitivity = 0.001;
+        this.tankOrbit.theta -= e.deltaX * sensitivity;
+        this.tankOrbit.velocity = -e.deltaX * sensitivity * 0.3;
+        this._updateTankPreviewCamera();
+      },
+      { passive: false },
+    );
+
+    // Right-click drag to orbit (matches game controls)
+    canvas.addEventListener("mousedown", (e) => {
+      e.stopPropagation();
+      if (e.button !== 2) return; // Only right-click
+      this.tankOrbit.isDragging = true;
+      this.tankOrbit.hasBeenDragged = true; // Stop auto-spin permanently
+      this.tankOrbit.lastX = e.clientX;
+      this.tankOrbit.velocity = 0; // Stop momentum when grabbing
+      canvas.style.cursor = "grabbing";
+    });
+
+    canvas.addEventListener("click", (e) => {
+      e.stopPropagation();
+    });
+
+    // Use window for mousemove/mouseup so dragging continues outside canvas
+    window.addEventListener("mousemove", (e) => {
+      if (!this.tankOrbit || !this.tankOrbit.isDragging) return;
+
+      const now = performance.now();
+      const deltaX = e.clientX - this.tankOrbit.lastX;
+      const deltaTime = now - this.tankOrbit.lastMoveTime;
+
+      // Rotate camera around tank horizontally only (clockwise/counterclockwise)
+      const rotationDelta = deltaX * 0.01;
+      this.tankOrbit.theta += rotationDelta;
+
+      // Track velocity for momentum (radians per ms)
+      if (deltaTime > 0 && deltaTime < 100) {
+        this.tankOrbit.velocity = (rotationDelta / deltaTime) * 16; // Normalize to ~60fps
+      }
+
+      // Update camera position
+      this._updateTankPreviewCamera();
+
+      this.tankOrbit.lastX = e.clientX;
+      this.tankOrbit.lastMoveTime = now;
+    });
+
+    window.addEventListener("mouseup", () => {
+      if (!this.tankOrbit) return;
+      this.tankOrbit.isDragging = false;
+      canvas.style.cursor = "grab";
+      // Velocity is preserved for momentum effect
+    });
+
+    // Set initial cursor
+    canvas.style.cursor = "grab";
+
+    // Initial camera position
+    this._updateTankPreviewCamera();
+  }
+
+  /**
+   * Update tank preview camera position based on orbit angles
+   */
+  _updateTankPreviewCamera() {
+    if (!this.tankOrbit || !this.tankPreviewCamera) return;
+
+    const { theta, phi, radius } = this.tankOrbit;
+
+    // Spherical to Cartesian conversion
+    const x = radius * Math.sin(phi) * Math.cos(theta);
+    const y = radius * Math.cos(phi);
+    const z = radius * Math.sin(phi) * Math.sin(theta);
+
+    this.tankPreviewCamera.position.set(x, y, z);
+    this.tankPreviewCamera.lookAt(0, 0, 0); // Look at tank base (tank appears higher in frame)
+  }
+
+  /**
+   * Create a rectangular shadow blob on top of the ground plane (matches tank shape)
+   * Tank dimensions: hull 2.5w × 5.0l, tracks add 0.6 each side = ~3.7w × 5.2l
+   */
+  _createShadowBlob() {
+    const shadowWidth = 4.5; // Tank width (~3.7 + soft edge)
+    const shadowDepth = 7; // Tank length - extended for longer tank footprint
+    const shadowGeometry = new THREE.PlaneGeometry(shadowWidth, shadowDepth);
+
+    // Create canvas for rectangular gradient shadow texture
+    // Canvas aspect ratio matches tank: width < depth (tank is longer than wide)
+    const canvas = document.createElement("canvas");
+    const width = 96; // Narrower (tank width)
+    const height = 144; // Longer (tank length) - extended
+    canvas.width = width;
+    canvas.height = height;
+    const ctx = canvas.getContext("2d");
+
+    // Draw rounded rectangle with soft edges using multiple passes
+    const centerX = width / 2;
+    const centerY = height / 2;
+    const rectWidth = width * 0.7;
+    const rectHeight = height * 0.7;
+    const cornerRadius = 8;
+
+    // Helper to draw rounded rect path
+    const roundedRect = (x, y, w, h, r) => {
+      ctx.beginPath();
+      ctx.moveTo(x + r, y);
+      ctx.lineTo(x + w - r, y);
+      ctx.quadraticCurveTo(x + w, y, x + w, y + r);
+      ctx.lineTo(x + w, y + h - r);
+      ctx.quadraticCurveTo(x + w, y + h, x + w - r, y + h);
+      ctx.lineTo(x + r, y + h);
+      ctx.quadraticCurveTo(x, y + h, x, y + h - r);
+      ctx.lineTo(x, y + r);
+      ctx.quadraticCurveTo(x, y, x + r, y);
+      ctx.closePath();
+    };
+
+    // Draw multiple layers to create soft edge falloff
+    const layers = 8;
+    for (let i = layers; i >= 0; i--) {
+      const scale = 1 + (i / layers) * 0.5; // Outer layers are larger
+      const alpha = (1 - i / layers) * 0.6; // Outer layers are more transparent
+      const w = rectWidth * scale;
+      const h = rectHeight * scale;
+      const x = centerX - w / 2;
+      const y = centerY - h / 2;
+      const r = cornerRadius * scale;
+
+      roundedRect(x, y, w, h, r);
+      ctx.fillStyle = `rgba(0, 0, 0, ${alpha})`;
+      ctx.fill();
+    }
+
+    const shadowTexture = new THREE.CanvasTexture(canvas);
+    shadowTexture.minFilter = THREE.NearestFilter;
+    shadowTexture.magFilter = THREE.NearestFilter;
+    shadowTexture.needsUpdate = true;
+
+    const shadowMaterial = new THREE.MeshBasicMaterial({
+      map: shadowTexture,
+      transparent: true,
+      depthWrite: false,
+      side: THREE.DoubleSide,
+      blending: THREE.NormalBlending,
+    });
+
+    const shadowMesh = new THREE.Mesh(shadowGeometry, shadowMaterial);
+    shadowMesh.rotation.x = -Math.PI / 2;
+    shadowMesh.position.y = 0.05; // Above ground plane
+    shadowMesh.renderOrder = 0; // Render after ground plane (-1)
+
+    this.tankPreviewGroup.add(shadowMesh);
+  }
+
+  /**
+   * Create a ground plane underneath the tank that fades to transparent at edges
+   */
+  _createGroundPlane() {
+    // Create a circular plane geometry
+    const groundSize = 5.5;
+    const groundGeometry = new THREE.CircleGeometry(groundSize, 32);
+
+    // Create canvas for radial gradient texture
+    const canvas = document.createElement("canvas");
+    const size = 256;
+    canvas.width = size;
+    canvas.height = size;
+    const ctx = canvas.getContext("2d");
+
+    // Draw radial gradient: gray center fading to transparent edges (ground plane effect)
+    const gradient = ctx.createRadialGradient(
+      size / 2,
+      size / 2,
+      0, // Inner circle center
+      size / 2,
+      size / 2,
+      size / 2, // Outer circle radius
+    );
+    gradient.addColorStop(0, "rgba(80, 80, 85, 0.9)"); // Solid gray center
+    gradient.addColorStop(0.4, "rgba(70, 70, 75, 0.7)"); // Still mostly solid
+    gradient.addColorStop(0.7, "rgba(60, 60, 65, 0.4)"); // Starting to fade
+    gradient.addColorStop(1, "rgba(50, 50, 55, 0)"); // Transparent edges
+
+    ctx.fillStyle = gradient;
+    ctx.fillRect(0, 0, size, size);
+
+    // Create texture from canvas
+    const groundTexture = new THREE.CanvasTexture(canvas);
+    groundTexture.minFilter = THREE.NearestFilter;
+    groundTexture.magFilter = THREE.NearestFilter;
+    groundTexture.needsUpdate = true;
+
+    // Create material with transparency
+    const groundMaterial = new THREE.MeshBasicMaterial({
+      map: groundTexture,
+      transparent: true,
+      depthWrite: false,
+      opacity: 1,
+    });
+
+    // Create the ground mesh
+    const groundMesh = new THREE.Mesh(groundGeometry, groundMaterial);
+    groundMesh.rotation.x = -Math.PI / 2; // Rotate to lay flat on ground
+    groundMesh.position.y = 0; // At ground level
+    groundMesh.renderOrder = -1; // Render before tank
+
+    this.tankPreviewGroup.add(groundMesh);
+  }
+
+  /**
+   * Build the 3D tank model for preview
+   */
+  _buildPreviewTank() {
+    // Clear existing
+    while (this.tankPreviewGroup.children.length > 0) {
+      this.tankPreviewGroup.remove(this.tankPreviewGroup.children[0]);
+    }
+
+    // Create ground plane underneath the tank
+    this._createGroundPlane();
+
+    // Create shadow blob on top of ground plane
+    this._createShadowBlob();
+
+    // Get faction colors
+    const faction = this.playerFaction || "rust";
+    const factionData =
+      typeof FACTION_COLORS !== "undefined" ? FACTION_COLORS[faction] : null;
+
+    const colors = {
+      primary: factionData ? factionData.vehicle.primary : 0x555555,
+      secondary: factionData ? factionData.vehicle.secondary : 0x444444,
+      tracks: 0x222222,
+      barrel: 0x333333,
+    };
+
+    // Materials
+    const hullMaterial = new THREE.MeshStandardMaterial({
+      color: colors.primary,
+      roughness: 0.7,
+      metalness: 0.3,
+      flatShading: true,
+    });
+
+    const turretMaterial = new THREE.MeshStandardMaterial({
+      color: colors.secondary,
+      roughness: 0.6,
+      metalness: 0.4,
+      flatShading: true,
+    });
+
+    const trackMaterial = new THREE.MeshStandardMaterial({
+      color: colors.tracks,
+      roughness: 0.9,
+      metalness: 0.1,
+      flatShading: true,
+    });
+
+    const barrelMaterial = new THREE.MeshStandardMaterial({
+      color: colors.barrel,
+      roughness: 0.5,
+      metalness: 0.6,
+      flatShading: true,
+    });
+
+    // Hull (2.5 × 0.8 × 5)
+    const hull = new THREE.Mesh(
+      new THREE.BoxGeometry(2.5, 0.8, 5),
+      hullMaterial,
+    );
+    hull.position.y = 0.4;
+    this.tankPreviewGroup.add(hull);
+
+    // Front slope
+    const frontSlope = new THREE.Mesh(
+      new THREE.BoxGeometry(2.2, 0.5, 1.0),
+      hullMaterial,
+    );
+    frontSlope.position.set(0, 0.7, -2.5);
+    frontSlope.rotation.x = 0.3;
+    this.tankPreviewGroup.add(frontSlope);
+
+    // Rear
+    const rear = new THREE.Mesh(
+      new THREE.BoxGeometry(2.2, 1.0, 0.8),
+      hullMaterial,
+    );
+    rear.position.set(0, 0.5, 2.6);
+    this.tankPreviewGroup.add(rear);
+
+    // Tracks
+    const trackGeom = new THREE.BoxGeometry(0.6, 0.6, 5.2);
+    const leftTrack = new THREE.Mesh(trackGeom, trackMaterial);
+    leftTrack.position.set(-1.3, 0.3, 0);
+    this.tankPreviewGroup.add(leftTrack);
+
+    const rightTrack = new THREE.Mesh(trackGeom, trackMaterial);
+    rightTrack.position.set(1.3, 0.3, 0);
+    this.tankPreviewGroup.add(rightTrack);
+
+    // Turret group
+    const turretGroup = new THREE.Group();
+    turretGroup.position.y = 0.8;
+
+    // Turret base
+    const turret = new THREE.Mesh(
+      new THREE.BoxGeometry(1.5, 0.6, 1.8),
+      turretMaterial,
+    );
+    turret.position.y = 0.3;
+    turretGroup.add(turret);
+
+    // Barrel
+    const barrel = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.15, 0.2, 2.5, 8),
+      barrelMaterial,
+    );
+    barrel.rotation.x = -Math.PI / 2;
+    barrel.position.set(0, 0.4, -2.0);
+    turretGroup.add(barrel);
+
+    // Muzzle brake
+    const muzzle = new THREE.Mesh(
+      new THREE.BoxGeometry(0.4, 0.3, 0.3),
+      barrelMaterial,
+    );
+    muzzle.position.set(0, 0.4, -3.2);
+    turretGroup.add(muzzle);
+
+    this.tankPreviewGroup.add(turretGroup);
+  }
+
+  /**
+   * Animation loop for tank preview
+   * OPTIMIZED: Reduced to 30 FPS and includes visibility check
+   */
+  _animateTankPreview() {
+    if (!this.tankPreviewRenderer) return;
+
+    let lastRenderTime = 0;
+    const targetFPS = 30;
+    const frameInterval = 1000 / targetFPS;
+
+    const animate = (timestamp) => {
+      // Exit if dashboard is hidden (defensive check)
+      if (!this.isVisible) {
+        this.tankPreviewAnimationId = null;
+        return;
+      }
+
+      this.tankPreviewAnimationId = requestAnimationFrame(animate);
+
+      // Throttle to 30 FPS - preview doesn't need 60 FPS
+      const elapsed = timestamp - lastRenderTime;
+      if (elapsed < frameInterval) return;
+      lastRenderTime = timestamp - (elapsed % frameInterval);
+
+      if (this.tankOrbit && !this.tankOrbit.isDragging) {
+        // Auto-spin until user drags for the first time
+        if (!this.tankOrbit.hasBeenDragged) {
+          this.tankOrbit.theta += this.tankOrbit.autoSpinSpeed;
+          this._updateTankPreviewCamera();
+        }
+        // Apply momentum after dragging
+        else if (Math.abs(this.tankOrbit.velocity) > 0.0001) {
+          this.tankOrbit.theta += this.tankOrbit.velocity;
+          this.tankOrbit.velocity *= this.tankOrbit.friction; // Apply friction
+          this._updateTankPreviewCamera();
+
+          // Stop when velocity is negligible
+          if (Math.abs(this.tankOrbit.velocity) < 0.0001) {
+            this.tankOrbit.velocity = 0;
+          }
+        }
+      }
+
+      this.tankPreviewRenderer.render(
+        this.tankPreviewScene,
+        this.tankPreviewCamera,
+      );
+    };
+    animate(0);
+  }
+
+  /**
+   * Update the tank preview (rebuild with current faction colors)
+   */
+  _updateTankPreview() {
+    if (!this.tankPreviewGroup) return;
+    this._buildPreviewTank();
+  }
+
+  /**
+   * Update loadout when player level changes
+   */
+  updateLoadout(playerLevel) {
+    this.playerLevel = playerLevel;
+    if (this.loadoutInitialized) {
+      this._renderUpgrades(playerLevel);
+      this._updateSlotStates(playerLevel);
+    }
+  }
+}

@@ -1,0 +1,66 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32">
+  <!-- Pixel art crosshair/reticle - centered at 16,16 -->
+  <style>
+    .outer { fill: #000000; }
+    .inner { fill: #00ffff; }
+  </style>
+
+  <!-- Top crosshair arm - outer black -->
+  <rect class="outer" x="14" y="4" width="4" height="2"/>
+  <rect class="outer" x="14" y="6" width="4" height="2"/>
+  <rect class="outer" x="14" y="8" width="4" height="2"/>
+  <rect class="outer" x="14" y="10" width="4" height="2"/>
+
+  <!-- Top crosshair arm - inner yellow -->
+  <rect class="inner" x="15" y="5" width="2" height="6"/>
+
+  <!-- Bottom crosshair arm - outer black -->
+  <rect class="outer" x="14" y="20" width="4" height="2"/>
+  <rect class="outer" x="14" y="22" width="4" height="2"/>
+  <rect class="outer" x="14" y="24" width="4" height="2"/>
+  <rect class="outer" x="14" y="26" width="4" height="2"/>
+
+  <!-- Bottom crosshair arm - inner yellow -->
+  <rect class="inner" x="15" y="21" width="2" height="6"/>
+
+  <!-- Left crosshair arm - outer black -->
+  <rect class="outer" x="4" y="14" width="2" height="4"/>
+  <rect class="outer" x="6" y="14" width="2" height="4"/>
+  <rect class="outer" x="8" y="14" width="2" height="4"/>
+  <rect class="outer" x="10" y="14" width="2" height="4"/>
+
+  <!-- Left crosshair arm - inner yellow -->
+  <rect class="inner" x="5" y="15" width="6" height="2"/>
+
+  <!-- Right crosshair arm - outer black -->
+  <rect class="outer" x="20" y="14" width="2" height="4"/>
+  <rect class="outer" x="22" y="14" width="2" height="4"/>
+  <rect class="outer" x="24" y="14" width="2" height="4"/>
+  <rect class="outer" x="26" y="14" width="2" height="4"/>
+
+  <!-- Right crosshair arm - inner yellow -->
+  <rect class="inner" x="21" y="15" width="6" height="2"/>
+
+  <!-- Center dot - black outline -->
+  <rect class="outer" x="14" y="14" width="4" height="4"/>
+
+  <!-- Center dot - yellow fill -->
+  <rect class="inner" x="15" y="15" width="2" height="2"/>
+
+  <!-- Corner accents for more tactical look -->
+  <!-- Top-left corner -->
+  <rect class="outer" x="8" y="8" width="2" height="2"/>
+  <rect class="inner" x="9" y="9" width="1" height="1"/>
+
+  <!-- Top-right corner -->
+  <rect class="outer" x="22" y="8" width="2" height="2"/>
+  <rect class="inner" x="22" y="9" width="1" height="1"/>
+
+  <!-- Bottom-left corner -->
+  <rect class="outer" x="8" y="22" width="2" height="2"/>
+  <rect class="inner" x="9" y="22" width="1" height="1"/>
+
+  <!-- Bottom-right corner -->
+  <rect class="outer" x="22" y="22" width="2" height="2"/>
+  <rect class="inner" x="22" y="22" width="1" height="1"/>
+</svg>
