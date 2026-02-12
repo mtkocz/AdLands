@@ -182,11 +182,7 @@
 
         // Fetch sponsor images via HTTP (too large for WebSocket) and apply in background
         if (data.world.sponsors && data.world.sponsors.length > 0) {
-          fetch("/api/sponsors").then(r => r.json()).then(apiData => {
-            const imageMap = {};
-            for (const s of apiData.sponsors) {
-              imageMap[s.id] = { patternImage: s.patternImage, logoImage: s.logoImage };
-            }
+          fetch("/api/sponsors/images").then(r => r.json()).then(imageMap => {
             const merged = data.world.sponsors.map(s => ({ ...s, ...imageMap[s.id] }));
             planet.preloadSponsorTextures(merged).then(() => {
               planet.applySponsorVisuals(merged);

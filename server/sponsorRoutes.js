@@ -5,6 +5,7 @@
  */
 
 const { Router } = require("express");
+const zlib = require("zlib");
 
 function createSponsorRoutes(sponsorStore, gameRoom) {
   const router = Router();
@@ -23,6 +24,27 @@ function createSponsorRoutes(sponsorStore, gameRoom) {
       lastModified: sponsorStore._cache?.lastModified || "",
     };
     res.json(data);
+  });
+
+  // GET /api/sponsors/images — sponsor images only, gzip compressed
+  router.get("/images", (req, res) => {
+    const images = {};
+    for (const s of sponsorStore.getAll()) {
+      if (s.patternImage || s.logoImage) {
+        images[s.id] = { patternImage: s.patternImage, logoImage: s.logoImage };
+      }
+    }
+    const json = JSON.stringify(images);
+    if (req.headers["accept-encoding"]?.includes("gzip")) {
+      zlib.gzip(Buffer.from(json), (err, compressed) => {
+        if (err) return res.status(500).end();
+        res.setHeader("Content-Type", "application/json");
+        res.setHeader("Content-Encoding", "gzip");
+        res.end(compressed);
+      });
+    } else {
+      res.json(images);
+    }
   });
 
   // GET /api/sponsors/export — download as JSON file
