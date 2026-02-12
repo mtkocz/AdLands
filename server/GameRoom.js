@@ -332,6 +332,9 @@ class GameRoom {
       // Server-computed faction rank (1-based, unique per faction)
       rank: 0,
 
+      // Cannon cooldown (server-authoritative)
+      lastFireTime: 0,
+
       // Profile data (sent by client after connect)
       badges: [],
       totalCrypto: 0,
@@ -458,6 +461,11 @@ class GameRoom {
   handleFire(socketId, power, fireTurretAngle) {
     const player = this.players.get(socketId);
     if (!player || player.isDead || player.waitingForPortal) return;
+
+    // Enforce server-side cooldown (1 second between shots)
+    const now = Date.now();
+    if (now - player.lastFireTime < 1000) return;
+    player.lastFireTime = now;
 
     // Clamp charge power to valid range (0-10)
     const chargePower = Math.max(0, Math.min(10, power || 0));
