@@ -322,6 +322,12 @@ class CommanderDrawing {
       }
     }
 
+    // Broadcast to faction members via server
+    if (window.networkManager?.isMultiplayer) {
+      const points = this.currentStroke.map((p) => [p.x, p.y, p.z]);
+      window.networkManager.sendCommanderDrawing({ points });
+    }
+
     // Notify Tusk
     if (window.tuskCommentary && window.tuskCommentary.onCommanderDrawing) {
       window.tuskCommentary.onCommanderDrawing("Player");
@@ -479,6 +485,58 @@ class CommanderDrawing {
 
       return true;
     });
+  }
+
+  // ========================
+  // REMOTE DRAWING (from network)
+  // ========================
+
+  /**
+   * Add a drawing received from another commander via the network.
+   * @param {Array<number[]>} points - Array of [x, y, z] local-space point coords
+   * @param {string} faction - Author's faction
+   */
+  addRemoteDrawing(points, faction) {
+    if (!points || points.length < 2) return;
+
+    // Convert flat arrays to Vector3
+    const vectors = points.map(
+      (p) => new THREE.Vector3(p[0], p[1], p[2]),
+    );
+
+    const mesh = this._createStrokeMesh(vectors);
+    if (!mesh) return;
+
+    // Add outline first (renders behind)
+    const outlineMesh = mesh.userData.outlineMesh;
+    if (outlineMesh) {
+      this.planet.hexGroup.add(outlineMesh);
+    }
+    this.planet.hexGroup.add(mesh);
+
+    // Add to drawings list with expiry
+    this.drawings.push({
+      mesh,
+      outlineMesh,
+      expiry:
+        Date.now() + DRAWING_CONFIG.fadeTime + DRAWING_CONFIG.fadeDuration,
+      fadeStart: Date.now() + DRAWING_CONFIG.fadeTime,
+      authorFaction: faction,
+    });
+
+    // Enforce max drawings cap
+    while (this.drawings.length > DRAWING_CONFIG.maxDrawings) {
+      const oldest = this.drawings[0];
+      oldest.fadeStart = Date.now();
+      oldest.expiry = Date.now() + DRAWING_CONFIG.fadeDuration;
+      if (oldest._cappedFade) {
+        this.drawings.shift();
+        this._removeDrawingMeshes(oldest);
+      } else {
+        oldest._cappedFade = true;
+        break;
+      }
+    }
   }
 
   // ========================

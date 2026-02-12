@@ -80,7 +80,10 @@ const mainRoom = new GameRoom(io, "main", sponsorStore, sponsorImageUrls);
 mainRoom.start();
 
 // Mount sponsor API routes (after GameRoom so live reload can broadcast)
-app.use("/api/sponsors", createSponsorRoutes(sponsorStore, mainRoom));
+app.use("/api/sponsors", createSponsorRoutes(sponsorStore, mainRoom, {
+  imageUrls: sponsorImageUrls,
+  gameDir,
+}));
 
 // ========================
 // CONNECTION HANDLING
@@ -149,6 +152,20 @@ io.on("connection", (socket) => {
     mainRoom.handleCommanderOverride(socket.id, socket);
   });
 
+  // ---- Commander Ping (broadcast to faction) ----
+  socket.on("commander-ping", (data) => {
+    if (data && typeof data === "object") {
+      mainRoom.handleCommanderPing(socket.id, data);
+    }
+  });
+
+  // ---- Commander Drawing (broadcast to faction) ----
+  socket.on("commander-drawing", (data) => {
+    if (data && typeof data === "object") {
+      mainRoom.handleCommanderDrawing(socket.id, data);
+    }
+  });
+
   // ---- Chat ----
   socket.on("chat", (msg) => {
     // Relay chat with player info
@@ -176,6 +193,11 @@ io.on("connection", (socket) => {
       // Lobby: broadcast to all players
       io.to(mainRoom.roomId).emit("chat", chatData);
     }
+  });
+
+  // ---- Ping measurement (echo timestamp back) ----
+  socket.on("ping-measure", (ts) => {
+    socket.emit("pong-measure", ts);
   });
 
   // ---- Disconnect ----

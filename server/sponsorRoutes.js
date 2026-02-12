@@ -45,8 +45,11 @@ function extractSponsorImages(sponsorStore, gameDir) {
   return urlMap;
 }
 
-function createSponsorRoutes(sponsorStore, gameRoom) {
+function createSponsorRoutes(sponsorStore, gameRoom, { imageUrls, gameDir } = {}) {
   const router = Router();
+
+  // Mutable reference so we can update after re-extraction
+  let _imageUrls = imageUrls || {};
 
   function reloadIfLive() {
     if (gameRoom && typeof gameRoom.reloadSponsors === "function") {
@@ -54,11 +57,45 @@ function createSponsorRoutes(sponsorStore, gameRoom) {
     }
   }
 
-  // GET /api/sponsors — list all sponsors
+  /**
+   * Re-extract sponsor images and update the URL map.
+   * Called after mutations so static files stay in sync.
+   */
+  function reExtractImages() {
+    if (gameDir) {
+      _imageUrls = extractSponsorImages(sponsorStore, gameDir);
+    }
+  }
+
+  /**
+   * Strip heavy base64 fields from a sponsor for list responses.
+   * Replaces patternImage/logoImage with static URLs when available.
+   */
+  function toLite(sponsor) {
+    const lite = { ...sponsor };
+    const urls = _imageUrls[sponsor.id];
+
+    // Replace patternImage with URL (always strip base64 from list)
+    delete lite.patternImage;
+    if (urls?.patternUrl) lite.patternUrl = urls.patternUrl;
+
+    // Replace logoImage with URL
+    if (urls?.logoUrl) {
+      lite.logoUrl = urls.logoUrl;
+      delete lite.logoImage;
+    }
+    // If no extracted logo URL, keep logoImage base64 as fallback
+
+    return lite;
+  }
+
+  // GET /api/sponsors — list all sponsors (lite by default, ?full=1 for base64)
   router.get("/", (req, res) => {
+    const full = req.query.full === "1";
+    const sponsors = sponsorStore.getAll();
     const data = {
       version: 1,
-      sponsors: sponsorStore.getAll(),
+      sponsors: full ? sponsors : sponsors.map(toLite),
       lastModified: sponsorStore._cache?.lastModified || "",
     };
     res.json(data);
@@ -84,6 +121,7 @@ function createSponsorRoutes(sponsorStore, gameRoom) {
   router.post("/", (req, res) => {
     const result = sponsorStore.create(req.body);
     if (result.errors) return res.status(400).json({ errors: result.errors });
+    reExtractImages();
     reloadIfLive();
     res.status(201).json(result.sponsor);
   });
@@ -92,6 +130,7 @@ function createSponsorRoutes(sponsorStore, gameRoom) {
   router.post("/import", (req, res) => {
     const merge = req.body.merge !== false; // default true
     const result = sponsorStore.importJSON(req.body, merge);
+    reExtractImages();
     reloadIfLive();
     res.json(result);
   });
@@ -103,6 +142,7 @@ function createSponsorRoutes(sponsorStore, gameRoom) {
       const status = result.errors.includes("Sponsor not found") ? 404 : 400;
       return res.status(status).json({ errors: result.errors });
     }
+    reExtractImages();
     reloadIfLive();
     res.json(result.sponsor);
   });
@@ -111,6 +151,7 @@ function createSponsorRoutes(sponsorStore, gameRoom) {
   router.delete("/:id", (req, res) => {
     const deleted = sponsorStore.delete(req.params.id);
     if (!deleted) return res.status(404).json({ errors: ["Sponsor not found"] });
+    reExtractImages();
     reloadIfLive();
     res.json({ success: true });
   });

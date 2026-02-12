@@ -617,18 +617,28 @@
   // Track if player has spawned in
   let hasSpawnedIn = false;
 
-  // Enable crypto when exiting fast travel
+  // Commander leaves the planet surface — despawn bodyguards
+  fastTravel.onEnterFastTravel = () => {
+    commanderBodyguards.onCommanderLeaveSurface();
+  };
+
+  // Commander lands on the planet surface — spawn bodyguards if commander
   fastTravel.onExitFastTravel = () => {
     cryptoSystem.enabled = true;
     hasSpawnedIn = true;
 
-    // First deploy: if commander was appointed while in fast travel,
-    // this triggers the deferred bodyguard spawn.
-    if (!commanderBodyguards.commanderDeployed) {
-      commanderBodyguards.setDeployed();
-    } else if (commanderBodyguards.isActive()) {
-      // Subsequent fast travels: teleport bodyguards to new position
-      commanderBodyguards.onCommanderTeleport();
+    // Notify bodyguards that commander is on the surface.
+    // If a spawn was deferred (became commander while in fast travel), this triggers it.
+    commanderBodyguards.onCommanderLand();
+
+    // If commander is already active but bodyguards aren't (returning from fast travel),
+    // spawn fresh bodyguards at the new position.
+    if (!commanderBodyguards.isActive() && commanderSystem.isHumanCommander() && !commanderSystem.multiplayerMode) {
+      const faction = commanderSystem.humanPlayerFaction;
+      const commander = commanderSystem.commanders[faction];
+      if (commander) {
+        commanderBodyguards.spawn(commander, faction);
+      }
     }
   };
 
@@ -1302,6 +1312,7 @@
     proximityChat,
     botTanks,
     capturePulse,
+    commanderDrawing,
     updatePlayerCount,
 
     // Called by MultiplayerClient when server assigns faction
@@ -1432,6 +1443,17 @@
         playerSquad,
         { followingPlayerId: clickedPlayer.playerId },
       );
+      // Broadcast commander pings to faction via server
+      if (isCommander && window.networkManager?.isMultiplayer) {
+        const localPos = planet.hexGroup
+          .worldToLocal(clickedPlayer.position.clone())
+          .normalize();
+        window.networkManager.sendCommanderPing({
+          x: localPos.x,
+          y: localPos.y,
+          z: localPos.z,
+        });
+      }
       return;
     }
 
@@ -1449,6 +1471,17 @@
         playerFaction,
         playerSquad,
       );
+      // Broadcast commander pings to faction via server
+      if (isCommander && window.networkManager?.isMultiplayer) {
+        const localPos = planet.hexGroup
+          .worldToLocal(worldPoint.clone())
+          .normalize();
+        window.networkManager.sendCommanderPing({
+          x: localPos.x,
+          y: localPos.y,
+          z: localPos.z,
+        });
+      }
     }
   });
 
@@ -3281,6 +3314,7 @@
   const STABLE_FRAME_THRESHOLD = 22; // Each frame must be under 22ms (~45fps)
   let fpsLastTime = performance.now();
   const fpsCounter = document.getElementById("fps-counter");
+  const pingCounter = document.getElementById("ping-counter");
 
   // Preallocated frustum culling objects (avoid GC pressure)
   const sharedFrustum = new THREE.Frustum();
@@ -3302,6 +3336,17 @@
       fpsCounter.textContent = fps + " FPS";
       fpsCounter.style.color =
         fps >= 50 ? "#00ff00" : fps >= 30 ? "#ffd700" : "#ff0000";
+      // Update ping display
+      const net = window.networkManager;
+      if (net && net.connected) {
+        const ms = net.ping;
+        pingCounter.textContent = ms + " ms";
+        pingCounter.style.color =
+          ms <= 80 ? "#00ff00" : ms <= 150 ? "#ffd700" : "#ff0000";
+      } else {
+        pingCounter.textContent = "-- ms";
+        pingCounter.style.color = "#00bfff";
+      }
       frameCount = 0;
       fpsLastTime = now;
       // Refresh player counts once per second to catch quiet despawns

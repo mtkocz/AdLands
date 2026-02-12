@@ -844,6 +844,30 @@
       // Could trigger kill feed entry here if needed
     };
 
+    // Commander ping relayed by server — place on local ping system
+    net.onCommanderPing = (data) => {
+      if (!window.pingMarkerSystem || !planet) return;
+      // Reconstruct world position from local-space normal
+      const localNormal = new THREE.Vector3(data.x, data.y, data.z);
+      const worldPos = localNormal
+        .normalize()
+        .multiplyScalar(sphereRadius);
+      planet.hexGroup.localToWorld(worldPos);
+      window.pingMarkerSystem.placePing(
+        data.id,
+        worldPos,
+        true, // isCommander
+        data.faction,
+        null, // no squad for commander pings
+      );
+    };
+
+    // Commander drawing relayed by server — render on local drawing system
+    net.onCommanderDrawing = (data) => {
+      if (!mp.commanderDrawing) return;
+      mp.commanderDrawing.addRemoteDrawing(data.points, data.faction);
+    };
+
     // Server-authoritative commander change (immediate, per-faction)
     net.onCommanderUpdate = (data) => {
       if (!window.commanderSystem) return;

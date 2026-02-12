@@ -38,9 +38,27 @@
   // INITIALIZATION
   // ========================
 
+  // Loading overlay helpers
+  const loadingOverlay = document.getElementById("loading-overlay");
+  const loadingBarFill = document.getElementById("loading-bar-fill");
+  const loadingStatus = document.getElementById("loading-status");
+
+  function setLoadingProgress(pct, status) {
+    if (loadingBarFill) loadingBarFill.style.width = pct + "%";
+    if (loadingStatus) loadingStatus.textContent = status;
+  }
+
+  function hideLoading() {
+    if (!loadingOverlay) return;
+    loadingOverlay.classList.add("fade-out");
+    setTimeout(() => loadingOverlay.remove(), 400);
+  }
+
   async function init() {
-    // Initialize storage (REST API if server running, IndexedDB fallback)
+    // Step 1: Connect to storage
+    setLoadingProgress(10, "Connecting to server...");
     await SponsorStorage.init();
+    setLoadingProgress(40, "Loading sponsors...");
 
     // Show connection status badge
     const headerActions = document.querySelector(".header-actions");
@@ -51,7 +69,8 @@
       headerActions.prepend(badge);
     }
 
-    // Initialize hex selector
+    // Step 2: Initialize hex selector (builds 3D sphere)
+    setLoadingProgress(50, "Building hex sphere...");
     const hexContainer = document.getElementById("hex-canvas-container");
     hexSelector = new HexSelector(hexContainer, {
       width: hexContainer.clientWidth,
@@ -60,6 +79,7 @@
     });
 
     // Initialize pricing panel
+    setLoadingProgress(65, "Setting up panels...");
     const pricingContainer = document.getElementById("pricing-panel");
     pricingPanel = new PricingPanel(pricingContainer, {
       onTierFilter: handleTierFilter,
@@ -81,7 +101,8 @@
       onRewardsChange: handleRewardsChange,
     });
 
-    // Setup event listeners
+    // Step 3: Wire up UI
+    setLoadingProgress(80, "Loading sponsor list...");
     setupEventListeners();
 
     // Load existing sponsors
@@ -91,7 +112,12 @@
     columnResizer.init(document.getElementById("main-content"));
 
     // Update assigned tiles in hex selector
+    setLoadingProgress(95, "Rendering tiles...");
     updateAssignedTiles();
+
+    // Done — fade out loading overlay
+    setLoadingProgress(100, "Ready");
+    hideLoading();
   }
 
   function setupEventListeners() {
@@ -600,12 +626,13 @@
         const rev = calcRevenueForTiles(sponsor.cluster?.tileIndices, tierMap);
         totalMonthly += rev.total;
 
+        const logoSrc = sponsor.logoUrl || sponsor.logoImage;
         htmlParts.push(`
             <div class="sponsor-card" data-id="${sponsor.id}">
                 <div class="sponsor-card-logo">
                     ${
-                      sponsor.logoImage
-                        ? `<img src="${sponsor.logoImage}" alt="${escapeHtml(sponsor.name)}">`
+                      logoSrc
+                        ? `<img src="${logoSrc}" alt="${escapeHtml(sponsor.name)}">`
                         : '<span style="color:#666;font-size:12px;">No logo</span>'
                     }
                 </div>
@@ -659,14 +686,15 @@
           ? `<div class="sponsor-card-revenue"><span class="sponsor-card-revenue-total">$${fmtUSD(groupRevenue)}/mo</span></div>`
           : "";
 
+        const groupLogoSrc = first.logoUrl || first.logoImage;
         htmlParts.push(`
             <div class="sponsor-group" data-name="${escapeHtml(first.name)}">
                 <div class="sponsor-group-header">
                     <span class="sponsor-group-chevron">&#x25B6;</span>
                     <div class="sponsor-card-logo">
                         ${
-                          first.logoImage
-                            ? `<img src="${first.logoImage}" alt="${escapeHtml(first.name)}">`
+                          groupLogoSrc
+                            ? `<img src="${groupLogoSrc}" alt="${escapeHtml(first.name)}">`
                             : '<span style="color:#666;font-size:12px;">No logo</span>'
                         }
                     </div>
@@ -698,8 +726,9 @@
     sponsorsListEl.innerHTML = htmlParts.join("") + totalHtml;
   }
 
-  function editSponsor(id) {
-    const sponsor = SponsorStorage.getById(id);
+  async function editSponsor(id) {
+    // Fetch full data (including base64 images) from server
+    const sponsor = await SponsorStorage.fetchFull(id);
     if (!sponsor) {
       showToast("Sponsor not found", "error");
       return;
@@ -739,7 +768,7 @@
    * @param {string} sponsorName - The shared sponsor name
    * @param {string|null} startAtId - Optionally start at a specific cluster ID
    */
-  function editGroup(sponsorName, startAtId) {
+  async function editGroup(sponsorName, startAtId) {
     const sponsors = SponsorStorage.getAll();
     const members = sponsors.filter(
       (s) => (s.name || "").toLowerCase() === sponsorName.toLowerCase()
@@ -754,6 +783,9 @@
       editSponsor(members[0].id);
       return;
     }
+
+    // Fetch full data for all group members
+    await Promise.all(members.map((s) => SponsorStorage.fetchFull(s.id)));
 
     // Determine starting index
     let activeIndex = 0;

@@ -54,7 +54,7 @@ canvas:not(#tank-preview-canvas) {
 #tusk-dialogue *,
 #crypto-hud-bar,
 #crypto-hud-bar *,
-#fps-counter,
+#debug-bar,
 #ui-hint,
 #capture-status,
 #capture-status *,
@@ -157,15 +157,16 @@ canvas {
 }
 
 /* ========================
-   FPS COUNTER
+   DEBUG BAR (FPS + PING)
    ======================== */
 
-#fps-counter {
+#debug-bar {
     position: absolute;
     top: var(--padding-md);
     left: 50%;
     transform: translateX(-50%);
-    color: #00ff00;
+    display: flex;
+    gap: var(--padding-md);
     background: var(--bg-panel);
     padding: var(--padding-sm) var(--padding-lg);
     border-radius: 0;
@@ -173,11 +174,17 @@ canvas {
     border: none;
     font-size: var(--font-size-body);
     font-family: var(--font-body);
-    /* text-transform removed - preserve case */
     line-height: 1;
     z-index: 100;
-    /* Pixelated outline via SVG filter (single-pass) */
     filter: url(#pixel-outline-1);
+}
+
+#fps-counter {
+    color: #00ff00;
+}
+
+#ping-counter {
+    color: #00bfff;
 }
 
 /* ========================

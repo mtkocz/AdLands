@@ -31,6 +31,10 @@ class NetworkManager {
     this._lastInputSendTime = 0;
     this._inputSendInterval = 50; // ms — matches 20 tick/sec server
 
+    // Ping measurement
+    this.ping = 0; // latest round-trip time in ms
+    this._pingInterval = null;
+
     // Server state for reconciliation
     this.lastServerState = null;
 
@@ -61,6 +65,8 @@ class NetworkManager {
     this.onTipConfirmed = null;     // (data) => { targetId, targetName, amount, newBudget }
     this.onTipFailed = null;        // (data) => { reason }
     this.onBodyguardKilled = null;  // (data) => { id, faction, killerFaction }
+    this.onCommanderPing = null;    // (data) => { id, faction, x, y, z }
+    this.onCommanderDrawing = null; // (data) => { id, faction, points }
   }
 
   // ========================
@@ -81,10 +87,18 @@ class NetworkManager {
     this.socket.on("connect", () => {
       this.connected = true;
       this.playerId = this.socket.id;
+      // Start ping measurement (every 2s)
+      this._startPing();
     });
 
     this.socket.on("disconnect", (reason) => {
       this.connected = false;
+      this._stopPing();
+    });
+
+    // Ping response from server
+    this.socket.on("pong-measure", (ts) => {
+      this.ping = Date.now() - ts;
     });
 
     this.socket.on("reconnect", () => {
@@ -227,6 +241,16 @@ class NetworkManager {
     this.socket.on("bodyguard-killed", (data) => {
       if (this.onBodyguardKilled) this.onBodyguardKilled(data);
     });
+
+    // Commander ping (relayed by server to faction members)
+    this.socket.on("commander-ping", (data) => {
+      if (this.onCommanderPing) this.onCommanderPing(data);
+    });
+
+    // Commander drawing (relayed by server to faction members)
+    this.socket.on("commander-drawing", (data) => {
+      if (this.onCommanderDrawing) this.onCommanderDrawing(data);
+    });
   }
 
   // ========================
@@ -355,6 +379,42 @@ class NetworkManager {
   sendCommanderOverride() {
     if (!this.connected) return;
     this.socket.emit("commander-override");
+  }
+
+  /**
+   * Send a commander ping to the server for relay to faction members.
+   * @param {Object} data - { x, y, z } local-space normal direction
+   */
+  sendCommanderPing(data) {
+    if (!this.connected) return;
+    this.socket.emit("commander-ping", data);
+  }
+
+  /**
+   * Send a commander drawing to the server for relay to faction members.
+   * @param {Object} data - { points: [[x,y,z], ...] } local-space stroke points
+   */
+  sendCommanderDrawing(data) {
+    if (!this.connected) return;
+    this.socket.emit("commander-drawing", data);
+  }
+
+  // ========================
+  // PING MEASUREMENT
+  // ========================
+
+  _startPing() {
+    this._stopPing();
+    this._pingInterval = setInterval(() => {
+      if (this.connected) this.socket.emit("ping-measure", Date.now());
+    }, 2000);
+  }
+
+  _stopPing() {
+    if (this._pingInterval) {
+      clearInterval(this._pingInterval);
+      this._pingInterval = null;
+    }
   }
 
   // ========================

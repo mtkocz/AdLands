@@ -1531,6 +1531,62 @@ body {
 }
 
 /* ========================
+   LOADING OVERLAY
+   ======================== */
+
+#loading-overlay {
+    position: fixed;
+    inset: 0;
+    z-index: 9999;
+    background: #0a0a0a;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: opacity 0.4s ease;
+}
+
+#loading-overlay.fade-out {
+    opacity: 0;
+    pointer-events: none;
+}
+
+.loading-content {
+    text-align: center;
+    width: 280px;
+}
+
+.loading-title {
+    font-family: var(--font-header);
+    font-size: var(--font-size-header);
+    text-shadow: var(--header-text-shadow);
+    padding-top: var(--header-padding-top);
+    color: var(--accent-gold);
+    margin-bottom: var(--space-lg);
+}
+
+.loading-bar-track {
+    height: 8px;
+    background: var(--bg-highlight);
+    border: var(--border-width) solid var(--border-dark);
+    clip-path: var(--clip-rounded-4);
+    overflow: hidden;
+}
+
+.loading-bar-fill {
+    height: 100%;
+    width: 0%;
+    background: var(--accent-gold);
+    transition: width 0.3s ease;
+}
+
+.loading-status {
+    font-family: var(--font-small);
+    font-size: var(--font-size-small);
+    color: var(--text-muted);
+    margin-top: var(--space-sm);
+}
+
+/* ========================
    CLUSTER TABS (Editor)
    ======================== */
 

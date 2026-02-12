@@ -462,9 +462,9 @@ class GameRoom {
     const player = this.players.get(socketId);
     if (!player || player.isDead || player.waitingForPortal) return;
 
-    // Enforce server-side cooldown (1 second between shots)
+    // Enforce server-side cooldown (2 seconds between shots)
     const now = Date.now();
-    if (now - player.lastFireTime < 1000) return;
+    if (now - player.lastFireTime < 2000) return;
     player.lastFireTime = now;
 
     // Clamp charge power to valid range (0-10)
@@ -1711,6 +1711,66 @@ class GameRoom {
         : null;
     }
     return snapshot;
+  }
+
+  // ========================
+  // COMMANDER PING / DRAWING RELAY
+  // ========================
+
+  /**
+   * Relay a commander ping to all other players in the room.
+   * Server validates that the sender is actually the commander of their faction.
+   */
+  handleCommanderPing(socketId, data) {
+    const player = this.players.get(socketId);
+    if (!player) return;
+
+    // Validate this player is actually the commander of their faction
+    const commander = this.commanders[player.faction];
+    if (!commander || commander.id !== socketId) return;
+
+    // Validate data (local-space normal vector)
+    if (typeof data.x !== "number" || typeof data.y !== "number" || typeof data.z !== "number") return;
+    if (!isFinite(data.x) || !isFinite(data.y) || !isFinite(data.z)) return;
+
+    // Broadcast to all others in room
+    const socket = this.io.sockets.sockets.get(socketId);
+    if (socket) {
+      socket.to(this.roomId).emit("commander-ping", {
+        id: socketId,
+        faction: player.faction,
+        x: data.x,
+        y: data.y,
+        z: data.z,
+      });
+    }
+  }
+
+  /**
+   * Relay a commander drawing to all other players in the room.
+   * Server validates that the sender is actually the commander of their faction.
+   */
+  handleCommanderDrawing(socketId, data) {
+    const player = this.players.get(socketId);
+    if (!player) return;
+
+    // Validate this player is actually the commander of their faction
+    const commander = this.commanders[player.faction];
+    if (!commander || commander.id !== socketId) return;
+
+    // Validate data: array of point arrays
+    if (!Array.isArray(data.points) || data.points.length < 2) return;
+    if (data.points.length > 500) return; // Hard limit matching client maxPointsPerStroke
+
+    // Broadcast to all others in room
+    const socket = this.io.sockets.sockets.get(socketId);
+    if (socket) {
+      socket.to(this.roomId).emit("commander-drawing", {
+        id: socketId,
+        faction: player.faction,
+        points: data.points,
+      });
+    }
   }
 
   // ========================

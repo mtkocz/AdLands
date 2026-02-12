@@ -47,6 +47,9 @@ class FastTravel {
         // Multiplayer callback: when set, portal selection goes through server
         this.onPortalChosen = null;
 
+        // Called when entering fast travel (commander leaves planet surface)
+        this.onEnterFastTravel = null;
+
         // Minimum spawn distance from other tanks (in radians on sphere surface)
         this.minSpawnDistance = 0.03;  // ~3 degrees apart
 
@@ -164,6 +167,11 @@ class FastTravel {
         // Disable tank controls and hide tank
         this.tank.setControlsEnabled(false);
         this.tank.setVisible(false);
+
+        // Notify that commander has left the planet surface
+        if (this.onEnterFastTravel) {
+            this.onEnterFastTravel();
+        }
     }
 
     /**

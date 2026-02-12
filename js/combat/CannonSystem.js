@@ -61,7 +61,7 @@ class CannonSystem {
       projectileRadius: 0.125, // Tracer thickness
       maxDistance: 20, // Max range before despawn
       maxLifetime: 2, // Fallback timeout (seconds)
-      cooldown: 1, // Time between shots
+      cooldown: 2, // Time between shots
       // Charge multipliers (applied at max charge)
       chargeSpeedMultiplier: 2, // 2x speed at max charge
       chargeRangeMultiplier: 3, // 4x range at max charge

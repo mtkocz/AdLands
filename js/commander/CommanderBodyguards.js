@@ -83,9 +83,10 @@ class CommanderBodyguards {
         // Track if bodyguards are active
         this.active = false;
 
-        // Deferred spawn: if commander is appointed before deploying,
-        // store the pending spawn and execute it on deploy.
-        this.commanderDeployed = false;
+        // Bodyguards only exist while commander is on the planet surface.
+        // If commander is appointed while off-surface (fast travel / pre-deploy),
+        // the spawn is deferred until they land.
+        this.commanderOnSurface = false;
         this._pendingSpawn = null; // { commander, faction }
 
     }
@@ -127,11 +128,11 @@ class CommanderBodyguards {
     // ========================
 
     /**
-     * Mark the commander as deployed (exited fast travel onto the planet).
-     * If bodyguard spawn was deferred, execute it now.
+     * Notify that the commander has landed on the planet surface.
+     * Triggers any deferred bodyguard spawn.
      */
-    setDeployed() {
-        this.commanderDeployed = true;
+    onCommanderLand() {
+        this.commanderOnSurface = true;
         if (this._pendingSpawn) {
             const { commander, faction } = this._pendingSpawn;
             this._pendingSpawn = null;
@@ -140,11 +141,23 @@ class CommanderBodyguards {
     }
 
     /**
+     * Notify that the commander has left the planet surface (fast travel / death).
+     * Despawns any active bodyguards.
+     */
+    onCommanderLeaveSurface() {
+        this.commanderOnSurface = false;
+        this._pendingSpawn = null;
+        if (this.active) {
+            this.despawn(false);
+        }
+    }
+
+    /**
      * Spawn bodyguards for a commander
      */
     spawn(commander, faction) {
-        // Defer spawn until commander deploys
-        if (!this.commanderDeployed) {
+        // Defer spawn until commander is on the planet surface
+        if (!this.commanderOnSurface) {
             this._pendingSpawn = { commander, faction };
             return;
         }
@@ -337,51 +350,6 @@ class CommanderBodyguards {
     onCommanderRespawn() {
         // Bodyguards do not respawn; new ones are only created
         // when a player freshly gains commander status via spawn()
-    }
-
-    /**
-     * Called when commander fast travels — bodyguards disappear and respawn
-     * at the commander's new position with a dust wave effect.
-     */
-    onCommanderTeleport() {
-        if (!this.active) return;
-
-        // Hide all living bodyguards immediately
-        for (const guard of this.guards) {
-            if (guard.isDead) continue;
-            guard.group.visible = false;
-        }
-
-        // After a short delay, reposition and respawn with dust wave
-        setTimeout(() => {
-            if (!this.active || !this.commander) return;
-
-            const cmdPos = this._getCommanderPosition();
-            const cmdHeading = this._getCommanderHeading();
-
-            for (const guard of this.guards) {
-                if (guard.isDead) continue;
-
-                // Reposition near commander's new location
-                const angleOffset = guard.side === 'left'
-                    ? -BODYGUARD_CONFIG.formationAngle
-                    : BODYGUARD_CONFIG.formationAngle;
-                const flankAngle = cmdHeading + angleOffset + Math.PI;
-                guard.theta = cmdPos.theta + Math.cos(flankAngle) * BODYGUARD_CONFIG.followDistance;
-                guard.phi = cmdPos.phi + Math.sin(flankAngle) * BODYGUARD_CONFIG.followDistance;
-                guard.heading = cmdHeading;
-                guard.state.speed = 0;
-
-                // Update visual position before showing
-                this._updateGuardVisual(guard);
-
-                // Show guard
-                guard.group.visible = true;
-
-                // Dust wave spawn effect
-                this._spawnShockwaveAt(guard);
-            }
-        }, 400);
     }
 
     // ========================

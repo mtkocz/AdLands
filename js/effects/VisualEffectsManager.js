@@ -685,7 +685,7 @@ class VisualEffectsManager {
   _hideUIElements() {
     const ids = [
       "player-tags-container",
-      "fps-counter",
+      "debug-bar",
       "ui-hint",
       "left-panel-stack",
       "fast-travel-ui",
@@ -708,7 +708,7 @@ class VisualEffectsManager {
     if (!this.hudVisible) return;
     const ids = [
       "player-tags-container",
-      "fps-counter",
+      "debug-bar",
       "ui-hint",
       "left-panel-stack",
       "fast-travel-ui",

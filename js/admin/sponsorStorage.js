@@ -231,6 +231,34 @@ const SponsorStorage = {
   },
 
   /**
+   * Fetch full sponsor data (including base64 images) from the server.
+   * Updates the in-memory cache entry so subsequent getById calls return full data.
+   * No-op when not connected to the API or when the sponsor already has patternImage.
+   * @param {string} id
+   * @returns {Promise<Object|null>}
+   */
+  async fetchFull(id) {
+    if (!this._useAPI) return this.getById(id);
+
+    // Already have full data cached
+    const cached = this.getById(id);
+    if (cached && cached.patternImage !== undefined) return cached;
+
+    try {
+      const res = await fetch(`${this._apiBase}/${encodeURIComponent(id)}`);
+      if (!res.ok) return cached;
+      const full = await res.json();
+      // Merge full data into cache
+      const index = this._cache.sponsors.findIndex((s) => s.id === id);
+      if (index !== -1) this._cache.sponsors[index] = full;
+      return full;
+    } catch (e) {
+      console.warn("[SponsorStorage] fetchFull failed:", e);
+      return cached;
+    }
+  },
+
+  /**
    * Save a new sponsor
    * @param {Object} sponsor
    * @returns {Promise<Object>} The saved sponsor with generated ID
