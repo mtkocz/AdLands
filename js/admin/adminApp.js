@@ -101,6 +101,13 @@
       onRewardsChange: handleRewardsChange,
     });
 
+    // Initialize moon sponsor panel
+    setLoadingProgress(68, "Setting up moon sponsors...");
+    if (typeof MoonSponsorPanel !== "undefined") {
+      const moonPanel = new MoonSponsorPanel();
+      await moonPanel.init();
+    }
+
     // Step 3: Wire up UI
     setLoadingProgress(80, "Loading sponsor list...");
     setupEventListeners();

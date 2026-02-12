@@ -1656,3 +1656,96 @@ body {
     border-color: var(--accent-cyan);
     color: var(--accent-cyan);
 }
+
+/* ========================
+   MOON SPONSORS PANEL
+   ======================== */
+
+#moon-sponsors-panel {
+    grid-column: 1;
+}
+
+.moon-slot {
+    border: 1px solid rgba(255, 255, 255, 0.06);
+    margin-bottom: var(--space-xs);
+    transition: border-color 0.15s ease;
+}
+
+.moon-slot:last-child {
+    margin-bottom: 0;
+}
+
+.moon-slot:hover {
+    border-color: rgba(255, 255, 255, 0.15);
+}
+
+.moon-slot.expanded {
+    border-color: var(--accent-cyan);
+}
+
+.moon-slot-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: var(--space-xs) var(--space-sm);
+    cursor: pointer;
+    user-select: none;
+}
+
+.moon-slot-label {
+    font-family: var(--font-small);
+    font-size: var(--font-size-body);
+    color: var(--text-primary);
+}
+
+.moon-slot-size {
+    color: var(--text-muted);
+    font-size: var(--font-size-small);
+}
+
+.moon-slot-status {
+    font-family: var(--font-small);
+    font-size: var(--font-size-small);
+    color: var(--text-muted);
+}
+
+.moon-slot-status.sponsored {
+    color: var(--accent-cyan);
+}
+
+.moon-slot-form {
+    padding: 0 var(--space-sm) var(--space-sm);
+}
+
+.moon-form-fields .form-group {
+    margin-bottom: var(--space-xs);
+}
+
+.moon-form-fields .form-group label {
+    margin-bottom: var(--space-xxs);
+}
+
+.moon-pattern-adjustments {
+    margin-top: var(--space-xs);
+    padding: var(--space-xs);
+    border: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.moon-pattern-adjustments > label {
+    display: block;
+    font-family: var(--font-small);
+    font-size: var(--font-size-small);
+    color: var(--text-muted);
+    margin-bottom: var(--space-xxs);
+    margin-top: var(--space-xs);
+}
+
+.moon-pattern-adjustments > label:first-child {
+    margin-top: 0;
+}
+
+.moon-form-actions {
+    display: flex;
+    gap: var(--space-sm);
+    margin-top: var(--space-sm);
+}

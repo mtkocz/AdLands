@@ -76,9 +76,10 @@
    * @param {Object} entity - { speed, heading, theta, phi }
    * @param {number} planetRotationSpeed - radians per second-ish
    * @param {number} deltaTime - seconds since last tick
-   * @param {number} [minPhi=0.01] - minimum latitude (avoid north pole)
-   * @param {number} [maxPhi=Math.PI-0.01] - maximum latitude (avoid south pole)
+   * @param {number} [minPhi] - minimum latitude (polar opening boundary)
+   * @param {number} [maxPhi] - maximum latitude (polar opening boundary)
    */
+  var POLAR_PHI_LIMIT = (10 * Math.PI) / 180; // 10° from pole = polar tile opening edge
   function moveOnSphere(
     entity,
     planetRotationSpeed,
@@ -86,8 +87,8 @@
     minPhi,
     maxPhi
   ) {
-    if (minPhi === undefined) minPhi = 0.01;
-    if (maxPhi === undefined) maxPhi = Math.PI - 0.01;
+    if (minPhi === undefined) minPhi = POLAR_PHI_LIMIT;
+    if (maxPhi === undefined) maxPhi = Math.PI - POLAR_PHI_LIMIT;
 
     const speed = entity.speed;
     const heading = entity.heading;

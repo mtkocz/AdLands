@@ -191,6 +191,13 @@
         } else {
           mp.setSponsorTexturesReady();
         }
+
+        // Apply moon sponsor textures
+        if (data.world.moonSponsors && mp.environment) {
+          data.world.moonSponsors.forEach((sponsor, i) => {
+            mp.environment.applyMoonSponsor(i, sponsor);
+          });
+        }
       } else {
         mp.setSponsorTexturesReady();
       }
@@ -1083,6 +1090,16 @@
       }
 
       console.log(`[Multiplayer] Sponsors reloaded: ${data.world.sponsors?.length || 0} active`);
+    };
+
+    // Admin changed moon sponsors — update moon textures
+    net.onMoonSponsorsReloaded = (data) => {
+      if (!mp.environment || !data.moonSponsors) return;
+      console.log("[Multiplayer] Moon sponsors reloaded by admin");
+      mp.environment.clearMoonSponsors();
+      data.moonSponsors.forEach((sponsor, i) => {
+        mp.environment.applyMoonSponsor(i, sponsor);
+      });
     };
 
     // Server-authoritative crypto balances (broadcast every 5 seconds)

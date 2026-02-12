@@ -174,6 +174,18 @@ class Tank {
    * @returns {boolean} true if collision detected and position reverted
    */
   checkTerrainCollision(prevTheta, prevPhi, planetRotationSpeed, deltaTime) {
+    // Pole collision: block movement into polar openings
+    if (this.state.phi < Tank.POLAR_PHI_LIMIT || this.state.phi > Math.PI - Tank.POLAR_PHI_LIMIT) {
+      const dt60 = deltaTime * 60;
+      const rotDelta = (planetRotationSpeed * dt60) / 60;
+      this.state.theta = prevTheta - rotDelta;
+      if (this.state.theta < 0) this.state.theta += Math.PI * 2;
+      if (this.state.theta > Math.PI * 2) this.state.theta -= Math.PI * 2;
+      this.state.phi = prevPhi;
+      this.state.speed = 0;
+      return true;
+    }
+
     if (!this.planet?.terrainElevation) return false;
 
     const r = this.sphereRadius;
@@ -376,8 +388,6 @@ class Tank {
       entity,
       planetRotationSpeed,
       deltaTime,
-      0.01,
-      Math.PI - 0.01,
     );
     this.state.theta = entity.theta;
     this.state.phi = entity.phi;
@@ -1431,15 +1441,16 @@ class Tank {
  * @param {Object} entity - Must have: state.speed, heading, theta, phi
  * @param {number} planetRotationSpeed - Planet rotation speed (per second)
  * @param {number} deltaTime - Time since last frame in seconds
- * @param {number} minPhi - Minimum latitude (default 0.01)
- * @param {number} maxPhi - Maximum latitude (default PI - 0.01)
+ * @param {number} minPhi - Minimum latitude (polar opening boundary)
+ * @param {number} maxPhi - Maximum latitude (polar opening boundary)
  */
+Tank.POLAR_PHI_LIMIT = (10 * Math.PI) / 180; // 10° from pole = polar tile opening edge
 Tank.moveEntityOnSphere = function (
   entity,
   planetRotationSpeed,
   deltaTime = 1 / 60,
-  minPhi = 0.01,
-  maxPhi = Math.PI - 0.01,
+  minPhi = Tank.POLAR_PHI_LIMIT,
+  maxPhi = Math.PI - Tank.POLAR_PHI_LIMIT,
 ) {
   const speed = entity.state.speed;
   const heading = entity.heading;

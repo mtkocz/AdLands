@@ -29,11 +29,13 @@ const BOT_NAME_POOL = [
 ];
 
 class GameRoom {
-  constructor(io, roomId, sponsorStore, sponsorImageUrls) {
+  constructor(io, roomId, sponsorStore, sponsorImageUrls, moonSponsorStore, moonSponsorImageUrls) {
     this.io = io;
     this.roomId = roomId;
     this.sponsorStore = sponsorStore || null;
     this.sponsorImageUrls = sponsorImageUrls || {};
+    this.moonSponsorStore = moonSponsorStore || null;
+    this.moonSponsorImageUrls = moonSponsorImageUrls || {};
 
     // Connected players: socketId → player state
     this.players = new Map();
@@ -311,6 +313,41 @@ class GameRoom {
     });
 
     console.log(`[Room ${this.roomId}] Sponsors reloaded: ${this.sponsors.length} active, broadcast to clients`);
+  }
+
+  // ========================
+  // LIVE MOON SPONSOR RELOAD
+  // ========================
+
+  /**
+   * Build moon sponsor payload for clients (URLs instead of base64).
+   */
+  _buildMoonSponsorPayload() {
+    if (!this.moonSponsorStore) return [null, null, null];
+    return this.moonSponsorStore.getAll().map((sponsor, i) => {
+      if (!sponsor || sponsor.active === false) return null;
+      const urls = this.moonSponsorImageUrls[i] || {};
+      return {
+        moonIndex: i,
+        name: sponsor.name,
+        tagline: sponsor.tagline,
+        websiteUrl: sponsor.websiteUrl,
+        patternImage: urls.patternUrl || null,
+        patternAdjustment: sponsor.patternAdjustment,
+      };
+    });
+  }
+
+  /**
+   * Reload moon sponsors and broadcast to all connected clients.
+   * Called by the REST API after moon sponsor assign/clear.
+   */
+  reloadMoonSponsors() {
+    if (!this.moonSponsorStore) return;
+    const moonSponsors = this._buildMoonSponsorPayload();
+    this.io.to(this.roomId).emit("moon-sponsors-reloaded", { moonSponsors });
+    const active = moonSponsors.filter(Boolean).length;
+    console.log(`[Room ${this.roomId}] Moon sponsors reloaded: ${active} active, broadcast to clients`);
   }
 
   // ========================
@@ -1954,6 +1991,7 @@ class GameRoom {
       portalTileIndices: Array.from(worldResult.portalTileIndices),
       polarTileIndices: Array.from(worldResult.polarTileIndices),
       sponsors,
+      moonSponsors: this._buildMoonSponsorPayload(),
     };
   }
 

@@ -59,6 +59,7 @@ class NetworkManager {
     this.onPlayerActivated = null;  // (data) => { id, name, faction, theta, phi, ... }
     this.onPlayerProfile = null;    // (data) => { id, badges, crypto, title }
     this.onSponsorsReloaded = null; // (data) => { world }
+    this.onMoonSponsorsReloaded = null; // (data) => { moonSponsors }
     this.onCommanderUpdate = null;  // (data) => { faction, commander: { id, name } | null }
     this.onCryptoUpdate = null;     // (cryptoState) => { playerId: amount, ... }
     this.onTipReceived = null;      // (data) => { fromId, fromName, amount, newCrypto }
@@ -209,6 +210,11 @@ class NetworkManager {
     // Admin changed sponsors — server reloaded clusters
     this.socket.on("sponsors-reloaded", (data) => {
       if (this.onSponsorsReloaded) this.onSponsorsReloaded(data);
+    });
+
+    // Admin changed moon sponsors — server reloaded moon textures
+    this.socket.on("moon-sponsors-reloaded", (data) => {
+      if (this.onMoonSponsorsReloaded) this.onMoonSponsorsReloaded(data);
     });
 
     // Server-authoritative commander change (immediate)

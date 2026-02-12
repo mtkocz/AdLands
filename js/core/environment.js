@@ -379,13 +379,27 @@ class Environment {
         ambientColor: { value: new THREE.Color(0x303030) },
         ambientIntensity: { value: 1 },
         planetRadius: { value: this.sphereRadius },
+        // Sponsor texture uniforms
+        hasTexture: { value: 0 },
+        moonTexture: { value: null },
+        textureScale: { value: 1.0 },
+        textureOffsetX: { value: 0.0 },
+        textureOffsetY: { value: 0.0 },
+        saturation: { value: 1.0 },
+        inputBlack: { value: 0.0 },
+        inputGamma: { value: 1.0 },
+        inputWhite: { value: 1.0 },
+        outputBlack: { value: 0.0 },
+        outputWhite: { value: 1.0 },
       },
       vertexShader: `
                 varying vec3 vNormal;
                 varying vec3 vWorldPosition;
+                varying vec2 vUv;
                 void main() {
                     vNormal = normalize(mat3(modelMatrix) * normal);
                     vWorldPosition = (modelMatrix * vec4(position, 1.0)).xyz;
+                    vUv = uv;
                     gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
                 }
             `,
@@ -393,7 +407,12 @@ class Environment {
                 uniform vec3 moonColor, sunDirection, sunColor, fillLightDirection, fillLightColor;
                 uniform vec3 secondaryFillLightDirection, secondaryFillLightColor, ambientColor;
                 uniform float sunIntensity, fillLightIntensity, secondaryFillLightIntensity, ambientIntensity, planetRadius;
+                uniform float hasTexture;
+                uniform sampler2D moonTexture;
+                uniform float textureScale, textureOffsetX, textureOffsetY;
+                uniform float saturation, inputBlack, inputGamma, inputWhite, outputBlack, outputWhite;
                 varying vec3 vNormal, vWorldPosition;
+                varying vec2 vUv;
 
                 float calculateShadow(vec3 pos, vec3 lightDir) {
                     float a = dot(lightDir, lightDir);
@@ -408,12 +427,29 @@ class Environment {
                     return 1.0;
                 }
 
+                vec3 applyLevels(vec3 c) {
+                    c = clamp((c - vec3(inputBlack)) / (vec3(inputWhite) - vec3(inputBlack)), 0.0, 1.0);
+                    c = pow(c, vec3(1.0 / inputGamma));
+                    c = mix(vec3(outputBlack), vec3(outputWhite), c);
+                    return c;
+                }
+
                 void main() {
                     vec3 n = normalize(vNormal);
-                    vec3 color = moonColor * ambientColor * ambientIntensity;
-                    color += moonColor * sunColor * sunIntensity * max(dot(n, sunDirection), 0.0) * calculateShadow(vWorldPosition, sunDirection);
-                    color += moonColor * fillLightColor * fillLightIntensity * max(dot(n, fillLightDirection), 0.0);
-                    color += moonColor * secondaryFillLightColor * secondaryFillLightIntensity * max(dot(n, secondaryFillLightDirection), 0.0);
+                    vec3 baseColor;
+                    if (hasTexture > 0.5) {
+                        vec2 uv = vUv * textureScale + vec2(textureOffsetX, textureOffsetY);
+                        baseColor = texture2D(moonTexture, uv).rgb;
+                        baseColor = applyLevels(baseColor);
+                        float gray = dot(baseColor, vec3(0.2126, 0.7152, 0.0722));
+                        baseColor = mix(vec3(gray), baseColor, saturation);
+                    } else {
+                        baseColor = moonColor;
+                    }
+                    vec3 color = baseColor * ambientColor * ambientIntensity;
+                    color += baseColor * sunColor * sunIntensity * max(dot(n, sunDirection), 0.0) * calculateShadow(vWorldPosition, sunDirection);
+                    color += baseColor * fillLightColor * fillLightIntensity * max(dot(n, fillLightDirection), 0.0);
+                    color += baseColor * secondaryFillLightColor * secondaryFillLightIntensity * max(dot(n, secondaryFillLightDirection), 0.0);
                     gl_FragColor = vec4(color, 1.0);
                 }
             `,
@@ -428,6 +464,61 @@ class Environment {
       this.scene.add(moon);
       this.moons.push(moon);
     });
+  }
+
+  /**
+   * Apply a sponsor's pattern texture to a moon.
+   * @param {number} moonIndex - 0, 1, or 2
+   * @param {Object|null} sponsorData - { patternImage, patternAdjustment } or null to clear
+   */
+  applyMoonSponsor(moonIndex, sponsorData) {
+    if (moonIndex < 0 || moonIndex >= this.moons.length) return;
+    const moon = this.moons[moonIndex];
+    const mat = moon.material;
+
+    if (!sponsorData || !sponsorData.patternImage) {
+      // Clear sponsor — revert to default gray
+      mat.uniforms.hasTexture.value = 0;
+      mat.uniforms.moonTexture.value = null;
+      mat.needsUpdate = true;
+      return;
+    }
+
+    // Load texture from URL
+    const img = new Image();
+    img.crossOrigin = "anonymous";
+    img.onload = () => {
+      const texture = new THREE.Texture(img);
+      texture.wrapS = texture.wrapT = THREE.RepeatWrapping;
+      texture.minFilter = THREE.NearestFilter;
+      texture.magFilter = THREE.NearestFilter;
+      texture.needsUpdate = true;
+
+      mat.uniforms.hasTexture.value = 1;
+      mat.uniforms.moonTexture.value = texture;
+
+      // Apply adjustments
+      const adj = sponsorData.patternAdjustment || {};
+      mat.uniforms.textureScale.value = adj.scale || 1;
+      mat.uniforms.textureOffsetX.value = adj.offsetX || 0;
+      mat.uniforms.textureOffsetY.value = adj.offsetY || 0;
+      mat.uniforms.saturation.value = adj.saturation !== undefined ? adj.saturation : 1;
+      mat.uniforms.inputBlack.value = (adj.inputBlack || 0) / 255;
+      mat.uniforms.inputGamma.value = adj.inputGamma || 1;
+      mat.uniforms.inputWhite.value = (adj.inputWhite !== undefined ? adj.inputWhite : 255) / 255;
+      mat.uniforms.outputBlack.value = (adj.outputBlack || 0) / 255;
+      mat.uniforms.outputWhite.value = (adj.outputWhite !== undefined ? adj.outputWhite : 255) / 255;
+
+      mat.needsUpdate = true;
+    };
+    img.src = sponsorData.patternImage;
+  }
+
+  /** Clear all moon sponsor textures, reverting to default gray. */
+  clearMoonSponsors() {
+    for (let i = 0; i < this.moons.length; i++) {
+      this.applyMoonSponsor(i, null);
+    }
   }
 
   _createSatellites() {

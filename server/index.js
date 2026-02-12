@@ -13,6 +13,8 @@ const { Server } = require("socket.io");
 const GameRoom = require("./GameRoom");
 const SponsorStore = require("./SponsorStore");
 const { createSponsorRoutes, extractSponsorImages } = require("./sponsorRoutes");
+const MoonSponsorStore = require("./MoonSponsorStore");
+const { createMoonSponsorRoutes, extractMoonSponsorImages } = require("./moonSponsorRoutes");
 
 // ========================
 // CONFIG
@@ -38,6 +40,11 @@ sponsorStore.load();
 // Extract base64 sponsor images to static PNG files (avoids sending MB of base64 over WebSocket)
 const gameDir = path.join(__dirname, "..");
 const sponsorImageUrls = extractSponsorImages(sponsorStore, gameDir);
+
+// Moon sponsor store + image extraction
+const moonSponsorStore = new MoonSponsorStore(path.join(__dirname, "..", "data", "moonSponsors.json"));
+moonSponsorStore.load();
+const moonSponsorImageUrls = extractMoonSponsorImages(moonSponsorStore, gameDir);
 
 // Routes mounted after GameRoom creation (below) so live reload can reference mainRoom
 
@@ -76,12 +83,18 @@ app.get("/", (req, res) => {
 // ========================
 
 // For now: one global room. Later you'd add matchmaking / multiple rooms.
-const mainRoom = new GameRoom(io, "main", sponsorStore, sponsorImageUrls);
+const mainRoom = new GameRoom(io, "main", sponsorStore, sponsorImageUrls, moonSponsorStore, moonSponsorImageUrls);
 mainRoom.start();
 
 // Mount sponsor API routes (after GameRoom so live reload can broadcast)
 app.use("/api/sponsors", createSponsorRoutes(sponsorStore, mainRoom, {
   imageUrls: sponsorImageUrls,
+  gameDir,
+}));
+
+// Mount moon sponsor API routes
+app.use("/api/moon-sponsors", createMoonSponsorRoutes(moonSponsorStore, mainRoom, {
+  imageUrls: moonSponsorImageUrls,
   gameDir,
 }));
 
