@@ -631,19 +631,30 @@ class BodyguardManager {
 
   /**
    * Compact state for per-tick broadcast (included in "state" event).
+   * Reuses cached objects to reduce GC pressure.
    */
   getStatesForBroadcast() {
-    const states = {};
+    if (!this._broadcastCache) this._broadcastCache = {};
+    const states = this._broadcastCache;
+
+    // Remove stale entries
+    for (const id in states) {
+      if (!this.bodyguards.has(id)) delete states[id];
+    }
+
     for (const [id, bg] of this.bodyguards) {
-      states[id] = {
-        t: bg.theta,
-        p: bg.phi,
-        h: bg.heading,
-        s: bg.speed,
-        hp: bg.hp,
-        d: bg.isDead ? 1 : 0,
-        f: bg.faction,
-      };
+      let s = states[id];
+      if (!s) {
+        s = {};
+        states[id] = s;
+      }
+      s.t = bg.theta;
+      s.p = bg.phi;
+      s.h = bg.heading;
+      s.s = bg.speed;
+      s.hp = bg.hp;
+      s.d = bg.isDead ? 1 : 0;
+      s.f = bg.faction;
     }
     return states;
   }

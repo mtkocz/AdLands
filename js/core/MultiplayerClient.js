@@ -863,9 +863,22 @@
     };
 
     // Commander drawing relayed by server — render on local drawing system
+    // Supports live streaming (done: false = preview, done: true = finalized)
     net.onCommanderDrawing = (data) => {
       if (!mp.commanderDrawing) return;
-      mp.commanderDrawing.addRemoteDrawing(data.points, data.faction);
+      if (data.done) {
+        mp.commanderDrawing.finalizeRemotePreview(
+          data.id,
+          data.points,
+          data.faction,
+        );
+      } else {
+        mp.commanderDrawing.updateRemotePreview(
+          data.id,
+          data.points,
+          data.faction,
+        );
+      }
     };
 
     // Server-authoritative commander change (immediate, per-faction)

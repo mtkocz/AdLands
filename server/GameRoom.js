@@ -79,8 +79,9 @@ class GameRoom {
     this.holdingCryptoCounter = 0;
     this.holdingCryptoInterval = this.tickRate * 60; // 1200 ticks = 60s
 
-    // Throttle rank recomputation to once per second
+    // Throttle rank recomputation to once per second (or when dirty flag is set)
     this.rankRecomputeCounter = 0;
+    this._ranksDirty = false;
 
     // ---- Server-authoritative world generation ----
     this.worldGen = new WorldGenerator(480, 22, 42);
@@ -187,16 +188,43 @@ class GameRoom {
   }
 
   start() {
-    this.tickInterval = setInterval(() => this._gameTick(), 1000 / this.tickRate);
+    this._tickRunning = true;
+    this._nextTickTime = Date.now();
+    this._scheduleTick();
     console.log(`[Room ${this.roomId}] Started at ${this.tickRate} ticks/sec`);
   }
 
   stop() {
+    this._tickRunning = false;
     if (this.tickInterval) {
-      clearInterval(this.tickInterval);
+      clearTimeout(this.tickInterval);
       this.tickInterval = null;
     }
     console.log(`[Room ${this.roomId}] Stopped`);
+  }
+
+  /**
+   * Self-correcting tick scheduler using setTimeout.
+   * Unlike setInterval, this never queues up ticks when processing runs long —
+   * it yields to the event loop between ticks so socket events (ping, input)
+   * can be processed promptly. Drops ticks if falling behind >200ms.
+   */
+  _scheduleTick() {
+    if (!this._tickRunning) return;
+    const now = Date.now();
+    const tickMs = 1000 / this.tickRate;
+
+    // If we've fallen behind by more than 4 ticks, skip ahead (don't cascade)
+    if (now - this._nextTickTime > tickMs * 4) {
+      this._nextTickTime = now;
+    }
+
+    this._nextTickTime += tickMs;
+    const delay = Math.max(1, this._nextTickTime - now);
+    this.tickInterval = setTimeout(() => {
+      this._gameTick();
+      this._scheduleTick();
+    }, delay);
   }
 
   // ========================
@@ -402,7 +430,7 @@ class GameRoom {
     });
 
     // Recompute ranks and commander for all factions
-    this._recomputeRanks();
+    this._markRanksDirty();
 
     console.log(
       `[Room ${this.roomId}] ${player.name} (${player.faction}) joined. ` +
@@ -420,7 +448,7 @@ class GameRoom {
     this.resignedPlayers.delete(socketId);
 
     // Recompute ranks and commander (removed player no longer eligible)
-    this._recomputeRanks();
+    this._markRanksDirty();
 
     // Tell everyone the player left
     this.io.to(this.roomId).emit("player-left", { id: socketId });
@@ -548,7 +576,7 @@ class GameRoom {
 
     // Re-evaluate ranks and commander if ranking metrics changed
     if (player.level !== oldLevel || player.totalCrypto !== oldTotalCrypto) {
-      this._recomputeRanks();
+      this._markRanksDirty();
     }
 
     // Relay to all other clients
@@ -637,7 +665,7 @@ class GameRoom {
 
     // Recompute ranks and commander (player is now alive and deployed)
     if (wasWaiting) {
-      this._recomputeRanks();
+      this._markRanksDirty();
     }
 
     console.log(
@@ -756,10 +784,11 @@ class GameRoom {
       this.io.to(this.roomId).emit("commander-sync", this._getCommanderSnapshot());
     }
 
-    // 6. Recompute faction ranks (every 1 second)
+    // 6. Recompute faction ranks (every 1 second, or immediately when dirty)
     this.rankRecomputeCounter++;
-    if (this.rankRecomputeCounter >= this.tickRate) {
+    if (this.rankRecomputeCounter >= this.tickRate || this._ranksDirty) {
       this.rankRecomputeCounter = 0;
+      this._ranksDirty = false;
       this._recomputeRanks();
     }
 
@@ -948,7 +977,7 @@ class GameRoom {
             }
 
             // Recompute ranks and commander
-            this._recomputeRanks();
+            this._markRanksDirty();
 
             // Respawn after 5 seconds
             setTimeout(() => this._respawnPlayer(id), 5000);
@@ -1008,7 +1037,7 @@ class GameRoom {
     player.waitingForPortal = true;
 
     // Recompute ranks and commander
-    this._recomputeRanks();
+    this._markRanksDirty();
 
     // Tell the respawning client to choose a portal
     const socket = this.io.sockets.sockets.get(socketId);
@@ -1053,7 +1082,7 @@ class GameRoom {
       });
 
       // Recompute ranks and commander
-      this._recomputeRanks();
+      this._markRanksDirty();
 
       player.killStreak = 0;
       player.deathCount = (player.deathCount || 0) + 1;
@@ -1176,7 +1205,7 @@ class GameRoom {
     this.resignedPlayers.set(socketId, Date.now() + ms);
 
     // Recompute ranks and commander (resigned player excluded → next-ranked takes over)
-    this._recomputeRanks();
+    this._markRanksDirty();
   }
 
   handleCancelResign(socketId) {
@@ -1185,7 +1214,7 @@ class GameRoom {
 
     if (this.resignedPlayers.delete(socketId)) {
       // Player is eligible again — recompute ranks and commander
-      this._recomputeRanks();
+      this._markRanksDirty();
     }
   }
 
@@ -1200,7 +1229,7 @@ class GameRoom {
     });
 
     // Immediately recompute (override will be honored in _recomputeRanks)
-    this._recomputeRanks();
+    this._markRanksDirty();
 
     // Always confirm current commander state to the requester.
     // _recomputeRanks only broadcasts when the commander *changes*; if the
@@ -1517,38 +1546,60 @@ class GameRoom {
   // ========================
 
   _broadcastState() {
-    // Build compact state snapshot
-    const playerStates = {};
-    for (const [id, p] of this.players) {
-      const state = {
-        t: p.theta,        // theta
-        p: p.phi,          // phi
-        h: p.heading,      // heading
-        s: p.speed,        // speed
-        ta: p.turretAngle, // turret angle
-        hp: p.hp,
-        d: p.waitingForPortal ? 2 : (p.isDead ? 1 : 0), // 0=alive, 1=dead, 2=waiting
-        seq: p.lastInputSeq, // so client knows which input was processed
-        f: p.faction,      // faction (ensures sync on missed events / late joins)
-        r: p.rank || 0,    // faction rank (1-based, server-authoritative)
-      };
-      playerStates[id] = state;
+    // Reuse player state objects across ticks to reduce GC pressure.
+    // _playerStateCache: id → reusable state object
+    if (!this._playerStateCache) this._playerStateCache = {};
+    const playerStates = this._playerStateCache;
+
+    // Remove stale entries for disconnected players
+    for (const id in playerStates) {
+      if (!this.players.has(id)) delete playerStates[id];
     }
 
-    // Build state payload
-    const statePayload = {
-      tick: this.tick,
-      players: playerStates,
-      bg: this.bodyguardManager.getStatesForBroadcast(), // Bodyguard states
-      pr: this.planetRotation,
-      ma: this.moons.map(m => m.angle),
-      // Only send dynamic orbital data per tick (angle + rotation)
-      sa: this.stations.map(s => [s.orbitalAngle, s.localRotation]),
-    };
+    // Update/create entries for current players
+    for (const [id, p] of this.players) {
+      let state = playerStates[id];
+      if (!state) {
+        state = {};
+        playerStates[id] = state;
+      }
+      state.t = p.theta;
+      state.p = p.phi;
+      state.h = p.heading;
+      state.s = p.speed;
+      state.ta = p.turretAngle;
+      state.hp = p.hp;
+      state.d = p.waitingForPortal ? 2 : (p.isDead ? 1 : 0);
+      state.seq = p.lastInputSeq;
+      state.f = p.faction;
+      state.r = p.rank || 0;
+    }
 
-    // Include full orbital params every 100 ticks (~5s) to handle late joins / missed welcome
+    // Reuse payload object
+    if (!this._statePayload) this._statePayload = { tick: 0, players: null, bg: null, pr: 0, ma: [], sa: [] };
+    const statePayload = this._statePayload;
+    statePayload.tick = this.tick;
+    statePayload.players = playerStates;
+    statePayload.bg = this.bodyguardManager.getStatesForBroadcast();
+    statePayload.pr = this.planetRotation;
+
+    // Update moon angles in-place
+    statePayload.ma.length = this.moons.length;
+    for (let i = 0; i < this.moons.length; i++) statePayload.ma[i] = this.moons[i].angle;
+
+    // Update station data in-place
     if (this.tick % 100 === 0) {
+      // Full orbital params every ~5s
       statePayload.sa = this.stations.map(s => [s.orbitalAngle, s.localRotation, s.inclination, s.ascendingNode, s.orbitRadius]);
+    } else {
+      statePayload.sa.length = this.stations.length;
+      for (let i = 0; i < this.stations.length; i++) {
+        const s = this.stations[i];
+        if (!statePayload.sa[i]) statePayload.sa[i] = [0, 0];
+        statePayload.sa[i][0] = s.orbitalAngle;
+        statePayload.sa[i][1] = s.localRotation;
+        statePayload.sa[i].length = 2;
+      }
     }
 
     // volatile: if client buffer is full, drop stale state rather than queueing
@@ -1620,7 +1671,15 @@ class GameRoom {
     });
 
     // Recompute ranks and commanders for all factions
-    this._recomputeRanks();
+    this._markRanksDirty();
+  }
+
+  /**
+   * Mark ranks as needing recomputation. Actual work deferred to next tick.
+   * This avoids redundant recomputations when multiple events fire in the same frame.
+   */
+  _markRanksDirty() {
+    this._ranksDirty = true;
   }
 
   /**
@@ -1733,10 +1792,10 @@ class GameRoom {
     if (typeof data.x !== "number" || typeof data.y !== "number" || typeof data.z !== "number") return;
     if (!isFinite(data.x) || !isFinite(data.y) || !isFinite(data.z)) return;
 
-    // Broadcast to all others in room
+    // Broadcast to all others in room (volatile — skip if client buffer full)
     const socket = this.io.sockets.sockets.get(socketId);
     if (socket) {
-      socket.to(this.roomId).emit("commander-ping", {
+      socket.to(this.roomId).volatile.emit("commander-ping", {
         id: socketId,
         faction: player.faction,
         x: data.x,
@@ -1762,14 +1821,22 @@ class GameRoom {
     if (!Array.isArray(data.points) || data.points.length < 2) return;
     if (data.points.length > 500) return; // Hard limit matching client maxPointsPerStroke
 
-    // Broadcast to all others in room
+    const isDone = !!data.done;
+
+    // Preview updates are volatile (droppable), final strokes are reliable
     const socket = this.io.sockets.sockets.get(socketId);
     if (socket) {
-      socket.to(this.roomId).emit("commander-drawing", {
+      const payload = {
         id: socketId,
         faction: player.faction,
         points: data.points,
-      });
+        done: isDone,
+      };
+      if (isDone) {
+        socket.to(this.roomId).emit("commander-drawing", payload);
+      } else {
+        socket.to(this.roomId).volatile.emit("commander-drawing", payload);
+      }
     }
   }
 

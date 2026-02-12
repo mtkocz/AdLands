@@ -36,6 +36,9 @@ class WorldGenerator {
     this._spatialGrid = null;
     this._GRID_PHI = 32;
     this._GRID_THETA = 64;
+
+    // Reusable result object for getNearestTile (avoids allocation per call)
+    this._nearestResult = { tileIndex: -1, clusterId: null };
   }
 
   // ========================
@@ -373,20 +376,17 @@ class WorldGenerator {
   getNearestTile(theta, phi) {
     if (!this._spatialGrid) return null;
 
-    // Convert spherical (theta, phi) to Cartesian
-    // Convention: theta = atan2(z, x), matching GameRoom portal coords and client Tank.js
+    // Convert spherical (theta, phi) to Cartesian using scratch vector (zero allocation)
     const sinPhi = Math.sin(phi);
-    const pos = new Vec3(
-      this.radius * sinPhi * Math.cos(theta),
-      this.radius * Math.cos(phi),
-      this.radius * sinPhi * Math.sin(theta)
-    );
+    const px = this.radius * sinPhi * Math.cos(theta);
+    const py = this.radius * Math.cos(phi);
+    const pz = this.radius * sinPhi * Math.sin(theta);
 
-    const r = pos.length();
+    const r = Math.sqrt(px * px + py * py + pz * pz);
     if (r < 0.001) return null;
 
-    const gridPhi = Math.acos(Math.max(-1, Math.min(1, pos.y / r)));
-    const gridTheta = Math.atan2(pos.z, pos.x) + Math.PI;
+    const gridPhi = Math.acos(Math.max(-1, Math.min(1, py / r)));
+    const gridTheta = Math.atan2(pz, px) + Math.PI;
 
     const phiCell = Math.min(
       this._GRID_PHI - 1,
@@ -411,9 +411,9 @@ class WorldGenerator {
 
         for (const arrayIdx of entries) {
           const tcEntry = this.tileCenters[arrayIdx];
-          const dx = pos.x - tcEntry.position.x;
-          const dy = pos.y - tcEntry.position.y;
-          const dz = pos.z - tcEntry.position.z;
+          const dx = px - tcEntry.position.x;
+          const dy = py - tcEntry.position.y;
+          const dz = pz - tcEntry.position.z;
           const dist = dx * dx + dy * dy + dz * dz;
           if (dist < closestDist) {
             closestDist = dist;
@@ -427,7 +427,10 @@ class WorldGenerator {
 
     const tileIndex = this.tileCenters[closestArrayIdx].tileIndex;
     const clusterId = this.tileClusterMap.get(tileIndex);
-    return { tileIndex, clusterId: clusterId !== undefined ? clusterId : null };
+    // Reuse result object to avoid allocation per call
+    this._nearestResult.tileIndex = tileIndex;
+    this._nearestResult.clusterId = clusterId !== undefined ? clusterId : null;
+    return this._nearestResult;
   }
 }
 

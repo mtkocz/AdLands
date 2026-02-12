@@ -56,6 +56,13 @@ class CommanderDrawing {
     // Track if drawing is enabled
     this.enabled = false;
 
+    // Network streaming: throttle preview sends while drawing
+    this._lastPreviewSendTime = 0;
+    this._previewSendInterval = 150; // ms — stream drawing to faction every 150ms
+
+    // Remote preview meshes from other commanders: commanderId → { mesh, outlineMesh, faction }
+    this.remotePreviews = new Map();
+
     // Setup input
     this._setupInput();
   }
@@ -177,6 +184,22 @@ class CommanderDrawing {
       if (this.currentStroke.length < DRAWING_CONFIG.maxPointsPerStroke) {
         this.currentStroke.push(point);
         this._renderPreview();
+
+        // Stream preview to faction members (throttled)
+        if (
+          window.networkManager?.isMultiplayer &&
+          this.currentStroke.length >= 2
+        ) {
+          const now = performance.now();
+          if (now - this._lastPreviewSendTime >= this._previewSendInterval) {
+            this._lastPreviewSendTime = now;
+            const pts = this.currentStroke.map((p) => [p.x, p.y, p.z]);
+            window.networkManager.sendCommanderDrawing({
+              points: pts,
+              done: false,
+            });
+          }
+        }
       }
     }
   }
@@ -322,10 +345,10 @@ class CommanderDrawing {
       }
     }
 
-    // Broadcast to faction members via server
+    // Broadcast finalized stroke to faction members via server
     if (window.networkManager?.isMultiplayer) {
       const points = this.currentStroke.map((p) => [p.x, p.y, p.z]);
-      window.networkManager.sendCommanderDrawing({ points });
+      window.networkManager.sendCommanderDrawing({ points, done: true });
     }
 
     // Notify Tusk
@@ -407,8 +430,12 @@ class CommanderDrawing {
     // Update drawing state based on commander status
     this.enabled = this._canDraw();
 
-    // Early exit if no drawings to update and not currently drawing
-    if (this.drawings.length === 0 && !this.isDrawing) {
+    // Early exit if nothing to update
+    if (
+      this.drawings.length === 0 &&
+      this.remotePreviews.size === 0 &&
+      !this.isDrawing
+    ) {
       return;
     }
 
@@ -485,6 +512,26 @@ class CommanderDrawing {
 
       return true;
     });
+
+    // Update remote preview visibility (faction + distance fade)
+    for (const [, preview] of this.remotePreviews) {
+      const pFaction = preview.faction;
+      const factionMatch =
+        pFaction === viewerFaction ||
+        !pFaction ||
+        pFaction === "unknown" ||
+        !viewerFaction;
+
+      const visible = factionMatch && distanceFade > 0;
+      preview.mesh.visible = visible;
+      if (visible) preview.mesh.material.opacity = 0.9 * distanceFade;
+      if (preview.outlineMesh) {
+        preview.outlineMesh.visible = visible;
+        if (visible)
+          preview.outlineMesh.material.opacity =
+            DRAWING_CONFIG.outlineOpacity * distanceFade;
+      }
+    }
   }
 
   // ========================
@@ -492,14 +539,18 @@ class CommanderDrawing {
   // ========================
 
   /**
-   * Add a drawing received from another commander via the network.
+   * Update a live preview of a remote commander's in-progress drawing.
+   * Called repeatedly as the commander draws (streamed every ~150ms).
+   * @param {string} commanderId - Socket ID of the drawing commander
    * @param {Array<number[]>} points - Array of [x, y, z] local-space point coords
    * @param {string} faction - Author's faction
    */
-  addRemoteDrawing(points, faction) {
+  updateRemotePreview(commanderId, points, faction) {
+    // Remove old preview mesh for this commander
+    this._clearRemotePreview(commanderId);
+
     if (!points || points.length < 2) return;
 
-    // Convert flat arrays to Vector3
     const vectors = points.map(
       (p) => new THREE.Vector3(p[0], p[1], p[2]),
     );
@@ -507,14 +558,60 @@ class CommanderDrawing {
     const mesh = this._createStrokeMesh(vectors);
     if (!mesh) return;
 
-    // Add outline first (renders behind)
     const outlineMesh = mesh.userData.outlineMesh;
     if (outlineMesh) {
       this.planet.hexGroup.add(outlineMesh);
     }
     this.planet.hexGroup.add(mesh);
 
-    // Add to drawings list with expiry
+    this.remotePreviews.set(commanderId, { mesh, outlineMesh, faction });
+  }
+
+  /**
+   * Finalize a remote commander's drawing: remove preview and add permanent drawing.
+   * @param {string} commanderId - Socket ID of the drawing commander
+   * @param {Array<number[]>} points - Final array of [x, y, z] local-space point coords
+   * @param {string} faction - Author's faction
+   */
+  finalizeRemotePreview(commanderId, points, faction) {
+    this._clearRemotePreview(commanderId);
+    this._addRemoteDrawing(points, faction);
+  }
+
+  _clearRemotePreview(commanderId) {
+    const preview = this.remotePreviews.get(commanderId);
+    if (!preview) return;
+
+    if (preview.outlineMesh) {
+      this.planet.hexGroup.remove(preview.outlineMesh);
+      preview.outlineMesh.geometry.dispose();
+      preview.outlineMesh.material.dispose();
+    }
+    this.planet.hexGroup.remove(preview.mesh);
+    preview.mesh.geometry.dispose();
+    preview.mesh.material.dispose();
+    this.remotePreviews.delete(commanderId);
+  }
+
+  /**
+   * Add a finalized drawing received from another commander.
+   */
+  _addRemoteDrawing(points, faction) {
+    if (!points || points.length < 2) return;
+
+    const vectors = points.map(
+      (p) => new THREE.Vector3(p[0], p[1], p[2]),
+    );
+
+    const mesh = this._createStrokeMesh(vectors);
+    if (!mesh) return;
+
+    const outlineMesh = mesh.userData.outlineMesh;
+    if (outlineMesh) {
+      this.planet.hexGroup.add(outlineMesh);
+    }
+    this.planet.hexGroup.add(mesh);
+
     this.drawings.push({
       mesh,
       outlineMesh,
@@ -566,6 +663,11 @@ class CommanderDrawing {
   dispose() {
     // Clear preview
     this._clearPreview();
+
+    // Clear remote previews
+    for (const commanderId of this.remotePreviews.keys()) {
+      this._clearRemotePreview(commanderId);
+    }
 
     // Remove all drawings
     this.drawings.forEach((drawing) => {
