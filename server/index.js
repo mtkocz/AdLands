@@ -193,7 +193,7 @@ server.listen(PORT, () => {
   console.log("");
   console.log("═══════════════════════════════════════════════");
   console.log("  AdLands - Multiplayer Server");
-  console.log("  Humanity's Second Chance™");
+  console.log("  A Limited Liability Company");
   console.log("═══════════════════════════════════════════════");
   console.log(`  Local:   http://localhost:${PORT}`);
   console.log(`  Network: http://<your-ip>:${PORT}`);
