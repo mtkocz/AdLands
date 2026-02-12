@@ -179,7 +179,10 @@
 
         // Sponsor images are now URLs (not base64) — browser loads them efficiently
         if (data.world.sponsors && data.world.sponsors.length > 0) {
-          planet.preloadSponsorTextures(data.world.sponsors).then(() => {
+          if (mp.setSponsorLoadProgress) mp.setSponsorLoadProgress(0);
+          planet.preloadSponsorTextures(data.world.sponsors, (p) => {
+            if (mp.setSponsorLoadProgress) mp.setSponsorLoadProgress(p);
+          }).then(() => {
             planet.applySponsorVisuals(data.world.sponsors);
             planet.deElevateSponsorTiles();
             mp.setSponsorTexturesReady();

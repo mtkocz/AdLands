@@ -70,10 +70,10 @@ class CommanderSkin {
     applyTrim(tank) {
         if (!tank) return;
 
-        // Get the tank's group (player tank has .group, bot has .group)
-        const tankGroup = tank.group;
+        // Parent to bodyGroup so trim leans with the hull (falls back to group)
+        const tankGroup = tank.bodyGroup || tank.group;
         if (!tankGroup) {
-            console.warn('[CommanderSkin] Tank has no group');
+            console.warn('[CommanderSkin] Tank has no bodyGroup or group');
             return;
         }
 
@@ -116,7 +116,7 @@ class CommanderSkin {
             return;
         }
 
-        const tankGroup = tank.group;
+        const tankGroup = tank.bodyGroup || tank.group;
         if (tankGroup) {
             tankGroup.remove(trimGroup);
         }

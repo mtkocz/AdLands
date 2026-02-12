@@ -2620,33 +2620,41 @@ class Planet {
    * @param {Array} sponsors - Array of sponsor objects with patternImage fields
    * @returns {Promise<void>}
    */
-  preloadSponsorTextures(sponsors) {
-    const loads = [];
+  preloadSponsorTextures(sponsors, onProgress) {
+    const toLoad = [];
     for (const sponsor of sponsors) {
       if (!sponsor.patternImage) continue;
       if (this._sponsorTextureCache.has(sponsor.patternImage)) continue;
-
-      const p = new Promise((resolve) => {
-        const img = new Image();
-        img.onload = () => {
-          const texture = new THREE.Texture(img);
-          texture.wrapS = texture.wrapT = THREE.RepeatWrapping;
-          texture.minFilter = THREE.NearestFilter;
-          texture.magFilter = THREE.NearestFilter;
-          texture.needsUpdate = true;
-          this._sponsorTextureCache.set(sponsor.patternImage, texture);
-          resolve();
-        };
-        img.onerror = () => {
-          console.warn(`[Planet] Failed to preload sponsor texture for ${sponsor.name || sponsor.id}`);
-          resolve(); // Don't block on failures — fallback pattern will be used
-        };
-        img.src = sponsor.patternImage;
-      });
-      loads.push(p);
+      toLoad.push(sponsor);
     }
-    if (loads.length === 0) return Promise.resolve();
-    console.log(`[Planet] Preloading ${loads.length} sponsor texture(s)...`);
+    if (toLoad.length === 0) {
+      if (onProgress) onProgress(1);
+      return Promise.resolve();
+    }
+    const total = toLoad.length;
+    let loaded = 0;
+    console.log(`[Planet] Preloading ${total} sponsor texture(s)...`);
+    const loads = toLoad.map((sponsor) => new Promise((resolve) => {
+      const img = new Image();
+      img.onload = () => {
+        const texture = new THREE.Texture(img);
+        texture.wrapS = texture.wrapT = THREE.RepeatWrapping;
+        texture.minFilter = THREE.NearestFilter;
+        texture.magFilter = THREE.NearestFilter;
+        texture.needsUpdate = true;
+        this._sponsorTextureCache.set(sponsor.patternImage, texture);
+        loaded++;
+        if (onProgress) onProgress(loaded / total);
+        resolve();
+      };
+      img.onerror = () => {
+        console.warn(`[Planet] Failed to preload sponsor texture for ${sponsor.name || sponsor.id}`);
+        loaded++;
+        if (onProgress) onProgress(loaded / total);
+        resolve(); // Don't block on failures — fallback pattern will be used
+      };
+      img.src = sponsor.patternImage;
+    }));
     return Promise.all(loads).then(() => {
       console.log(`[Planet] Sponsor textures preloaded (${this._sponsorTextureCache.size} cached)`);
     });

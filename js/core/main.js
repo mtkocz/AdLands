@@ -101,6 +101,11 @@
   // In multiplayer mode, start as false — the welcome payload delivers sponsors.
   let sponsorTexturesReady = typeof io === "undefined";
 
+  // Granular sponsor loading progress (0-1) for the loading bar.
+  // Starts at 1 (complete) — set to 0 when sponsor loading begins.
+  let sponsorLoadProgress = 1;
+  let sponsorLoadActive = false;
+
   async function loadAndApplySponsors(planet) {
     // In multiplayer mode, sponsors come from the server welcome payload.
     // MultiplayerClient.js handles applying them via planet.applySponsorVisuals().
@@ -120,7 +125,10 @@
 
       // Preload all sponsor pattern textures during loading screen
       sponsorTexturesReady = false;
-      await planet.preloadSponsorTextures(activeSponsors);
+      sponsorLoadActive = true;
+      sponsorLoadProgress = 0;
+      await planet.preloadSponsorTextures(activeSponsors, (p) => { sponsorLoadProgress = p; });
+      sponsorLoadProgress = 1;
       sponsorTexturesReady = true;
 
       for (const sponsor of activeSponsors) {
@@ -613,6 +621,11 @@
   fastTravel.onExitFastTravel = () => {
     cryptoSystem.enabled = true;
     hasSpawnedIn = true;
+
+    // Teleport bodyguards to commander's new position (disappear + respawn with dustwave)
+    if (commanderBodyguards.isActive()) {
+      commanderBodyguards.onCommanderTeleport();
+    }
   };
 
   // Connect chat system to bot tanks
@@ -1368,8 +1381,10 @@
     // Hook for fire events
     onFire: null,
 
+    // Called by MultiplayerClient to report sponsor texture loading progress (0-1)
+    setSponsorLoadProgress: (p) => { sponsorLoadProgress = p; },
     // Called by MultiplayerClient after sponsor textures are preloaded
-    setSponsorTexturesReady: () => { sponsorTexturesReady = true; },
+    setSponsorTexturesReady: () => { sponsorLoadProgress = 1; sponsorTexturesReady = true; },
   };
 
   // Ping marker placement - left-click in orbital/fast travel mode
@@ -3478,13 +3493,19 @@
         stableFrameCount = 0;
       }
 
-      // Progress bar: first 80% tracks min frames, last 20% tracks stability
-      const minProgress = Math.min(80, (warmupFrames / WARMUP_FRAMES_MIN) * 80);
-      const stabilityProgress = Math.min(
-        20,
-        (stableFrameCount / STABLE_FRAMES_NEEDED) * 20,
-      );
-      loadingProgress = Math.min(100, minProgress + stabilityProgress);
+      // Progress bar: weighted sum of loading phases (never decreases)
+      // When sponsors are loading: warmup 40% + sponsors 40% + stability 20%
+      // When no sponsors:          warmup 80% + stability 20%
+      const warmupRatio = Math.min(1, warmupFrames / WARMUP_FRAMES_MIN);
+      const stabilityRatio = Math.min(1, stableFrameCount / STABLE_FRAMES_NEEDED);
+      let newProgress;
+      // sponsorLoadActive (singleplayer) or !sponsorTexturesReady (multiplayer waiting for server)
+      if (sponsorLoadActive || !sponsorTexturesReady) {
+        newProgress = warmupRatio * 40 + sponsorLoadProgress * 40 + stabilityRatio * 20;
+      } else {
+        newProgress = warmupRatio * 80 + stabilityRatio * 20;
+      }
+      loadingProgress = Math.max(loadingProgress, Math.min(100, newProgress));
 
       if (loadingBarFill) {
         loadingBarFill.style.width = loadingProgress + "%";

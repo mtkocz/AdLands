@@ -314,6 +314,51 @@ class CommanderBodyguards {
         // when a player freshly gains commander status via spawn()
     }
 
+    /**
+     * Called when commander fast travels — bodyguards disappear and respawn
+     * at the commander's new position with a dust wave effect.
+     */
+    onCommanderTeleport() {
+        if (!this.active) return;
+
+        // Hide all living bodyguards immediately
+        for (const guard of this.guards) {
+            if (guard.isDead) continue;
+            guard.group.visible = false;
+        }
+
+        // After a short delay, reposition and respawn with dust wave
+        setTimeout(() => {
+            if (!this.active || !this.commander) return;
+
+            const cmdPos = this._getCommanderPosition();
+            const cmdHeading = this._getCommanderHeading();
+
+            for (const guard of this.guards) {
+                if (guard.isDead) continue;
+
+                // Reposition near commander's new location
+                const angleOffset = guard.side === 'left'
+                    ? -BODYGUARD_CONFIG.formationAngle
+                    : BODYGUARD_CONFIG.formationAngle;
+                const flankAngle = cmdHeading + angleOffset + Math.PI;
+                guard.theta = cmdPos.theta + Math.cos(flankAngle) * BODYGUARD_CONFIG.followDistance;
+                guard.phi = cmdPos.phi + Math.sin(flankAngle) * BODYGUARD_CONFIG.followDistance;
+                guard.heading = cmdHeading;
+                guard.state.speed = 0;
+
+                // Update visual position before showing
+                this._updateGuardVisual(guard);
+
+                // Show guard
+                guard.group.visible = true;
+
+                // Dust wave spawn effect
+                this._spawnShockwaveAt(guard);
+            }
+        }, 400);
+    }
+
     // ========================
     // BODYGUARD CREATION
     // ========================
