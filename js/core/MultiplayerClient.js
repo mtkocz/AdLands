@@ -177,13 +177,22 @@
         planet.applyServerWorld(data.world);
         console.log("[Multiplayer] Applied server world data");
 
-        // Preload sponsor textures during loading screen, then apply visuals
+        // Fetch sponsor images via HTTP (too large for WebSocket), then apply visuals
         if (data.world.sponsors && data.world.sponsors.length > 0) {
-          planet.preloadSponsorTextures(data.world.sponsors).then(() => {
-            planet.applySponsorVisuals(data.world.sponsors);
-            planet.deElevateSponsorTiles();
+          fetch("/api/sponsors").then(r => r.json()).then(apiData => {
+            const imageMap = {};
+            for (const s of apiData.sponsors) {
+              imageMap[s.id] = { patternImage: s.patternImage, logoImage: s.logoImage };
+            }
+            const merged = data.world.sponsors.map(s => ({ ...s, ...imageMap[s.id] }));
+            planet.preloadSponsorTextures(merged).then(() => {
+              planet.applySponsorVisuals(merged);
+              planet.deElevateSponsorTiles();
+              mp.setSponsorTexturesReady();
+              console.log(`[Multiplayer] Applied ${merged.length} server sponsors`);
+            });
+          }).catch(() => {
             mp.setSponsorTexturesReady();
-            console.log(`[Multiplayer] Applied ${data.world.sponsors.length} server sponsors`);
           });
         } else {
           mp.setSponsorTexturesReady();

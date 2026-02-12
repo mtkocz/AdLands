@@ -1791,14 +1791,12 @@ class GameRoom {
       };
     }
 
-    // Serialize sponsor data for clients (includes base64 images for textures)
+    // Serialize sponsor data for clients (without base64 images — fetched via HTTP)
     const sponsors = this.sponsors.map(s => ({
       id: s.id,
       name: s.name,
       tagline: s.tagline,
       websiteUrl: s.websiteUrl,
-      logoImage: s.logoImage,
-      patternImage: s.patternImage,
       patternAdjustment: s.patternAdjustment,
       cluster: { tileIndices: s.cluster.tileIndices },
       rewards: s.rewards,
