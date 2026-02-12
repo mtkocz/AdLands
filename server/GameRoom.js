@@ -629,6 +629,19 @@ class GameRoom {
     }
   }
 
+  handleEnterFastTravel(socketId) {
+    const player = this.players.get(socketId);
+    if (!player || player.isDead || player.waitingForPortal) return;
+
+    // Kill bodyguards immediately when commander enters fast travel
+    for (const faction of FACTIONS) {
+      if (this.commanders[faction]?.id === socketId) {
+        this.bodyguardManager.killAllForFaction(faction);
+        break;
+      }
+    }
+  }
+
   handleChoosePortal(socketId, portalTileIndex) {
     const player = this.players.get(socketId);
     if (!player || player.isDead) return;
@@ -664,10 +677,10 @@ class GameRoom {
     player.heading = Math.random() * Math.PI * 2;
     player.waitingForPortal = false;
 
-    // Kill bodyguards and schedule delayed respawn so death state broadcasts to clients
+    // Schedule delayed bodyguard respawn (they were killed in handleEnterFastTravel)
     for (const faction of FACTIONS) {
       if (this.commanders[faction]?.id === socketId) {
-        this.bodyguardManager.killAllForFaction(faction);
+        this.bodyguardManager.killAllForFaction(faction); // no-op if already dead from handleEnterFastTravel
         this.bodyguardManager.scheduleRespawn(faction, socketId, 4);
         break;
       }

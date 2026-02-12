@@ -340,6 +340,11 @@ class NetworkManager {
    * Send portal selection to the server.
    * @param {number} portalTileIndex - The tile index of the chosen portal
    */
+  sendEnterFastTravel() {
+    if (!this.connected) return;
+    this.socket.emit("enter-fast-travel");
+  }
+
   sendChoosePortal(portalTileIndex) {
     if (!this.connected) return;
     this.socket.emit("choose-portal", { portalTileIndex });

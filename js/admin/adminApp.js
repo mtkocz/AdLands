@@ -1127,12 +1127,14 @@
         return;
       }
 
-      // Create a copy without the id and cluster (tiles must be reassigned)
+      // Create a copy without the id, cluster, or hex visuals (must be reassigned)
       const duplicate = {
         ...sponsor,
         id: undefined,
         name: sponsor.name,
-        cluster: { tileIndices: [] }, // Clear tiles - must be reassigned
+        cluster: { tileIndices: [] },
+        patternImage: null,
+        patternAdjustment: {},
       };
 
       // Deep copy rewards array

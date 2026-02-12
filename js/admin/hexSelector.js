@@ -94,10 +94,11 @@ class HexSelector {
 
     // Moon meshes and state
     this.moonMeshes = [];
+    // Distances and radii scaled from game values (sphereRadius 480→100, factor 4.8)
     this.moonConfigs = [
-      { radius: 12, distance: 190, angle: 0, inclination: 0.3, label: "Moon 1 (Large)" },
-      { radius: 6, distance: 250, angle: 2.094, inclination: -0.2, label: "Moon 2 (Small)" },
-      { radius: 9, distance: 220, angle: 4.189, inclination: 0.15, label: "Moon 3 (Medium)" },
+      { radius: 10, distance: 125, angle: 0, inclination: 0.3, label: "Moon 1 (Large)" },
+      { radius: 5, distance: 170.8, angle: 2.094, inclination: -0.2, label: "Moon 2 (Small)" },
+      { radius: 6.67, distance: 150, angle: 4.189, inclination: 0.15, label: "Moon 3 (Medium)" },
     ];
     this.selectedMoons = new Set(); // Moon indices selected for current sponsor
     this.assignedMoons = new Map(); // moonIndex → sponsorName (moons belonging to other sponsors)

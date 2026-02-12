@@ -390,6 +390,12 @@
               s: bgState.s,
               hp: bgState.hp,
             });
+            // Dust shockwave on spawn
+            if (bg) {
+              const worldPos = new THREE.Vector3();
+              bg.group.getWorldPosition(worldPos);
+              dustShockwave?.emit(worldPos, 1.5);
+            }
           }
 
           if (!bg) continue;
@@ -407,6 +413,10 @@
               hp: bgState.hp,
             });
             if (!bg) continue;
+            // Dust shockwave on respawn
+            const worldPos = new THREE.Vector3();
+            bg.group.getWorldPosition(worldPos);
+            dustShockwave?.emit(worldPos, 1.5);
           }
 
           // Handle death transition
@@ -1321,8 +1331,15 @@
     // CONNECT
     // ========================
 
-    // Wire fast travel portal selection to send to server
+    // Wire fast travel events to send to server
     if (mp.fastTravel) {
+      const origOnEnter = mp.fastTravel.onEnterFastTravel;
+      mp.fastTravel.onEnterFastTravel = () => {
+        if (origOnEnter) origOnEnter();
+        if (net.isMultiplayer) {
+          net.sendEnterFastTravel();
+        }
+      };
       mp.fastTravel.onPortalChosen = (portalTileIndex) => {
         if (net.isMultiplayer) {
           net.sendChoosePortal(portalTileIndex);

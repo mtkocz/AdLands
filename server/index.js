@@ -126,6 +126,11 @@ io.on("connection", (socket) => {
     }
   });
 
+  // ---- Enter Fast Travel (commander pressed E at portal) ----
+  socket.on("enter-fast-travel", () => {
+    mainRoom.handleEnterFastTravel(socket.id);
+  });
+
   // ---- Portal Selection ----
   socket.on("choose-portal", (data) => {
     if (typeof data?.portalTileIndex !== "number") return;
