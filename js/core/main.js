@@ -622,8 +622,12 @@
     cryptoSystem.enabled = true;
     hasSpawnedIn = true;
 
-    // Teleport bodyguards to commander's new position (disappear + respawn with dustwave)
-    if (commanderBodyguards.isActive()) {
+    // First deploy: if commander was appointed while in fast travel,
+    // this triggers the deferred bodyguard spawn.
+    if (!commanderBodyguards.commanderDeployed) {
+      commanderBodyguards.setDeployed();
+    } else if (commanderBodyguards.isActive()) {
+      // Subsequent fast travels: teleport bodyguards to new position
       commanderBodyguards.onCommanderTeleport();
     }
   };

@@ -83,6 +83,11 @@ class CommanderBodyguards {
         // Track if bodyguards are active
         this.active = false;
 
+        // Deferred spawn: if commander is appointed before deploying,
+        // store the pending spawn and execute it on deploy.
+        this.commanderDeployed = false;
+        this._pendingSpawn = null; // { commander, faction }
+
     }
 
     // ========================
@@ -122,9 +127,28 @@ class CommanderBodyguards {
     // ========================
 
     /**
+     * Mark the commander as deployed (exited fast travel onto the planet).
+     * If bodyguard spawn was deferred, execute it now.
+     */
+    setDeployed() {
+        this.commanderDeployed = true;
+        if (this._pendingSpawn) {
+            const { commander, faction } = this._pendingSpawn;
+            this._pendingSpawn = null;
+            this.spawn(commander, faction);
+        }
+    }
+
+    /**
      * Spawn bodyguards for a commander
      */
     spawn(commander, faction) {
+        // Defer spawn until commander deploys
+        if (!this.commanderDeployed) {
+            this._pendingSpawn = { commander, faction };
+            return;
+        }
+
         if (this.active) {
             this.despawn();
         }
@@ -198,6 +222,7 @@ class CommanderBodyguards {
         this.commander = null;
         this.commanderFaction = null;
         this.active = false;
+        this._pendingSpawn = null;
 
         // Defer expensive operations to next frame to prevent lag spike
         requestAnimationFrame(() => {

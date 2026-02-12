@@ -4223,6 +4223,13 @@ body.colorblind-tritanopia {
     font-size: var(--font-size-header);
     color: var(--accent-cyan);
     letter-spacing: 4px;
+    margin-bottom: 8px;
+}
+
+.loading-tagline {
+    font-family: var(--font-body);
+    font-size: var(--font-size-body);
+    color: var(--text-muted);
     margin-bottom: 32px;
 }
 
