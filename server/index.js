@@ -47,6 +47,8 @@ const io = new Server(server, {
   perMessageDeflate: false,        // Disable per-message compression (adds latency for small msgs)
   pingInterval: 10000,             // How often to check if client is alive
   pingTimeout: 5000,               // How long to wait for pong before disconnect
+  maxHttpBufferSize: 50e6,         // 50MB — welcome payload includes base64 sponsor textures
+
 });
 
 // ========================
