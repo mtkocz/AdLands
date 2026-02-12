@@ -1342,24 +1342,7 @@ class HexSelector {
     }
 
     // Apply faint sponsor patterns if tile map provided
-    console.log(
-      "[DEBUG] setAssignedTiles: tileMap =",
-      tileMap,
-      "size =",
-      tileMap ? tileMap.size : "null",
-    );
     if (tileMap && tileMap.size > 0) {
-      // Check how many entries have patternImage
-      let withPattern = 0;
-      for (const [, info] of tileMap) {
-        if (info.patternImage) withPattern++;
-      }
-      console.log(
-        "[DEBUG] tileMap entries with patternImage:",
-        withPattern,
-        "/",
-        tileMap.size,
-      );
       this._applyAssignedPatterns(tileMap);
     }
     this._needsRender = true;
@@ -1380,35 +1363,12 @@ class HexSelector {
       sponsorGroups.get(info.sponsorId).tileIndices.push(tileIndex);
     }
 
-    console.log(
-      "[DEBUG] _applyAssignedPatterns: sponsorGroups count =",
-      sponsorGroups.size,
-    );
-
     // Process each sponsor group
     for (const [sponsorId, group] of sponsorGroups) {
       const { info, tileIndices } = group;
-      console.log(
-        "[DEBUG] Loading texture for sponsor",
-        sponsorId,
-        "tiles:",
-        tileIndices.length,
-        "imageLen:",
-        info.patternImage?.length,
-      );
 
       // Load texture (cache per sponsor to avoid duplicates)
       this._loadAssignedTexture(sponsorId, info.patternImage, (texture) => {
-        console.log(
-          "[DEBUG] Texture loaded for sponsor",
-          sponsorId,
-          "texture:",
-          texture,
-          "image:",
-          texture.image?.width,
-          "x",
-          texture.image?.height,
-        );
         this._applyPatternToAssignedGroup(
           tileIndices,
           texture,

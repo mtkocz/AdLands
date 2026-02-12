@@ -148,7 +148,7 @@ class CommanderBodyguards {
         this.commanderOnSurface = false;
         this._pendingSpawn = null;
         if (this.active) {
-            this.despawn(false);
+            this.despawn(true);
         }
     }
 
@@ -334,14 +334,7 @@ class CommanderBodyguards {
      */
     onCommanderDeath() {
         if (!this.active) return;
-
-        // Kill all bodyguards with full death sequence
-        this.guards.forEach((guard) => {
-            if (!guard.isDead) {
-                this._triggerDeathSequence(guard);
-            }
-        });
-
+        this.onCommanderLeaveSurface();
     }
 
     /**

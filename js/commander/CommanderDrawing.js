@@ -15,7 +15,7 @@ const DRAWING_CONFIG = {
   maxPointsPerStroke: 500,
   minPointDistance: 3, // Minimum distance between stroke points
   maxStrokeLength: 600, // Maximum total length of a stroke
-  heightAboveSurface: 6.25, // How far drawings float above planet
+  heightAboveSurface: 12, // How far drawings float above planet
   maxDrawings: 10, // Maximum number of lines (oldest fades when exceeded)
   hideDistance: 260, // Hide drawings when camera closer than this
   hideFadeRange: 30, // Smooth fade range (260-290 units from surface)

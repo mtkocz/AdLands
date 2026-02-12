@@ -415,7 +415,7 @@ const SponsorStorage = {
 
       const info = {
         sponsorId: sponsor.id,
-        patternImage: sponsor.patternImage || null,
+        patternImage: sponsor.patternImage || sponsor.patternUrl || null,
         patternAdjustment: sponsor.patternAdjustment || {},
       };
 

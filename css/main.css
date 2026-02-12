@@ -100,8 +100,19 @@ input:disabled {
     user-select: none;
 }
 
+/* Re-enable text selection/editing in input fields (Firefox requires explicit override) */
+input,
+textarea {
+    -webkit-user-select: text;
+    -moz-user-select: text;
+    -ms-user-select: text;
+    user-select: text;
+}
+
 html {
     overscroll-behavior: none;
+    /* Prevent iOS Safari bounce scroll */
+    -webkit-overflow-scrolling: auto;
 }
 
 body {
@@ -115,6 +126,9 @@ body {
 
 canvas {
     display: block;
+    /* Prevent touch default behaviors on game canvases */
+    touch-action: none;
+    -webkit-touch-callout: none;
 }
 
 /* ========================
@@ -1321,6 +1335,9 @@ canvas {
     padding: 0;
     max-height: 140px;
     overflow-y: auto;
+    /* Firefox scrollbar styling */
+    scrollbar-width: thin;
+    scrollbar-color: var(--border-dark) transparent;
 }
 
 #intel-rewards-list li {
@@ -1777,7 +1794,7 @@ body.tip-dragging .chat-mention.tip-highlight {
     font-family: var(--font-small);
     /* text-transform removed - preserve case */
     line-height: 1.2;
-    word-wrap: break-word;
+    overflow-wrap: break-word;
     text-align: right;
     transition:
         opacity 0.3s ease,
@@ -1959,8 +1976,12 @@ body.tip-dragging .chat-mention.tip-highlight {
     display: flex;
     flex-direction: column;
     gap: 0; /* No gap - messages flow tightly */
+    /* Firefox scrollbar styling */
+    scrollbar-width: thin;
+    scrollbar-color: rgba(255, 255, 255, 0.2) #111111;
 }
 
+/* Webkit (Chrome, Safari, Edge) scrollbar styling */
 .chat-section-messages::-webkit-scrollbar {
     width: var(--space-xs); /* 4px - 1 grid unit */
 }
@@ -1977,7 +1998,7 @@ body.tip-dragging .chat-mention.tip-highlight {
     font-size: var(--font-size-body); /* 16px */
     font-family: var(--font-body);
     line-height: 1.2; /* Tight line height */
-    word-wrap: break-word;
+    overflow-wrap: break-word;
     padding-bottom: 0; /* No extra spacing */
 }
 
@@ -2733,9 +2754,12 @@ body.tip-dragging .chat-mention.tip-highlight {
     overflow-x: hidden;
     overscroll-behavior: contain;
     padding-bottom: var(--space-lg); /* 16px - extra scroll space at bottom */
+    /* Firefox scrollbar styling */
+    scrollbar-width: thin;
+    scrollbar-color: var(--border-dark) transparent;
 }
 
-/* Custom scrollbar for dashboard (8px width) */
+/* Webkit (Chrome, Safari, Edge) scrollbar styling */
 .dashboard-panels::-webkit-scrollbar {
     width: var(--space-sm); /* 4px - 1 grid unit */
 }
@@ -3534,6 +3558,13 @@ body.tip-dragging .chat-mention.tip-highlight {
     transform: scale(1.2);
 }
 
+.setting-row input[type="range"]::-moz-range-track {
+    background: var(--border-dark);
+    height: var(--space-xs); /* 4px - match WebKit track height */
+    border: none;
+    border-radius: 0;
+}
+
 .setting-row input[type="range"]::-moz-range-thumb {
     width: var(--space-lg); /* 16px - 4px aligned */
     height: var(--space-lg); /* 16px */
@@ -3541,6 +3572,10 @@ body.tip-dragging .chat-mention.tip-highlight {
     border-radius: 0;
     cursor: pointer;
     border: none;
+}
+
+.setting-row input[type="range"]::-moz-range-thumb:hover {
+    background: #33ffff;
 }
 
 /* Dropdowns */

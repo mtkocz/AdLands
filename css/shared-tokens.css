@@ -43,9 +43,12 @@ h6 {
 
 /* Disable anti-aliasing globally for pixel-perfect bitmap fonts */
 * {
-    -webkit-font-smoothing: none;
-    -moz-osx-font-smoothing: unset;
+    -webkit-font-smoothing: none; /* Chrome, Safari, Edge */
+    -moz-osx-font-smoothing: auto; /* Firefox on macOS - use native rendering */
     text-rendering: optimizeSpeed;
+    /* Prevent mobile browsers from inflating font sizes */
+    -webkit-text-size-adjust: 100%;
+    text-size-adjust: 100%;
 }
 
 :root {
