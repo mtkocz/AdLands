@@ -46,6 +46,8 @@ class BodyguardManager {
     this.worldGen = worldGen;
     // bodyguardId → bodyguard state
     this.bodyguards = new Map();
+    // faction → { commanderId, ticksRemaining }
+    this._pendingRespawns = new Map();
   }
 
   // ========================
@@ -144,6 +146,23 @@ class BodyguardManager {
     }
   }
 
+  /**
+   * Schedule a delayed respawn so the death state has time to broadcast.
+   * @param {string} faction
+   * @param {string} commanderId - socket ID of the new commander
+   * @param {number} ticks - number of update ticks to wait before respawning
+   */
+  scheduleRespawn(faction, commanderId, ticks) {
+    this._pendingRespawns.set(faction, { commanderId, ticksRemaining: ticks });
+  }
+
+  /**
+   * Check if a faction has a pending respawn scheduled.
+   */
+  hasPendingRespawn(faction) {
+    return this._pendingRespawns.has(faction);
+  }
+
   // ========================
   // TICK UPDATE
   // ========================
@@ -155,6 +174,19 @@ class BodyguardManager {
    * @param {number} planetRotation - current planet rotation
    */
   update(dt, players, planetRotation) {
+    // Process pending respawns (delayed so death state broadcasts first)
+    for (const [faction, pending] of this._pendingRespawns) {
+      pending.ticksRemaining--;
+      if (pending.ticksRemaining <= 0) {
+        this._pendingRespawns.delete(faction);
+        const commander = players.get(pending.commanderId);
+        if (commander && !commander.isDead && !commander.waitingForPortal) {
+          this.despawnForFaction(faction);
+          this.spawnForCommander(faction, pending.commanderId, commander);
+        }
+      }
+    }
+
     for (const [id, bg] of this.bodyguards) {
       if (bg.isDead) continue;
 

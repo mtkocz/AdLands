@@ -101,11 +101,17 @@
       onRewardsChange: handleRewardsChange,
     });
 
-    // Initialize moon sponsor panel
+    // Initialize moon sponsor panel (inline form triggered by clicking moons in hex selector)
     setLoadingProgress(68, "Setting up moon sponsors...");
+    let moonPanel = null;
     if (typeof MoonSponsorPanel !== "undefined") {
-      const moonPanel = new MoonSponsorPanel();
+      moonPanel = new MoonSponsorPanel({ hexSelector });
       await moonPanel.init();
+
+      // Wire moon click from hex selector to moon sponsor form
+      hexSelector.onMoonClick = (moonIndex) => {
+        moonPanel.showForm(moonIndex);
+      };
     }
 
     // Step 3: Wire up UI

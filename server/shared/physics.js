@@ -147,6 +147,7 @@
   exports.TANK_PHYSICS = TANK_PHYSICS;
   exports.PLANET_ROTATION_SPEED = PLANET_ROTATION_SPEED;
   exports.DAY_NIGHT_CYCLE_MINUTES = DAY_NIGHT_CYCLE_MINUTES;
+  exports.POLAR_PHI_LIMIT = POLAR_PHI_LIMIT;
   exports.applyInput = applyInput;
   exports.moveOnSphere = moveOnSphere;
   exports.sphericalDistance = sphericalDistance;

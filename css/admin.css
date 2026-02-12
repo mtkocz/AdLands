@@ -1658,63 +1658,52 @@ body {
 }
 
 /* ========================
-   MOON SPONSORS PANEL
+   MOON SPONSOR INLINE FORM (inside hex selector panel)
    ======================== */
 
-#moon-sponsors-panel {
-    grid-column: 1;
+#moon-sponsor-form-container {
+    margin-top: var(--space-sm);
 }
 
-.moon-slot {
-    border: 1px solid rgba(255, 255, 255, 0.06);
-    margin-bottom: var(--space-xs);
-    transition: border-color 0.15s ease;
+.moon-inline-form {
+    background: rgba(255, 255, 255, 0.04);
+    border: 1px solid var(--accent-cyan);
+    clip-path: var(--clip-rounded-8);
+    padding: var(--space-sm);
+    max-height: 400px;
+    overflow-y: auto;
 }
 
-.moon-slot:last-child {
-    margin-bottom: 0;
-}
-
-.moon-slot:hover {
-    border-color: rgba(255, 255, 255, 0.15);
-}
-
-.moon-slot.expanded {
-    border-color: var(--accent-cyan);
-}
-
-.moon-slot-header {
+.moon-inline-header {
     display: flex;
-    justify-content: space-between;
     align-items: center;
-    padding: var(--space-xs) var(--space-sm);
-    cursor: pointer;
-    user-select: none;
+    gap: var(--space-sm);
+    margin-bottom: var(--space-sm);
+    padding-bottom: var(--space-xs);
+    border-bottom: 1px solid rgba(255, 255, 255, 0.08);
 }
 
-.moon-slot-label {
-    font-family: var(--font-small);
+.moon-inline-title {
+    font-family: var(--font-body);
     font-size: var(--font-size-body);
     color: var(--text-primary);
 }
 
-.moon-slot-size {
-    color: var(--text-muted);
-    font-size: var(--font-size-small);
-}
-
-.moon-slot-status {
+.moon-inline-status {
     font-family: var(--font-small);
     font-size: var(--font-size-small);
     color: var(--text-muted);
+    flex: 1;
 }
 
-.moon-slot-status.sponsored {
+.moon-inline-status.sponsored {
     color: var(--accent-cyan);
 }
 
-.moon-slot-form {
-    padding: 0 var(--space-sm) var(--space-sm);
+.moon-inline-close {
+    width: 24px;
+    height: 24px;
+    flex-shrink: 0;
 }
 
 .moon-form-fields .form-group {

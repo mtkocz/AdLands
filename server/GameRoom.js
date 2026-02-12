@@ -8,6 +8,7 @@ const {
   FACTIONS,
   TANK_PHYSICS,
   PLANET_ROTATION_SPEED,
+  POLAR_PHI_LIMIT,
   applyInput,
   moveOnSphere,
   sphericalDistance,
@@ -663,11 +664,11 @@ class GameRoom {
     player.heading = Math.random() * Math.PI * 2;
     player.waitingForPortal = false;
 
-    // Reposition bodyguards if this player is a commander (avoids long travel from pre-portal spawn)
+    // Kill bodyguards and schedule delayed respawn so death state broadcasts to clients
     for (const faction of FACTIONS) {
       if (this.commanders[faction]?.id === socketId) {
-        this.bodyguardManager.despawnForFaction(faction);
-        this.bodyguardManager.spawnForCommander(faction, socketId, player);
+        this.bodyguardManager.killAllForFaction(faction);
+        this.bodyguardManager.scheduleRespawn(faction, socketId, 4);
         break;
       }
     }
@@ -785,6 +786,13 @@ class GameRoom {
       for (const [fwd, rgt] of probes) {
         const pPhi = player.phi + (fwdPhi * fwd + rgtPhi * rgt) / R;
         const pTh  = player.theta + (fwdTh * fwd + rgtTh * rgt) / R;
+
+        // Block if probe enters hollow polar opening
+        if (pPhi < POLAR_PHI_LIMIT || pPhi > Math.PI - POLAR_PHI_LIMIT) {
+          blocked = true;
+          break;
+        }
+
         const result = this.worldGen.getNearestTile(pTh + this.planetRotation, pPhi);
         if (result && this.terrain.getElevationAtTileIndex(result.tileIndex) > 0) {
           blocked = true;
@@ -1776,21 +1784,23 @@ class GameRoom {
           });
         }
       } else if (!current || current.id !== topPlayer.id) {
-        this.bodyguardManager.despawnForFaction(faction);
+        this.bodyguardManager.killAllForFaction(faction);
         this.commanders[faction] = { id: topPlayer.id, name: topPlayer.name };
-        // Spawn bodyguards for the new commander
-        this.bodyguardManager.spawnForCommander(faction, topPlayer.id, topPlayer);
+        // Delayed respawn so death state broadcasts before new bodyguards appear
+        this.bodyguardManager.scheduleRespawn(faction, topPlayer.id, 4);
         this.io.to(this.roomId).emit("commander-update", {
           faction,
           commander: { id: topPlayer.id, name: topPlayer.name },
         });
       } else if (topPlayer && !topPlayer.isDead && !topPlayer.waitingForPortal) {
         // Same commander, alive & deployed — respawn bodyguards if dead or missing
-        const hasDead = this.bodyguardManager.hasDeadBodyguards(faction);
-        const hasBg = this.bodyguardManager.hasBodyguards(faction);
-        if (hasDead || !hasBg) {
-          this.bodyguardManager.despawnForFaction(faction);
-          this.bodyguardManager.spawnForCommander(faction, topPlayer.id, topPlayer);
+        if (!this.bodyguardManager.hasPendingRespawn(faction)) {
+          const hasDead = this.bodyguardManager.hasDeadBodyguards(faction);
+          const hasBg = this.bodyguardManager.hasBodyguards(faction);
+          if (hasDead || !hasBg) {
+            this.bodyguardManager.killAllForFaction(faction);
+            this.bodyguardManager.scheduleRespawn(faction, topPlayer.id, 4);
+          }
         }
       }
     }

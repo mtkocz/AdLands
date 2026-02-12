@@ -392,9 +392,8 @@ class Tank {
     this.state.theta = entity.theta;
     this.state.phi = entity.phi;
 
-    // Terrain collision: block movement into elevated hexes
-    // Probe at tank's leading edge (not center) to prevent half-body penetration
-    if (this.planet?.terrainElevation && this.state.speed !== 0) {
+    // Collision: probe at tank's leading edge for terrain + polar boundary
+    if (this.planet && this.state.speed !== 0) {
       const r = this.sphereRadius;
       const t = Tank._terrainTemp;
       const sinPhi = Math.sin(this.state.phi);
@@ -424,7 +423,16 @@ class Tank {
 
       this.planet.hexGroup.worldToLocal(t.testPos);
 
-      if (this.planet.terrainElevation.getElevationAtPosition(t.testPos) > 0) {
+      // Check polar collision: is probe inside the hollow pole opening?
+      const probeR = t.testPos.length();
+      const probePhi = Math.acos(Math.max(-1, Math.min(1, t.testPos.y / probeR)));
+      const inPolar = probePhi < Tank.POLAR_PHI_LIMIT || probePhi > Math.PI - Tank.POLAR_PHI_LIMIT;
+
+      // Check terrain collision: is probe on elevated terrain?
+      const inTerrain = this.planet.terrainElevation &&
+        this.planet.terrainElevation.getElevationAtPosition(t.testPos) > 0;
+
+      if (inPolar || inTerrain) {
         // Revert movement but keep planet rotation compensation
         const dt60 = deltaTime * 60;
         const rotDelta = (planetRotationSpeed * dt60) / 60;

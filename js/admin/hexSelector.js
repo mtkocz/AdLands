@@ -19,7 +19,7 @@ class HexSelector {
       60,
       this.width / this.height,
       1,
-      2000,
+      3000,
     );
     this.renderer = new THREE.WebGLRenderer({ antialias: false, alpha: true });
 
@@ -92,8 +92,19 @@ class HexSelector {
     this.raycaster = new THREE.Raycaster();
     this.mouse = new THREE.Vector2();
 
+    // Moon meshes and state
+    this.moonMeshes = [];
+    this.moonConfigs = [
+      { radius: 12, distance: 190, speed: -0.15, angle: 0, inclination: 0.3, label: "Moon 1 (Large)" },
+      { radius: 6, distance: 250, speed: -0.11, angle: 2.094, inclination: -0.2, label: "Moon 2 (Small)" },
+      { radius: 9, distance: 220, speed: -0.08, angle: 4.189, inclination: 0.15, label: "Moon 3 (Medium)" },
+    ];
+    this.moonSponsorData = [null, null, null]; // Loaded sponsor data per moon
+    this.selectedMoon = null; // Index of currently selected moon (or null)
+
     // Callbacks
     this.onSelectionChange = options.onSelectionChange || null;
+    this.onMoonClick = options.onMoonClick || null;
 
     // Render-on-demand flag (set true when visual state changes)
     this._needsRender = true;
@@ -122,6 +133,9 @@ class HexSelector {
 
     // Generate hexasphere and build meshes
     this._generateTiles();
+
+    // Create orbiting moons
+    this._createMoons();
 
     // Setup controls
     this._setupControls();
@@ -286,6 +300,30 @@ class HexSelector {
       opacity: 0.1,
     });
     this.scene.add(new THREE.Mesh(outlineGeom, outlineMat));
+  }
+
+  _createMoons() {
+    this.moonMeshes = [];
+
+    for (let i = 0; i < this.moonConfigs.length; i++) {
+      const cfg = this.moonConfigs[i];
+      const geometry = new THREE.SphereGeometry(cfg.radius, 24, 24);
+      const material = new THREE.MeshLambertMaterial({
+        color: 0x888888,
+        emissive: 0x111111,
+      });
+      const mesh = new THREE.Mesh(geometry, material);
+      mesh.userData = { isMoon: true, moonIndex: i, label: cfg.label };
+
+      // Set initial position based on angle and inclination
+      const x = cfg.distance * Math.cos(cfg.angle) * Math.cos(cfg.inclination);
+      const y = cfg.distance * Math.sin(cfg.inclination);
+      const z = cfg.distance * Math.sin(cfg.angle) * Math.cos(cfg.inclination);
+      mesh.position.set(x, y, z);
+
+      this.scene.add(mesh);
+      this.moonMeshes.push(mesh);
+    }
   }
 
   _buildAdjacencyMap(tiles) {
@@ -625,6 +663,19 @@ class HexSelector {
     this.mouse.y = -((e.clientY - rect.top) / rect.height) * 2 + 1;
 
     this.raycaster.setFromCamera(this.mouse, this.camera);
+
+    // Check moon intersections first (they're in front of the planet)
+    if (this.moonMeshes.length > 0) {
+      const moonIntersects = this.raycaster.intersectObjects(this.moonMeshes);
+      if (moonIntersects.length > 0) {
+        const moonMesh = moonIntersects[0].object;
+        const moonIndex = moonMesh.userData.moonIndex;
+        this._selectMoon(moonIndex);
+        return;
+      }
+    }
+
+    // Check tile intersections
     const intersects = this.raycaster.intersectObjects(this.tileMeshes);
 
     if (intersects.length > 0) {
@@ -635,8 +686,77 @@ class HexSelector {
       if (mesh.userData.isExcluded) return;
       if (this.assignedTiles.has(tileIndex)) return;
 
+      // Deselect any selected moon when clicking tiles
+      if (this.selectedMoon !== null) {
+        this._deselectMoon();
+      }
+
       this._toggleSelection(tileIndex);
     }
+  }
+
+  /**
+   * Select a moon (highlight it and trigger callback)
+   * @param {number} moonIndex
+   */
+  _selectMoon(moonIndex) {
+    // Deselect previous moon
+    if (this.selectedMoon !== null && this.selectedMoon !== moonIndex) {
+      this._deselectMoon();
+    }
+
+    this.selectedMoon = moonIndex;
+    const mesh = this.moonMeshes[moonIndex];
+    if (mesh) {
+      mesh.material.color.setHex(0xffdd44);
+      mesh.material.emissive.setHex(0x443300);
+    }
+    this._needsRender = true;
+
+    if (this.onMoonClick) {
+      this.onMoonClick(moonIndex, this.moonSponsorData[moonIndex]);
+    }
+  }
+
+  /**
+   * Deselect the currently selected moon
+   */
+  _deselectMoon() {
+    if (this.selectedMoon === null) return;
+    const mesh = this.moonMeshes[this.selectedMoon];
+    if (mesh) {
+      // Restore color based on whether moon has a sponsor
+      const hasSponsor = this.moonSponsorData[this.selectedMoon] != null;
+      mesh.material.color.setHex(hasSponsor ? 0xaaaacc : 0x888888);
+      mesh.material.emissive.setHex(hasSponsor ? 0x222233 : 0x111111);
+    }
+    this.selectedMoon = null;
+    this._needsRender = true;
+  }
+
+  /**
+   * Update moon sponsor data and visual state
+   * @param {number} moonIndex
+   * @param {Object|null} sponsorData
+   */
+  setMoonSponsorData(moonIndex, sponsorData) {
+    if (moonIndex < 0 || moonIndex >= 3) return;
+    this.moonSponsorData[moonIndex] = sponsorData;
+
+    const mesh = this.moonMeshes[moonIndex];
+    if (!mesh) return;
+
+    // Update moon color based on sponsor state (unless it's the selected moon)
+    if (this.selectedMoon !== moonIndex) {
+      if (sponsorData && sponsorData.name) {
+        mesh.material.color.setHex(0xaaaacc);
+        mesh.material.emissive.setHex(0x222233);
+      } else {
+        mesh.material.color.setHex(0x888888);
+        mesh.material.emissive.setHex(0x111111);
+      }
+    }
+    this._needsRender = true;
   }
 
   /**
@@ -979,6 +1099,19 @@ class HexSelector {
     const deltaTime = elapsed / 1000;
     this.lastFrameTime = now;
 
+    // Update moon orbits (always moving)
+    for (let i = 0; i < this.moonConfigs.length; i++) {
+      const cfg = this.moonConfigs[i];
+      cfg.angle += cfg.speed * deltaTime;
+      const mesh = this.moonMeshes[i];
+      if (mesh) {
+        const x = cfg.distance * Math.cos(cfg.angle) * Math.cos(cfg.inclination);
+        const y = cfg.distance * Math.sin(cfg.inclination);
+        const z = cfg.distance * Math.sin(cfg.angle) * Math.cos(cfg.inclination);
+        mesh.position.set(x, y, z);
+      }
+    }
+
     // Check if anything is actually animating
     const hasMotion =
       this.isDragging ||
@@ -992,9 +1125,6 @@ class HexSelector {
     } else if (hasMotion) {
       // Apply orbital momentum when not dragging (only if not transitioning)
       this._applyOrbitalMomentum();
-    } else if (!this._needsRender) {
-      // Nothing animating and no pending render - skip
-      return;
     }
 
     this._needsRender = false;
@@ -2083,6 +2213,12 @@ class HexSelector {
 
     // Dispose geometries and materials
     this.tileMeshes.forEach((mesh) => {
+      mesh.geometry.dispose();
+      mesh.material.dispose();
+    });
+
+    // Dispose moon meshes
+    this.moonMeshes.forEach((mesh) => {
       mesh.geometry.dispose();
       mesh.material.dispose();
     });

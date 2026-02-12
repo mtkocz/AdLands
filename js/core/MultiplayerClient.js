@@ -394,6 +394,21 @@
 
           if (!bg) continue;
 
+          // Handle resurrection: server respawned with same ID — remove dead one and recreate
+          if (bg.isDead && bgState.d === 0) {
+            despawnRemoteBodyguard(bgId);
+            bg = spawnRemoteBodyguard({
+              id: bgId,
+              f: bgState.f,
+              t: bgState.t,
+              p: bgState.p,
+              h: bgState.h,
+              s: bgState.s,
+              hp: bgState.hp,
+            });
+            if (!bg) continue;
+          }
+
           // Handle death transition
           if (bgState.d === 1 && !bg.isDead) {
             bg.die();
