@@ -95,16 +95,15 @@ class HexSelector {
     // Moon meshes and state
     this.moonMeshes = [];
     this.moonConfigs = [
-      { radius: 12, distance: 190, speed: -0.15, angle: 0, inclination: 0.3, label: "Moon 1 (Large)" },
-      { radius: 6, distance: 250, speed: -0.11, angle: 2.094, inclination: -0.2, label: "Moon 2 (Small)" },
-      { radius: 9, distance: 220, speed: -0.08, angle: 4.189, inclination: 0.15, label: "Moon 3 (Medium)" },
+      { radius: 12, distance: 190, angle: 0, inclination: 0.3, label: "Moon 1 (Large)" },
+      { radius: 6, distance: 250, angle: 2.094, inclination: -0.2, label: "Moon 2 (Small)" },
+      { radius: 9, distance: 220, angle: 4.189, inclination: 0.15, label: "Moon 3 (Medium)" },
     ];
-    this.moonSponsorData = [null, null, null]; // Loaded sponsor data per moon
-    this.selectedMoon = null; // Index of currently selected moon (or null)
+    this.selectedMoons = new Set(); // Moon indices selected for current sponsor
+    this.assignedMoons = new Map(); // moonIndex → sponsorName (moons belonging to other sponsors)
 
     // Callbacks
     this.onSelectionChange = options.onSelectionChange || null;
-    this.onMoonClick = options.onMoonClick || null;
 
     // Render-on-demand flag (set true when visual state changes)
     this._needsRender = true;
@@ -670,7 +669,10 @@ class HexSelector {
       if (moonIntersects.length > 0) {
         const moonMesh = moonIntersects[0].object;
         const moonIndex = moonMesh.userData.moonIndex;
-        this._selectMoon(moonIndex);
+        // Skip moons assigned to other sponsors
+        if (!this.assignedMoons.has(moonIndex)) {
+          this._toggleMoonSelection(moonIndex);
+        }
         return;
       }
     }
@@ -686,74 +688,98 @@ class HexSelector {
       if (mesh.userData.isExcluded) return;
       if (this.assignedTiles.has(tileIndex)) return;
 
-      // Deselect any selected moon when clicking tiles
-      if (this.selectedMoon !== null) {
-        this._deselectMoon();
-      }
-
       this._toggleSelection(tileIndex);
     }
   }
 
   /**
-   * Select a moon (highlight it and trigger callback)
+   * Toggle moon selection (like tile selection)
    * @param {number} moonIndex
    */
-  _selectMoon(moonIndex) {
-    // Deselect previous moon
-    if (this.selectedMoon !== null && this.selectedMoon !== moonIndex) {
-      this._deselectMoon();
-    }
-
-    this.selectedMoon = moonIndex;
-    const mesh = this.moonMeshes[moonIndex];
-    if (mesh) {
-      mesh.material.color.setHex(0xffdd44);
-      mesh.material.emissive.setHex(0x443300);
-    }
-    this._needsRender = true;
-
-    if (this.onMoonClick) {
-      this.onMoonClick(moonIndex, this.moonSponsorData[moonIndex]);
-    }
-  }
-
-  /**
-   * Deselect the currently selected moon
-   */
-  _deselectMoon() {
-    if (this.selectedMoon === null) return;
-    const mesh = this.moonMeshes[this.selectedMoon];
-    if (mesh) {
-      // Restore color based on whether moon has a sponsor
-      const hasSponsor = this.moonSponsorData[this.selectedMoon] != null;
-      mesh.material.color.setHex(hasSponsor ? 0xaaaacc : 0x888888);
-      mesh.material.emissive.setHex(hasSponsor ? 0x222233 : 0x111111);
-    }
-    this.selectedMoon = null;
-    this._needsRender = true;
-  }
-
-  /**
-   * Update moon sponsor data and visual state
-   * @param {number} moonIndex
-   * @param {Object|null} sponsorData
-   */
-  setMoonSponsorData(moonIndex, sponsorData) {
-    if (moonIndex < 0 || moonIndex >= 3) return;
-    this.moonSponsorData[moonIndex] = sponsorData;
-
+  _toggleMoonSelection(moonIndex) {
     const mesh = this.moonMeshes[moonIndex];
     if (!mesh) return;
 
-    // Update moon color based on sponsor state (unless it's the selected moon)
-    if (this.selectedMoon !== moonIndex) {
-      if (sponsorData && sponsorData.name) {
-        mesh.material.color.setHex(0xaaaacc);
-        mesh.material.emissive.setHex(0x222233);
-      } else {
+    if (this.selectedMoons.has(moonIndex)) {
+      // Deselect
+      this.selectedMoons.delete(moonIndex);
+      mesh.material.color.setHex(0x888888);
+      mesh.material.emissive.setHex(0x111111);
+    } else {
+      // Select
+      this.selectedMoons.add(moonIndex);
+      mesh.material.color.setHex(0xffd700); // Same yellow as selected tiles
+      mesh.material.emissive.setHex(0x333300);
+    }
+    this._needsRender = true;
+
+    if (this.onSelectionChange) {
+      this.onSelectionChange(this.getSelectedTiles());
+    }
+  }
+
+  /**
+   * Get selected moon indices
+   * @returns {number[]}
+   */
+  getSelectedMoons() {
+    return Array.from(this.selectedMoons);
+  }
+
+  /**
+   * Set selected moons (for loading existing sponsor)
+   * @param {number[]} moonIndices
+   */
+  setSelectedMoons(moonIndices) {
+    // Clear current moon selection
+    for (const mi of this.selectedMoons) {
+      const mesh = this.moonMeshes[mi];
+      if (mesh) {
         mesh.material.color.setHex(0x888888);
         mesh.material.emissive.setHex(0x111111);
+      }
+    }
+    this.selectedMoons.clear();
+
+    // Select new moons
+    for (const mi of moonIndices) {
+      if (mi < 0 || mi >= this.moonMeshes.length) continue;
+      if (this.assignedMoons.has(mi)) continue;
+      this.selectedMoons.add(mi);
+      const mesh = this.moonMeshes[mi];
+      if (mesh) {
+        mesh.material.color.setHex(0xffd700);
+        mesh.material.emissive.setHex(0x333300);
+      }
+    }
+    this._needsRender = true;
+  }
+
+  /**
+   * Set moons that are assigned to other sponsors (shown dimmed)
+   * @param {Map<number, string>} assignedMap - moonIndex → sponsorName
+   */
+  setAssignedMoons(assignedMap) {
+    // Reset previously assigned moons
+    for (const mi of this.assignedMoons.keys()) {
+      if (!this.selectedMoons.has(mi)) {
+        const mesh = this.moonMeshes[mi];
+        if (mesh) {
+          mesh.material.color.setHex(0x888888);
+          mesh.material.emissive.setHex(0x111111);
+        }
+      }
+    }
+
+    this.assignedMoons = new Map(assignedMap);
+
+    // Dim assigned moons (dark red, like assigned tiles)
+    for (const [mi] of this.assignedMoons) {
+      if (this.selectedMoons.has(mi)) continue;
+      const mesh = this.moonMeshes[mi];
+      if (mesh) {
+        mesh.material.color.setHex(0x664444);
+        mesh.material.emissive.setHex(0x220000);
       }
     }
     this._needsRender = true;
@@ -1099,19 +1125,6 @@ class HexSelector {
     const deltaTime = elapsed / 1000;
     this.lastFrameTime = now;
 
-    // Update moon orbits (always moving)
-    for (let i = 0; i < this.moonConfigs.length; i++) {
-      const cfg = this.moonConfigs[i];
-      cfg.angle += cfg.speed * deltaTime;
-      const mesh = this.moonMeshes[i];
-      if (mesh) {
-        const x = cfg.distance * Math.cos(cfg.angle) * Math.cos(cfg.inclination);
-        const y = cfg.distance * Math.sin(cfg.inclination);
-        const z = cfg.distance * Math.sin(cfg.angle) * Math.cos(cfg.inclination);
-        mesh.position.set(x, y, z);
-      }
-    }
-
     // Check if anything is actually animating
     const hasMotion =
       this.isDragging ||
@@ -1125,6 +1138,9 @@ class HexSelector {
     } else if (hasMotion) {
       // Apply orbital momentum when not dragging (only if not transitioning)
       this._applyOrbitalMomentum();
+    } else if (!this._needsRender) {
+      // Nothing animating and no pending render - skip
+      return;
     }
 
     this._needsRender = false;
@@ -1390,7 +1406,7 @@ class HexSelector {
   }
 
   /**
-   * Clear all selected tiles
+   * Clear all selected tiles and moons
    */
   clearSelection() {
     for (const tileIndex of this.selectedTiles) {
@@ -1409,6 +1425,16 @@ class HexSelector {
       }
     }
     this.selectedTiles.clear();
+
+    // Clear moon selection
+    for (const mi of this.selectedMoons) {
+      const mesh = this.moonMeshes[mi];
+      if (mesh) {
+        mesh.material.color.setHex(0x888888);
+        mesh.material.emissive.setHex(0x111111);
+      }
+    }
+    this.selectedMoons.clear();
 
     // Update visual hints (all tiles become selectable again)
     this._updateSelectableHighlights();

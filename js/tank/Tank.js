@@ -392,7 +392,8 @@ class Tank {
     this.state.theta = entity.theta;
     this.state.phi = entity.phi;
 
-    // Collision: probe at tank's leading edge for terrain + polar boundary
+    // Collision: probe full tank body box for terrain + polar boundary
+    // 5 probes (center + 4 corners) matching server-side collision in GameRoom.js
     if (this.planet && this.state.speed !== 0) {
       const r = this.sphereRadius;
       const t = Tank._terrainTemp;
@@ -401,38 +402,56 @@ class Tank {
       const sinTheta = Math.sin(this.state.theta);
       const cosTheta = Math.cos(this.state.theta);
 
-      t.testPos.set(
-        r * sinPhi * cosTheta,
-        r * cosPhi,
-        r * sinPhi * sinTheta,
-      );
-
-      // Offset probe forward along heading direction on sphere surface
-      const BUFFER = 2.75; // Half tank body length (5.5 / 2)
-      const dir = Math.sign(this.state.speed);
       const h = this.state.heading;
       const cosH = Math.cos(h);
       const sinH = Math.sin(h);
-      // Forward = cosH * North + (-sinH) * East  (unit vector on sphere surface)
+      const dir = Math.sign(this.state.speed);
+
+      // Tank center in world space
+      const cx = r * sinPhi * cosTheta;
+      const cy = r * cosPhi;
+      const cz = r * sinPhi * sinTheta;
+
+      // Forward and right unit vectors on sphere surface
+      // Forward = cosH * North + (-sinH) * East
+      // Right   = sinH * North +   cosH  * East
       // North = (-cosPhi*cosTheta, sinPhi, -cosPhi*sinTheta)
       // East  = (-sinTheta, 0, cosTheta)
-      const offset = dir * BUFFER;
-      t.testPos.x += (-cosH * cosPhi * cosTheta + sinH * sinTheta) * offset;
-      t.testPos.y += (cosH * sinPhi) * offset;
-      t.testPos.z += (-cosH * cosPhi * sinTheta - sinH * cosTheta) * offset;
+      const fwd_x = -cosH * cosPhi * cosTheta + sinH * sinTheta;
+      const fwd_y =  cosH * sinPhi;
+      const fwd_z = -cosH * cosPhi * sinTheta - sinH * cosTheta;
+      const rgt_x = -sinH * cosPhi * cosTheta - cosH * sinTheta;
+      const rgt_y =  sinH * sinPhi;
+      const rgt_z = -sinH * cosPhi * sinTheta + cosH * cosTheta;
 
-      this.planet.hexGroup.worldToLocal(t.testPos);
+      let blocked = false;
+      for (const [fwd, rgt] of Tank._collisionProbes) {
+        const f = fwd * dir;
+        t.testPos.set(
+          cx + fwd_x * f + rgt_x * rgt,
+          cy + fwd_y * f + rgt_y * rgt,
+          cz + fwd_z * f + rgt_z * rgt,
+        );
 
-      // Check polar collision: is probe inside the hollow pole opening?
-      const probeR = t.testPos.length();
-      const probePhi = Math.acos(Math.max(-1, Math.min(1, t.testPos.y / probeR)));
-      const inPolar = probePhi < Tank.POLAR_PHI_LIMIT || probePhi > Math.PI - Tank.POLAR_PHI_LIMIT;
+        this.planet.hexGroup.worldToLocal(t.testPos);
 
-      // Check terrain collision: is probe on elevated terrain?
-      const inTerrain = this.planet.terrainElevation &&
-        this.planet.terrainElevation.getElevationAtPosition(t.testPos) > 0;
+        // Check polar collision: is probe inside the hollow pole opening?
+        const probeR = t.testPos.length();
+        const probePhi = Math.acos(Math.max(-1, Math.min(1, t.testPos.y / probeR)));
+        if (probePhi < Tank.POLAR_PHI_LIMIT || probePhi > Math.PI - Tank.POLAR_PHI_LIMIT) {
+          blocked = true;
+          break;
+        }
 
-      if (inPolar || inTerrain) {
+        // Check terrain collision: is probe on elevated terrain?
+        if (this.planet.terrainElevation &&
+          this.planet.terrainElevation.getElevationAtPosition(t.testPos) > 0) {
+          blocked = true;
+          break;
+        }
+      }
+
+      if (blocked) {
         // Revert movement but keep planet rotation compensation
         const dt60 = deltaTime * 60;
         const rotDelta = (planetRotationSpeed * dt60) / 60;
@@ -1719,6 +1738,16 @@ Tank.updateEntityVisual = function (entity, sphereRadius) {
 Tank._terrainTemp = {
   testPos: new THREE.Vector3(),
 };
+
+// Collision box probes: [forward_units, right_units]
+// Center + 4 corners of the tank body (5.5 long × 3 wide)
+Tank._collisionProbes = [
+  [0, 0],          // center
+  [2.75, -1.5],    // front-left
+  [2.75,  1.5],    // front-right
+  [-2.75, -1.5],   // rear-left
+  [-2.75,  1.5],   // rear-right
+];
 
 Tank._lodTemp = {
   tankWorldPos: new THREE.Vector3(),

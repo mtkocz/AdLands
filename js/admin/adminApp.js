@@ -11,6 +11,7 @@
   let sponsorForm = null;
   let rewardConfig = null;
   let pricingPanel = null;
+  let moonManager = null;
 
   // Busy guard — prevents concurrent save/duplicate/delete operations
   let busy = false;
@@ -101,17 +102,13 @@
       onRewardsChange: handleRewardsChange,
     });
 
-    // Initialize moon sponsor panel (inline form triggered by clicking moons in hex selector)
-    setLoadingProgress(68, "Setting up moon sponsors...");
-    let moonPanel = null;
-    if (typeof MoonSponsorPanel !== "undefined") {
-      moonPanel = new MoonSponsorPanel({ hexSelector });
-      await moonPanel.init();
-
-      // Wire moon click from hex selector to moon sponsor form
-      hexSelector.onMoonClick = (moonIndex) => {
-        moonPanel.showForm(moonIndex);
-      };
+    // Initialize moon sponsor manager (API utility for moon assignments)
+    setLoadingProgress(68, "Loading moon sponsors...");
+    if (typeof MoonSponsorManager !== "undefined") {
+      moonManager = new MoonSponsorManager();
+      await moonManager.load();
+      // Show which moons are already assigned to other sponsors
+      updateAssignedMoons();
     }
 
     // Step 3: Wire up UI
@@ -223,15 +220,21 @@
   // ========================
 
   function handleSelectionChange(selectedTiles) {
-    selectionCountEl.textContent = selectedTiles.length;
+    const selectedMoons = hexSelector ? hexSelector.getSelectedMoons() : [];
+    const totalCount = selectedTiles.length + selectedMoons.length;
+    selectionCountEl.textContent = totalCount;
 
     // Update selected tiles list for accountability
+    const parts = [];
     if (selectedTiles.length > 0) {
       const sortedTiles = [...selectedTiles].sort((a, b) => a - b);
-      selectedTilesListEl.textContent = "IDs: " + sortedTiles.join(", ");
-    } else {
-      selectedTilesListEl.textContent = "";
+      parts.push("Tiles: " + sortedTiles.join(", "));
     }
+    if (selectedMoons.length > 0) {
+      const moonLabels = selectedMoons.map(i => "Moon " + (i + 1));
+      parts.push(moonLabels.join(", "));
+    }
+    selectedTilesListEl.textContent = parts.join(" | ");
 
     // Update pricing panel
     if (pricingPanel) {
@@ -465,6 +468,12 @@
           return;
         }
 
+        // Save moon assignments
+        if (moonManager) {
+          const selectedMoons = hexSelector.getSelectedMoons();
+          await moonManager.saveMoonsForSponsor(selectedMoons, formData);
+        }
+
         handleClearForm();
         refreshSponsorsList();
       } else {
@@ -503,6 +512,12 @@
           return;
         }
 
+        // Save moon assignments
+        if (moonManager) {
+          const selectedMoons = hexSelector.getSelectedMoons();
+          await moonManager.saveMoonsForSponsor(selectedMoons, formData);
+        }
+
         handleClearForm();
         refreshSponsorsList();
       }
@@ -519,6 +534,7 @@
     hexSelector.setPatternPreview(null);
     rewardConfig.clear();
     updateAssignedTiles();
+    updateAssignedMoons();
     selectedTilesListEl.textContent = "";
   }
 
@@ -761,6 +777,13 @@
     if (sponsor.cluster?.tileIndices) {
       hexSelector.setSelectedTiles(sponsor.cluster.tileIndices);
       hexSelector.transitionToCluster(sponsor.cluster.tileIndices);
+    }
+
+    // Load moon assignments for this sponsor
+    if (moonManager && sponsor.name) {
+      const moonIndices = moonManager.getMoonsForSponsor(sponsor.name);
+      hexSelector.setSelectedMoons(moonIndices);
+      updateAssignedMoons(sponsor.name);
     }
 
     // Load rewards
@@ -1161,6 +1184,16 @@
     const assignedTiles = SponsorStorage.getAssignedTiles(excludeSponsorId);
     const assignedTileMap = SponsorStorage.getAssignedTileMap(excludeSponsorId);
     hexSelector.setAssignedTiles(assignedTiles, assignedTileMap);
+  }
+
+  /**
+   * Update which moons are shown as assigned (dimmed) in hex selector.
+   * @param {string|null} excludeName - Sponsor name to exclude (currently editing)
+   */
+  function updateAssignedMoons(excludeName = null) {
+    if (!moonManager || !hexSelector) return;
+    const assignedMap = moonManager.getAssignedMoons(excludeName);
+    hexSelector.setAssignedMoons(assignedMap);
   }
 
   // ========================
