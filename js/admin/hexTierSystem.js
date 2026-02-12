@@ -297,6 +297,33 @@ const HexTierSystem = {
       discount: this.getClusterDiscount(n),
     }));
   },
+
+  // ═══════════════════════════════════════════════════════
+  // MOON PRICING
+  // ═══════════════════════════════════════════════════════
+
+  /** Fixed monthly price per moon index (ordered by moonConfigs) */
+  MOON_PRICES: [250, 60, 120], // Moon 1 (Large), Moon 2 (Small), Moon 3 (Medium)
+
+  MOON_LABELS: ["Moon 1 (Large)", "Moon 2 (Small)", "Moon 3 (Medium)"],
+
+  /**
+   * Calculate pricing for selected moons
+   * @param {number[]} moonIndices
+   * @returns {{ moons: Array<{index, label, price}>, moonTotal: number }}
+   */
+  calculateMoonPricing(moonIndices) {
+    if (!moonIndices || moonIndices.length === 0) {
+      return { moons: [], moonTotal: 0 };
+    }
+    let moonTotal = 0;
+    const moons = moonIndices.map((i) => {
+      const price = this.MOON_PRICES[i] || 0;
+      moonTotal += price;
+      return { index: i, label: this.MOON_LABELS[i] || `Moon ${i + 1}`, price };
+    });
+    return { moons, moonTotal };
+  },
 };
 
 // Make available globally for other modules

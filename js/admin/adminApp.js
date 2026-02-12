@@ -242,9 +242,9 @@
       pricingPanel.updatePricing(pricing);
     }
 
-    // Update pattern preview when selection changes
+    // Update pattern preview when selection changes (tiles or moons)
     const formData = sponsorForm.getFormData();
-    if (formData.patternImage && selectedTiles.length > 0) {
+    if (formData.patternImage && (selectedTiles.length > 0 || selectedMoons.length > 0)) {
       hexSelector.setPatternPreview(
         formData.patternImage,
         formData.patternAdjustment,
@@ -267,13 +267,18 @@
     if (!tierMap || typeof HexTierSystem === "undefined") return;
 
     const editingId = sponsorForm ? sponsorForm.getEditingSponsorId() : null;
+    const editingSponsor = editingId ? SponsorStorage.getById(editingId) : null;
+    const editingSponsorName = editingSponsor?.name;
+    const liveSelectedMoons = hexSelector ? hexSelector.getSelectedMoons() : [];
     const sponsors = SponsorStorage.getAll();
     let totalMonthly = 0;
+
+    // Track which sponsor names we've already counted moon revenue for (avoid double-counting in groups)
+    const moonRevCounted = new Set();
 
     for (const s of sponsors) {
       let tiles;
       if (editingId && s.id === editingId) {
-        // Use live selection for the active cluster being edited
         tiles = liveSelectedTiles;
       } else {
         tiles = s.cluster?.tileIndices;
@@ -281,17 +286,35 @@
       const rev = calcRevenueForTiles(tiles, tierMap);
       totalMonthly += rev.total;
 
+      // Add moon revenue once per sponsor name
+      const nameKey = (s.name || "").toLowerCase();
+      if (!moonRevCounted.has(nameKey)) {
+        moonRevCounted.add(nameKey);
+        // For the editing sponsor, use live moon selection
+        if (editingSponsorName && nameKey === editingSponsorName.toLowerCase()) {
+          totalMonthly += calcMoonRevenue(null, liveSelectedMoons);
+        } else {
+          totalMonthly += calcMoonRevenue(s.name);
+        }
+      }
+
       // Patch individual card/cluster row revenue in-place (only for editing sponsor)
       if (editingId && s.id === editingId) {
+        const liveMoonRev = calcMoonRevenue(null, liveSelectedMoons);
+        const liveTotal = rev.total + liveMoonRev;
+
         // Update card if it's a flat card
         const card = sponsorsListEl.querySelector(`.sponsor-card[data-id="${s.id}"]`);
         if (card) {
           const revEl = card.querySelector(".sponsor-card-revenue");
-          if (rev.html) {
-            if (revEl) revEl.outerHTML = rev.html;
+          const newHtml = liveTotal > 0
+            ? `<div class="sponsor-card-revenue"><span class="sponsor-card-revenue-total">$${fmtUSD(liveTotal)}/mo</span></div>`
+            : "";
+          if (newHtml) {
+            if (revEl) revEl.outerHTML = newHtml;
             else {
               const info = card.querySelector(".sponsor-card-info");
-              if (info) info.insertAdjacentHTML("beforeend", rev.html);
+              if (info) info.insertAdjacentHTML("beforeend", newHtml);
             }
           } else if (revEl) {
             revEl.remove();
@@ -331,11 +354,18 @@
           groupTiles += tiles?.length || 0;
           groupRev += calcRevenueForTiles(tiles, tierMap).total;
         }
+        // Add moon revenue for the group (live selection if editing)
+        const groupMoonRev = editingSponsorName
+          ? calcMoonRevenue(null, liveSelectedMoons)
+          : calcMoonRevenue(editingGroup.name);
+        groupRev += groupMoonRev;
+
         const statsEl = groupEl.querySelector(".sponsor-group-header .sponsor-card-stats");
         if (statsEl) {
           const totalRewards = editingGroup.ids.reduce((sum, id) =>
             sum + (SponsorStorage.getById(id)?.rewards?.length || 0), 0);
-          statsEl.textContent = `${groupTiles} tiles, ${totalRewards} rewards`;
+          const groupMoonCount = liveSelectedMoons.length;
+          statsEl.textContent = `${groupTiles} tiles${groupMoonCount > 0 ? ", " + groupMoonCount + " moons" : ""}, ${totalRewards} rewards`;
         }
         const revEl = groupEl.querySelector(".sponsor-group-header .sponsor-card-revenue");
         if (groupRev > 0) {
@@ -369,9 +399,10 @@
   }
 
   function handleFormChange(formData) {
-    // Update pattern preview on selected tiles in real-time
+    // Update pattern preview on selected tiles and moons in real-time
     const selectedTiles = hexSelector.getSelectedTiles();
-    if (formData.patternImage && selectedTiles.length > 0) {
+    const selectedMoons = hexSelector.getSelectedMoons();
+    if (formData.patternImage && (selectedTiles.length > 0 || selectedMoons.length > 0)) {
       hexSelector.setPatternPreview(
         formData.patternImage,
         formData.patternAdjustment,
@@ -412,8 +443,9 @@
         // Save active cluster's per-cluster data
         const activeId = editingGroup.ids[editingGroup.activeIndex];
 
-        if (selectedTiles.length === 0) {
-          showToast("Active cluster must have at least one tile", "error");
+        const selectedMoonsForGroupSave = hexSelector ? hexSelector.getSelectedMoons() : [];
+        if (selectedTiles.length === 0 && selectedMoonsForGroupSave.length === 0) {
+          showToast("Active cluster must have at least one tile or moon", "error");
           return;
         }
 
@@ -621,6 +653,19 @@
     return { html, total: pricing.total };
   }
 
+  /**
+   * Calculate moon revenue for a sponsor by name
+   * @param {string} sponsorName
+   * @param {number[]} [overrideMoons] - If provided, use these moon indices instead of looking up by name
+   * @returns {number} Monthly moon revenue
+   */
+  function calcMoonRevenue(sponsorName, overrideMoons) {
+    if (typeof HexTierSystem === "undefined") return 0;
+    const indices = overrideMoons || (moonManager ? moonManager.getMoonsForSponsor(sponsorName) : []);
+    if (!indices.length) return 0;
+    return HexTierSystem.calculateMoonPricing(indices).moonTotal;
+  }
+
   function refreshSponsorsList() {
     const sponsors = SponsorStorage.getAll();
 
@@ -651,10 +696,12 @@
 
     for (const [, members] of groups) {
       if (members.length === 1) {
-        // Single sponsor — render as flat card (unchanged)
+        // Single sponsor — render as flat card
         const sponsor = members[0];
         const rev = calcRevenueForTiles(sponsor.cluster?.tileIndices, tierMap);
-        totalMonthly += rev.total;
+        const moonRev = calcMoonRevenue(sponsor.name);
+        const sponsorTotal = rev.total + moonRev;
+        totalMonthly += sponsorTotal;
 
         const logoSrc = sponsor.logoUrl || sponsor.logoImage;
         htmlParts.push(`
@@ -669,10 +716,10 @@
                 <div class="sponsor-card-info">
                     <div class="sponsor-card-name">${escapeHtml(sponsor.name)}</div>
                     <div class="sponsor-card-stats">
-                        ${sponsor.cluster?.tileIndices?.length || 0} tiles,
+                        ${sponsor.cluster?.tileIndices?.length || 0} tiles${moonRev > 0 ? ", " + moonManager.getMoonsForSponsor(sponsor.name).length + " moons" : ""},
                         ${sponsor.rewards?.length || 0} rewards
                     </div>
-                    ${rev.html}
+                    ${sponsorTotal > 0 ? `<div class="sponsor-card-revenue"><span class="sponsor-card-revenue-total">$${fmtUSD(sponsorTotal)}/mo</span></div>` : ""}
                 </div>
                 <div class="sponsor-card-actions">
                     <button class="icon-btn duplicate-sponsor-btn" title="Duplicate">&#x29C9;</button>
@@ -690,7 +737,7 @@
           (sum, s) => sum + (s.rewards?.length || 0), 0
         );
 
-        // Aggregate revenue across all clusters
+        // Aggregate revenue across all clusters + moons
         let groupRevenue = 0;
         const clusterRows = members.map((s, i) => {
           const tileCount = s.cluster?.tileIndices?.length || 0;
@@ -712,6 +759,13 @@
           `;
         }).join("");
 
+        // Add moon revenue (moons are shared across all clusters of this sponsor)
+        const groupMoonRev = calcMoonRevenue(first.name);
+        groupRevenue += groupMoonRev;
+        totalMonthly += groupMoonRev;
+
+        const groupMoonCount = moonManager ? moonManager.getMoonsForSponsor(first.name).length : 0;
+
         const groupRevHtml = groupRevenue > 0
           ? `<div class="sponsor-card-revenue"><span class="sponsor-card-revenue-total">$${fmtUSD(groupRevenue)}/mo</span></div>`
           : "";
@@ -732,7 +786,7 @@
                         <div class="sponsor-card-name">${escapeHtml(first.name)}</div>
                         <span class="sponsor-group-badge">${members.length} clusters</span>
                         <div class="sponsor-card-stats">
-                            ${totalTiles} tiles, ${totalRewards} rewards
+                            ${totalTiles} tiles${groupMoonCount > 0 ? ", " + groupMoonCount + " moons" : ""}, ${totalRewards} rewards
                         </div>
                         ${groupRevHtml}
                     </div>

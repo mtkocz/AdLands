@@ -161,10 +161,13 @@ class PricingPanel {
   updatePricing(pricing) {
     const container = this.container.querySelector("#pricing-summary");
 
-    if (!pricing || pricing.totalHexes === 0) {
+    const hasMoons = pricing && pricing.moons && pricing.moons.length > 0;
+    const hasHexes = pricing && pricing.totalHexes > 0;
+
+    if (!pricing || (!hasHexes && !hasMoons)) {
       container.innerHTML = `
         <div class="pricing-empty-state">
-          Select hexes on the map to see pricing
+          Select hexes or moons to see pricing
           <div class="pricing-empty-hint">Click hexes to build a cluster • Bigger clusters = bigger discounts</div>
         </div>
       `;
@@ -179,61 +182,90 @@ class PricingPanel {
       discountAmount,
       total,
       label,
+      moons,
+      moonTotal,
     } = pricing;
 
-    let html = `
-      <div class="pricing-header">
-        <span class="pricing-hex-count">${totalHexes} ${totalHexes === 1 ? "hex" : "hexes"} selected</span>
-      </div>
-    `;
+    let html = "";
 
-    // Tier breakdown
-    Object.entries(byTier).forEach(([tierId, count]) => {
-      const tier = HexTierSystem.TIERS[tierId];
+    // Hex pricing section
+    if (hasHexes) {
       html += `
-        <div class="pricing-row">
-          <div class="pricing-row-left">
-            <span class="pricing-tier-icon" style="color: ${tier.textColor}">${tier.icon}</span>
-            <span class="pricing-tier-name">${tier.name} × ${count}</span>
-          </div>
-          <span class="pricing-tier-subtotal">$${_fmtUSD(tier.price * count)}</span>
+        <div class="pricing-header">
+          <span class="pricing-hex-count">${totalHexes} ${totalHexes === 1 ? "hex" : "hexes"} selected</span>
         </div>
       `;
-    });
 
-    // Subtotal
-    html += `
-      <div class="pricing-subtotal-row">
-        <span>Subtotal</span>
-        <span>$${_fmtUSD(subtotal)}/mo</span>
-      </div>
-    `;
-
-    // Discount (if any)
-    if (discount > 0) {
-      html += `
-        <div class="pricing-discount-row">
-          <div class="pricing-discount-left">
-            <span class="pricing-discount-label">★ ${label}</span>
-            <span class="pricing-discount-badge">-${discount}%</span>
+      // Tier breakdown
+      Object.entries(byTier).forEach(([tierId, count]) => {
+        const tier = HexTierSystem.TIERS[tierId];
+        html += `
+          <div class="pricing-row">
+            <div class="pricing-row-left">
+              <span class="pricing-tier-icon" style="color: ${tier.textColor}">${tier.icon}</span>
+              <span class="pricing-tier-name">${tier.name} × ${count}</span>
+            </div>
+            <span class="pricing-tier-subtotal">$${_fmtUSD(tier.price * count)}</span>
           </div>
-          <span class="pricing-discount-amount">-$${_fmtUSD(discountAmount)}</span>
+        `;
+      });
+
+      // Subtotal
+      html += `
+        <div class="pricing-subtotal-row">
+          <span>Hex subtotal</span>
+          <span>$${_fmtUSD(subtotal)}/mo</span>
         </div>
       `;
+
+      // Discount (if any)
+      if (discount > 0) {
+        html += `
+          <div class="pricing-discount-row">
+            <div class="pricing-discount-left">
+              <span class="pricing-discount-label">★ ${label}</span>
+              <span class="pricing-discount-badge">-${discount}%</span>
+            </div>
+            <span class="pricing-discount-amount">-$${_fmtUSD(discountAmount)}</span>
+          </div>
+        `;
+      }
     }
 
-    // Total
+    // Moon pricing section
+    if (hasMoons) {
+      html += `
+        <div class="pricing-header" ${hasHexes ? 'style="margin-top: 8px; padding-top: 8px; border-top: 1px solid rgba(255,255,255,0.08);"' : ""}>
+          <span class="pricing-hex-count">${moons.length} ${moons.length === 1 ? "moon" : "moons"} selected</span>
+        </div>
+      `;
+
+      for (const moon of moons) {
+        html += `
+          <div class="pricing-row">
+            <div class="pricing-row-left">
+              <span class="pricing-tier-icon" style="color: #aaa">☽</span>
+              <span class="pricing-tier-name">${moon.label}</span>
+            </div>
+            <span class="pricing-tier-subtotal">$${_fmtUSD(moon.price)}</span>
+          </div>
+        `;
+      }
+    }
+
+    // Grand total
+    const grandTotal = total + (moonTotal || 0);
     html += `
       <div class="pricing-total-row">
         <span>Monthly Total</span>
         <div class="pricing-total-amount">
-          <span class="pricing-total-value">$${_fmtUSD(total)}</span>
+          <span class="pricing-total-value">$${_fmtUSD(grandTotal)}</span>
           <span class="pricing-total-unit">/mo</span>
         </div>
       </div>
     `;
 
-    // Savings callout
+    // Savings callout (hex cluster discount only)
     if (discount > 0) {
       html += `
         <div class="pricing-savings">

@@ -702,15 +702,33 @@ class HexSelector {
     if (!mesh) return;
 
     if (this.selectedMoons.has(moonIndex)) {
-      // Deselect
+      // Deselect — restore original material
       this.selectedMoons.delete(moonIndex);
+      if (mesh.userData.originalMaterial) {
+        if (mesh.material !== mesh.userData.originalMaterial) {
+          mesh.material.dispose();
+        }
+        mesh.material = mesh.userData.originalMaterial;
+        delete mesh.userData.originalMaterial;
+      }
       mesh.material.color.setHex(0x888888);
       mesh.material.emissive.setHex(0x111111);
     } else {
       // Select
       this.selectedMoons.add(moonIndex);
-      mesh.material.color.setHex(0xffd700); // Same yellow as selected tiles
-      mesh.material.emissive.setHex(0x333300);
+      if (this.patternTexture) {
+        // Apply pattern texture immediately
+        if (!mesh.userData.originalMaterial) {
+          mesh.userData.originalMaterial = mesh.material;
+        }
+        if (mesh.material !== mesh.userData.originalMaterial) {
+          mesh.material.dispose();
+        }
+        mesh.material = this._createMoonPatternMaterial(moonIndex);
+      } else {
+        mesh.material.color.setHex(0xffd700);
+        mesh.material.emissive.setHex(0x333300);
+      }
     }
     this._needsRender = true;
 
@@ -732,17 +750,24 @@ class HexSelector {
    * @param {number[]} moonIndices
    */
   setSelectedMoons(moonIndices) {
-    // Clear current moon selection
+    // Clear current moon selection and restore original materials
     for (const mi of this.selectedMoons) {
       const mesh = this.moonMeshes[mi];
       if (mesh) {
+        if (mesh.userData.originalMaterial) {
+          if (mesh.material !== mesh.userData.originalMaterial) {
+            mesh.material.dispose();
+          }
+          mesh.material = mesh.userData.originalMaterial;
+          delete mesh.userData.originalMaterial;
+        }
         mesh.material.color.setHex(0x888888);
         mesh.material.emissive.setHex(0x111111);
       }
     }
     this.selectedMoons.clear();
 
-    // Select new moons
+    // Select new moons (pattern will be applied via setPatternPreview flow)
     for (const mi of moonIndices) {
       if (mi < 0 || mi >= this.moonMeshes.length) continue;
       if (this.assignedMoons.has(mi)) continue;
@@ -1360,10 +1385,15 @@ class HexSelector {
     if (typeof HexTierSystem === "undefined" || !this.tierMap) {
       return null;
     }
-    return HexTierSystem.calculatePricing(
+    const pricing = HexTierSystem.calculatePricing(
       this.getSelectedTiles(),
       this.tierMap,
     );
+    // Attach moon pricing
+    const moonPricing = HexTierSystem.calculateMoonPricing(this.getSelectedMoons());
+    pricing.moons = moonPricing.moons;
+    pricing.moonTotal = moonPricing.moonTotal;
+    return pricing;
   }
 
   /**
@@ -1427,10 +1457,17 @@ class HexSelector {
     }
     this.selectedTiles.clear();
 
-    // Clear moon selection
+    // Clear moon selection and restore original materials
     for (const mi of this.selectedMoons) {
       const mesh = this.moonMeshes[mi];
       if (mesh) {
+        if (mesh.userData.originalMaterial) {
+          if (mesh.material !== mesh.userData.originalMaterial) {
+            mesh.material.dispose();
+          }
+          mesh.material = mesh.userData.originalMaterial;
+          delete mesh.userData.originalMaterial;
+        }
         mesh.material.color.setHex(0x888888);
         mesh.material.emissive.setHex(0x111111);
       }
@@ -1816,6 +1853,7 @@ class HexSelector {
       // Clear pattern preview
       this.patternTexture = null;
       this._clearPatternFromSelectedTiles();
+      this._clearPatternFromSelectedMoons();
       return;
     }
 
@@ -1834,6 +1872,7 @@ class HexSelector {
       this.patternTexture.needsUpdate = true;
 
       this._applyPatternToSelectedTiles();
+      this._applyPatternToSelectedMoons();
     };
     img.src = imageDataUrl;
   }
@@ -1860,6 +1899,9 @@ class HexSelector {
 
     if (this.patternTexture && this.selectedTiles.size > 0) {
       this._applyPatternToSelectedTiles();
+    }
+    if (this.patternTexture && this.selectedMoons.size > 0) {
+      this._applyPatternToSelectedMoons();
     }
   }
 
@@ -2064,6 +2106,149 @@ class HexSelector {
   }
 
   /**
+   * Create a ShaderMaterial for a moon with frontal projection toward planet center.
+   * Projects texture along the direction from moon to origin — same UVs on front
+   * and back hemisphere, so the texture is visible from all angles without flipping.
+   * @param {number} moonIndex
+   * @returns {THREE.ShaderMaterial}
+   */
+  _createMoonPatternMaterial(moonIndex) {
+    const mesh = this.moonMeshes[moonIndex];
+    const P = mesh.position;
+    const radius = this.moonConfigs[moonIndex].radius;
+
+    // Compute projection basis: project along moon→origin direction
+    const forward = P.clone().normalize().negate();
+    const worldUp = new THREE.Vector3(0, 1, 0);
+    let right = new THREE.Vector3().crossVectors(worldUp, forward);
+    if (right.lengthSq() < 0.001) {
+      right = new THREE.Vector3(1, 0, 0);
+    }
+    right.normalize();
+    const up = new THREE.Vector3().crossVectors(forward, right).normalize();
+
+    const adj = this.patternAdjustment;
+    const inputBlack = (adj.inputBlack ?? 0) / 255.0;
+    const inputWhite = (adj.inputWhite ?? 255) / 255.0;
+    const gamma = adj.inputGamma ?? 1.0;
+    const outputBlack = (adj.outputBlack ?? 0) / 255.0;
+    const outputWhite = (adj.outputWhite ?? 255) / 255.0;
+    const saturation = adj.saturation ?? 1.0;
+    const scale = adj.scale || 1.0;
+    const offsetX = adj.offsetX || 0;
+    const offsetY = adj.offsetY || 0;
+
+    const vertexShader = `
+      uniform vec3 uRight;
+      uniform vec3 uUp;
+      uniform float uInvRadius;
+      varying vec2 vUv;
+      void main() {
+          float projR = dot(position, uRight) * uInvRadius;
+          float projU = dot(position, uUp) * uInvRadius;
+          vUv = vec2(projR * 0.5 + 0.5, projU * 0.5 + 0.5);
+          gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+      }
+    `;
+
+    const fragmentShader = `
+      uniform sampler2D map;
+      uniform float uScale;
+      uniform float uOffsetX;
+      uniform float uOffsetY;
+      uniform float uInputBlack;
+      uniform float uInputWhite;
+      uniform float uGamma;
+      uniform float uOutputBlack;
+      uniform float uOutputWhite;
+      uniform float uSaturation;
+      uniform vec3 uTint;
+      varying vec2 vUv;
+      void main() {
+          vec2 uv = (vUv - 0.5) / uScale + 0.5;
+          uv += vec2(uOffsetX, uOffsetY) * 0.5;
+          vec4 texColor = texture2D(map, uv);
+          vec3 color = texColor.rgb;
+          // Input levels
+          float inputRange = max(0.001, uInputWhite - uInputBlack);
+          color = clamp((color - uInputBlack) / inputRange, 0.0, 1.0);
+          // Gamma
+          color = pow(color, vec3(1.0 / uGamma));
+          // Output levels
+          color = uOutputBlack + color * (uOutputWhite - uOutputBlack);
+          // Saturation
+          float lum = dot(color, vec3(0.299, 0.587, 0.114));
+          color = mix(vec3(lum), color, uSaturation);
+          // Tint
+          color *= uTint;
+          gl_FragColor = vec4(clamp(color, 0.0, 1.0), texColor.a);
+      }
+    `;
+
+    return new THREE.ShaderMaterial({
+      uniforms: {
+        map: { value: this.patternTexture },
+        uRight: { value: right },
+        uUp: { value: up },
+        uInvRadius: { value: 1.0 / radius },
+        uScale: { value: scale },
+        uOffsetX: { value: offsetX },
+        uOffsetY: { value: offsetY },
+        uInputBlack: { value: inputBlack },
+        uInputWhite: { value: inputWhite },
+        uGamma: { value: gamma },
+        uOutputBlack: { value: outputBlack },
+        uOutputWhite: { value: outputWhite },
+        uSaturation: { value: saturation },
+        uTint: { value: new THREE.Color(0xffff88) },
+      },
+      vertexShader,
+      fragmentShader,
+    });
+  }
+
+  /**
+   * Apply pattern texture to all selected moons
+   */
+  _applyPatternToSelectedMoons() {
+    if (!this.patternTexture || this.selectedMoons.size === 0) return;
+
+    for (const moonIndex of this.selectedMoons) {
+      const mesh = this.moonMeshes[moonIndex];
+      if (!mesh) continue;
+
+      if (!mesh.userData.originalMaterial) {
+        mesh.userData.originalMaterial = mesh.material;
+      }
+      if (mesh.material !== mesh.userData.originalMaterial) {
+        mesh.material.dispose();
+      }
+      mesh.material = this._createMoonPatternMaterial(moonIndex);
+    }
+    this._needsRender = true;
+  }
+
+  /**
+   * Clear pattern from selected moons, restore original material with selection color
+   */
+  _clearPatternFromSelectedMoons() {
+    for (const moonIndex of this.selectedMoons) {
+      const mesh = this.moonMeshes[moonIndex];
+      if (!mesh) continue;
+
+      if (mesh.userData.originalMaterial) {
+        if (mesh.material !== mesh.userData.originalMaterial) {
+          mesh.material.dispose();
+        }
+        mesh.material = mesh.userData.originalMaterial;
+        mesh.material.color.setHex(0xffd700);
+        mesh.material.emissive.setHex(0x333300);
+      }
+    }
+    this._needsRender = true;
+  }
+
+  /**
    * Calculate the center point of all selected tiles
    * @returns {THREE.Vector3}
    */
@@ -2248,6 +2433,9 @@ class HexSelector {
     this.moonMeshes.forEach((mesh) => {
       mesh.geometry.dispose();
       mesh.material.dispose();
+      if (mesh.userData.originalMaterial && mesh.userData.originalMaterial !== mesh.material) {
+        mesh.userData.originalMaterial.dispose();
+      }
     });
 
     // Dispose tile outlines

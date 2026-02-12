@@ -677,11 +677,11 @@ class GameRoom {
     player.heading = Math.random() * Math.PI * 2;
     player.waitingForPortal = false;
 
-    // Schedule delayed bodyguard respawn (they were killed in handleEnterFastTravel)
+    // Spawn bodyguards now that commander is on the surface
     for (const faction of FACTIONS) {
       if (this.commanders[faction]?.id === socketId) {
-        this.bodyguardManager.killAllForFaction(faction); // no-op if already dead from handleEnterFastTravel
-        this.bodyguardManager.scheduleRespawn(faction, socketId, 4);
+        this.bodyguardManager.despawnForFaction(faction);
+        this.bodyguardManager.spawnForCommander(faction, socketId, player);
         break;
       }
     }
@@ -1799,8 +1799,10 @@ class GameRoom {
       } else if (!current || current.id !== topPlayer.id) {
         this.bodyguardManager.killAllForFaction(faction);
         this.commanders[faction] = { id: topPlayer.id, name: topPlayer.name };
-        // Delayed respawn so death state broadcasts before new bodyguards appear
-        this.bodyguardManager.scheduleRespawn(faction, topPlayer.id, 4);
+        // Only spawn bodyguards if new commander is on the planet surface
+        if (!topPlayer.isDead && !topPlayer.waitingForPortal) {
+          this.bodyguardManager.scheduleRespawn(faction, topPlayer.id, 4);
+        }
         this.io.to(this.roomId).emit("commander-update", {
           faction,
           commander: { id: topPlayer.id, name: topPlayer.name },
