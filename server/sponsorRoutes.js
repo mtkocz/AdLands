@@ -5,7 +5,45 @@
  */
 
 const { Router } = require("express");
-const zlib = require("zlib");
+const fs = require("fs");
+const path = require("path");
+
+/**
+ * Extract base64 sponsor images to static PNG files on disk.
+ * Returns a map of sponsorId → { patternUrl, logoUrl }.
+ */
+function extractSponsorImages(sponsorStore, gameDir) {
+  const texDir = path.join(gameDir, "sponsor-textures");
+  if (!fs.existsSync(texDir)) fs.mkdirSync(texDir);
+
+  const urlMap = {};
+  for (const s of sponsorStore.getAll()) {
+    const urls = {};
+    if (s.patternImage) {
+      const match = s.patternImage.match(/^data:image\/(\w+);base64,(.+)$/);
+      if (match) {
+        const ext = match[1] === "jpeg" ? "jpg" : match[1];
+        const filePath = path.join(texDir, `${s.id}.${ext}`);
+        fs.writeFileSync(filePath, Buffer.from(match[2], "base64"));
+        urls.patternUrl = `/sponsor-textures/${s.id}.${ext}`;
+      }
+    }
+    if (s.logoImage) {
+      const match = s.logoImage.match(/^data:image\/(\w+);base64,(.+)$/);
+      if (match) {
+        const ext = match[1] === "jpeg" ? "jpg" : match[1];
+        const filePath = path.join(texDir, `${s.id}_logo.${ext}`);
+        fs.writeFileSync(filePath, Buffer.from(match[2], "base64"));
+        urls.logoUrl = `/sponsor-textures/${s.id}_logo.${ext}`;
+      }
+    }
+    if (urls.patternUrl || urls.logoUrl) {
+      urlMap[s.id] = urls;
+    }
+  }
+  console.log(`[SponsorRoutes] Extracted ${Object.keys(urlMap).length} sponsor image sets to ${texDir}`);
+  return urlMap;
+}
 
 function createSponsorRoutes(sponsorStore, gameRoom) {
   const router = Router();
@@ -24,27 +62,6 @@ function createSponsorRoutes(sponsorStore, gameRoom) {
       lastModified: sponsorStore._cache?.lastModified || "",
     };
     res.json(data);
-  });
-
-  // GET /api/sponsors/images — sponsor images only, gzip compressed
-  router.get("/images", (req, res) => {
-    const images = {};
-    for (const s of sponsorStore.getAll()) {
-      if (s.patternImage || s.logoImage) {
-        images[s.id] = { patternImage: s.patternImage, logoImage: s.logoImage };
-      }
-    }
-    const json = JSON.stringify(images);
-    if (req.headers["accept-encoding"]?.includes("gzip")) {
-      zlib.gzip(Buffer.from(json), (err, compressed) => {
-        if (err) return res.status(500).end();
-        res.setHeader("Content-Type", "application/json");
-        res.setHeader("Content-Encoding", "gzip");
-        res.end(compressed);
-      });
-    } else {
-      res.json(images);
-    }
   });
 
   // GET /api/sponsors/export — download as JSON file
@@ -101,4 +118,4 @@ function createSponsorRoutes(sponsorStore, gameRoom) {
   return router;
 }
 
-module.exports = createSponsorRoutes;
+module.exports = { createSponsorRoutes, extractSponsorImages };

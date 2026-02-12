@@ -29,10 +29,11 @@ const BOT_NAME_POOL = [
 ];
 
 class GameRoom {
-  constructor(io, roomId, sponsorStore) {
+  constructor(io, roomId, sponsorStore, sponsorImageUrls) {
     this.io = io;
     this.roomId = roomId;
     this.sponsorStore = sponsorStore || null;
+    this.sponsorImageUrls = sponsorImageUrls || {};
 
     // Connected players: socketId → player state
     this.players = new Map();
@@ -1791,18 +1792,23 @@ class GameRoom {
       };
     }
 
-    // Serialize sponsor data for clients (without base64 images — fetched via HTTP)
-    const sponsors = this.sponsors.map(s => ({
-      id: s.id,
-      name: s.name,
-      tagline: s.tagline,
-      websiteUrl: s.websiteUrl,
-      patternAdjustment: s.patternAdjustment,
-      cluster: { tileIndices: s.cluster.tileIndices },
-      rewards: s.rewards,
-      active: s.active,
-      clusterId: this.sponsorClusterMap.get(s.id),
-    }));
+    // Serialize sponsor data for clients (with image URLs instead of base64)
+    const sponsors = this.sponsors.map(s => {
+      const urls = this.sponsorImageUrls[s.id] || {};
+      return {
+        id: s.id,
+        name: s.name,
+        tagline: s.tagline,
+        websiteUrl: s.websiteUrl,
+        patternImage: urls.patternUrl || null,
+        logoImage: urls.logoUrl || null,
+        patternAdjustment: s.patternAdjustment,
+        cluster: { tileIndices: s.cluster.tileIndices },
+        rewards: s.rewards,
+        active: s.active,
+        clusterId: this.sponsorClusterMap.get(s.id),
+      };
+    });
 
     return {
       clusters,

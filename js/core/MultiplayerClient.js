@@ -177,21 +177,16 @@
         planet.applyServerWorld(data.world);
         console.log("[Multiplayer] Applied server world data");
 
-        // Don't block loading screen on sponsor textures — load them in background
-        mp.setSponsorTexturesReady();
-
-        // Fetch sponsor images via HTTP (too large for WebSocket) and apply in background
+        // Sponsor images are now URLs (not base64) — browser loads them efficiently
         if (data.world.sponsors && data.world.sponsors.length > 0) {
-          fetch("/api/sponsors/images").then(r => r.json()).then(imageMap => {
-            const merged = data.world.sponsors.map(s => ({ ...s, ...imageMap[s.id] }));
-            planet.preloadSponsorTextures(merged).then(() => {
-              planet.applySponsorVisuals(merged);
-              planet.deElevateSponsorTiles();
-              console.log(`[Multiplayer] Applied ${merged.length} server sponsors`);
-            });
-          }).catch(err => {
-            console.warn("[Multiplayer] Failed to fetch sponsor images:", err);
+          planet.preloadSponsorTextures(data.world.sponsors).then(() => {
+            planet.applySponsorVisuals(data.world.sponsors);
+            planet.deElevateSponsorTiles();
+            mp.setSponsorTexturesReady();
+            console.log(`[Multiplayer] Applied ${data.world.sponsors.length} server sponsors`);
           });
+        } else {
+          mp.setSponsorTexturesReady();
         }
       } else {
         mp.setSponsorTexturesReady();

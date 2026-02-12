@@ -12,7 +12,7 @@ const path = require("path");
 const { Server } = require("socket.io");
 const GameRoom = require("./GameRoom");
 const SponsorStore = require("./SponsorStore");
-const createSponsorRoutes = require("./sponsorRoutes");
+const { createSponsorRoutes, extractSponsorImages } = require("./sponsorRoutes");
 
 // ========================
 // CONFIG
@@ -34,6 +34,11 @@ const server = http.createServer(app);
 
 const sponsorStore = new SponsorStore(path.join(__dirname, "..", "data", "sponsors.json"));
 sponsorStore.load();
+
+// Extract base64 sponsor images to static PNG files (avoids sending MB of base64 over WebSocket)
+const gameDir = path.join(__dirname, "..");
+const sponsorImageUrls = extractSponsorImages(sponsorStore, gameDir);
+
 // Routes mounted after GameRoom creation (below) so live reload can reference mainRoom
 
 // Socket.IO with CORS for development (allows connecting from file:// or other origins)
@@ -59,7 +64,6 @@ const io = new Server(server, {
 app.use("/shared", express.static(path.join(__dirname, "shared")));
 
 // Serve the main game directory (parent of server/)
-const gameDir = path.join(__dirname, "..");
 app.use(express.static(gameDir));
 
 // Fallback: serve index.html for root
@@ -72,7 +76,7 @@ app.get("/", (req, res) => {
 // ========================
 
 // For now: one global room. Later you'd add matchmaking / multiple rooms.
-const mainRoom = new GameRoom(io, "main", sponsorStore);
+const mainRoom = new GameRoom(io, "main", sponsorStore, sponsorImageUrls);
 mainRoom.start();
 
 // Mount sponsor API routes (after GameRoom so live reload can broadcast)
