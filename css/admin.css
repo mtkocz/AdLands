@@ -336,7 +336,7 @@ body {
 }
 
 #selected-tiles-list:empty::before {
-    content: "No tiles selected";
+    content: "No tiles or moons selected";
     color: var(--text-muted);
 }
 
@@ -1657,84 +1657,3 @@ body {
     color: var(--accent-cyan);
 }
 
-/* ========================
-   MOON SPONSOR INLINE FORM (inside hex selector panel)
-   ======================== */
-
-#moon-sponsor-form-container {
-    margin-top: var(--space-sm);
-}
-
-.moon-inline-form {
-    background: rgba(255, 255, 255, 0.04);
-    border: 1px solid var(--accent-cyan);
-    clip-path: var(--clip-rounded-8);
-    padding: var(--space-sm);
-    max-height: 400px;
-    overflow-y: auto;
-}
-
-.moon-inline-header {
-    display: flex;
-    align-items: center;
-    gap: var(--space-sm);
-    margin-bottom: var(--space-sm);
-    padding-bottom: var(--space-xs);
-    border-bottom: 1px solid rgba(255, 255, 255, 0.08);
-}
-
-.moon-inline-title {
-    font-family: var(--font-body);
-    font-size: var(--font-size-body);
-    color: var(--text-primary);
-}
-
-.moon-inline-status {
-    font-family: var(--font-small);
-    font-size: var(--font-size-small);
-    color: var(--text-muted);
-    flex: 1;
-}
-
-.moon-inline-status.sponsored {
-    color: var(--accent-cyan);
-}
-
-.moon-inline-close {
-    width: 24px;
-    height: 24px;
-    flex-shrink: 0;
-}
-
-.moon-form-fields .form-group {
-    margin-bottom: var(--space-xs);
-}
-
-.moon-form-fields .form-group label {
-    margin-bottom: var(--space-xxs);
-}
-
-.moon-pattern-adjustments {
-    margin-top: var(--space-xs);
-    padding: var(--space-xs);
-    border: 1px solid rgba(255, 255, 255, 0.06);
-}
-
-.moon-pattern-adjustments > label {
-    display: block;
-    font-family: var(--font-small);
-    font-size: var(--font-size-small);
-    color: var(--text-muted);
-    margin-bottom: var(--space-xxs);
-    margin-top: var(--space-xs);
-}
-
-.moon-pattern-adjustments > label:first-child {
-    margin-top: 0;
-}
-
-.moon-form-actions {
-    display: flex;
-    gap: var(--space-sm);
-    margin-top: var(--space-sm);
-}

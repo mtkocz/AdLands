@@ -484,8 +484,9 @@
           rewards: rewards,
         };
 
-        if (selectedTiles.length === 0) {
-          showToast("Please select at least one tile on the hex sphere", "error");
+        const selectedMoonsForSave = hexSelector ? hexSelector.getSelectedMoons() : [];
+        if (selectedTiles.length === 0 && selectedMoonsForSave.length === 0) {
+          showToast("Please select at least one tile or moon", "error");
           return;
         }
 
@@ -846,6 +847,13 @@
     // Load active cluster
     loadClusterAtIndex(activeIndex);
 
+    // Load moon assignments for this sponsor group
+    if (moonManager && sponsorName) {
+      const moonIndices = moonManager.getMoonsForSponsor(sponsorName);
+      hexSelector.setSelectedMoons(moonIndices);
+      updateAssignedMoons(sponsorName);
+    }
+
     // Render cluster tabs
     renderClusterTabs();
 
@@ -1101,6 +1109,11 @@
     }
 
     hexSelector.setAssignedTiles(assigned, tileMap);
+
+    // Also update assigned moons (exclude the current group's sponsor name)
+    if (moonManager && editingGroup) {
+      updateAssignedMoons(editingGroup.name);
+    }
   }
 
   async function duplicateSponsor(id) {
@@ -1153,6 +1166,16 @@
       await SponsorStorage.delete(id);
       showToast(`Cluster deleted from "${sponsor.name}"`, "success");
 
+      // Check if this sponsor name still exists — if not, clear its moon assignments
+      if (moonManager && sponsor.name) {
+        const remaining = SponsorStorage.getAll().filter(
+          (s) => s.name && s.name.toLowerCase() === sponsor.name.toLowerCase()
+        );
+        if (remaining.length === 0) {
+          await moonManager.clearMoonsForSponsor(sponsor.name);
+        }
+      }
+
       if (editingGroup) {
         // Remove from group
         const idx = editingGroup.ids.indexOf(id);
@@ -1175,6 +1198,7 @@
 
       refreshSponsorsList();
       updateAssignedTiles();
+      updateAssignedMoons();
     } finally {
       busy = false;
     }
