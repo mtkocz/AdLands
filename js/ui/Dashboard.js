@@ -627,6 +627,13 @@ class Dashboard {
                                 <span class="toggle-slider"></span>
                             </label>
                         </div>
+                        <div class="controls-hints">
+                            <div class="controls-hint"><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> <span>Move</span></div>
+                            <div class="controls-hint"><kbd>H</kbd> <span>Hide UI</span></div>
+                            <div class="controls-hint"><kbd>Left Click</kbd> <span>Fire</span></div>
+                            <div class="controls-hint"><kbd>Right Click</kbd> <span>Aim</span></div>
+                            <div class="controls-hint"><kbd>Right Drag</kbd> <span>Orbit Camera</span></div>
+                        </div>
                     </div>
                 </div>
 
