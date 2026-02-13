@@ -1490,8 +1490,10 @@ body {
 }
 
 .sponsor-cluster-row .icon-btn {
-    width: calc(var(--grid) * 5);
-    height: calc(var(--grid) * 5);
+    width: calc(var(--grid) * 6);
+    height: calc(var(--grid) * 6);
+    min-width: 24px;
+    min-height: 24px;
     padding: 0;
     background: transparent;
     border: none;
@@ -1506,6 +1508,10 @@ body {
 
 .sponsor-cluster-row .icon-btn:hover {
     color: var(--accent-cyan);
+}
+
+.sponsor-cluster-row .delete-sponsor-btn:hover {
+    color: #ef4444;
 }
 
 .sponsor-group-badge {
@@ -1648,5 +1654,36 @@ body {
     border-left-color: var(--accent-gold);
     border-left-width: 3px;
     color: var(--text-primary);
+}
+
+/* Paused sponsor styling */
+.sponsor-card.paused,
+.sponsor-group.paused > .sponsor-group-header {
+    opacity: 0.5;
+}
+
+.sponsor-card.paused:hover,
+.sponsor-group.paused > .sponsor-group-header:hover {
+    opacity: 0.7;
+}
+
+.paused-badge {
+    font-family: var(--font-small);
+    font-size: 9px;
+    color: var(--accent-gold);
+    background: rgba(251, 191, 36, 0.15);
+    padding: 1px 5px;
+    margin-left: var(--space-xs);
+    vertical-align: middle;
+}
+
+/* Delete sponsor button — red on hover */
+.delete-entire-sponsor-btn:hover {
+    color: #ef4444 !important;
+}
+
+/* Pause button — gold on hover */
+.pause-sponsor-btn:hover {
+    color: var(--accent-gold) !important;
 }
 

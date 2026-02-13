@@ -182,9 +182,13 @@
       const groupHeader = e.target.closest(".sponsor-group-header");
       if (groupHeader) {
         const group = groupHeader.closest(".sponsor-group");
-        if (e.target.closest(".add-cluster-btn")) {
+        if (e.target.closest(".delete-entire-sponsor-btn")) {
+          deleteEntireSponsor(group.dataset.name);
+        } else if (e.target.closest(".pause-sponsor-btn")) {
+          togglePauseSponsor(group.dataset.name);
+        } else if (e.target.closest(".add-cluster-btn")) {
           addClusterToGroup(group.dataset.name);
-        } else {
+        } else if (!e.target.closest(".sponsor-card-actions")) {
           // Clicking group header loads sponsor info view
           // If already editing this group, just switch to info view
           if (editingGroup && editingGroup.name.toLowerCase() === group.dataset.name.toLowerCase()) {
@@ -224,11 +228,14 @@
       const card = e.target.closest(".sponsor-card");
       if (!card) return;
       const id = card.dataset.id;
+      const cardName = card.dataset.name;
 
-      if (e.target.closest(".duplicate-sponsor-btn")) {
+      if (e.target.closest(".delete-entire-sponsor-btn")) {
+        deleteEntireSponsor(cardName);
+      } else if (e.target.closest(".pause-sponsor-btn")) {
+        togglePauseSponsor(cardName);
+      } else if (e.target.closest(".duplicate-sponsor-btn")) {
         duplicateSponsor(id);
-      } else if (e.target.closest(".delete-sponsor-btn")) {
-        deleteSponsor(id);
       } else if (!e.target.closest(".sponsor-card-actions")) {
         editSponsor(id);
       }
@@ -826,8 +833,9 @@
 
         const isEditing = sponsor.id === currentEditingId;
         const logoSrc = sponsor.logoUrl || sponsor.logoImage;
+        const isPaused = !!sponsor.paused;
         htmlParts.push(`
-            <div class="sponsor-card${isEditing ? " editing" : ""}" data-id="${sponsor.id}">
+            <div class="sponsor-card${isEditing ? " editing" : ""}${isPaused ? " paused" : ""}" data-id="${sponsor.id}" data-name="${escapeHtml(sponsor.name)}">
                 <div class="sponsor-card-logo">
                     ${
                       logoSrc
@@ -836,7 +844,7 @@
                     }
                 </div>
                 <div class="sponsor-card-info">
-                    <div class="sponsor-card-name">${escapeHtml(sponsor.name)}</div>
+                    <div class="sponsor-card-name">${escapeHtml(sponsor.name)}${isPaused ? ' <span class="paused-badge">PAUSED</span>' : ""}</div>
                     <div class="sponsor-card-stats">
                         ${sponsor.cluster?.tileIndices?.length || 0} tiles${moonRev > 0 ? ", " + moonManager.getMoonsForSponsor(sponsor.name).length + " moons" : ""}${bbRev > 0 ? ", " + (billboardManager ? billboardManager.getBillboardsForSponsor(sponsor.name).length : 0) + " billboards" : ""},
                         ${sponsor.rewards?.length || 0} rewards
@@ -844,8 +852,9 @@
                     ${sponsorTotal > 0 ? `<div class="sponsor-card-revenue"><span class="sponsor-card-revenue-total">$${fmtUSD(sponsorTotal)}/mo</span></div>` : ""}
                 </div>
                 <div class="sponsor-card-actions">
+                    <button class="icon-btn pause-sponsor-btn" title="${isPaused ? "Resume" : "Pause"}">&#x23F8;</button>
                     <button class="icon-btn duplicate-sponsor-btn" title="Duplicate">&#x29C9;</button>
-                    <button class="close-btn delete-sponsor-btn" title="Delete">&times;</button>
+                    <button class="icon-btn delete-entire-sponsor-btn" title="Delete">&times;</button>
                 </div>
             </div>
         `);
@@ -872,13 +881,24 @@
           const tileCount = s.cluster?.tileIndices?.length || 0;
           const rev = calcRevenueForTiles(s.cluster?.tileIndices, tierMap);
 
-          // Detect territory type from stored field
+          // Detect territory type from stored field, with fallback inference
+          let tt = s.territoryType;
           let typeLabel, typeClass;
-          const tt = s.territoryType;
-          if (tt === 'hex' || (!tt && tileCount > 0)) { typeLabel = "Hex Cluster"; typeClass = "type-hex"; }
-          else if (tt === 'moon') { typeLabel = "Moon"; typeClass = "type-moon"; }
-          else if (tt === 'billboard') { typeLabel = "Billboard"; typeClass = "type-billboard"; }
-          else { typeLabel = "Empty"; typeClass = "type-empty"; }
+          if (tt === 'hex' || (!tt && tileCount > 0)) {
+            tt = 'hex'; typeLabel = "Hex Cluster"; typeClass = "type-hex";
+          } else if (tt === 'moon') {
+            typeLabel = "Moon"; typeClass = "type-moon";
+          } else if (tt === 'billboard') {
+            typeLabel = "Billboard"; typeClass = "type-billboard";
+          } else if (!tt && tileCount === 0 && !moonRevClaimed && groupMoonRev > 0) {
+            // Infer as moon territory (backward compat for missing territoryType)
+            tt = 'moon'; typeLabel = "Moon"; typeClass = "type-moon";
+          } else if (!tt && tileCount === 0 && !bbRevClaimed && groupBbRev > 0) {
+            // Infer as billboard territory
+            tt = 'billboard'; typeLabel = "Billboard"; typeClass = "type-billboard";
+          } else {
+            typeLabel = "Empty"; typeClass = "type-empty";
+          }
 
           // Row revenue: tile revenue + moon/billboard revenue (claimed once per type)
           let rowRev = rev.total;
@@ -922,8 +942,9 @@
 
         const isGroupEditing = currentEditingGroupName && currentEditingGroupName.toLowerCase() === (first.name || "").toLowerCase();
         const groupLogoSrc = first.logoUrl || first.logoImage;
+        const isGroupPaused = members.some((s) => !!s.paused);
         htmlParts.push(`
-            <div class="sponsor-group${isGroupEditing ? " editing expanded" : ""}" data-name="${escapeHtml(first.name)}">
+            <div class="sponsor-group${isGroupEditing ? " editing expanded" : ""}${isGroupPaused ? " paused" : ""}" data-name="${escapeHtml(first.name)}">
                 <div class="sponsor-group-header">
                     <span class="sponsor-group-chevron">&#x25B6;</span>
                     <div class="sponsor-card-logo">
@@ -934,7 +955,7 @@
                         }
                     </div>
                     <div class="sponsor-card-info">
-                        <div class="sponsor-card-name">${escapeHtml(first.name)}</div>
+                        <div class="sponsor-card-name">${escapeHtml(first.name)}${isGroupPaused ? ' <span class="paused-badge">PAUSED</span>' : ""}</div>
                         <span class="sponsor-group-badge">${members.length} territories</span>
                         <div class="sponsor-card-stats">
                             ${totalTiles} tiles${groupMoonCount > 0 ? ", " + groupMoonCount + " moons" : ""}${groupBbCount > 0 ? ", " + groupBbCount + " billboards" : ""}, ${totalRewards} rewards
@@ -942,7 +963,9 @@
                         ${groupRevHtml}
                     </div>
                     <div class="sponsor-card-actions">
+                        <button class="icon-btn pause-sponsor-btn" title="${isGroupPaused ? "Resume" : "Pause"}">&#x23F8;</button>
                         <button class="icon-btn add-cluster-btn" title="Add territory">+</button>
+                        <button class="icon-btn delete-entire-sponsor-btn" title="Delete sponsor">&times;</button>
                     </div>
                 </div>
                 <div class="sponsor-group-clusters">
@@ -1369,12 +1392,16 @@
   }
 
   async function deleteSponsor(id) {
-    if (busy) return;
+    if (busy) {
+      showToast("Please wait for the current operation to finish", "info");
+      return;
+    }
 
     const sponsor = SponsorStorage.getById(id);
     if (!sponsor) return;
 
-    const label = editingGroup
+    const isInEditingGroup = editingGroup && editingGroup.ids.includes(id);
+    const label = isInEditingGroup
       ? `Delete territory from "${sponsor.name}"?`
       : `Are you sure you want to delete "${sponsor.name}"?`;
     if (!confirm(label)) return;
@@ -1382,7 +1409,7 @@
     busy = true;
     try {
       await SponsorStorage.delete(id);
-      showToast(`Territory deleted from "${sponsor.name}"`, "success");
+      showToast(`Deleted "${sponsor.name}" territory`, "success");
 
       // Check if this sponsor name still exists — if not, clear its moon and billboard assignments
       if (sponsor.name) {
@@ -1395,8 +1422,8 @@
         }
       }
 
-      if (editingGroup) {
-        // Remove from group
+      if (isInEditingGroup) {
+        // Remove from editing group
         const idx = editingGroup.ids.indexOf(id);
         if (idx !== -1) editingGroup.ids.splice(idx, 1);
 
@@ -1418,6 +1445,86 @@
       updateAssignedTiles();
       updateAssignedMoons();
       updateAssignedBillboards();
+    } finally {
+      busy = false;
+    }
+  }
+
+  /**
+   * Delete an entire sponsor group (all territories with the same name)
+   */
+  async function deleteEntireSponsor(sponsorName) {
+    if (busy) {
+      showToast("Please wait for the current operation to finish", "info");
+      return;
+    }
+
+    const sponsors = SponsorStorage.getAll();
+    const members = sponsors.filter(
+      (s) => (s.name || "").toLowerCase() === sponsorName.toLowerCase()
+    );
+    if (members.length === 0) return;
+
+    const label = members.length === 1
+      ? `Are you sure you want to delete "${sponsorName}"?`
+      : `Delete "${sponsorName}" and all ${members.length} territories?`;
+    if (!confirm(label)) return;
+
+    busy = true;
+    try {
+      for (const s of members) {
+        await SponsorStorage.delete(s.id);
+      }
+      // Clear moon/billboard assignments
+      if (moonManager) await moonManager.clearMoonsForSponsor(sponsorName);
+      if (billboardManager) await billboardManager.clearBillboardsForSponsor(sponsorName);
+
+      showToast(`Deleted "${sponsorName}"`, "success");
+
+      // Clear form if we were editing this sponsor
+      if (editingGroup && editingGroup.name.toLowerCase() === sponsorName.toLowerCase()) {
+        handleClearForm();
+      } else {
+        const editingId = sponsorForm.getEditingSponsorId();
+        if (editingId && members.some((s) => s.id === editingId)) {
+          handleClearForm();
+        }
+      }
+
+      refreshSponsorsList();
+      updateAssignedTiles();
+      updateAssignedMoons();
+      updateAssignedBillboards();
+    } finally {
+      busy = false;
+    }
+  }
+
+  /**
+   * Toggle the paused state of a sponsor (all territories with the same name)
+   */
+  async function togglePauseSponsor(sponsorName) {
+    if (busy) {
+      showToast("Please wait for the current operation to finish", "info");
+      return;
+    }
+
+    const sponsors = SponsorStorage.getAll();
+    const members = sponsors.filter(
+      (s) => (s.name || "").toLowerCase() === sponsorName.toLowerCase()
+    );
+    if (members.length === 0) return;
+
+    // Toggle: if any member is not paused, pause all; otherwise unpause all
+    const shouldPause = members.some((s) => !s.paused);
+
+    busy = true;
+    try {
+      for (const s of members) {
+        await SponsorStorage.update(s.id, { paused: shouldPause });
+      }
+      showToast(`${shouldPause ? "Paused" : "Resumed"} "${sponsorName}"`, "success");
+      refreshSponsorsList();
     } finally {
       busy = false;
     }
