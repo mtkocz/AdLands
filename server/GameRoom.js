@@ -64,7 +64,7 @@ class GameRoom {
       { orbitalAngle: 3.64, speed: 0.0036, orbitRadius: 750, inclination: 0.7, ascendingNode: 2.5, rotationSpeed: 0.048, localRotation: 0 },
     ];
 
-    // Server-authoritative billboard orbital parameters (21 billboards across 3 tiers)
+    // Server-authoritative billboard orbital parameters (18 billboards across 2 tiers)
     this.billboardOrbits = this._generateBillboardOrbits();
 
     // Tick loop: 20 ticks/second
@@ -366,7 +366,6 @@ class GameRoom {
     const orbits = [
       { distance: 538, count: 12 },
       { distance: 850, count: 6 },
-      { distance: 920, count: 3 },
     ];
     const maxInclination = Math.PI / 3; // 60° — never pass over poles
     const wobbleRange = 0.087; // ~5° orientation wobble
@@ -391,7 +390,7 @@ class GameRoom {
   }
 
   _buildBillboardSponsorPayload() {
-    if (!this.billboardSponsorStore) return new Array(21).fill(null);
+    if (!this.billboardSponsorStore) return new Array(18).fill(null);
     const pausedNames = this._getPausedSponsorNames();
     return this.billboardSponsorStore.getAll().map((sponsor, i) => {
       if (!sponsor || sponsor.active === false) return null;

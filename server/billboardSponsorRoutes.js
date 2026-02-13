@@ -9,7 +9,7 @@ const fs = require("fs");
 const fsp = require("fs").promises;
 const path = require("path");
 
-const MAX_INDEX = 20; // 0-20 = 21 slots
+const MAX_INDEX = 17; // 0-17 = 18 slots
 
 /**
  * Extract base64 billboard sponsor images to static PNG files on disk.
@@ -68,7 +68,7 @@ function createBillboardSponsorRoutes(billboardSponsorStore, gameRoom, { imageUr
     return lite;
   }
 
-  // GET /api/billboard-sponsors — list all 21 billboard sponsor slots
+  // GET /api/billboard-sponsors — list all 18 billboard sponsor slots
   router.get("/", (req, res) => {
     const full = req.query.full === "1";
     const sponsors = billboardSponsorStore.getAll();

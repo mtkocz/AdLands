@@ -329,17 +329,15 @@ const HexTierSystem = {
   // BILLBOARD PRICING
   // ═══════════════════════════════════════════════════════
 
-  /** Billboard orbit tier definitions: 12 low (0-11), 6 mid (12-17), 3 high (18-20) */
+  /** Billboard orbit tier definitions: 12 low (0-11), 6 high (12-17) */
   BILLBOARD_ORBIT_TIERS: {
     LOW:  { label: "Low Orbit",  count: 12, price: 25  },
-    MID:  { label: "Mid Orbit",  count: 6,  price: 50  },
-    HIGH: { label: "High Orbit", count: 3,  price: 100 },
+    HIGH: { label: "High Orbit", count: 6,  price: 100 },
   },
 
   /** Map billboard index to its orbit tier */
   getBillboardOrbitTier(billboardIndex) {
     if (billboardIndex < 12) return "LOW";
-    if (billboardIndex < 18) return "MID";
     return "HIGH";
   },
 
@@ -347,7 +345,7 @@ const HexTierSystem = {
   getBillboardLabel(billboardIndex) {
     const tier = this.getBillboardOrbitTier(billboardIndex);
     const tierDef = this.BILLBOARD_ORBIT_TIERS[tier];
-    const offset = tier === "LOW" ? 0 : tier === "MID" ? 12 : 18;
+    const offset = tier === "LOW" ? 0 : 12;
     const localIndex = billboardIndex - offset + 1;
     return `${tierDef.label} #${localIndex}`;
   },

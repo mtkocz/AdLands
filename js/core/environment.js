@@ -820,12 +820,11 @@ gl_FragColor = vec4( outgoingLight, diffuseColor.a );`
   }
 
   _createBillboards() {
-    // 21 billboard slots across 3 orbital tiers
-    // Admin uses sphereRadius 100 with distances 112/137/156 → scale to game (×4.8)
+    // 18 billboard slots across 2 orbital tiers
+    // Admin uses sphereRadius 100 with distances 112/137 → scale to game (×4.8)
     const orbits = [
       { distance: 538, count: 12 },  // LOW orbit (below moons)
-      { distance: 850, count: 6 },   // MID orbit (above moons, clear of 600/720/820)
-      { distance: 920, count: 3 },   // HIGH orbit (near camera orbit at 960)
+      { distance: 850, count: 6 },   // HIGH orbit (above moons, clear of 600/720/820)
     ];
 
     const panelWidth = 57.6;   // 12 × 4.8 scale
@@ -1438,7 +1437,7 @@ gl_FragColor = vec4( outgoingLight, diffuseColor.a );`
 
   /**
    * Apply a sponsor's pattern texture to a billboard's ad panel.
-   * @param {number} billboardIndex - 0-20
+   * @param {number} billboardIndex - 0-17
    * @param {Object|null} sponsorData - { patternImage, patternAdjustment } or null to clear
    */
   applyBillboardSponsor(billboardIndex, sponsorData) {

@@ -1,15 +1,15 @@
 /**
  * AdLands - Server-Side Billboard Sponsor Store
  * Reads/writes data/billboardSponsors.json with in-memory cache.
- * Manages 21 fixed billboard slots (index 0-20) across 3 orbit tiers:
- *   LOW (0-11), MID (12-17), HIGH (18-20)
+ * Manages 18 fixed billboard slots (index 0-17) across 2 orbit tiers:
+ *   LOW (0-11), HIGH (12-17)
  */
 
 const fs = require("fs");
 const fsp = require("fs").promises;
 const path = require("path");
 
-const SLOT_COUNT = 21;
+const SLOT_COUNT = 18;
 
 class BillboardSponsorStore {
   constructor(filePath) {
@@ -57,12 +57,12 @@ class BillboardSponsorStore {
     await fsp.rename(tmp, this.filePath);
   }
 
-  /** Get all 21 billboard sponsor slots */
+  /** Get all 18 billboard sponsor slots */
   getAll() {
     return this._cache ? this._cache.billboardSponsors : new Array(SLOT_COUNT).fill(null);
   }
 
-  /** Get a billboard sponsor by index (0-20) */
+  /** Get a billboard sponsor by index (0-17) */
   getByIndex(billboardIndex) {
     if (billboardIndex < 0 || billboardIndex >= SLOT_COUNT) return null;
     return this.getAll()[billboardIndex] || null;
@@ -75,7 +75,7 @@ class BillboardSponsorStore {
 
   /**
    * Assign a sponsor to a billboard slot.
-   * @param {number} billboardIndex - 0 through 20
+   * @param {number} billboardIndex - 0 through 17
    * @param {Object} sponsorData - Sponsor data (name, tagline, etc.)
    * @returns {{ sponsor?: Object, errors?: string[] }}
    */
@@ -106,7 +106,7 @@ class BillboardSponsorStore {
 
   /**
    * Clear a billboard's sponsor.
-   * @param {number} billboardIndex - 0 through 20
+   * @param {number} billboardIndex - 0 through 17
    * @returns {boolean}
    */
   async clear(billboardIndex) {

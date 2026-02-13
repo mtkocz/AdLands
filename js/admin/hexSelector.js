@@ -350,8 +350,7 @@ class HexSelector {
 
     const orbits = [
       { distance: 112, count: 12, inclinationRange: 0.25 }, // Low orbit (satellite distance)
-      { distance: 137, count: 6, inclinationRange: 0.20 },  // Mid orbit (between Moon 1 & Moon 3)
-      { distance: 156, count: 3, inclinationRange: 0.15 },  // High orbit (asteroid belt distance)
+      { distance: 137, count: 6, inclinationRange: 0.20 },  // High orbit (between Moon 1 & Moon 3)
     ];
 
     let globalIndex = 0;
@@ -366,7 +365,7 @@ class HexSelector {
           distance: orbit.distance,
           angle,
           inclination,
-          orbit: orbit.distance === 112 ? "LOW" : orbit.distance === 137 ? "MID" : "HIGH",
+          orbit: orbit.distance === 112 ? "LOW" : "HIGH",
         });
         globalIndex++;
       }

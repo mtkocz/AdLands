@@ -123,15 +123,22 @@
         return;
       }
 
+      // Fetch full sponsor data (server API returns lite responses without images)
+      await Promise.all(activeSponsors.map((s) => SponsorStorage.fetchFull(s.id)));
+      // Re-read sponsors since fetchFull replaces cache entries
+      const fullSponsors = SponsorStorage.getAll().filter(
+        (s) => s.active !== false,
+      );
+
       // Preload all sponsor pattern textures during loading screen
       sponsorTexturesReady = false;
       sponsorLoadActive = true;
       sponsorLoadProgress = 0;
-      await planet.preloadSponsorTextures(activeSponsors, (p) => { sponsorLoadProgress = p; });
+      await planet.preloadSponsorTextures(fullSponsors, (p) => { sponsorLoadProgress = p; });
       sponsorLoadProgress = 1;
       sponsorTexturesReady = true;
 
-      for (const sponsor of activeSponsors) {
+      for (const sponsor of fullSponsors) {
         if (
           sponsor.cluster &&
           sponsor.cluster.tileIndices &&

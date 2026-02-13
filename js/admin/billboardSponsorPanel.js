@@ -2,10 +2,10 @@
  * AdLands - Billboard Sponsor Manager (API utility)
  * Manages billboard-sponsor assignments via the REST API.
  * Billboards are selected in the hex selector; this class handles persistence.
- * 21 fixed slots: indices 0-11 (low orbit), 12-17 (mid orbit), 18-20 (high orbit).
+ * 18 fixed slots: indices 0-11 (low orbit), 12-17 (high orbit).
  */
 
-const BILLBOARD_SLOT_COUNT = 21;
+const BILLBOARD_SLOT_COUNT = 18;
 
 class BillboardSponsorManager {
   constructor() {
