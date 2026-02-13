@@ -252,10 +252,10 @@ class Planet {
       );
     }
 
-    // Generate shared rock texture for cliff walls, polar walls, and elevated terrain tops
-    this._createRockWallTexture();
-
     this._createTileMeshes(hexasphere.tiles);
+
+    // Generate shared rock texture for cliff walls and polar opening walls
+    this._createRockWallTexture();
 
     // Create cliff wall geometry for terrain elevation transitions
     if (this.terrainElevation) {
@@ -914,8 +914,29 @@ class Planet {
         const isElevated = this.terrainElevation && this.terrainElevation.getElevationAtTileIndex(index) > 0;
 
         if (isElevated) {
+          // Lazily create pixelated noise texture matching cliff walls
+          if (!this._elevatedTerrainTexture) {
+            const sz = 8;
+            const c = document.createElement("canvas");
+            c.width = sz;
+            c.height = sz;
+            const cx = c.getContext("2d");
+            const rng = this._createSeededRandom(999);
+            for (let y = 0; y < sz; y++) {
+              for (let x = 0; x < sz; x++) {
+                const v = Math.floor(150 + rng() * 105);
+                cx.fillStyle = `rgb(${v}, ${v}, ${v})`;
+                cx.fillRect(x, y, 1, 1);
+              }
+            }
+            const tex = new THREE.CanvasTexture(c);
+            tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
+            tex.minFilter = THREE.NearestFilter;
+            tex.magFilter = THREE.NearestFilter;
+            this._elevatedTerrainTexture = tex;
+          }
           material = new THREE.MeshStandardMaterial({
-            map: this._rockWallTexture,
+            map: this._elevatedTerrainTexture,
             flatShading: true,
             roughness: 0.95,
             metalness: 0.05,
