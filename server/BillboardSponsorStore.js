@@ -94,7 +94,7 @@ class BillboardSponsorStore {
       id: existing ? existing.id : this.generateId(),
       billboardIndex,
       active: sponsorData.active !== undefined ? sponsorData.active : true,
-      createdAt: existing ? existing.createdAt : now,
+      createdAt: existing?.createdAt || now,
       updatedAt: now,
     };
 

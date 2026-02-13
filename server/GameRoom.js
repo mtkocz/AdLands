@@ -2154,6 +2154,7 @@ class GameRoom {
         cluster: { tileIndices: s.cluster.tileIndices },
         rewards: s.rewards,
         active: s.active,
+        createdAt: s.createdAt,
         clusterId: this.sponsorClusterMap.get(s.id),
       };
     });
