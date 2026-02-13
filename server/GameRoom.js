@@ -162,7 +162,7 @@ class GameRoom {
     this.sponsorHoldTimers = new Map(); // sponsorId → { owner, capturedAt, holdDuration }
 
     if (this.sponsorStore) {
-      this.sponsors = this.sponsorStore.getAll().filter(s => s.active !== false);
+      this.sponsors = this.sponsorStore.getAll().filter(s => s.active !== false && !s.paused);
       this._applySponsorClusters(worldResult);
       console.log(`[Room ${roomId}] Applied ${this.sponsors.length} sponsor clusters`);
     }
@@ -280,8 +280,8 @@ class GameRoom {
     this.clusterSponsorMap.clear();
     this.sponsorHoldTimers.clear();
 
-    // 3. Re-read and re-apply sponsors
-    this.sponsors = this.sponsorStore.getAll().filter(s => s.active !== false);
+    // 3. Re-read and re-apply sponsors (exclude paused)
+    this.sponsors = this.sponsorStore.getAll().filter(s => s.active !== false && !s.paused);
     this._applySponsorClusters(wr);
 
     // 4. Rebuild world payload
@@ -330,8 +330,11 @@ class GameRoom {
    */
   _buildMoonSponsorPayload() {
     if (!this.moonSponsorStore) return [null, null, null];
+    const pausedNames = this._getPausedSponsorNames();
     return this.moonSponsorStore.getAll().map((sponsor, i) => {
       if (!sponsor || sponsor.active === false) return null;
+      // Hide moon if its sponsor name is paused
+      if (sponsor.name && pausedNames.has(sponsor.name.toLowerCase())) return null;
       const urls = this.moonSponsorImageUrls[i] || {};
       return {
         moonIndex: i,
@@ -386,8 +389,11 @@ class GameRoom {
 
   _buildBillboardSponsorPayload() {
     if (!this.billboardSponsorStore) return new Array(21).fill(null);
+    const pausedNames = this._getPausedSponsorNames();
     return this.billboardSponsorStore.getAll().map((sponsor, i) => {
       if (!sponsor || sponsor.active === false) return null;
+      // Hide billboard if its sponsor name is paused
+      if (sponsor.name && pausedNames.has(sponsor.name.toLowerCase())) return null;
       const urls = this.billboardSponsorImageUrls[i] || {};
       return {
         billboardIndex: i,
@@ -2033,6 +2039,19 @@ class GameRoom {
   // ========================
   // HELPERS
   // ========================
+
+  /**
+   * Get a Set of lowercased sponsor names that are currently paused.
+   * Used by moon/billboard payload builders to hide paused sponsors.
+   */
+  _getPausedSponsorNames() {
+    const names = new Set();
+    if (!this.sponsorStore) return names;
+    for (const s of this.sponsorStore.getAll()) {
+      if (s.paused && s.name) names.add(s.name.toLowerCase());
+    }
+    return names;
+  }
 
   _applySponsorClusters(worldResult) {
     for (const sponsor of this.sponsors) {

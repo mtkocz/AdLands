@@ -54,6 +54,9 @@ function createSponsorRoutes(sponsorStore, gameRoom, { imageUrls, gameDir } = {}
   function reloadIfLive() {
     if (gameRoom && typeof gameRoom.reloadSponsors === "function") {
       gameRoom.reloadSponsors();
+      // Also reload moon/billboard sponsors (pause state affects them)
+      if (typeof gameRoom.reloadMoonSponsors === "function") gameRoom.reloadMoonSponsors();
+      if (typeof gameRoom.reloadBillboardSponsors === "function") gameRoom.reloadBillboardSponsors();
     }
   }
 

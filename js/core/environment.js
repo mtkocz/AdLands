@@ -492,8 +492,16 @@ class Environment {
       mat.uniforms.hasTexture.value = 0;
       mat.uniforms.moonTexture.value = null;
       mat.needsUpdate = true;
+      moon.userData.sponsor = null;
       return;
     }
+
+    // Store sponsor metadata for right-click popup
+    moon.userData.sponsor = {
+      name: sponsorData.name,
+      tagline: sponsorData.tagline,
+      websiteUrl: sponsorData.websiteUrl,
+    };
 
     // Load texture from URL
     const img = new Image();
@@ -720,6 +728,67 @@ class Environment {
     });
   }
 
+  /**
+   * Inject analytical planet shadow into a MeshLambertMaterial via onBeforeCompile.
+   * Uses ray-sphere intersection (same approach as moon shader) to test whether the
+   * planet blocks sunlight at each fragment's world position.
+   */
+  _applyPlanetShadow(material) {
+    const planetRadius = this.sphereRadius;
+    const existingCallback = material.onBeforeCompile;
+
+    // Add a define so Three.js generates a unique shader program for shadowed materials
+    material.defines = material.defines || {};
+    material.defines['PLANET_SHADOW'] = '';
+
+    material.onBeforeCompile = (shader) => {
+      // Chain existing onBeforeCompile if present (e.g., UV flip on ad panels)
+      if (existingCallback) existingCallback(shader);
+
+      // Add uniforms
+      shader.uniforms.uPlanetRadius = { value: planetRadius };
+      shader.uniforms.uSunDirection = { value: new THREE.Vector3(1, 0, 0) };
+
+      // Vertex shader: declare varying and compute world position
+      shader.vertexShader = shader.vertexShader.replace(
+        '#include <common>',
+        '#include <common>\nvarying vec3 vWorldPos;'
+      );
+      shader.vertexShader = shader.vertexShader.replace(
+        '#include <worldpos_vertex>',
+        '#include <worldpos_vertex>\nvWorldPos = (modelMatrix * vec4(transformed, 1.0)).xyz;'
+      );
+
+      // Fragment shader: add shadow function and apply before output
+      shader.fragmentShader = shader.fragmentShader.replace(
+        '#include <common>',
+        `#include <common>
+uniform float uPlanetRadius;
+uniform vec3 uSunDirection;
+varying vec3 vWorldPos;
+
+float calcPlanetShadow(vec3 pos, vec3 lightDir, float radius) {
+    float a = dot(lightDir, lightDir);
+    float b = 2.0 * dot(pos, lightDir);
+    float c = dot(pos, pos) - radius * radius;
+    float d = b * b - 4.0 * a * c;
+    if (d > 0.0) {
+        float t1 = (-b - sqrt(d)) / (2.0 * a);
+        float t2 = (-b + sqrt(d)) / (2.0 * a);
+        if (t1 > 0.01 || t2 > 0.01) return 0.0;
+    }
+    return 1.0;
+}`
+      );
+
+      shader.fragmentShader = shader.fragmentShader.replace(
+        '#include <output_fragment>',
+        `outgoingLight *= mix(0.3, 1.0, calcPlanetShadow(vWorldPos, uSunDirection, uPlanetRadius));
+#include <output_fragment>`
+      );
+    };
+  }
+
   _createBillboards() {
     // 21 billboard slots across 3 orbital tiers
     // Admin uses sphereRadius 100 with distances 112/137/156 → scale to game (×4.8)
@@ -739,6 +808,11 @@ class Environment {
     const frameMat = new THREE.MeshLambertMaterial({ color: 0x444444, emissive: 0x080808 });
     const solarMat = new THREE.MeshLambertMaterial({ color: 0x1a1a3a, emissive: 0x050510, side: THREE.DoubleSide });
     const hubMat = new THREE.MeshLambertMaterial({ color: 0x555555 });
+
+    // Apply planet shadow to shared materials
+    this._applyPlanetShadow(frameMat);
+    this._applyPlanetShadow(solarMat);
+    this._applyPlanetShadow(hubMat);
 
     let globalIndex = 0;
     for (const orbit of orbits) {
@@ -764,6 +838,8 @@ class Environment {
             #endif`
           );
         };
+        // Chain planet shadow onto the ad panel material (preserves UV flip above)
+        this._applyPlanetShadow(panelMat);
         const adPanel = new THREE.Mesh(new THREE.PlaneGeometry(panelWidth, panelHeight), panelMat);
         adPanel.userData.isAdPanel = true;
         group.add(adPanel);
@@ -1347,8 +1423,16 @@ class Environment {
       adPanel.material.emissive.setHex(0x111111);
       adPanel.material.map = null;
       adPanel.material.needsUpdate = true;
+      bb.userData.sponsor = null;
       return;
     }
+
+    // Store sponsor metadata for right-click popup
+    bb.userData.sponsor = {
+      name: sponsorData.name,
+      tagline: sponsorData.tagline,
+      websiteUrl: sponsorData.websiteUrl,
+    };
 
     // Load texture from URL
     const img = new Image();

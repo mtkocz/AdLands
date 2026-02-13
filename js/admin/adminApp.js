@@ -639,12 +639,13 @@
           }
         }
 
+        let createdSponsor = null;
         try {
           if (editingId) {
             await SponsorStorage.update(editingId, sponsor);
             showToast(`Sponsor "${sponsor.name}" updated`, "success");
           } else {
-            await SponsorStorage.create(sponsor);
+            createdSponsor = await SponsorStorage.create(sponsor);
             showToast(`Sponsor "${sponsor.name}" created`, "success");
           }
         } catch (e) {
@@ -662,8 +663,15 @@
           await billboardManager.saveBillboardsForSponsor(selectedBillboardsForSave, formData);
         }
 
-        handleClearForm();
-        refreshSponsorsList();
+        if (createdSponsor) {
+          // New sponsor — enter edit mode and show territory view
+          refreshSponsorsList();
+          await editSponsor(createdSponsor.id);
+          showTerritoryView();
+        } else {
+          handleClearForm();
+          refreshSponsorsList();
+        }
       }
     } finally {
       busy = false;

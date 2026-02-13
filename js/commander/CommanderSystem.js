@@ -859,7 +859,7 @@ class CommanderSystem {
     }
 
     // Bodyguards die with commander (single-player only; server handles multiplayer)
-    if (commander.isHuman && this.bodyguards && !this.multiplayerMode) {
+    if (this.bodyguards && !this.multiplayerMode && this.bodyguards.commanderFaction === faction) {
       this.bodyguards.onCommanderDeath();
     }
   }

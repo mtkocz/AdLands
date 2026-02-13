@@ -953,6 +953,13 @@
       }
     }
 
+    // If this bot was a commander, notify commander system (escort bots die, gold trim removed)
+    if (bot.playerId && commanderSystem.isCommander(bot.playerId)) {
+      commanderSystem.onCommanderDeath(bot.faction);
+      const victimName = bot.lodDot?.userData?.username || "Commander";
+      tuskCommentary.onCommanderDeath(victimName, bot.faction);
+    }
+
     // Schedule bot respawn at random portal (5 seconds, same as player)
     setTimeout(() => {
       botTanks.respawnBot(bot);
@@ -3022,8 +3029,42 @@
     positionIntelPopup(clickX, clickY);
   }
 
+  function showSpaceSponsorPopup(clickX, clickY, sponsor, type) {
+    const logoEl = document.getElementById("intel-logo");
+    logoEl.classList.add("hidden");
+
+    document.getElementById("intel-name").textContent =
+      sponsor.name || "Unknown Sponsor";
+    document.getElementById("intel-tagline").textContent =
+      sponsor.tagline || type;
+
+    const urlSection = document.getElementById("intel-url-section");
+    const urlEl = document.getElementById("intel-url");
+    if (sponsor.websiteUrl) {
+      urlEl.href = sponsor.websiteUrl;
+      urlEl.textContent = sponsor.websiteUrl.replace(/^https?:\/\//, "");
+      urlSection.classList.remove("hidden");
+    } else {
+      urlSection.classList.add("hidden");
+    }
+
+    // Hide cluster-specific sections
+    document.querySelector("#territory-intel-popup .intel-stats").classList.add("hidden");
+    const sectionEls = document.querySelectorAll("#territory-intel-popup .intel-section");
+    sectionEls.forEach((el) => {
+      if (el.querySelector("h4")) el.classList.add("hidden");
+    });
+
+    positionIntelPopup(clickX, clickY);
+  }
+
   function hideTerritoryIntelPopup() {
     intelPopup.classList.add("hidden");
+    // Restore hidden sections for next use
+    const statsEl = document.querySelector("#territory-intel-popup .intel-stats");
+    if (statsEl) statsEl.classList.remove("hidden");
+    const sectionEls = document.querySelectorAll("#territory-intel-popup .intel-section");
+    sectionEls.forEach((el) => el.classList.remove("hidden"));
   }
 
   // Right-click detection for sponsor clusters
@@ -3084,6 +3125,29 @@
           showTerritoryIntelPopup(clickX, clickY, sponsor, clusterId);
           return;
         }
+      }
+    }
+
+    // Check sponsored billboards (raycast into billboard groups recursively)
+    const bbMeshes = environment.billboards.flatMap((bb) => bb.children);
+    const bbHits = intelRaycaster.intersectObjects(bbMeshes);
+    if (bbHits.length > 0) {
+      const bbGroup = bbHits[0].object.parent;
+      const sponsor = bbGroup?.userData?.sponsor;
+      if (sponsor) {
+        showSpaceSponsorPopup(clickX, clickY, sponsor, "Billboard");
+        return;
+      }
+    }
+
+    // Check sponsored moons
+    const moonHits = intelRaycaster.intersectObjects(environment.moons);
+    if (moonHits.length > 0) {
+      const moon = moonHits[0].object;
+      const sponsor = moon?.userData?.sponsor;
+      if (sponsor) {
+        showSpaceSponsorPopup(clickX, clickY, sponsor, "Moon");
+        return;
       }
     }
 
