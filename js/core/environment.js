@@ -432,7 +432,7 @@ class Environment {
                     float projU = dot(localPos, up) * invR;
                     vUv = vec2(projR * 0.5 + 0.5, projU * 0.5 + 0.5);
                     // How much this vertex faces the projection direction (1=center, 0=edge, <0=back)
-                    vFacingFactor = dot(normalize(localPos), forward);
+                    vFacingFactor = -dot(normalize(localPos), forward);
 
                     gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
                 }

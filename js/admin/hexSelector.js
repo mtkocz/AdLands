@@ -2861,7 +2861,7 @@ class HexSelector {
           float projU = dot(position, uUp) * uInvRadius;
           vUv = vec2(projR * 0.5 + 0.5, projU * 0.5 + 0.5);
           // How much this vertex faces the projection direction (1=center, 0=edge, <0=back)
-          vFacingFactor = dot(normalize(position), uForward);
+          vFacingFactor = -dot(normalize(position), uForward);
           gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
       }
     `;
