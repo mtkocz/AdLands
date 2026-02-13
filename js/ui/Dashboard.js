@@ -45,6 +45,7 @@ class Dashboard {
       "social",
       "messages",
       "tasks",
+      "territory",
       "share",
       "settings",
     ];
@@ -57,6 +58,7 @@ class Dashboard {
       social: { icon: "\uD83D\uDC65", title: "Social", hasBadge: true },
       messages: { icon: "\uD83D\uDCAC", title: "Messages", hasBadge: true },
       tasks: { icon: "\uD83D\uDCCB", title: "Tasks", hasBadge: true },
+      territory: { icon: "\u2691", title: "Claim Territory", hasBadge: false },
       share: { icon: "\uD83D\uDCF7", title: "Share", hasBadge: false },
       settings: { icon: "\u2699", title: "Settings", hasBadge: false },
     };
@@ -69,6 +71,14 @@ class Dashboard {
     // Loadout state
     this.equippedUpgrades = {}; // slot -> upgradeId
     this.loadoutInitialized = false;
+
+    // Territory claim state
+    this._territoryPlanet = null;
+    this._territoryTank = null;
+    this._territoryCamera = null;
+    this._playerTerritories = []; // { id, tierName, tileIndices, patternImage, timestamp }
+    this._selectedTerritoryTier = null;
+    this._territoryPreview = null; // { centerTile, rawCount, tileIndices, pricing }
 
     // DOM references
     this.container = null;
@@ -342,6 +352,8 @@ class Dashboard {
         return this._buildMessagesContent();
       case "tasks":
         return this._buildTasksContent();
+      case "territory":
+        return this._buildTerritoryContent();
       case "share":
         return this._buildShareContent();
       case "settings":
@@ -469,6 +481,70 @@ class Dashboard {
                     <div class="section-title">Weekly Tasks</div>
                     <div class="tasks-list" id="dashboard-weekly-tasks">
                         <div class="empty-state">No active tasks</div>
+                    </div>
+                </div>
+            </div>
+        `;
+  }
+
+  _buildTerritoryContent() {
+    return `
+            <div class="panel-inner territory-panel">
+                <div class="territory-description">
+                    Rent a hex. Plant your flag. Show everyone who owns this ground.
+                </div>
+
+                <div class="territory-tiers" id="territory-tiers">
+                    <div class="territory-tier-card" data-tier="outpost">
+                        <div class="tier-card-header">
+                            <span class="tier-card-name">Outpost</span>
+                        </div>
+                        <div class="tier-card-details">
+                            <span class="tier-card-hexes">1 hex</span>
+                            <span class="tier-card-price">$3 – $15/mo</span>
+                        </div>
+                    </div>
+
+                    <div class="territory-tier-card" data-tier="compound">
+                        <div class="tier-card-header">
+                            <span class="tier-card-name">Compound</span>
+                        </div>
+                        <div class="tier-card-details">
+                            <span class="tier-card-hexes">up to 7 hexes</span>
+                            <span class="tier-card-price">$14 – $72/mo</span>
+                        </div>
+                    </div>
+
+                    <div class="territory-tier-card" data-tier="stronghold">
+                        <div class="tier-card-header">
+                            <span class="tier-card-name">Stronghold</span>
+                        </div>
+                        <div class="tier-card-details">
+                            <span class="tier-card-hexes">up to 19 hexes</span>
+                            <span class="tier-card-price">$33 – $167/mo</span>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="territory-preview hidden" id="territory-preview">
+                    <div class="preview-header">Claim Preview</div>
+                    <div class="preview-hex-count" id="territory-hex-count"></div>
+                    <div class="preview-overlap-warning hidden" id="territory-overlap-warning"></div>
+                    <div class="preview-pricing" id="territory-pricing"></div>
+                    <div class="preview-actions">
+                        <button class="territory-btn territory-btn-claim" id="btn-territory-claim">
+                            Claim Territory
+                        </button>
+                        <button class="territory-btn territory-btn-cancel" id="btn-territory-cancel">
+                            Cancel
+                        </button>
+                    </div>
+                </div>
+
+                <div class="territory-owned" id="territory-owned">
+                    <div class="territory-section-title">Your Territories</div>
+                    <div class="territory-list" id="territory-list">
+                        <div class="empty-state">No territories claimed</div>
                     </div>
                 </div>
             </div>
@@ -769,6 +845,33 @@ class Dashboard {
     this.container.addEventListener("click", (e) => {
       if (e.target.id === "btn-become-commander") {
         this._handleBecomeCommander();
+      }
+    });
+
+    // Territory panel interactions
+    this.container.addEventListener("click", (e) => {
+      const tierCard = e.target.closest(".territory-tier-card");
+      if (tierCard) {
+        this._selectTerritoryTier(tierCard.dataset.tier);
+      }
+
+      if (e.target.id === "btn-territory-claim") {
+        this._claimTerritory();
+      }
+
+      if (e.target.id === "btn-territory-cancel") {
+        this._cancelTerritoryPreview();
+      }
+
+      // Image upload button on owned territory
+      const uploadBtn = e.target.closest(".territory-item-upload");
+      if (uploadBtn) {
+        const territoryId = uploadBtn.dataset.territoryId;
+        const input = document.createElement("input");
+        input.type = "file";
+        input.accept = "image/*";
+        input.onchange = () => this._handleTerritoryUpload(input, territoryId);
+        input.click();
       }
     });
 

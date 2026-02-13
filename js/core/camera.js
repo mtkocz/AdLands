@@ -37,6 +37,15 @@ class GameCamera {
       easeOut: 0.015, // Slow, smooth ease out for satisfying return
     };
 
+    // Territory preview pullback (camera pulls back to show claimed cluster)
+    this.territoryPreviewPullback = {
+      target: 0, // 0 = no pullback, 1 = full pullback
+      current: 0,
+      maxExtraDistance: 55, // Max extra distance at full pullback (frames 19-hex cluster)
+      easeIn: 1.5, // Smooth pull-out speed (per second)
+      easeOut: 2.5, // Faster snap-back when canceling (per second)
+    };
+
     // Mode state: 'surface', 'orbital', 'fastTravel', 'portalPreview'
     this.mode = "orbital"; // Start in orbital view before first deployment
     this.transitioning = false;
@@ -194,6 +203,10 @@ class GameCamera {
     this.chargePullback.target = Math.max(0, Math.min(1, ratio));
   }
 
+  setTerritoryPreviewPullback(ratio) {
+    this.territoryPreviewPullback.target = Math.max(0, Math.min(1, ratio));
+  }
+
   // ========================
   // MODE UPDATES
   // ========================
@@ -241,15 +254,18 @@ class GameCamera {
   }
 
   _updateSurface(deltaTime) {
-    // Smooth the charge pullback
+    // Smooth the dynamic pullbacks
     this._updateChargePullback(deltaTime);
+    this._updateTerritoryPreviewPullback(deltaTime);
 
     // Position camera above the smoothed tank position
-    // Add speed-based zoom offset + charge pullback for dynamic distance
+    // Add speed-based zoom offset + charge pullback + territory preview for dynamic distance
     const chargePullbackDistance =
       this.chargePullback.current * this.chargePullback.maxExtraDistance;
+    const territoryPullbackDistance =
+      this.territoryPreviewPullback.current * this.territoryPreviewPullback.maxExtraDistance;
     const effectiveDistance =
-      this.surfaceDistance + this.currentSpeedZoom + chargePullbackDistance;
+      this.surfaceDistance + this.currentSpeedZoom + chargePullbackDistance + territoryPullbackDistance;
     const targetCameraPos = _camTempNormal.copy(this.smoothedPosition).normalize().multiplyScalar(effectiveDistance);
 
     // Smooth camera position with frame-rate independent easing
@@ -277,6 +293,26 @@ class GameCamera {
     this.chargePullback.current = Math.max(
       0,
       Math.min(1, this.chargePullback.current),
+    );
+  }
+
+  _updateTerritoryPreviewPullback(deltaTime) {
+    const target = this.territoryPreviewPullback.target;
+    const current = this.territoryPreviewPullback.current;
+
+    if (current < target) {
+      // Pulling back - smooth ease in
+      const factor = 1 - Math.exp(-this.territoryPreviewPullback.easeIn * deltaTime);
+      this.territoryPreviewPullback.current += (target - current) * factor;
+    } else if (current > target) {
+      // Returning - faster snap-back
+      const factor = 1 - Math.exp(-this.territoryPreviewPullback.easeOut * deltaTime);
+      this.territoryPreviewPullback.current += (target - current) * factor;
+    }
+
+    this.territoryPreviewPullback.current = Math.max(
+      0,
+      Math.min(1, this.territoryPreviewPullback.current),
     );
   }
 

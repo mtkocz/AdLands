@@ -2399,6 +2399,57 @@ class Planet {
   }
 
   // ========================
+  // TERRITORY / TIER HELPERS
+  // ========================
+
+  /**
+   * Get or build the tier map for all tiles (lazy, cached).
+   * Requires HexTierSystem to be loaded via index.html.
+   * @returns {Map<number, string>|null} tileIndex → tier ID, or null if unavailable
+   */
+  getTierMap() {
+    if (this._tierMap) return this._tierMap;
+    if (typeof HexTierSystem === "undefined" || !this._tiles || !this._adjacencyMap) return null;
+
+    this._tierMap = HexTierSystem.buildTierMap(
+      this._tiles,
+      this.radius,
+      this._adjacencyMap,
+    );
+    return this._tierMap;
+  }
+
+  /**
+   * Expand hex rings from a center tile using BFS on the adjacency map.
+   * Ring 0 = center (1 tile), Ring 1 = +neighbors (7 total), Ring 2 = +outer ring (19 total).
+   * @param {number} centerTileIndex - Starting tile
+   * @param {number} ringCount - Number of rings to expand (0, 1, or 2)
+   * @returns {number[]} Array of tile indices in the cluster
+   */
+  getHexRing(centerTileIndex, ringCount) {
+    if (!this._adjacencyMap) return [centerTileIndex];
+
+    const inCluster = new Set([centerTileIndex]);
+    let currentRing = [centerTileIndex];
+
+    for (let r = 0; r < ringCount; r++) {
+      const nextRing = [];
+      for (const tileIdx of currentRing) {
+        const neighbors = this._adjacencyMap.get(tileIdx) || [];
+        for (const neighbor of neighbors) {
+          if (!inCluster.has(neighbor)) {
+            inCluster.add(neighbor);
+            nextRing.push(neighbor);
+          }
+        }
+      }
+      currentRing = nextRing;
+    }
+
+    return Array.from(inCluster);
+  }
+
+  // ========================
   // SPONSOR CLUSTERS
   // ========================
 
