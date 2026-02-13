@@ -1628,13 +1628,13 @@ body {
 }
 
 .sponsor-cluster-row-type.type-moon {
-    color: var(--accent-gold);
-    background: rgba(255, 255, 255, 0.08);
+    color: var(--accent-cyan);
+    background: rgba(0, 200, 200, 0.1);
 }
 
 .sponsor-cluster-row-type.type-billboard {
-    color: var(--viridian);
-    background: rgba(74, 222, 128, 0.1);
+    color: var(--accent-cyan);
+    background: rgba(0, 200, 200, 0.1);
 }
 
 .sponsor-cluster-row-type.type-empty {

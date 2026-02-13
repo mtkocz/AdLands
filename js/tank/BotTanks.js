@@ -2245,6 +2245,7 @@ class BotTanks {
   _onBotDeath(bot, killerFaction) {
     bot.isDead = true;
     bot.state.isDead = true; // Also set on state for tread dust/tracks
+    bot.state.speed = 0;
     bot.damageState = "dead";
 
     // Hide lodDot immediately so it's not detected by raycast

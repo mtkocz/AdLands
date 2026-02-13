@@ -619,11 +619,25 @@ class HexSelector {
                       outputBlack === 0 && outputWhite === 1 && saturation === 1;
 
     if (isDefault) {
-      return new THREE.MeshBasicMaterial({
+      const mat = new THREE.MeshBasicMaterial({
         map: this.patternTexture,
         color: 0xffff88,
         side: THREE.DoubleSide,
       });
+      // Flip U on back face so outside surface reads correctly
+      mat.onBeforeCompile = (shader) => {
+        shader.fragmentShader = shader.fragmentShader.replace(
+          '#include <map_fragment>',
+          `#ifdef USE_MAP
+            vec2 mapUv = vUv;
+            if (!gl_FrontFacing) mapUv.x = 1.0 - mapUv.x;
+            vec4 texelColor = texture2D(map, mapUv);
+            texelColor = mapTexelToLinear(texelColor);
+            diffuseColor *= texelColor;
+          #endif`
+        );
+      };
+      return mat;
     }
 
     return new THREE.ShaderMaterial({
@@ -661,7 +675,9 @@ class HexSelector {
         uniform vec3 uTint;
         varying vec2 vUv;
         void main() {
-          vec4 texColor = texture2D(map, vUv);
+          vec2 uv = vUv;
+          if (!gl_FrontFacing) uv.x = 1.0 - uv.x;
+          vec4 texColor = texture2D(map, uv);
           vec3 color = texColor.rgb;
           float inputRange = max(0.001, uInputWhite - uInputBlack);
           color = clamp((color - uInputBlack) / inputRange, 0.0, 1.0);

@@ -857,14 +857,18 @@
           (sum, s) => sum + (s.rewards?.length || 0), 0
         );
 
-        // Aggregate revenue across all clusters + moons
+        // Pre-calculate moon/billboard revenue (shared per sponsor name)
+        const groupMoonRev = calcMoonRevenue(first.name);
+        const groupBbRev = calcBillboardRevenue(first.name);
+        let moonRevClaimed = false;
+        let bbRevClaimed = false;
+
+        // Aggregate revenue across all clusters + moons + billboards
         let groupRevenue = 0;
         const activeEditId = editingGroup ? editingGroup.ids[editingGroup.activeIndex] : null;
         const clusterRows = members.map((s, i) => {
           const tileCount = s.cluster?.tileIndices?.length || 0;
           const rev = calcRevenueForTiles(s.cluster?.tileIndices, tierMap);
-          groupRevenue += rev.total;
-          totalMonthly += rev.total;
 
           // Detect territory type from stored field
           let typeLabel, typeClass;
@@ -874,8 +878,20 @@
           else if (tt === 'billboard') { typeLabel = "Billboard"; typeClass = "type-billboard"; }
           else { typeLabel = "Empty"; typeClass = "type-empty"; }
 
-          const revSpan = rev.total > 0
-            ? `<span class="sponsor-cluster-row-revenue">$${fmtUSD(rev.total)}/mo</span>`
+          // Row revenue: tile revenue + moon/billboard revenue (claimed once per type)
+          let rowRev = rev.total;
+          if (tt === 'moon' && !moonRevClaimed) {
+            rowRev += groupMoonRev;
+            moonRevClaimed = true;
+          } else if (tt === 'billboard' && !bbRevClaimed) {
+            rowRev += groupBbRev;
+            bbRevClaimed = true;
+          }
+          groupRevenue += rowRev;
+          totalMonthly += rowRev;
+
+          const revSpan = rowRev > 0
+            ? `<span class="sponsor-cluster-row-revenue">$${fmtUSD(rowRev)}/mo</span>`
             : "";
 
           const isActive = s.id === activeEditId;
@@ -891,11 +907,9 @@
           `;
         }).join("");
 
-        // Add moon + billboard revenue (shared across all clusters of this sponsor)
-        const groupMoonRev = calcMoonRevenue(first.name);
-        const groupBbRev = calcBillboardRevenue(first.name);
-        groupRevenue += groupMoonRev + groupBbRev;
-        totalMonthly += groupMoonRev + groupBbRev;
+        // Add any unclaimed moon/billboard revenue to group total
+        if (!moonRevClaimed) { groupRevenue += groupMoonRev; totalMonthly += groupMoonRev; }
+        if (!bbRevClaimed) { groupRevenue += groupBbRev; totalMonthly += groupBbRev; }
 
         const groupMoonCount = moonManager ? moonManager.getMoonsForSponsor(first.name).length : 0;
         const groupBbCount = billboardManager ? billboardManager.getBillboardsForSponsor(first.name).length : 0;
@@ -1076,11 +1090,28 @@
     // Set the form's editing ID to this cluster's entry
     sponsorForm.editingSponsorId = id;
 
-    // Update hex selector: exclude all other sponsors AND sibling clusters
+    // === STEP 1: Load form data FIRST (so selection callbacks see correct pattern) ===
+    const patternData = {
+      id: id,
+      name: sponsorForm.getFormData().name,
+      tagline: sponsorForm.getFormData().tagline,
+      websiteUrl: sponsorForm.getFormData().websiteUrl,
+      logoImage: sponsorForm.getFormData().logoImage,
+      patternImage: sponsor.patternImage || null,
+      patternAdjustment: sponsor.patternAdjustment || null,
+    };
+    sponsorForm.loadSponsor(patternData);
+
+    // === STEP 2: Load rewards ===
+    if (sponsor.rewards) {
+      rewardConfig.loadRewards(sponsor.rewards);
+    } else {
+      rewardConfig.clear();
+    }
+
+    // === STEP 3: Update hex selector and set selection LAST ===
     updateGroupAssignedTiles(id);
 
-    // Load this territory's selection based on its type
-    // Fallback detection for territories saved before territoryType field existed
     let tt = sponsor.territoryType;
     if (!tt) {
       if (sponsor.cluster?.tileIndices?.length > 0) tt = 'hex';
@@ -1104,27 +1135,6 @@
       hexSelector.transitionToCluster(sponsor.cluster.tileIndices);
     } else {
       hexSelector.clearSelection();
-    }
-
-    // Load this cluster's pattern into form (without overwriting shared fields)
-    // Use loadSponsor's pattern logic by building a partial sponsor object
-    const patternData = {
-      id: id,
-      name: sponsorForm.getFormData().name, // keep current shared name
-      tagline: sponsorForm.getFormData().tagline,
-      websiteUrl: sponsorForm.getFormData().websiteUrl,
-      logoImage: sponsorForm.getFormData().logoImage,
-      patternImage: sponsor.patternImage || null,
-      patternAdjustment: sponsor.patternAdjustment || null,
-    };
-    // Re-load via loadSponsor to update all sliders and previews consistently
-    sponsorForm.loadSponsor(patternData);
-
-    // Load this cluster's rewards
-    if (sponsor.rewards) {
-      rewardConfig.loadRewards(sponsor.rewards);
-    } else {
-      rewardConfig.clear();
     }
   }
 
@@ -1209,13 +1219,17 @@
         return;
       }
 
-      // Get shared fields from the first member
-      const first = members[0];
+      // Copy shared fields + texture from the last member
+      const last = members[members.length - 1];
+      await SponsorStorage.fetchFull(last.id);
+      const lastFull = SponsorStorage.getById(last.id);
       const newSponsor = await SponsorStorage.create({
-        name: first.name,
-        tagline: first.tagline,
-        websiteUrl: first.websiteUrl,
-        logoImage: first.logoImage,
+        name: lastFull.name,
+        tagline: lastFull.tagline,
+        websiteUrl: lastFull.websiteUrl,
+        logoImage: lastFull.logoImage,
+        patternImage: lastFull.patternImage || null,
+        patternAdjustment: lastFull.patternAdjustment || null,
         cluster: { tileIndices: [] },
         rewards: [],
       });

@@ -751,6 +751,19 @@ class Environment {
           emissive: 0x111111,
           side: THREE.DoubleSide,
         });
+        // Flip U on back face so outside surface reads correctly
+        panelMat.onBeforeCompile = (shader) => {
+          shader.fragmentShader = shader.fragmentShader.replace(
+            '#include <map_fragment>',
+            `#ifdef USE_MAP
+              vec2 mapUv = vUv;
+              if (!gl_FrontFacing) mapUv.x = 1.0 - mapUv.x;
+              vec4 texelColor = texture2D(map, mapUv);
+              texelColor = mapTexelToLinear(texelColor);
+              diffuseColor *= texelColor;
+            #endif`
+          );
+        };
         const adPanel = new THREE.Mesh(new THREE.PlaneGeometry(panelWidth, panelHeight), panelMat);
         adPanel.userData.isAdPanel = true;
         group.add(adPanel);
@@ -1137,7 +1150,7 @@ class Environment {
       moon.position.y = Math.sin(a) * d * Math.sin(inc);
 
       // Tidal lock: always face outward from planet center
-      moon.lookAt(0, 0, 0);
+      moon.lookAt(moon.position.x * 2, moon.position.y * 2, moon.position.z * 2);
 
       // Apply visibility culling
       this._updateSpaceObjectVisibility(
@@ -1349,7 +1362,7 @@ class Environment {
 
       adPanel.material.map = texture;
       adPanel.material.color.setHex(0xffffff);
-      adPanel.material.emissive.setHex(0x222222);
+      adPanel.material.emissive.setHex(0x000000);
       adPanel.material.needsUpdate = true;
     };
     img.src = sponsorData.patternImage;
