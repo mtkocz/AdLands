@@ -252,7 +252,7 @@ class Planet {
       );
     }
 
-    // Generate shared rock texture for cliff walls, polar walls, and terrain surface
+    // Generate shared rock texture for cliff walls, polar walls, and elevated terrain tops
     this._createRockWallTexture();
 
     this._createTileMeshes(hexasphere.tiles);
@@ -899,10 +899,11 @@ class Planet {
           side: THREE.FrontSide,
         });
       } else if (clusterId === undefined) {
-        const g = 58 / 255;
+        if (!this._neutralTexture) {
+          this._neutralTexture = this._createPatternTexture("solid", 58);
+        }
         material = new THREE.MeshStandardMaterial({
-          map: this._rockWallTexture,
-          color: new THREE.Color(g, g, g),
+          map: this._neutralTexture,
           flatShading: true,
           roughness: 0.8,
           metalness: 0.1,
@@ -910,15 +911,33 @@ class Planet {
         });
       } else {
         const pattern = this.clusterPatterns.get(clusterId);
-        const g = pattern.grayValue / 255;
-        material = new THREE.MeshStandardMaterial({
-          map: this._rockWallTexture,
-          color: new THREE.Color(g, g, g),
-          flatShading: true,
-          roughness: pattern.roughness,
-          metalness: pattern.metalness,
-          side: THREE.FrontSide,
-        });
+        const isElevated = this.terrainElevation && this.terrainElevation.getElevationAtTileIndex(index) > 0;
+
+        if (isElevated) {
+          const g = pattern.grayValue / 255;
+          material = new THREE.MeshStandardMaterial({
+            map: this._rockWallTexture,
+            color: new THREE.Color(g, g, g),
+            flatShading: true,
+            roughness: 0.95,
+            metalness: 0.05,
+            side: THREE.FrontSide,
+          });
+        } else {
+          if (!this.clusterTextures.has(clusterId)) {
+            this.clusterTextures.set(
+              clusterId,
+              this._createPatternTexture(pattern.type, pattern.grayValue),
+            );
+          }
+          material = new THREE.MeshStandardMaterial({
+            map: this.clusterTextures.get(clusterId),
+            flatShading: true,
+            roughness: pattern.roughness,
+            metalness: pattern.metalness,
+            side: THREE.FrontSide,
+          });
+        }
       }
 
       const mesh = new THREE.Mesh(geometry, material);
