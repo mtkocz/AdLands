@@ -458,10 +458,11 @@
   }
 
   function handleFormChange(formData) {
-    // Update pattern preview on selected tiles and moons in real-time
+    // Update pattern preview on selected tiles, moons, and billboards in real-time
     const selectedTiles = hexSelector.getSelectedTiles();
     const selectedMoons = hexSelector.getSelectedMoons();
-    if (formData.patternImage && (selectedTiles.length > 0 || selectedMoons.length > 0)) {
+    const selectedBillboards = hexSelector.getSelectedBillboards();
+    if (formData.patternImage && (selectedTiles.length > 0 || selectedMoons.length > 0 || selectedBillboards.length > 0)) {
       hexSelector.setPatternPreview(
         formData.patternImage,
         formData.patternAdjustment,
@@ -1079,7 +1080,17 @@
     updateGroupAssignedTiles(id);
 
     // Load this territory's selection based on its type
-    const tt = sponsor.territoryType;
+    // Fallback detection for territories saved before territoryType field existed
+    let tt = sponsor.territoryType;
+    if (!tt) {
+      if (sponsor.cluster?.tileIndices?.length > 0) tt = 'hex';
+      else {
+        const fallbackMoons = moonManager ? moonManager.getMoonsForSponsor(editingGroup.name) : [];
+        const fallbackBbs = billboardManager ? billboardManager.getBillboardsForSponsor(editingGroup.name) : [];
+        if (fallbackMoons.length > 0) tt = 'moon';
+        else if (fallbackBbs.length > 0) tt = 'billboard';
+      }
+    }
     if (tt === 'moon') {
       hexSelector.clearSelection();
       const moonIndices = moonManager ? moonManager.getMoonsForSponsor(editingGroup.name) : [];

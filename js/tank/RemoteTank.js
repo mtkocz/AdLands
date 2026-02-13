@@ -154,21 +154,28 @@ class RemoteTank {
    * The render loop will interpolate toward this.
    */
   setTargetState(serverState) {
-    this.targetState.theta = serverState.t;
-    this.targetState.phi = serverState.p;
-    this.targetState.heading = serverState.h;
-    this.targetState.speed = serverState.s;
-    this.targetState.turretAngle = serverState.ta;
-
     const wasDead = this.isDead;
     this.isDead = !!serverState.d;
     this.state.isDead = this.isDead;
     this.hp = serverState.hp;
 
-    if (this.isDead && !wasDead) {
-      // Just died — could trigger death effects here
-      this.state.speed = 0;
+    if (this.isDead) {
+      // Dead tanks ignore server position updates — the client-side
+      // update() loop handles planet rotation counter-rotation only.
+      // This prevents any interpolation-caused movement after death.
+      if (!wasDead) {
+        // Just died — freeze speed immediately
+        this.state.speed = 0;
+        this.targetState.speed = 0;
+      }
+      return;
     }
+
+    this.targetState.theta = serverState.t;
+    this.targetState.phi = serverState.p;
+    this.targetState.heading = serverState.h;
+    this.targetState.speed = serverState.s;
+    this.targetState.turretAngle = serverState.ta;
   }
 
   /**
@@ -178,11 +185,46 @@ class RemoteTank {
   update(deltaTime) {
     if (!this.group) return;
 
+    const dt60 = deltaTime * 60;
+
+    if (this.isDead) {
+      // Dead tanks: no interpolation, no dead-reckoning — only counter planet
+      // rotation so the wreck stays fixed on the surface.
+      this.state.theta -= (SharedPhysics.PLANET_ROTATION_SPEED * dt60) / 60;
+      while (this.state.theta < 0) this.state.theta += Math.PI * 2;
+      while (this.state.theta >= Math.PI * 2) this.state.theta -= Math.PI * 2;
+      // Keep target in sync so there's no snap if respawned
+      this.targetState.theta = this.state.theta;
+      this.targetState.phi = this.state.phi;
+
+      this.state.speed = 0;
+
+      // Update lean springs (will settle to zero because isDead)
+      Tank.updateLeanState(this.state.lean, 0, this.state.heading, deltaTime, true);
+
+      // Update visual (keeps mesh on rotating planet)
+      const entity = {
+        theta: this.state.theta,
+        phi: this.state.phi,
+        heading: this.state.heading,
+        group: this.group,
+        bodyGroup: this.bodyGroup,
+        speed: 0,
+        wigglePhase: this.state.wigglePhase,
+        currentRollAngle: 0,
+        hp: this.hp,
+        maxHp: this.maxHp,
+        isDead: true,
+        lean: this.state.lean,
+      };
+      Tank.updateEntityVisual(entity, this.sphereRadius);
+      return;
+    }
+
     // Dead-reckon the target forward using speed + heading between server ticks.
     // This fills in smooth motion between 20Hz updates instead of the target
     // staying static and the lerp decelerating into a sawtooth pattern.
-    const dt60 = deltaTime * 60;
-    if (this.targetState.speed !== 0 && !this.isDead) {
+    if (this.targetState.speed !== 0) {
       const heading = this.targetState.heading;
       const phi = this.targetState.phi;
       const velocityNorth = Math.cos(heading) * this.targetState.speed * dt60;
@@ -233,7 +275,7 @@ class RemoteTank {
     }
 
     // Update momentum lean springs
-    Tank.updateLeanState(this.state.lean, this.state.speed, this.state.heading, deltaTime, this.isDead);
+    Tank.updateLeanState(this.state.lean, this.state.speed, this.state.heading, deltaTime, false);
 
     // Update 3D position on sphere (reuse Tank's static method)
     const entity = {
@@ -247,7 +289,7 @@ class RemoteTank {
       currentRollAngle: 0,
       hp: this.hp,
       maxHp: this.maxHp,
-      isDead: this.isDead,
+      isDead: false,
       lean: this.state.lean,
     };
     Tank.updateEntityVisual(entity, this.sphereRadius);
@@ -259,9 +301,6 @@ class RemoteTank {
         this.state.turretAngle
       );
     }
-
-    // Dead tanks stay visible (death effects shown by TankDamageEffects)
-    // Visibility is controlled by MultiplayerClient after fade completes
   }
 
   // ========================
@@ -276,6 +315,11 @@ class RemoteTank {
     this.isDead = true;
     this.state.isDead = true;
     this.state.speed = 0;
+    this.targetState.speed = 0;
+    // Snap target to current position so there's no residual interpolation drift
+    this.targetState.theta = this.state.theta;
+    this.targetState.phi = this.state.phi;
+    this.targetState.heading = this.state.heading;
     this.damageState = "dead";
     this.isFading = false;
 

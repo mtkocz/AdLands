@@ -569,6 +569,10 @@ class HexSelector {
     }
 
     this._needsRender = true;
+
+    if (this.onSelectionChange) {
+      this.onSelectionChange(this.getSelectedTiles());
+    }
   }
 
   setAssignedBillboards(assignedMap) {
@@ -1266,6 +1270,10 @@ class HexSelector {
     }
 
     this._needsRender = true;
+
+    if (this.onSelectionChange) {
+      this.onSelectionChange(this.getSelectedTiles());
+    }
   }
 
   /**

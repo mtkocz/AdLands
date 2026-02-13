@@ -814,6 +814,9 @@
     tank.setControlsEnabled(false);
     proximityChat.setPlayerDead(true);
 
+    // Hide territory control ring immediately
+    setTerritoryRingVisible(false);
+
     // Fade out player tag over 3 seconds
     playerTags.fadeOutTag("player", 3000);
 
