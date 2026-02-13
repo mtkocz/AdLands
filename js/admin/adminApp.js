@@ -486,7 +486,10 @@
   }
 
   async function handleSaveSponsor() {
-    if (busy) return;
+    if (busy) {
+      showToast("Please wait for the current operation to finish", "info");
+      return;
+    }
     busy = true;
 
     try {
@@ -594,13 +597,21 @@
         }
 
         // Save moon assignments
-        if (moonManager) {
-          await moonManager.saveMoonsForSponsor(selectedMoonsForGroupSave, formData);
+        try {
+          if (moonManager) {
+            await moonManager.saveMoonsForSponsor(selectedMoonsForGroupSave, formData);
+          }
+        } catch (e) {
+          console.warn("[AdminApp] Moon save failed:", e);
         }
 
         // Save billboard assignments
-        if (billboardManager) {
-          await billboardManager.saveBillboardsForSponsor(selectedBillboardsForGroupSave, formData);
+        try {
+          if (billboardManager) {
+            await billboardManager.saveBillboardsForSponsor(selectedBillboardsForGroupSave, formData);
+          }
+        } catch (e) {
+          console.warn("[AdminApp] Billboard save failed:", e);
         }
 
         handleClearForm();
@@ -654,13 +665,21 @@
         }
 
         // Save moon assignments
-        if (moonManager) {
-          await moonManager.saveMoonsForSponsor(selectedMoonsForSave, formData);
+        try {
+          if (moonManager) {
+            await moonManager.saveMoonsForSponsor(selectedMoonsForSave, formData);
+          }
+        } catch (e) {
+          console.warn("[AdminApp] Moon save failed:", e);
         }
 
         // Save billboard assignments
-        if (billboardManager) {
-          await billboardManager.saveBillboardsForSponsor(selectedBillboardsForSave, formData);
+        try {
+          if (billboardManager) {
+            await billboardManager.saveBillboardsForSponsor(selectedBillboardsForSave, formData);
+          }
+        } catch (e) {
+          console.warn("[AdminApp] Billboard save failed:", e);
         }
 
         if (createdSponsor) {
@@ -1272,7 +1291,10 @@
    * Creates a new entry with shared fields, then enters group edit on the new cluster
    */
   async function addClusterToGroup(sponsorName) {
-    if (busy) return;
+    if (busy) {
+      showToast("Please wait for the current operation to finish", "info");
+      return;
+    }
     busy = true;
 
     try {
@@ -1373,7 +1395,10 @@
   }
 
   async function duplicateSponsor(id) {
-    if (busy) return;
+    if (busy) {
+      showToast("Please wait for the current operation to finish", "info");
+      return;
+    }
     busy = true;
 
     try {

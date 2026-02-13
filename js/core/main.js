@@ -2964,7 +2964,18 @@
     intelPopup.style.visibility = "visible";
   }
 
+  function resetIntelPopupState() {
+    // Restore all sections and stat rows to default visible state
+    const statsEl = document.querySelector("#territory-intel-popup .intel-stats");
+    if (statsEl) statsEl.classList.remove("hidden");
+    document.querySelectorAll("#territory-intel-popup .intel-section")
+      .forEach((el) => el.classList.remove("hidden"));
+    document.querySelectorAll("#territory-intel-popup .stat-row")
+      .forEach((el) => el.classList.remove("hidden"));
+  }
+
   function showTerritoryIntelPopup(clickX, clickY, sponsor, clusterId) {
+    resetIntelPopupState();
     const logoEl = document.getElementById("intel-logo");
     if (sponsor.logoImage) {
       logoEl.src = sponsor.logoImage;
@@ -3024,6 +3035,7 @@
   }
 
   function showSpaceSponsorPopup(clickX, clickY, sponsor, type) {
+    resetIntelPopupState();
     const logoEl = document.getElementById("intel-logo");
     if (sponsor.logoImage) {
       logoEl.src = sponsor.logoImage;
@@ -3068,14 +3080,7 @@
 
   function hideTerritoryIntelPopup() {
     intelPopup.classList.add("hidden");
-    // Restore hidden sections for next use
-    const statsEl = document.querySelector("#territory-intel-popup .intel-stats");
-    if (statsEl) statsEl.classList.remove("hidden");
-    const sectionEls = document.querySelectorAll("#territory-intel-popup .intel-section");
-    sectionEls.forEach((el) => el.classList.remove("hidden"));
-    // Restore individual stat rows hidden by space sponsor popup
-    document.querySelectorAll("#territory-intel-popup .stat-row")
-      .forEach((el) => el.classList.remove("hidden"));
+    resetIntelPopupState();
   }
 
   // Right-click detection for sponsor clusters
@@ -3116,6 +3121,32 @@
 
     intelRaycaster.setFromCamera(intelMouse, camera);
 
+    // Check billboards and moons FIRST so they block clicks to the planet surface
+
+    // Check sponsored billboards (raycast into billboard groups recursively)
+    const bbMeshes = environment.billboards.flatMap((bb) => bb.children);
+    const bbHits = intelRaycaster.intersectObjects(bbMeshes);
+    if (bbHits.length > 0) {
+      const bbGroup = bbHits[0].object.parent;
+      const sponsor = bbGroup?.userData?.sponsor;
+      if (sponsor) {
+        showSpaceSponsorPopup(clickX, clickY, sponsor, "Billboard");
+      }
+      return; // Block click from reaching planet surface
+    }
+
+    // Check sponsored moons
+    const moonHits = intelRaycaster.intersectObjects(environment.moons);
+    if (moonHits.length > 0) {
+      const moon = moonHits[0].object;
+      const sponsor = moon?.userData?.sponsor;
+      if (sponsor) {
+        showSpaceSponsorPopup(clickX, clickY, sponsor, "Moon");
+      }
+      return; // Block click from reaching planet surface
+    }
+
+    // Check hex tiles on planet surface
     const intersects = intelRaycaster.intersectObjects(
       planet.hexGroup.children,
     );
@@ -3136,29 +3167,6 @@
           showTerritoryIntelPopup(clickX, clickY, sponsor, clusterId);
           return;
         }
-      }
-    }
-
-    // Check sponsored billboards (raycast into billboard groups recursively)
-    const bbMeshes = environment.billboards.flatMap((bb) => bb.children);
-    const bbHits = intelRaycaster.intersectObjects(bbMeshes);
-    if (bbHits.length > 0) {
-      const bbGroup = bbHits[0].object.parent;
-      const sponsor = bbGroup?.userData?.sponsor;
-      if (sponsor) {
-        showSpaceSponsorPopup(clickX, clickY, sponsor, "Billboard");
-        return;
-      }
-    }
-
-    // Check sponsored moons
-    const moonHits = intelRaycaster.intersectObjects(environment.moons);
-    if (moonHits.length > 0) {
-      const moon = moonHits[0].object;
-      const sponsor = moon?.userData?.sponsor;
-      if (sponsor) {
-        showSpaceSponsorPopup(clickX, clickY, sponsor, "Moon");
-        return;
       }
     }
 
