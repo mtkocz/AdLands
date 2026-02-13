@@ -30,13 +30,15 @@ const BOT_NAME_POOL = [
 ];
 
 class GameRoom {
-  constructor(io, roomId, sponsorStore, sponsorImageUrls, moonSponsorStore, moonSponsorImageUrls) {
+  constructor(io, roomId, sponsorStore, sponsorImageUrls, moonSponsorStore, moonSponsorImageUrls, billboardSponsorStore, billboardSponsorImageUrls) {
     this.io = io;
     this.roomId = roomId;
     this.sponsorStore = sponsorStore || null;
     this.sponsorImageUrls = sponsorImageUrls || {};
     this.moonSponsorStore = moonSponsorStore || null;
     this.moonSponsorImageUrls = moonSponsorImageUrls || {};
+    this.billboardSponsorStore = billboardSponsorStore || null;
+    this.billboardSponsorImageUrls = billboardSponsorImageUrls || {};
 
     // Connected players: socketId → player state
     this.players = new Map();
@@ -351,6 +353,34 @@ class GameRoom {
     console.log(`[Room ${this.roomId}] Moon sponsors reloaded: ${active} active, broadcast to clients`);
   }
 
+  _buildBillboardSponsorPayload() {
+    if (!this.billboardSponsorStore) return new Array(21).fill(null);
+    return this.billboardSponsorStore.getAll().map((sponsor, i) => {
+      if (!sponsor || sponsor.active === false) return null;
+      const urls = this.billboardSponsorImageUrls[i] || {};
+      return {
+        billboardIndex: i,
+        name: sponsor.name,
+        tagline: sponsor.tagline,
+        websiteUrl: sponsor.websiteUrl,
+        patternImage: urls.patternUrl || null,
+        patternAdjustment: sponsor.patternAdjustment,
+      };
+    });
+  }
+
+  /**
+   * Reload billboard sponsors and broadcast to all connected clients.
+   * Called by the REST API after billboard sponsor assign/clear.
+   */
+  reloadBillboardSponsors() {
+    if (!this.billboardSponsorStore) return;
+    const billboardSponsors = this._buildBillboardSponsorPayload();
+    this.io.to(this.roomId).emit("billboard-sponsors-reloaded", { billboardSponsors });
+    const active = billboardSponsors.filter(Boolean).length;
+    console.log(`[Room ${this.roomId}] Billboard sponsors reloaded: ${active} active, broadcast to clients`);
+  }
+
   // ========================
   // PLAYER MANAGEMENT
   // ========================
@@ -632,6 +662,9 @@ class GameRoom {
   handleEnterFastTravel(socketId) {
     const player = this.players.get(socketId);
     if (!player || player.isDead || player.waitingForPortal) return;
+
+    // Mark as waiting so _recomputeRanks won't respawn bodyguards
+    player.waitingForPortal = true;
 
     // Kill bodyguards immediately when commander enters fast travel
     for (const faction of FACTIONS) {
@@ -1733,6 +1766,47 @@ class GameRoom {
   }
 
   /**
+   * Server-authoritative identity update from onboarding screen.
+   * Sanitizes name, handles duplicates, updates faction if changed.
+   */
+  handleSetIdentity(socketId, name, faction) {
+    const player = this.players.get(socketId);
+    if (!player) return;
+
+    // Sanitize name: trim, limit 20 chars, strip non-alphanumeric (keep spaces, hyphens, underscores)
+    let sanitized = name.trim().replace(/[^\w\s\-]/g, "").substring(0, 20);
+    if (!sanitized) sanitized = this._pickName();
+
+    // Check for duplicate names — append suffix if taken
+    for (const [id, p] of this.players) {
+      if (id !== socketId && p.name === sanitized) {
+        sanitized = sanitized + "_" + Math.floor(Math.random() * 99);
+        break;
+      }
+    }
+
+    const oldFaction = player.faction;
+    player.name = sanitized;
+    player.faction = faction;
+
+    // Broadcast identity update to all clients
+    this.io.to(this.roomId).emit("player-identity-updated", {
+      id: socketId,
+      name: sanitized,
+      faction: faction,
+    });
+
+    // Recompute ranks if faction changed
+    if (oldFaction !== faction) {
+      if (this.commanders[oldFaction]?.id === socketId) {
+        this.bodyguardManager.despawnForFaction(oldFaction);
+        this.commanders[oldFaction] = null;
+      }
+      this._markRanksDirty();
+    }
+  }
+
+  /**
    * Mark ranks as needing recomputation. Actual work deferred to next tick.
    * This avoids redundant recomputations when multiple events fire in the same frame.
    */
@@ -2017,6 +2091,7 @@ class GameRoom {
       polarTileIndices: Array.from(worldResult.polarTileIndices),
       sponsors,
       moonSponsors: this._buildMoonSponsorPayload(),
+      billboardSponsors: this._buildBillboardSponsorPayload(),
     };
   }
 

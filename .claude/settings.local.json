@@ -11,7 +11,8 @@
       "Bash(lsof:*)",
       "Bash(xargs kill:*)",
       "Bash(node -e \" const { execSync } = require\\(''child_process''\\); const { fork } = require\\(''child_process''\\); const child = fork\\(''./index.js'', { stdio: [''pipe'', ''pipe'', ''pipe'', ''ipc''] }\\); let output = ''''; child.stdout.on\\(''data'', \\(d\\) => { output += d.toString\\(\\); }\\); child.stderr.on\\(''data'', \\(d\\) => { output += ''[stderr] '' + d.toString\\(\\); }\\); setTimeout\\(\\(\\) => { child.kill\\(\\); console.log\\(output\\); }, 3000\\); \")",
-      "Bash(node -e:*)"
+      "Bash(node -e:*)",
+      "Bash(/usr/local/bin/node:*)"
     ]
   }
 }

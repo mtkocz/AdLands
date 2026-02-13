@@ -470,9 +470,15 @@
   // Fast travel system
   const fastTravel = new FastTravel(scene, planet, tank, gameCamera, renderer);
 
-  // Start in fast travel mode (deployment selection)
-  gameCamera.enterFastTravelImmediate();
-  fastTravel.enterFastTravelAtStart();
+  // Portal selection is deferred until after onboarding completes
+  // (sky beams stay hidden until the player confirms name & faction)
+  function startPortalSelection() {
+    gameCamera.enterFastTravelImmediate();
+    fastTravel.enterFastTravelAtStart();
+  }
+
+  // Onboarding screen (name & faction selection)
+  const onboardingScreen = new OnboardingScreen();
 
   // Dust shockwave effect system (create early so fastTravel can use it)
   const dustShockwave = new DustShockwave(scene, CONFIG.sphereRadius);
@@ -1400,6 +1406,23 @@
     setSponsorLoadProgress: (p) => { sponsorLoadProgress = p; },
     // Called by MultiplayerClient after sponsor textures are preloaded
     setSponsorTexturesReady: () => { sponsorLoadProgress = 1; sponsorTexturesReady = true; },
+  };
+
+  // Wire onboarding screen confirm callback
+  onboardingScreen.onConfirm = ({ name, faction }) => {
+    // Update local state via the mp interface
+    window._mp.setPlayerFaction(faction);
+    window._mp.setPlayerName(name);
+
+    // Send chosen identity to server
+    if (window.networkManager) {
+      window.networkManager.sendIdentity(name, faction);
+    }
+
+    // Fade out onboarding, then reveal sky beams + portal selection
+    onboardingScreen.hide(() => {
+      startPortalSelection();
+    });
   };
 
   // Ping marker placement - left-click in orbital/fast travel mode
@@ -3587,6 +3610,8 @@
 
       if (isReady) {
         loadingScreen.classList.add("fade-out");
+        // Show onboarding screen as loading fades out
+        onboardingScreen.show();
         setTimeout(() => {
           loadingScreen.classList.add("hidden");
         }, 500);

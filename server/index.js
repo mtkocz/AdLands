@@ -15,6 +15,8 @@ const SponsorStore = require("./SponsorStore");
 const { createSponsorRoutes, extractSponsorImages } = require("./sponsorRoutes");
 const MoonSponsorStore = require("./MoonSponsorStore");
 const { createMoonSponsorRoutes, extractMoonSponsorImages } = require("./moonSponsorRoutes");
+const BillboardSponsorStore = require("./BillboardSponsorStore");
+const { createBillboardSponsorRoutes, extractBillboardSponsorImages } = require("./billboardSponsorRoutes");
 
 // ========================
 // CONFIG
@@ -45,6 +47,11 @@ const sponsorImageUrls = extractSponsorImages(sponsorStore, gameDir);
 const moonSponsorStore = new MoonSponsorStore(path.join(__dirname, "..", "data", "moonSponsors.json"));
 moonSponsorStore.load();
 const moonSponsorImageUrls = extractMoonSponsorImages(moonSponsorStore, gameDir);
+
+// Billboard sponsor store + image extraction
+const billboardSponsorStore = new BillboardSponsorStore(path.join(__dirname, "..", "data", "billboardSponsors.json"));
+billboardSponsorStore.load();
+const billboardSponsorImageUrls = extractBillboardSponsorImages(billboardSponsorStore, gameDir);
 
 // Routes mounted after GameRoom creation (below) so live reload can reference mainRoom
 
@@ -83,7 +90,7 @@ app.get("/", (req, res) => {
 // ========================
 
 // For now: one global room. Later you'd add matchmaking / multiple rooms.
-const mainRoom = new GameRoom(io, "main", sponsorStore, sponsorImageUrls, moonSponsorStore, moonSponsorImageUrls);
+const mainRoom = new GameRoom(io, "main", sponsorStore, sponsorImageUrls, moonSponsorStore, moonSponsorImageUrls, billboardSponsorStore, billboardSponsorImageUrls);
 mainRoom.start();
 
 // Mount sponsor API routes (after GameRoom so live reload can broadcast)
@@ -95,6 +102,12 @@ app.use("/api/sponsors", createSponsorRoutes(sponsorStore, mainRoom, {
 // Mount moon sponsor API routes
 app.use("/api/moon-sponsors", createMoonSponsorRoutes(moonSponsorStore, mainRoom, {
   imageUrls: moonSponsorImageUrls,
+  gameDir,
+}));
+
+// Mount billboard sponsor API routes
+app.use("/api/billboard-sponsors", createBillboardSponsorRoutes(billboardSponsorStore, mainRoom, {
+  imageUrls: billboardSponsorImageUrls,
   gameDir,
 }));
 
@@ -141,6 +154,14 @@ io.on("connection", (socket) => {
   socket.on("self-damage", (data) => {
     if (typeof data?.amount !== "number") return;
     mainRoom.handleSelfDamage(socket.id, data.amount);
+  });
+
+  // ---- Player Identity (onboarding screen) ----
+  socket.on("set-identity", (data) => {
+    if (!data || typeof data.name !== "string") return;
+    const validFactions = ["rust", "cobalt", "viridian"];
+    if (!validFactions.includes(data.faction)) return;
+    mainRoom.handleSetIdentity(socket.id, data.name, data.faction);
   });
 
   // ---- Faction Change ----

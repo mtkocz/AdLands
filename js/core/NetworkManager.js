@@ -41,6 +41,7 @@ class NetworkManager {
     // Callbacks — set by main.js to wire into existing systems
     this.onConnected = null;        // (welcomeData) => {}
     this.onPlayerJoined = null;     // (playerData) => {}
+    this.onPlayerIdentityUpdated = null; // ({ id, name, faction }) => {}
     this.onPlayerLeft = null;       // (playerId) => {}
     this.onStateUpdate = null;      // (stateData) => {}
     this.onPlayerFired = null;      // (fireData) => {}
@@ -119,6 +120,11 @@ class NetworkManager {
     // Another player joined
     this.socket.on("player-joined", (data) => {
       if (this.onPlayerJoined) this.onPlayerJoined(data);
+    });
+
+    // A player updated their identity (name/faction from onboarding)
+    this.socket.on("player-identity-updated", (data) => {
+      if (this.onPlayerIdentityUpdated) this.onPlayerIdentityUpdated(data);
     });
 
     // A player left
@@ -334,6 +340,16 @@ class NetworkManager {
   sendFactionChange(faction) {
     if (!this.connected) return;
     this.socket.emit("change-faction", { faction });
+  }
+
+  /**
+   * Send player-chosen name and faction from onboarding screen.
+   * @param {string} name - Chosen player name
+   * @param {string} faction - Chosen faction: 'rust', 'cobalt', or 'viridian'
+   */
+  sendIdentity(name, faction) {
+    if (!this.connected) return;
+    this.socket.emit("set-identity", { name, faction });
   }
 
   /**

@@ -12,6 +12,7 @@
   let rewardConfig = null;
   let pricingPanel = null;
   let moonManager = null;
+  let billboardManager = null;
 
   // Busy guard — prevents concurrent save/duplicate/delete operations
   let busy = false;
@@ -111,6 +112,14 @@
       updateAssignedMoons();
     }
 
+    // Initialize billboard sponsor manager
+    setLoadingProgress(72, "Loading billboard sponsors...");
+    if (typeof BillboardSponsorManager !== "undefined") {
+      billboardManager = new BillboardSponsorManager();
+      await billboardManager.load();
+      updateAssignedBillboards();
+    }
+
     // Step 3: Wire up UI
     setLoadingProgress(80, "Loading sponsor list...");
     setupEventListeners();
@@ -124,6 +133,9 @@
     // Update assigned tiles in hex selector
     setLoadingProgress(95, "Rendering tiles...");
     updateAssignedTiles();
+
+    // Show initial cluster tabs
+    renderClusterTabs();
 
     // Done — fade out loading overlay
     setLoadingProgress(100, "Ready");
@@ -221,7 +233,8 @@
 
   function handleSelectionChange(selectedTiles) {
     const selectedMoons = hexSelector ? hexSelector.getSelectedMoons() : [];
-    const totalCount = selectedTiles.length + selectedMoons.length;
+    const selectedBillboards = hexSelector ? hexSelector.getSelectedBillboards() : [];
+    const totalCount = selectedTiles.length + selectedMoons.length + selectedBillboards.length;
     selectionCountEl.textContent = totalCount;
 
     // Update selected tiles list for accountability
@@ -234,6 +247,12 @@
       const moonLabels = selectedMoons.map(i => "Moon " + (i + 1));
       parts.push(moonLabels.join(", "));
     }
+    if (selectedBillboards.length > 0) {
+      const bbLabels = selectedBillboards.map(i =>
+        typeof HexTierSystem !== "undefined" ? HexTierSystem.getBillboardLabel(i) : `Billboard ${i + 1}`
+      );
+      parts.push(bbLabels.join(", "));
+    }
     selectedTilesListEl.textContent = parts.join(" | ");
 
     // Update pricing panel
@@ -242,9 +261,9 @@
       pricingPanel.updatePricing(pricing);
     }
 
-    // Update pattern preview when selection changes (tiles or moons)
+    // Update pattern preview when selection changes (tiles, moons, or billboards)
     const formData = sponsorForm.getFormData();
-    if (formData.patternImage && (selectedTiles.length > 0 || selectedMoons.length > 0)) {
+    if (formData.patternImage && (selectedTiles.length > 0 || selectedMoons.length > 0 || selectedBillboards.length > 0)) {
       hexSelector.setPatternPreview(
         formData.patternImage,
         formData.patternAdjustment,
@@ -273,8 +292,9 @@
     const sponsors = SponsorStorage.getAll();
     let totalMonthly = 0;
 
-    // Track which sponsor names we've already counted moon revenue for (avoid double-counting in groups)
+    // Track which sponsor names we've already counted moon/billboard revenue for (avoid double-counting in groups)
     const moonRevCounted = new Set();
+    const liveSelectedBillboards = hexSelector ? hexSelector.getSelectedBillboards() : [];
 
     for (const s of sponsors) {
       let tiles;
@@ -286,22 +306,25 @@
       const rev = calcRevenueForTiles(tiles, tierMap);
       totalMonthly += rev.total;
 
-      // Add moon revenue once per sponsor name
+      // Add moon + billboard revenue once per sponsor name
       const nameKey = (s.name || "").toLowerCase();
       if (!moonRevCounted.has(nameKey)) {
         moonRevCounted.add(nameKey);
-        // For the editing sponsor, use live moon selection
+        // For the editing sponsor, use live selections
         if (editingSponsorName && nameKey === editingSponsorName.toLowerCase()) {
           totalMonthly += calcMoonRevenue(null, liveSelectedMoons);
+          totalMonthly += calcBillboardRevenue(null, liveSelectedBillboards);
         } else {
           totalMonthly += calcMoonRevenue(s.name);
+          totalMonthly += calcBillboardRevenue(s.name);
         }
       }
 
       // Patch individual card/cluster row revenue in-place (only for editing sponsor)
       if (editingId && s.id === editingId) {
         const liveMoonRev = calcMoonRevenue(null, liveSelectedMoons);
-        const liveTotal = rev.total + liveMoonRev;
+        const liveBbRev = calcBillboardRevenue(null, liveSelectedBillboards);
+        const liveTotal = rev.total + liveMoonRev + liveBbRev;
 
         // Update card if it's a flat card
         const card = sponsorsListEl.querySelector(`.sponsor-card[data-id="${s.id}"]`);
@@ -354,18 +377,22 @@
           groupTiles += tiles?.length || 0;
           groupRev += calcRevenueForTiles(tiles, tierMap).total;
         }
-        // Add moon revenue for the group (live selection if editing)
+        // Add moon + billboard revenue for the group (live selection if editing)
         const groupMoonRev = editingSponsorName
           ? calcMoonRevenue(null, liveSelectedMoons)
           : calcMoonRevenue(editingGroup.name);
-        groupRev += groupMoonRev;
+        const groupBbRev = editingSponsorName
+          ? calcBillboardRevenue(null, liveSelectedBillboards)
+          : calcBillboardRevenue(editingGroup.name);
+        groupRev += groupMoonRev + groupBbRev;
 
         const statsEl = groupEl.querySelector(".sponsor-group-header .sponsor-card-stats");
         if (statsEl) {
           const totalRewards = editingGroup.ids.reduce((sum, id) =>
             sum + (SponsorStorage.getById(id)?.rewards?.length || 0), 0);
           const groupMoonCount = liveSelectedMoons.length;
-          statsEl.textContent = `${groupTiles} tiles${groupMoonCount > 0 ? ", " + groupMoonCount + " moons" : ""}, ${totalRewards} rewards`;
+          const groupBbCount = liveSelectedBillboards.length;
+          statsEl.textContent = `${groupTiles} tiles${groupMoonCount > 0 ? ", " + groupMoonCount + " moons" : ""}${groupBbCount > 0 ? ", " + groupBbCount + " billboards" : ""}, ${totalRewards} rewards`;
         }
         const revEl = groupEl.querySelector(".sponsor-group-header .sponsor-card-revenue");
         if (groupRev > 0) {
@@ -506,6 +533,12 @@
           await moonManager.saveMoonsForSponsor(selectedMoons, formData);
         }
 
+        // Save billboard assignments
+        if (billboardManager) {
+          const selectedBillboards = hexSelector.getSelectedBillboards();
+          await billboardManager.saveBillboardsForSponsor(selectedBillboards, formData);
+        }
+
         handleClearForm();
         refreshSponsorsList();
       } else {
@@ -517,8 +550,9 @@
         };
 
         const selectedMoonsForSave = hexSelector ? hexSelector.getSelectedMoons() : [];
-        if (selectedTiles.length === 0 && selectedMoonsForSave.length === 0) {
-          showToast("Please select at least one tile or moon", "error");
+        const selectedBillboardsForSave = hexSelector ? hexSelector.getSelectedBillboards() : [];
+        if (selectedTiles.length === 0 && selectedMoonsForSave.length === 0 && selectedBillboardsForSave.length === 0) {
+          showToast("Please select at least one tile, moon, or billboard", "error");
           return;
         }
 
@@ -551,6 +585,12 @@
           await moonManager.saveMoonsForSponsor(selectedMoons, formData);
         }
 
+        // Save billboard assignments
+        if (billboardManager) {
+          const selectedBillboards = hexSelector.getSelectedBillboards();
+          await billboardManager.saveBillboardsForSponsor(selectedBillboards, formData);
+        }
+
         handleClearForm();
         refreshSponsorsList();
       }
@@ -561,14 +601,15 @@
 
   function handleClearForm() {
     editingGroup = null;
-    hideClusterTabs();
     sponsorForm.clear();
     hexSelector.clearSelection();
     hexSelector.setPatternPreview(null);
     rewardConfig.clear();
     updateAssignedTiles();
     updateAssignedMoons();
+    updateAssignedBillboards();
     selectedTilesListEl.textContent = "";
+    renderClusterTabs();
   }
 
   function handleExport() {
@@ -666,6 +707,19 @@
     return HexTierSystem.calculateMoonPricing(indices).moonTotal;
   }
 
+  /**
+   * Calculate billboard revenue for a sponsor by name
+   * @param {string} sponsorName
+   * @param {number[]} [overrideBillboards] - If provided, use these billboard indices instead of looking up by name
+   * @returns {number} Monthly billboard revenue
+   */
+  function calcBillboardRevenue(sponsorName, overrideBillboards) {
+    if (typeof HexTierSystem === "undefined") return 0;
+    const indices = overrideBillboards || (billboardManager ? billboardManager.getBillboardsForSponsor(sponsorName) : []);
+    if (!indices.length) return 0;
+    return HexTierSystem.calculateBillboardPricing(indices).billboardTotal;
+  }
+
   function refreshSponsorsList() {
     const sponsors = SponsorStorage.getAll();
 
@@ -700,7 +754,8 @@
         const sponsor = members[0];
         const rev = calcRevenueForTiles(sponsor.cluster?.tileIndices, tierMap);
         const moonRev = calcMoonRevenue(sponsor.name);
-        const sponsorTotal = rev.total + moonRev;
+        const bbRev = calcBillboardRevenue(sponsor.name);
+        const sponsorTotal = rev.total + moonRev + bbRev;
         totalMonthly += sponsorTotal;
 
         const logoSrc = sponsor.logoUrl || sponsor.logoImage;
@@ -716,7 +771,7 @@
                 <div class="sponsor-card-info">
                     <div class="sponsor-card-name">${escapeHtml(sponsor.name)}</div>
                     <div class="sponsor-card-stats">
-                        ${sponsor.cluster?.tileIndices?.length || 0} tiles${moonRev > 0 ? ", " + moonManager.getMoonsForSponsor(sponsor.name).length + " moons" : ""},
+                        ${sponsor.cluster?.tileIndices?.length || 0} tiles${moonRev > 0 ? ", " + moonManager.getMoonsForSponsor(sponsor.name).length + " moons" : ""}${bbRev > 0 ? ", " + (billboardManager ? billboardManager.getBillboardsForSponsor(sponsor.name).length : 0) + " billboards" : ""},
                         ${sponsor.rewards?.length || 0} rewards
                     </div>
                     ${sponsorTotal > 0 ? `<div class="sponsor-card-revenue"><span class="sponsor-card-revenue-total">$${fmtUSD(sponsorTotal)}/mo</span></div>` : ""}
@@ -759,12 +814,14 @@
           `;
         }).join("");
 
-        // Add moon revenue (moons are shared across all clusters of this sponsor)
+        // Add moon + billboard revenue (shared across all clusters of this sponsor)
         const groupMoonRev = calcMoonRevenue(first.name);
-        groupRevenue += groupMoonRev;
-        totalMonthly += groupMoonRev;
+        const groupBbRev = calcBillboardRevenue(first.name);
+        groupRevenue += groupMoonRev + groupBbRev;
+        totalMonthly += groupMoonRev + groupBbRev;
 
         const groupMoonCount = moonManager ? moonManager.getMoonsForSponsor(first.name).length : 0;
+        const groupBbCount = billboardManager ? billboardManager.getBillboardsForSponsor(first.name).length : 0;
 
         const groupRevHtml = groupRevenue > 0
           ? `<div class="sponsor-card-revenue"><span class="sponsor-card-revenue-total">$${fmtUSD(groupRevenue)}/mo</span></div>`
@@ -786,7 +843,7 @@
                         <div class="sponsor-card-name">${escapeHtml(first.name)}</div>
                         <span class="sponsor-group-badge">${members.length} clusters</span>
                         <div class="sponsor-card-stats">
-                            ${totalTiles} tiles${groupMoonCount > 0 ? ", " + groupMoonCount + " moons" : ""}, ${totalRewards} rewards
+                            ${totalTiles} tiles${groupMoonCount > 0 ? ", " + groupMoonCount + " moons" : ""}${groupBbCount > 0 ? ", " + groupBbCount + " billboards" : ""}, ${totalRewards} rewards
                         </div>
                         ${groupRevHtml}
                     </div>
@@ -820,7 +877,6 @@
 
     // Clear any active group editing
     editingGroup = null;
-    hideClusterTabs();
 
     // Update assigned tiles to exclude current sponsor's tiles
     updateAssignedTiles(id);
@@ -841,11 +897,19 @@
       updateAssignedMoons(sponsor.name);
     }
 
+    // Load billboard assignments for this sponsor
+    if (billboardManager && sponsor.name) {
+      const bbIndices = billboardManager.getBillboardsForSponsor(sponsor.name);
+      hexSelector.setSelectedBillboards(bbIndices);
+      updateAssignedBillboards(sponsor.name);
+    }
+
     // Load rewards
     if (sponsor.rewards) {
       rewardConfig.loadRewards(sponsor.rewards);
     }
 
+    renderClusterTabs();
     window.scrollTo({ top: 0, behavior: "smooth" });
     showToast(`Editing "${sponsor.name}"`, "success");
   }
@@ -906,6 +970,13 @@
       const moonIndices = moonManager.getMoonsForSponsor(sponsorName);
       hexSelector.setSelectedMoons(moonIndices);
       updateAssignedMoons(sponsorName);
+    }
+
+    // Load billboard assignments for this sponsor group
+    if (billboardManager && sponsorName) {
+      const bbIndices = billboardManager.getBillboardsForSponsor(sponsorName);
+      hexSelector.setSelectedBillboards(bbIndices);
+      updateAssignedBillboards(sponsorName);
     }
 
     // Render cluster tabs
@@ -1044,16 +1115,40 @@
   }
 
   /**
-   * Add a new cluster to the current editing group
+   * Add a new cluster to the current editing group.
+   * If editing a single sponsor (no group), promotes it to a group first.
    */
   async function addCluster() {
-    if (!editingGroup) return;
     if (busy) return;
     busy = true;
 
     try {
-      // Save current cluster first
-      await saveCurrentClusterState();
+      // If editing a single sponsor, promote to group first
+      if (!editingGroup) {
+        const editingId = sponsorForm ? sponsorForm.getEditingSponsorId() : null;
+        if (!editingId) return; // Can't add cluster to a new unsaved sponsor
+
+        // Save the current sponsor's data
+        const formData = sponsorForm.getFormData();
+        const selectedTiles = hexSelector.getSelectedTiles();
+        const rewards = rewardConfig.getRewards();
+        await SponsorStorage.update(editingId, {
+          ...formData,
+          cluster: { tileIndices: selectedTiles },
+          rewards: rewards,
+        });
+
+        // Set up editingGroup with the single sponsor
+        editingGroup = {
+          name: formData.name,
+          ids: [editingId],
+          activeIndex: 0,
+          clusterStates: new Map(),
+        };
+      } else {
+        // Save current cluster state
+        await saveCurrentClusterState();
+      }
 
       // Get shared fields from form
       const formData = sponsorForm.getFormData();
@@ -1086,32 +1181,36 @@
   }
 
   /**
-   * Render cluster tabs in the hex selector panel
+   * Render cluster tabs — always visible.
+   * Shows group cluster tabs when editing a group, or a single "Cluster 1" tab otherwise.
    */
   function renderClusterTabs() {
-    if (!editingGroup) {
-      hideClusterTabs();
-      return;
+    if (editingGroup) {
+      // Multi-cluster group
+      const tabs = editingGroup.ids.map((id, i) => {
+        const sponsor = SponsorStorage.getById(id);
+        const tileCount = sponsor?.cluster?.tileIndices?.length || 0;
+        const active = i === editingGroup.activeIndex ? " active" : "";
+        return `<button class="cluster-tab${active}" data-index="${i}">Cluster ${i + 1} (${tileCount})</button>`;
+      });
+
+      clusterTabsEl.innerHTML =
+        `<span class="cluster-tabs-label">Clusters:</span>` +
+        tabs.join("") +
+        `<button class="cluster-tab-add" title="Add cluster">+</button>`;
+    } else {
+      // Single cluster (new sponsor or editing single sponsor)
+      const editingId = sponsorForm ? sponsorForm.getEditingSponsorId() : null;
+      const showAdd = !!editingId; // Show "+" only when editing an existing sponsor
+      const tileCount = editingId
+        ? (SponsorStorage.getById(editingId)?.cluster?.tileIndices?.length || 0)
+        : (hexSelector ? hexSelector.getSelectedTiles().length : 0);
+
+      clusterTabsEl.innerHTML =
+        `<span class="cluster-tabs-label">Clusters:</span>` +
+        `<button class="cluster-tab active" data-index="0">Cluster 1 (${tileCount})</button>` +
+        (showAdd ? `<button class="cluster-tab-add" title="Add cluster">+</button>` : "");
     }
-
-    const tabs = editingGroup.ids.map((id, i) => {
-      const sponsor = SponsorStorage.getById(id);
-      const tileCount = sponsor?.cluster?.tileIndices?.length || 0;
-      const active = i === editingGroup.activeIndex ? " active" : "";
-      return `<button class="cluster-tab${active}" data-index="${i}">Cluster ${i + 1} (${tileCount})</button>`;
-    });
-
-    clusterTabsEl.innerHTML =
-      `<span class="cluster-tabs-label">Clusters:</span>` +
-      tabs.join("") +
-      `<button class="cluster-tab-add" title="Add cluster">+</button>`;
-
-    clusterTabsContainer.classList.add("visible");
-  }
-
-  function hideClusterTabs() {
-    clusterTabsContainer.classList.remove("visible");
-    clusterTabsEl.innerHTML = "";
   }
 
   /**
@@ -1164,9 +1263,12 @@
 
     hexSelector.setAssignedTiles(assigned, tileMap);
 
-    // Also update assigned moons (exclude the current group's sponsor name)
+    // Also update assigned moons/billboards (exclude the current group's sponsor name)
     if (moonManager && editingGroup) {
       updateAssignedMoons(editingGroup.name);
+    }
+    if (billboardManager && editingGroup) {
+      updateAssignedBillboards(editingGroup.name);
     }
   }
 
@@ -1222,13 +1324,14 @@
       await SponsorStorage.delete(id);
       showToast(`Cluster deleted from "${sponsor.name}"`, "success");
 
-      // Check if this sponsor name still exists — if not, clear its moon assignments
-      if (moonManager && sponsor.name) {
+      // Check if this sponsor name still exists — if not, clear its moon and billboard assignments
+      if (sponsor.name) {
         const remaining = SponsorStorage.getAll().filter(
           (s) => s.name && s.name.toLowerCase() === sponsor.name.toLowerCase()
         );
         if (remaining.length === 0) {
-          await moonManager.clearMoonsForSponsor(sponsor.name);
+          if (moonManager) await moonManager.clearMoonsForSponsor(sponsor.name);
+          if (billboardManager) await billboardManager.clearBillboardsForSponsor(sponsor.name);
         }
       }
 
@@ -1255,6 +1358,7 @@
       refreshSponsorsList();
       updateAssignedTiles();
       updateAssignedMoons();
+      updateAssignedBillboards();
     } finally {
       busy = false;
     }
@@ -1274,6 +1378,16 @@
     if (!moonManager || !hexSelector) return;
     const assignedMap = moonManager.getAssignedMoons(excludeName);
     hexSelector.setAssignedMoons(assignedMap);
+  }
+
+  /**
+   * Update which billboards are shown as assigned (dimmed) in hex selector.
+   * @param {string|null} excludeName - Sponsor name to exclude (currently editing)
+   */
+  function updateAssignedBillboards(excludeName = null) {
+    if (!billboardManager || !hexSelector) return;
+    const assignedMap = billboardManager.getAssignedBillboards(excludeName);
+    hexSelector.setAssignedBillboards(assignedMap);
   }
 
   // ========================
@@ -1310,8 +1424,6 @@
     gap: 8, // matches --space-sm
     minCol: 200,
     cols: [340, 375, 0, 320], // index 2 = flex, computed at runtime
-    row2: 158, // rewards row height
-    minRow: 120,
 
     init(gridEl) {
       this.grid = gridEl;
@@ -1343,18 +1455,10 @@
 
       this._positionHandles();
 
-      // Create row resize handle (between row 1 and rewards row)
-      this.rowHandle = document.createElement("div");
-      this.rowHandle.className = "row-resize-handle";
-      document.body.appendChild(this.rowHandle);
-      this._bindRowHandle();
-      this._positionRowHandle();
-
       window.addEventListener("resize", () => {
         this._recalcFlex();
         this._applyWidths();
         this._positionHandles();
-        this._positionRowHandle();
       });
     },
 
@@ -1384,7 +1488,6 @@
         this.cols[rightIdx] = newRight;
         this._applyWidths();
         this._positionHandles();
-        this._positionRowHandle();
       };
 
       const onMouseUp = () => {
@@ -1429,7 +1532,6 @@
       s.setProperty("--col2", this.cols[1] + "px");
       s.setProperty("--col3", this.cols[2] + "px");
       s.setProperty("--col4", this.cols[3] + "px");
-      s.setProperty("--row2", this.row2 + "px");
     },
 
     _positionHandles() {
@@ -1441,56 +1543,6 @@
       }
     },
 
-    _bindRowHandle() {
-      let startY, startRow2;
-      const handle = this.rowHandle;
-
-      const onMouseMove = (e) => {
-        const dy = e.clientY - startY;
-        const gridHeight = this.grid.getBoundingClientRect().height;
-        const maxRow2 = gridHeight - this.gap - 200; // keep row1 at least 200px
-        const newRow2 = Math.min(
-          maxRow2,
-          Math.max(this.minRow, startRow2 - dy),
-        );
-        this.row2 = newRow2;
-        this._applyWidths();
-        this._positionRowHandle();
-      };
-
-      const onMouseUp = () => {
-        handle.classList.remove("dragging");
-        document.body.style.cursor = "";
-        document.body.style.userSelect = "";
-        window.removeEventListener("mousemove", onMouseMove);
-        window.removeEventListener("mouseup", onMouseUp);
-        handleResize();
-      };
-
-      handle.addEventListener("mousedown", (e) => {
-        e.preventDefault();
-        startY = e.clientY;
-        startRow2 = this.row2;
-        handle.classList.add("dragging");
-        document.body.style.cursor = "row-resize";
-        document.body.style.userSelect = "none";
-        window.addEventListener("mousemove", onMouseMove);
-        window.addEventListener("mouseup", onMouseUp);
-      });
-    },
-
-    _positionRowHandle() {
-      const rect = this.grid.getBoundingClientRect();
-      // Row handle sits at the boundary between row 1 and row 2
-      // That's at: grid bottom - row2 height - gap
-      const y = rect.bottom - this.row2 - this.gap;
-      // Spans columns 2-3 (col1 width + gap offset to col1+col2+col3 width)
-      const left = rect.left + this.cols[0] + this.gap;
-      const width = this.cols[1] + this.gap + this.cols[2];
-      this.rowHandle.style.left = left + "px";
-      this.rowHandle.style.top = y - 4 + "px";
-      this.rowHandle.style.width = width + "px";
-    },
   };
 
   // ========================

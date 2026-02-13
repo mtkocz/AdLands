@@ -390,10 +390,14 @@
               s: bgState.s,
               hp: bgState.hp,
             });
-            // Dust shockwave on spawn
+            // Dust shockwave on spawn (compute position from theta/phi — group isn't positioned yet)
             if (bg) {
-              const worldPos = new THREE.Vector3();
-              bg.group.getWorldPosition(worldPos);
+              const t = bgState.t, p = bgState.p;
+              const worldPos = new THREE.Vector3(
+                sphereRadius * Math.sin(p) * Math.cos(t),
+                sphereRadius * Math.cos(p),
+                sphereRadius * Math.sin(p) * Math.sin(t)
+              );
               dustShockwave?.emit(worldPos, 1.5);
             }
           }
@@ -413,9 +417,13 @@
               hp: bgState.hp,
             });
             if (!bg) continue;
-            // Dust shockwave on respawn
-            const worldPos = new THREE.Vector3();
-            bg.group.getWorldPosition(worldPos);
+            // Dust shockwave on respawn (compute position from theta/phi)
+            const t = bgState.t, p = bgState.p;
+            const worldPos = new THREE.Vector3(
+              sphereRadius * Math.sin(p) * Math.cos(t),
+              sphereRadius * Math.cos(p),
+              sphereRadius * Math.sin(p) * Math.sin(t)
+            );
             dustShockwave?.emit(worldPos, 1.5);
           }
 
@@ -871,6 +879,27 @@
       }
     };
 
+    // Player identity updated (from onboarding screen — name and/or faction changed)
+    net.onPlayerIdentityUpdated = (data) => {
+      if (data.id === net.playerId) {
+        // Server confirmed our identity — update local display with sanitized name
+        mp.setPlayerName(data.name);
+        mp.setPlayerFaction(data.faction);
+        return;
+      }
+
+      const remoteTank = remoteTanks.get(data.id);
+      if (remoteTank) {
+        remoteTank.setFaction(data.faction);
+        playerTags.updateName?.(data.id, data.name);
+        playerTags.updateFaction?.(data.id, data.faction);
+        tankHeadlights.updateFaction?.(data.id, data.faction);
+      }
+      if (window.commanderSystem) {
+        window.commanderSystem.updatePlayerFaction?.(data.id, data.faction);
+      }
+    };
+
     // Bodyguard killed event (death visual is handled via state sync d:1)
     net.onBodyguardKilled = (data) => {
       // Could trigger kill feed entry here if needed
@@ -1305,7 +1334,7 @@
         avatarColor: null,
         squad: null,
         faction: faction,
-        title: null,
+        title: "Bodyguard",
         hp: bg.hp,
         maxHp: bg.maxHp,
       });

@@ -481,11 +481,8 @@ const SponsorStorage = {
           errors.push(`Sponsor missing name, skipped`);
           continue;
         }
-        if (!sponsor.cluster || !sponsor.cluster.tileIndices) {
-          errors.push(
-            `Sponsor "${sponsor.name}" missing cluster data, skipped`,
-          );
-          continue;
+        if (!sponsor.cluster) {
+          sponsor.cluster = { tileIndices: [] };
         }
 
         if (merge && existingIds.has(sponsor.id)) {
@@ -553,14 +550,6 @@ const SponsorStorage = {
 
     if (!sponsor.name || sponsor.name.trim().length === 0) {
       errors.push("Name is required");
-    }
-
-    if (
-      !sponsor.cluster ||
-      !sponsor.cluster.tileIndices ||
-      sponsor.cluster.tileIndices.length === 0
-    ) {
-      errors.push("At least one tile must be selected");
     }
 
     if (sponsor.websiteUrl && sponsor.websiteUrl.trim().length > 0) {

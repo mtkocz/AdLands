@@ -103,6 +103,14 @@ class HexSelector {
     this.selectedMoons = new Set(); // Moon indices selected for current sponsor
     this.assignedMoons = new Map(); // moonIndex → sponsorName (moons belonging to other sponsors)
 
+    // Billboard state
+    this.billboardsVisible = false;
+    this.billboardConfigs = [];
+    this.billboardGroups = []; // THREE.Group per billboard
+    this.billboardAdPanels = []; // Ad panel meshes for raycasting
+    this.selectedBillboards = new Set();
+    this.assignedBillboards = new Map(); // billboardIndex → sponsorName
+
     // Callbacks
     this.onSelectionChange = options.onSelectionChange || null;
 
@@ -136,6 +144,11 @@ class HexSelector {
 
     // Create orbiting moons
     this._createMoons();
+
+    // Create orbital billboards (hidden until toggled)
+    this._buildBillboardConfigs();
+    this._createBillboards();
+    this._createBillboardToggleButton();
 
     // Setup controls
     this._setupControls();
@@ -326,6 +339,446 @@ class HexSelector {
     }
   }
 
+  // ═══════════════════════════════════════════════════════
+  // BILLBOARD SYSTEM
+  // ═══════════════════════════════════════════════════════
+
+  _buildBillboardConfigs() {
+    this.billboardConfigs = [];
+
+    const orbits = [
+      { distance: 200, count: 12, inclinationRange: 0.25 }, // Low orbit
+      { distance: 280, count: 6, inclinationRange: 0.20 },  // Mid orbit
+      { distance: 380, count: 3, inclinationRange: 0.15 },  // High orbit
+    ];
+
+    let globalIndex = 0;
+    for (const orbit of orbits) {
+      for (let i = 0; i < orbit.count; i++) {
+        const angle = (i / orbit.count) * Math.PI * 2;
+        const incSign = (i % 2 === 0) ? 1 : -1;
+        const inclination = incSign * orbit.inclinationRange * ((i % 3 + 1) / 3);
+
+        this.billboardConfigs.push({
+          index: globalIndex,
+          distance: orbit.distance,
+          angle,
+          inclination,
+          orbit: orbit.distance === 200 ? "LOW" : orbit.distance === 280 ? "MID" : "HIGH",
+        });
+        globalIndex++;
+      }
+    }
+  }
+
+  _createBillboardModel() {
+    const group = new THREE.Group();
+
+    const panelWidth = 12;
+    const panelHeight = 8;
+
+    // Central ad panel (the textured surface)
+    const panelGeom = new THREE.PlaneGeometry(panelWidth, panelHeight);
+    const panelMat = new THREE.MeshLambertMaterial({
+      color: 0x888888,
+      emissive: 0x111111,
+      side: THREE.DoubleSide,
+    });
+    const adPanel = new THREE.Mesh(panelGeom, panelMat);
+    adPanel.userData.isAdPanel = true;
+    group.add(adPanel);
+
+    // Frame beams around the panel
+    const bt = 0.3; // beam thickness
+    const bd = 0.5; // beam depth
+    const frameMat = new THREE.MeshLambertMaterial({ color: 0x444444, emissive: 0x080808 });
+
+    const topBeam = new THREE.Mesh(new THREE.BoxGeometry(panelWidth + bt * 2, bt, bd), frameMat);
+    topBeam.position.set(0, panelHeight / 2 + bt / 2, 0);
+    group.add(topBeam);
+
+    const bottomBeam = new THREE.Mesh(new THREE.BoxGeometry(panelWidth + bt * 2, bt, bd), frameMat);
+    bottomBeam.position.set(0, -panelHeight / 2 - bt / 2, 0);
+    group.add(bottomBeam);
+
+    const leftBeam = new THREE.Mesh(new THREE.BoxGeometry(bt, panelHeight, bd), frameMat);
+    leftBeam.position.set(-panelWidth / 2 - bt / 2, 0, 0);
+    group.add(leftBeam);
+
+    const rightBeam = new THREE.Mesh(new THREE.BoxGeometry(bt, panelHeight, bd), frameMat);
+    rightBeam.position.set(panelWidth / 2 + bt / 2, 0, 0);
+    group.add(rightBeam);
+
+    // Solar panel wings
+    const solarMat = new THREE.MeshLambertMaterial({ color: 0x1a1a3a, emissive: 0x050510, side: THREE.DoubleSide });
+    const sw = 4, sh = 3;
+
+    const leftSolar = new THREE.Mesh(new THREE.PlaneGeometry(sw, sh), solarMat);
+    leftSolar.position.set(-panelWidth / 2 - bt - sw / 2 - 0.5, 0, 0);
+    group.add(leftSolar);
+
+    const rightSolar = new THREE.Mesh(new THREE.PlaneGeometry(sw, sh), solarMat);
+    rightSolar.position.set(panelWidth / 2 + bt + sw / 2 + 0.5, 0, 0);
+    group.add(rightSolar);
+
+    // Cylindrical hubs at wing connections
+    const hubGeom = new THREE.CylinderGeometry(0.4, 0.4, 0.8, 8);
+    const hubMat = new THREE.MeshLambertMaterial({ color: 0x555555 });
+
+    const leftHub = new THREE.Mesh(hubGeom, hubMat);
+    leftHub.rotation.z = Math.PI / 2;
+    leftHub.position.set(-panelWidth / 2 - bt - 0.2, 0, 0);
+    group.add(leftHub);
+
+    const rightHub = new THREE.Mesh(hubGeom, hubMat);
+    rightHub.rotation.z = Math.PI / 2;
+    rightHub.position.set(panelWidth / 2 + bt + 0.2, 0, 0);
+    group.add(rightHub);
+
+    return group;
+  }
+
+  _createBillboards() {
+    this.billboardGroups = [];
+    this.billboardAdPanels = [];
+
+    for (let i = 0; i < this.billboardConfigs.length; i++) {
+      const cfg = this.billboardConfigs[i];
+      const group = this._createBillboardModel();
+
+      // Position on orbital sphere
+      const x = cfg.distance * Math.cos(cfg.angle) * Math.cos(cfg.inclination);
+      const y = cfg.distance * Math.sin(cfg.inclination);
+      const z = cfg.distance * Math.sin(cfg.angle) * Math.cos(cfg.inclination);
+      group.position.set(x, y, z);
+
+      // Face toward planet center
+      group.lookAt(0, 0, 0);
+
+      group.userData = { isBillboard: true, billboardIndex: i, orbit: cfg.orbit };
+
+      // Find ad panel for raycasting
+      const adPanel = group.children.find((c) => c.userData.isAdPanel);
+      if (adPanel) {
+        adPanel.userData.billboardIndex = i;
+        adPanel.userData.isBillboard = true;
+        this.billboardAdPanels.push(adPanel);
+      }
+
+      this.billboardGroups.push(group);
+      // NOT added to scene — toggle handles visibility
+    }
+  }
+
+  _createBillboardToggleButton() {
+    const btn = document.createElement("button");
+    btn.className = "billboard-toggle-btn";
+    btn.textContent = "Billboards";
+    btn.title = "Toggle Orbital Billboards";
+    btn.style.cssText = `
+      position: absolute; top: 8px; right: 8px; z-index: 10;
+      padding: 4px 10px; font-size: 11px; cursor: pointer;
+      background: rgba(30,30,30,0.85); color: #888;
+      border: 1px solid #333; border-radius: 3px;
+      font-family: monospace;
+    `;
+    btn.addEventListener("click", () => this._toggleBillboardLayer());
+    this.container.style.position = "relative";
+    this.container.appendChild(btn);
+    this._billboardToggleBtn = btn;
+  }
+
+  _toggleBillboardLayer() {
+    this.billboardsVisible = !this.billboardsVisible;
+
+    if (this.billboardsVisible) {
+      for (const group of this.billboardGroups) {
+        this.scene.add(group);
+      }
+      // Zoom out to show billboard orbits
+      this.transitionStart = {
+        theta: this.orbitalTheta,
+        phi: this.orbitalPhi,
+        distance: this.orbitalDistance,
+      };
+      this.transitionTarget = {
+        theta: this.orbitalTheta,
+        phi: this.orbitalPhi,
+        distance: 500,
+      };
+      this.orbitalVelocity.theta = 0;
+      this.orbitalVelocity.phi = 0;
+      this.transitioning = true;
+      this.transitionProgress = 0;
+
+      this._refreshBillboardVisuals();
+    } else {
+      for (const group of this.billboardGroups) {
+        this.scene.remove(group);
+      }
+      // Zoom back in
+      this.transitionStart = {
+        theta: this.orbitalTheta,
+        phi: this.orbitalPhi,
+        distance: this.orbitalDistance,
+      };
+      this.transitionTarget = {
+        theta: this.orbitalTheta,
+        phi: this.orbitalPhi,
+        distance: 220,
+      };
+      this.orbitalVelocity.theta = 0;
+      this.orbitalVelocity.phi = 0;
+      this.transitioning = true;
+      this.transitionProgress = 0;
+    }
+
+    this._updateBillboardToggleButton();
+    this._needsRender = true;
+  }
+
+  _updateBillboardToggleButton() {
+    if (!this._billboardToggleBtn) return;
+    if (this.billboardsVisible) {
+      this._billboardToggleBtn.style.color = "#ffd700";
+      this._billboardToggleBtn.style.borderColor = "#ffd700";
+    } else {
+      this._billboardToggleBtn.style.color = "#888";
+      this._billboardToggleBtn.style.borderColor = "#333";
+    }
+  }
+
+  _refreshBillboardVisuals() {
+    for (let i = 0; i < this.billboardGroups.length; i++) {
+      const group = this.billboardGroups[i];
+      const adPanel = group.children.find((c) => c.userData.isAdPanel);
+      if (!adPanel) continue;
+
+      if (this.selectedBillboards.has(i)) {
+        if (this.patternTexture) {
+          if (!adPanel.userData.originalMaterial) adPanel.userData.originalMaterial = adPanel.material;
+          if (adPanel.material !== adPanel.userData.originalMaterial) adPanel.material.dispose();
+          adPanel.material = this._createBillboardPatternMaterial();
+        } else {
+          adPanel.material.color.setHex(0xffd700);
+          adPanel.material.emissive.setHex(0x333300);
+        }
+      } else if (this.assignedBillboards.has(i)) {
+        adPanel.material.color.setHex(0x664444);
+        adPanel.material.emissive.setHex(0x220000);
+      }
+    }
+  }
+
+  _toggleBillboardSelection(billboardIndex) {
+    const group = this.billboardGroups[billboardIndex];
+    const adPanel = group && group.children.find((c) => c.userData.isAdPanel);
+    if (!group || !adPanel) return;
+
+    if (this.selectedBillboards.has(billboardIndex)) {
+      // Deselect
+      this.selectedBillboards.delete(billboardIndex);
+      if (adPanel.userData.originalMaterial) {
+        if (adPanel.material !== adPanel.userData.originalMaterial) adPanel.material.dispose();
+        adPanel.material = adPanel.userData.originalMaterial;
+        delete adPanel.userData.originalMaterial;
+      }
+      adPanel.material.color.setHex(0x888888);
+      adPanel.material.emissive.setHex(0x111111);
+    } else {
+      // Select
+      this.selectedBillboards.add(billboardIndex);
+      if (this.patternTexture) {
+        if (!adPanel.userData.originalMaterial) adPanel.userData.originalMaterial = adPanel.material;
+        if (adPanel.material !== adPanel.userData.originalMaterial) adPanel.material.dispose();
+        adPanel.material = this._createBillboardPatternMaterial();
+      } else {
+        adPanel.material.color.setHex(0xffd700);
+        adPanel.material.emissive.setHex(0x333300);
+      }
+    }
+    this._needsRender = true;
+
+    if (this.onSelectionChange) {
+      this.onSelectionChange(this.getSelectedTiles());
+    }
+  }
+
+  getSelectedBillboards() {
+    return Array.from(this.selectedBillboards);
+  }
+
+  setSelectedBillboards(billboardIndices) {
+    // Clear current billboard selection
+    for (const bi of this.selectedBillboards) {
+      const group = this.billboardGroups[bi];
+      const adPanel = group && group.children.find((c) => c.userData.isAdPanel);
+      if (adPanel) {
+        if (adPanel.userData.originalMaterial) {
+          if (adPanel.material !== adPanel.userData.originalMaterial) adPanel.material.dispose();
+          adPanel.material = adPanel.userData.originalMaterial;
+          delete adPanel.userData.originalMaterial;
+        }
+        adPanel.material.color.setHex(0x888888);
+        adPanel.material.emissive.setHex(0x111111);
+      }
+    }
+    this.selectedBillboards.clear();
+
+    // Select new
+    for (const bi of billboardIndices) {
+      if (bi < 0 || bi >= this.billboardGroups.length) continue;
+      if (this.assignedBillboards.has(bi)) continue;
+      this.selectedBillboards.add(bi);
+      const group = this.billboardGroups[bi];
+      const adPanel = group && group.children.find((c) => c.userData.isAdPanel);
+      if (adPanel) {
+        adPanel.material.color.setHex(0xffd700);
+        adPanel.material.emissive.setHex(0x333300);
+      }
+    }
+
+    // Auto-show billboard layer if any selected
+    if (billboardIndices.length > 0 && !this.billboardsVisible) {
+      this._toggleBillboardLayer();
+    }
+
+    this._needsRender = true;
+  }
+
+  setAssignedBillboards(assignedMap) {
+    // Reset previously assigned
+    for (const bi of this.assignedBillboards.keys()) {
+      if (!this.selectedBillboards.has(bi)) {
+        const group = this.billboardGroups[bi];
+        const adPanel = group && group.children.find((c) => c.userData.isAdPanel);
+        if (adPanel) {
+          adPanel.material.color.setHex(0x888888);
+          adPanel.material.emissive.setHex(0x111111);
+        }
+      }
+    }
+
+    this.assignedBillboards = new Map(assignedMap);
+
+    // Dim assigned billboards
+    for (const [bi] of this.assignedBillboards) {
+      if (this.selectedBillboards.has(bi)) continue;
+      const group = this.billboardGroups[bi];
+      const adPanel = group && group.children.find((c) => c.userData.isAdPanel);
+      if (adPanel) {
+        adPanel.material.color.setHex(0x664444);
+        adPanel.material.emissive.setHex(0x220000);
+      }
+    }
+    this._needsRender = true;
+  }
+
+  _createBillboardPatternMaterial() {
+    const adj = this.patternAdjustment;
+    const inputBlack = (adj.inputBlack ?? 0) / 255.0;
+    const inputWhite = (adj.inputWhite ?? 255) / 255.0;
+    const gamma = adj.inputGamma ?? 1.0;
+    const outputBlack = (adj.outputBlack ?? 0) / 255.0;
+    const outputWhite = (adj.outputWhite ?? 255) / 255.0;
+    const saturation = adj.saturation ?? 1.0;
+    const scale = adj.scale || 1.0;
+    const offsetX = adj.offsetX || 0;
+    const offsetY = adj.offsetY || 0;
+
+    const isDefault = inputBlack === 0 && inputWhite === 1 && gamma === 1 &&
+                      outputBlack === 0 && outputWhite === 1 && saturation === 1;
+
+    if (isDefault) {
+      return new THREE.MeshBasicMaterial({
+        map: this.patternTexture,
+        color: 0xffff88,
+        side: THREE.DoubleSide,
+      });
+    }
+
+    return new THREE.ShaderMaterial({
+      uniforms: {
+        map: { value: this.patternTexture },
+        uScale: { value: scale },
+        uOffsetX: { value: offsetX },
+        uOffsetY: { value: offsetY },
+        uInputBlack: { value: inputBlack },
+        uInputWhite: { value: inputWhite },
+        uGamma: { value: gamma },
+        uOutputBlack: { value: outputBlack },
+        uOutputWhite: { value: outputWhite },
+        uSaturation: { value: saturation },
+        uTint: { value: new THREE.Color(0xffff88) },
+      },
+      vertexShader: `
+        uniform float uScale;
+        uniform float uOffsetX;
+        uniform float uOffsetY;
+        varying vec2 vUv;
+        void main() {
+          vUv = (uv - 0.5) / uScale + 0.5 + vec2(uOffsetX, uOffsetY) * 0.5;
+          gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+        }
+      `,
+      fragmentShader: `
+        uniform sampler2D map;
+        uniform float uInputBlack;
+        uniform float uInputWhite;
+        uniform float uGamma;
+        uniform float uOutputBlack;
+        uniform float uOutputWhite;
+        uniform float uSaturation;
+        uniform vec3 uTint;
+        varying vec2 vUv;
+        void main() {
+          vec4 texColor = texture2D(map, vUv);
+          vec3 color = texColor.rgb;
+          float inputRange = max(0.001, uInputWhite - uInputBlack);
+          color = clamp((color - uInputBlack) / inputRange, 0.0, 1.0);
+          color = pow(color, vec3(1.0 / uGamma));
+          color = uOutputBlack + color * (uOutputWhite - uOutputBlack);
+          float lum = dot(color, vec3(0.299, 0.587, 0.114));
+          color = mix(vec3(lum), color, uSaturation);
+          color *= uTint;
+          gl_FragColor = vec4(clamp(color, 0.0, 1.0), texColor.a);
+        }
+      `,
+      side: THREE.DoubleSide,
+    });
+  }
+
+  _applyPatternToSelectedBillboards() {
+    if (!this.patternTexture || this.selectedBillboards.size === 0) return;
+
+    for (const bi of this.selectedBillboards) {
+      const group = this.billboardGroups[bi];
+      const adPanel = group && group.children.find((c) => c.userData.isAdPanel);
+      if (!adPanel) continue;
+
+      if (!adPanel.userData.originalMaterial) adPanel.userData.originalMaterial = adPanel.material;
+      if (adPanel.material !== adPanel.userData.originalMaterial) adPanel.material.dispose();
+      adPanel.material = this._createBillboardPatternMaterial();
+    }
+    this._needsRender = true;
+  }
+
+  _clearPatternFromSelectedBillboards() {
+    for (const bi of this.selectedBillboards) {
+      const group = this.billboardGroups[bi];
+      const adPanel = group && group.children.find((c) => c.userData.isAdPanel);
+      if (!adPanel) continue;
+
+      if (adPanel.userData.originalMaterial) {
+        if (adPanel.material !== adPanel.userData.originalMaterial) adPanel.material.dispose();
+        adPanel.material = adPanel.userData.originalMaterial;
+        adPanel.material.color.setHex(0xffd700);
+        adPanel.material.emissive.setHex(0x333300);
+      }
+    }
+    this._needsRender = true;
+  }
+
   _buildAdjacencyMap(tiles) {
     const adjacencyMap = new Map();
     const vertexToTiles = new Map();
@@ -503,7 +956,7 @@ class HexSelector {
           this.orbitalDistance += e.deltaY * 0.5;
           this.orbitalDistance = Math.max(
             110,
-            Math.min(600, this.orbitalDistance),
+            Math.min(700, this.orbitalDistance),
           );
           this._updateCameraPosition();
           return;
@@ -527,7 +980,7 @@ class HexSelector {
             this.orbitalDistance += e.deltaY * 0.5;
             this.orbitalDistance = Math.max(
               110,
-              Math.min(600, this.orbitalDistance),
+              Math.min(700, this.orbitalDistance),
             );
             this._updateCameraPosition();
           } else {
@@ -628,7 +1081,7 @@ class HexSelector {
             this.orbitalDistance -= pinchDelta * 0.5;
             this.orbitalDistance = Math.max(
               110,
-              Math.min(600, this.orbitalDistance),
+              Math.min(700, this.orbitalDistance),
             );
             touchStartDistance = currentDistance;
           }
@@ -664,7 +1117,19 @@ class HexSelector {
 
     this.raycaster.setFromCamera(this.mouse, this.camera);
 
-    // Check moon intersections first (they're in front of the planet)
+    // Check billboard intersections first (when visible, they're farthest out)
+    if (this.billboardsVisible && this.billboardAdPanels.length > 0) {
+      const bbIntersects = this.raycaster.intersectObjects(this.billboardAdPanels);
+      if (bbIntersects.length > 0) {
+        const bbIndex = bbIntersects[0].object.userData.billboardIndex;
+        if (!this.assignedBillboards.has(bbIndex)) {
+          this._toggleBillboardSelection(bbIndex);
+        }
+        return;
+      }
+    }
+
+    // Check moon intersections (they're in front of the planet)
     if (this.moonMeshes.length > 0) {
       const moonIntersects = this.raycaster.intersectObjects(this.moonMeshes);
       if (moonIntersects.length > 0) {
@@ -1393,6 +1858,10 @@ class HexSelector {
     const moonPricing = HexTierSystem.calculateMoonPricing(this.getSelectedMoons());
     pricing.moons = moonPricing.moons;
     pricing.moonTotal = moonPricing.moonTotal;
+    // Attach billboard pricing
+    const bbPricing = HexTierSystem.calculateBillboardPricing(this.getSelectedBillboards());
+    pricing.billboards = bbPricing.billboards;
+    pricing.billboardTotal = bbPricing.billboardTotal;
     return pricing;
   }
 
@@ -1473,6 +1942,22 @@ class HexSelector {
       }
     }
     this.selectedMoons.clear();
+
+    // Clear billboard selection
+    for (const bi of this.selectedBillboards) {
+      const group = this.billboardGroups[bi];
+      const adPanel = group && group.children.find((c) => c.userData.isAdPanel);
+      if (adPanel) {
+        if (adPanel.userData.originalMaterial) {
+          if (adPanel.material !== adPanel.userData.originalMaterial) adPanel.material.dispose();
+          adPanel.material = adPanel.userData.originalMaterial;
+          delete adPanel.userData.originalMaterial;
+        }
+        adPanel.material.color.setHex(0x888888);
+        adPanel.material.emissive.setHex(0x111111);
+      }
+    }
+    this.selectedBillboards.clear();
 
     // Update visual hints (all tiles become selectable again)
     this._updateSelectableHighlights();
@@ -1854,6 +2339,7 @@ class HexSelector {
       this.patternTexture = null;
       this._clearPatternFromSelectedTiles();
       this._clearPatternFromSelectedMoons();
+      this._clearPatternFromSelectedBillboards();
       return;
     }
 
@@ -1873,6 +2359,7 @@ class HexSelector {
 
       this._applyPatternToSelectedTiles();
       this._applyPatternToSelectedMoons();
+      this._applyPatternToSelectedBillboards();
     };
     img.src = imageDataUrl;
   }
@@ -1902,6 +2389,9 @@ class HexSelector {
     }
     if (this.patternTexture && this.selectedMoons.size > 0) {
       this._applyPatternToSelectedMoons();
+    }
+    if (this.patternTexture && this.selectedBillboards.size > 0) {
+      this._applyPatternToSelectedBillboards();
     }
   }
 
@@ -2141,12 +2631,17 @@ class HexSelector {
     const vertexShader = `
       uniform vec3 uRight;
       uniform vec3 uUp;
+      uniform vec3 uForward;
       uniform float uInvRadius;
       varying vec2 vUv;
       void main() {
           float projR = dot(position, uRight) * uInvRadius;
           float projU = dot(position, uUp) * uInvRadius;
           vUv = vec2(projR * 0.5 + 0.5, projU * 0.5 + 0.5);
+          // Front hemisphere (facing away from origin): flip U so texture reads correctly
+          if (dot(position, uForward) < 0.0) {
+              vUv.x = 1.0 - vUv.x;
+          }
           gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
       }
     `;
@@ -2190,6 +2685,7 @@ class HexSelector {
         map: { value: this.patternTexture },
         uRight: { value: right },
         uUp: { value: up },
+        uForward: { value: forward },
         uInvRadius: { value: 1.0 / radius },
         uScale: { value: scale },
         uOffsetX: { value: offsetX },
@@ -2443,6 +2939,18 @@ class HexSelector {
       outline.geometry.dispose();
       outline.material.dispose();
     });
+
+    // Dispose billboard groups
+    this.billboardGroups.forEach((group) => {
+      group.traverse((child) => {
+        if (child.geometry) child.geometry.dispose();
+        if (child.material) child.material.dispose();
+        if (child.userData && child.userData.originalMaterial) child.userData.originalMaterial.dispose();
+      });
+    });
+    if (this._billboardToggleBtn) {
+      this._billboardToggleBtn.remove();
+    }
 
     // Dispose pattern texture
     if (this.patternTexture) {

@@ -324,6 +324,58 @@ const HexTierSystem = {
     });
     return { moons, moonTotal };
   },
+
+  // ═══════════════════════════════════════════════════════
+  // BILLBOARD PRICING
+  // ═══════════════════════════════════════════════════════
+
+  /** Billboard orbit tier definitions: 12 low (0-11), 6 mid (12-17), 3 high (18-20) */
+  BILLBOARD_ORBIT_TIERS: {
+    LOW:  { label: "Low Orbit",  count: 12, price: 25  },
+    MID:  { label: "Mid Orbit",  count: 6,  price: 50  },
+    HIGH: { label: "High Orbit", count: 3,  price: 100 },
+  },
+
+  /** Map billboard index to its orbit tier */
+  getBillboardOrbitTier(billboardIndex) {
+    if (billboardIndex < 12) return "LOW";
+    if (billboardIndex < 18) return "MID";
+    return "HIGH";
+  },
+
+  /** Get billboard label for display */
+  getBillboardLabel(billboardIndex) {
+    const tier = this.getBillboardOrbitTier(billboardIndex);
+    const tierDef = this.BILLBOARD_ORBIT_TIERS[tier];
+    const offset = tier === "LOW" ? 0 : tier === "MID" ? 12 : 18;
+    const localIndex = billboardIndex - offset + 1;
+    return `${tierDef.label} #${localIndex}`;
+  },
+
+  /** Get billboard price by index */
+  getBillboardPrice(billboardIndex) {
+    const tier = this.getBillboardOrbitTier(billboardIndex);
+    return this.BILLBOARD_ORBIT_TIERS[tier].price;
+  },
+
+  /**
+   * Calculate pricing for selected billboards
+   * @param {number[]} billboardIndices
+   * @returns {{ billboards: Array<{index, label, price, tier}>, billboardTotal: number }}
+   */
+  calculateBillboardPricing(billboardIndices) {
+    if (!billboardIndices || billboardIndices.length === 0) {
+      return { billboards: [], billboardTotal: 0 };
+    }
+    let billboardTotal = 0;
+    const billboards = billboardIndices.map((i) => {
+      const tier = this.getBillboardOrbitTier(i);
+      const price = this.getBillboardPrice(i);
+      billboardTotal += price;
+      return { index: i, label: this.getBillboardLabel(i), price, tier };
+    });
+    return { billboards, billboardTotal };
+  },
 };
 
 // Make available globally for other modules

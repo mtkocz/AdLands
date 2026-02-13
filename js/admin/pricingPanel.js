@@ -162,12 +162,13 @@ class PricingPanel {
     const container = this.container.querySelector("#pricing-summary");
 
     const hasMoons = pricing && pricing.moons && pricing.moons.length > 0;
+    const hasBillboards = pricing && pricing.billboards && pricing.billboards.length > 0;
     const hasHexes = pricing && pricing.totalHexes > 0;
 
-    if (!pricing || (!hasHexes && !hasMoons)) {
+    if (!pricing || (!hasHexes && !hasMoons && !hasBillboards)) {
       container.innerHTML = `
         <div class="pricing-empty-state">
-          Select hexes or moons to see pricing
+          Select hexes, moons, or billboards to see pricing
           <div class="pricing-empty-hint">Click hexes to build a cluster • Bigger clusters = bigger discounts</div>
         </div>
       `;
@@ -253,8 +254,30 @@ class PricingPanel {
       }
     }
 
+    // Billboard pricing section
+    if (hasBillboards) {
+      const { billboards } = pricing;
+      html += `
+        <div class="pricing-header" ${(hasHexes || hasMoons) ? 'style="margin-top: 8px; padding-top: 8px; border-top: 1px solid rgba(255,255,255,0.08);"' : ""}>
+          <span class="pricing-hex-count">${billboards.length} ${billboards.length === 1 ? "billboard" : "billboards"} selected</span>
+        </div>
+      `;
+
+      for (const bb of billboards) {
+        html += `
+          <div class="pricing-row">
+            <div class="pricing-row-left">
+              <span class="pricing-tier-icon" style="color: #7af">⛯</span>
+              <span class="pricing-tier-name">${bb.label}</span>
+            </div>
+            <span class="pricing-tier-subtotal">$${_fmtUSD(bb.price)}</span>
+          </div>
+        `;
+      }
+    }
+
     // Grand total
-    const grandTotal = total + (moonTotal || 0);
+    const grandTotal = total + (moonTotal || 0) + (pricing.billboardTotal || 0);
     html += `
       <div class="pricing-total-row">
         <span>Monthly Total</span>
