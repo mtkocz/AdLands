@@ -1353,12 +1353,6 @@ class Tank {
     const easedProgress = fadeProgress * fadeProgress;
     const opacity = 1 - easedProgress;
 
-    // Sink tank toward planet center relative to current surface position
-    // (position is already set by _updateVisual from theta/phi, so it tracks planet rotation)
-    const sinkDistance = 3 * easedProgress;
-    const normal = this.group.position.clone().normalize();
-    this.group.position.addScaledVector(normal, -sinkDistance);
-
     // Apply opacity to all tank meshes
     this.group.traverse((child) => {
       if (child.isMesh && child.material && child !== this.hitbox) {

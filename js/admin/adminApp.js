@@ -380,9 +380,11 @@
         if (row) {
           const statsEl = row.querySelector(".sponsor-cluster-row-stats");
           if (statsEl) statsEl.textContent = `${(tiles?.length || 0)} tiles, ${s.rewards?.length || 0} rewards`;
+          // Include live moon/billboard revenue for this row
+          const rowTotal = rev.total + liveMoonRev + liveBbRev;
           const revEl = row.querySelector(".sponsor-cluster-row-revenue");
-          const newRevSpan = rev.total > 0
-            ? `$${fmtUSD(rev.total)}/mo`
+          const newRevSpan = rowTotal > 0
+            ? `$${fmtUSD(rowTotal)}/mo`
             : "";
           if (revEl) {
             if (newRevSpan) revEl.textContent = newRevSpan;

@@ -420,11 +420,6 @@ class RemoteTank {
     const easedProgress = fadeProgress * fadeProgress;
     const opacity = 1 - easedProgress;
 
-    // Sink toward planet center (position is set by update() from theta/phi)
-    const sinkDistance = 3 * easedProgress;
-    const normal = this.group.position.clone().normalize();
-    this.group.position.addScaledVector(normal, -sinkDistance);
-
     // Apply opacity
     this.group.traverse((child) => {
       if (child.isMesh && child.material && child !== this.hitbox) {

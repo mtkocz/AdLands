@@ -510,6 +510,23 @@ class HexSelector {
       adPanel.material.color.setHex(0x888888);
       adPanel.material.emissive.setHex(0x111111);
     } else {
+      // Limit: 1 billboard per territory — deselect current before selecting new
+      if (this.selectedBillboards.size > 0) {
+        for (const bi of this.selectedBillboards) {
+          const g = this.billboardGroups[bi];
+          const ap = g && g.children.find((c) => c.userData.isAdPanel);
+          if (ap) {
+            if (ap.userData.originalMaterial) {
+              if (ap.material !== ap.userData.originalMaterial) ap.material.dispose();
+              ap.material = ap.userData.originalMaterial;
+              delete ap.userData.originalMaterial;
+            }
+            ap.material.color.setHex(0x888888);
+            ap.material.emissive.setHex(0x111111);
+          }
+        }
+        this.selectedBillboards.clear();
+      }
       // Select
       this.selectedBillboards.add(billboardIndex);
       if (this.patternTexture) {
@@ -549,7 +566,7 @@ class HexSelector {
     }
     this.selectedBillboards.clear();
 
-    // Select new
+    // Select new (limit: 1 per territory, take first valid)
     for (const bi of billboardIndices) {
       if (bi < 0 || bi >= this.billboardGroups.length) continue;
       if (this.assignedBillboards.has(bi)) continue;
@@ -560,6 +577,7 @@ class HexSelector {
         adPanel.material.color.setHex(0xffd700);
         adPanel.material.emissive.setHex(0x333300);
       }
+      break; // Only 1 billboard per territory
     }
 
     // Set type lock if billboards were loaded
@@ -1245,6 +1263,22 @@ class HexSelector {
       mesh.material.color.setHex(0x888888);
       mesh.material.emissive.setHex(0x111111);
     } else {
+      // Limit: 1 moon per territory — deselect current before selecting new
+      if (this.selectedMoons.size > 0) {
+        for (const mi of this.selectedMoons) {
+          const m = this.moonMeshes[mi];
+          if (m) {
+            if (m.userData.originalMaterial) {
+              if (m.material !== m.userData.originalMaterial) m.material.dispose();
+              m.material = m.userData.originalMaterial;
+              delete m.userData.originalMaterial;
+            }
+            m.material.color.setHex(0x888888);
+            m.material.emissive.setHex(0x111111);
+          }
+        }
+        this.selectedMoons.clear();
+      }
       // Select
       this.selectedMoons.add(moonIndex);
       if (this.patternTexture) {
@@ -1298,7 +1332,7 @@ class HexSelector {
     }
     this.selectedMoons.clear();
 
-    // Select new moons (pattern will be applied via setPatternPreview flow)
+    // Select new moon (limit: 1 per territory, take first valid)
     for (const mi of moonIndices) {
       if (mi < 0 || mi >= this.moonMeshes.length) continue;
       if (this.assignedMoons.has(mi)) continue;
@@ -1308,6 +1342,7 @@ class HexSelector {
         mesh.material.color.setHex(0xffd700);
         mesh.material.emissive.setHex(0x333300);
       }
+      break; // Only 1 moon per territory
     }
 
     // Set type lock if moons were loaded

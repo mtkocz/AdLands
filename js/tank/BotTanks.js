@@ -2361,20 +2361,6 @@ class BotTanks {
     const easedProgress = fadeProgress * fadeProgress;
     const opacity = 1 - easedProgress;
 
-    // Sink the tank through the ground as it fades
-    // Sink distance: 3 units (about tank height) over fade duration
-    const sinkDistance = 3 * easedProgress;
-    const surfaceNormal = bot.group.position.clone().normalize();
-
-    // Store original position on first fade frame
-    if (!bot.originalFadePosition) {
-      bot.originalFadePosition = bot.group.position.clone();
-    }
-
-    // Calculate sunken position (move toward planet center)
-    bot.group.position.copy(bot.originalFadePosition);
-    bot.group.position.addScaledVector(surfaceNormal, -sinkDistance);
-
     // Apply opacity to all tank meshes
     bot.group.traverse((child) => {
       if (child.isMesh && child.material && child !== bot.hitbox) {
