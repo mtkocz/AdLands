@@ -850,6 +850,22 @@ class Planet {
           )
         : 1;
 
+      const isElevated = extrusionScale > 1;
+
+      // For elevated tiles, build tangent-plane basis for distortion-free UVs
+      let tanU, tanV;
+      if (isElevated) {
+        const cp = tile.centerPoint;
+        const normal = new THREE.Vector3(
+          parseFloat(cp.x), parseFloat(cp.y), parseFloat(cp.z),
+        ).normalize();
+        const up = Math.abs(normal.y) < 0.99
+          ? new THREE.Vector3(0, 1, 0)
+          : new THREE.Vector3(1, 0, 0);
+        tanU = new THREE.Vector3().crossVectors(up, normal).normalize();
+        tanV = new THREE.Vector3().crossVectors(normal, tanU);
+      }
+
       for (let i = 0; i < n; i++) {
         const origX = parseFloat(boundary[i].x);
         const origY = parseFloat(boundary[i].y);
@@ -861,12 +877,18 @@ class Planet {
         const vz = origZ * extrusionScale;
         vertices.push(vx, vy, vz);
 
-        // UVs from ORIGINAL position so textures stay undistorted
-        const r = Math.sqrt(origX * origX + origY * origY + origZ * origZ);
-        const theta = Math.atan2(origZ, origX);
-        const phi = Math.acos(origY / r);
-        const scale = extrusionScale > 1 ? 240.0 : 60.0;
-        uvs.push((theta / Math.PI + 1) * 0.5 * scale, (phi / Math.PI) * scale);
+        if (isElevated) {
+          // Tangent-plane projection scaled to match cliff wall texture density
+          const u = (origX * tanU.x + origY * tanU.y + origZ * tanU.z) / ROCK_TEXTURE_WORLD_SIZE;
+          const v = (origX * tanV.x + origY * tanV.y + origZ * tanV.z) / ROCK_TEXTURE_WORLD_SIZE;
+          uvs.push(u, v);
+        } else {
+          // Spherical UVs for ground-level pattern textures
+          const r = Math.sqrt(origX * origX + origY * origY + origZ * origZ);
+          const theta = Math.atan2(origZ, origX);
+          const phi = Math.acos(origY / r);
+          uvs.push((theta / Math.PI + 1) * 0.5 * 60.0, (phi / Math.PI) * 60.0);
+        }
       }
 
       const indices = [];
@@ -914,11 +936,12 @@ class Planet {
         const isElevated = this.terrainElevation && this.terrainElevation.getElevationAtTileIndex(index) > 0;
 
         if (isElevated) {
-          // Add vertex colors matching cliff wall tint
+          // Desaturated vertex color with per-tile variation
           const variation = (this.random() - 0.5) * 0.06;
-          const cr = 0.45 + variation;
-          const cg = 0.42 + variation * 0.8;
-          const cb = 0.40 + variation * 0.6;
+          const gray = 0.42 + variation;
+          const cr = gray;
+          const cg = gray;
+          const cb = gray;
           const colors = [];
           for (let i = 0; i < n; i++) {
             colors.push(cr, cg, cb);

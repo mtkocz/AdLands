@@ -408,6 +408,7 @@ class Environment {
                 varying vec3 vNormal;
                 varying vec3 vWorldPosition;
                 varying vec2 vUv;
+                varying float vFacingFactor;
                 uniform float moonRadius;
                 void main() {
                     vNormal = normalize(mat3(modelMatrix) * normal);
@@ -430,10 +431,8 @@ class Environment {
                     float projR = dot(localPos, right) * invR;
                     float projU = dot(localPos, up) * invR;
                     vUv = vec2(projR * 0.5 + 0.5, projU * 0.5 + 0.5);
-                    // Back hemisphere (facing away from planet): flip U so texture reads correctly
-                    if (dot(localPos, forward) < 0.0) {
-                        vUv.x = 1.0 - vUv.x;
-                    }
+                    // How much this vertex faces the projection direction (1=center, 0=edge, <0=back)
+                    vFacingFactor = dot(normalize(localPos), forward);
 
                     gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
                 }
@@ -448,6 +447,7 @@ class Environment {
                 uniform float saturation, inputBlack, inputGamma, inputWhite, outputBlack, outputWhite;
                 varying vec3 vNormal, vWorldPosition;
                 varying vec2 vUv;
+                varying float vFacingFactor;
 
                 float calculateShadow(vec3 pos, vec3 lightDir) {
                     float a = dot(lightDir, lightDir);
@@ -476,10 +476,13 @@ class Environment {
                         // Scale/offset matching admin: zoom centered, then shift
                         vec2 uv = (vUv - 0.5) / textureScale + 0.5;
                         uv += vec2(textureOffsetX, textureOffsetY) * 0.5;
-                        baseColor = texture2D(moonTexture, uv).rgb;
-                        baseColor = applyLevels(baseColor);
-                        float gray = dot(baseColor, vec3(0.2126, 0.7152, 0.0722));
-                        baseColor = mix(vec3(gray), baseColor, saturation);
+                        vec3 texColor = texture2D(moonTexture, uv).rgb;
+                        texColor = applyLevels(texColor);
+                        float gray = dot(texColor, vec3(0.2126, 0.7152, 0.0722));
+                        texColor = mix(vec3(gray), texColor, saturation);
+                        // Fade texture to moonColor near edges to avoid projection artifacts
+                        float texMix = smoothstep(0.0, 0.3, vFacingFactor);
+                        baseColor = mix(moonColor, texColor, texMix);
                     } else {
                         baseColor = moonColor;
                     }
@@ -538,7 +541,7 @@ class Environment {
     img.crossOrigin = "anonymous";
     img.onload = () => {
       const texture = new THREE.Texture(img);
-      texture.wrapS = texture.wrapT = THREE.RepeatWrapping;
+      texture.wrapS = texture.wrapT = THREE.ClampToEdgeWrapping;
       texture.minFilter = THREE.NearestFilter;
       texture.magFilter = THREE.NearestFilter;
       texture.needsUpdate = true;

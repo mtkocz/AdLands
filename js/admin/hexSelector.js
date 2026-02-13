@@ -2855,14 +2855,13 @@ class HexSelector {
       uniform vec3 uForward;
       uniform float uInvRadius;
       varying vec2 vUv;
+      varying float vFacingFactor;
       void main() {
           float projR = dot(position, uRight) * uInvRadius;
           float projU = dot(position, uUp) * uInvRadius;
           vUv = vec2(projR * 0.5 + 0.5, projU * 0.5 + 0.5);
-          // Front hemisphere (facing away from origin): flip U so texture reads correctly
-          if (dot(position, uForward) < 0.0) {
-              vUv.x = 1.0 - vUv.x;
-          }
+          // How much this vertex faces the projection direction (1=center, 0=edge, <0=back)
+          vFacingFactor = dot(normalize(position), uForward);
           gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
       }
     `;
@@ -2880,6 +2879,7 @@ class HexSelector {
       uniform float uSaturation;
       uniform vec3 uTint;
       varying vec2 vUv;
+      varying float vFacingFactor;
       void main() {
           vec2 uv = (vUv - 0.5) / uScale + 0.5;
           uv += vec2(uOffsetX, uOffsetY) * 0.5;
@@ -2897,6 +2897,10 @@ class HexSelector {
           color = mix(vec3(lum), color, uSaturation);
           // Tint
           color *= uTint;
+          // Fade texture near edges to avoid projection artifacts
+          float texMix = smoothstep(0.0, 0.3, vFacingFactor);
+          vec3 baseTint = vec3(0.53, 0.53, 0.53) * uTint;
+          color = mix(baseTint, color, texMix);
           gl_FragColor = vec4(clamp(color, 0.0, 1.0), texColor.a);
       }
     `;
