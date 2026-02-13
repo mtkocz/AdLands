@@ -286,6 +286,7 @@ class CommanderBodyguards {
         // Mark as dead
         guard.isDead = true;
         guard.state.isDead = true;
+        guard.state.speed = 0;
         guard.damageState = 'dead';
 
         // Notify damage effects system (black smoke only, no fire)
@@ -805,6 +806,10 @@ class CommanderBodyguards {
             if (this.onGuardDamageStateChange) {
                 this.onGuardDamageStateChange(guard, 'healthy');
             }
+            // Remove from damage effects map to stop stale smoke emission
+            if (this.tankDamageEffects) {
+                this.tankDamageEffects.removeTank(`bodyguard-${guard.index}`);
+            }
         }
         this.dyingGuards = [];
     }
@@ -1223,6 +1228,10 @@ class CommanderBodyguards {
         if (fadeProgress >= 1) {
             guard.fadeState = 'faded';
             guard.group.visible = false;
+            // Clean up damage effects to stop smoke emission and free resources
+            if (this.tankDamageEffects) {
+                this.tankDamageEffects.removeTank(`bodyguard-${guard.index}`);
+            }
             return true; // Complete - ready for removal
         }
 

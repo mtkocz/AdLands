@@ -273,6 +273,10 @@ class RemoteBodyguard {
   // ========================
 
   setTargetState(serverState) {
+    // Dead bodyguards ignore server position updates — the client-side
+    // update() loop handles planet rotation counter-rotation only.
+    if (this.isDead) return;
+
     this.targetState.theta = serverState.t;
     this.targetState.phi = serverState.p;
     this.targetState.heading = serverState.h;
@@ -285,9 +289,43 @@ class RemoteBodyguard {
   // ========================
 
   update(deltaTime) {
-    if (!this.group || this.isDead) return;
+    if (!this.group) return;
 
     const dt60 = deltaTime * 60;
+
+    if (this.isDead) {
+      // Dead bodyguards: no interpolation, no dead-reckoning — only counter
+      // planet rotation so the wreck stays fixed on the surface.
+      this.state.theta -= (SharedPhysics.PLANET_ROTATION_SPEED * dt60) / 60;
+      while (this.state.theta < 0) this.state.theta += Math.PI * 2;
+      while (this.state.theta >= Math.PI * 2) this.state.theta -= Math.PI * 2;
+      // Keep target in sync so there's no snap if revived
+      this.targetState.theta = this.state.theta;
+      this.targetState.phi = this.state.phi;
+
+      this.state.speed = 0;
+
+      // Settle lean springs to zero
+      Tank.updateLeanState(this.state.lean, 0, this.state.heading, deltaTime, true);
+
+      // Update visual (keeps mesh positioned correctly on rotating planet)
+      const entity = {
+        theta: this.state.theta,
+        phi: this.state.phi,
+        heading: this.state.heading,
+        group: this.group,
+        bodyGroup: this.bodyGroup,
+        speed: 0,
+        wigglePhase: this.state.wigglePhase,
+        currentRollAngle: 0,
+        hp: this.hp,
+        maxHp: this.maxHp,
+        isDead: true,
+        lean: this.state.lean,
+      };
+      Tank.updateEntityVisual(entity, this.sphereRadius);
+      return;
+    }
 
     // Dead-reckon the target forward using speed + heading
     if (this.targetState.speed !== 0) {
@@ -323,7 +361,7 @@ class RemoteBodyguard {
     }
 
     // Lean springs
-    Tank.updateLeanState(this.state.lean, this.state.speed, this.state.heading, deltaTime, this.isDead);
+    Tank.updateLeanState(this.state.lean, this.state.speed, this.state.heading, deltaTime, false);
 
     // Position on sphere
     const entity = {
@@ -337,7 +375,7 @@ class RemoteBodyguard {
       currentRollAngle: 0,
       hp: this.hp,
       maxHp: this.maxHp,
-      isDead: this.isDead,
+      isDead: false,
       lean: this.state.lean,
     };
     Tank.updateEntityVisual(entity, this.sphereRadius);
@@ -351,6 +389,11 @@ class RemoteBodyguard {
     this.isDead = true;
     this.state.isDead = true;
     this.state.speed = 0;
+    this.targetState.speed = 0;
+    // Snap target to current position so there's no residual interpolation drift
+    this.targetState.theta = this.state.theta;
+    this.targetState.phi = this.state.phi;
+    this.targetState.heading = this.state.heading;
     this.damageState = "dead";
     this.isFading = false;
 
