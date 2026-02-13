@@ -133,14 +133,15 @@ class SponsorForm {
             this.patternOffsetY = Math.max(-1, Math.min(1, this.dragStartOffsetY + dy));
 
             this._updatePatternPreviewTransform();
+            // Update hex sphere in real-time during drag
+            this._fireAdjustmentChange();
         });
 
         document.addEventListener('mouseup', () => {
             if (this.isDragging) {
                 this.isDragging = false;
-                if (this.onFormChange) {
-                    this.onFormChange(this.getFormData());
-                }
+                // Final adjustment update (flush any pending throttled change)
+                this._fireAdjustmentChange();
             }
         });
 
@@ -174,9 +175,7 @@ class SponsorForm {
             this.patternSaturationValue.textContent = '1.00';
             this._updatePatternPreviewTransform();
             this._updatePatternPreviewColors();
-            if (this.onFormChange) {
-                this.onFormChange(this.getFormData());
-            }
+            this._fireAdjustmentChange();
         });
 
         // Input levels sliders

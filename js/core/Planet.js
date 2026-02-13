@@ -914,10 +914,8 @@ class Planet {
         const isElevated = this.terrainElevation && this.terrainElevation.getElevationAtTileIndex(index) > 0;
 
         if (isElevated) {
-          const g = pattern.grayValue / 255;
           material = new THREE.MeshStandardMaterial({
             map: this._rockWallTexture,
-            color: new THREE.Color(g, g, g),
             flatShading: true,
             roughness: 0.95,
             metalness: 0.05,

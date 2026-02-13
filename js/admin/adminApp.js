@@ -191,11 +191,11 @@
           addClusterToGroup(group.dataset.name);
         } else if (!e.target.closest(".sponsor-card-actions")) {
           // Clicking group header loads sponsor info view
-          // If already editing this group, just switch to info view
+          // If already editing this group, collapse and stop editing
           if (editingGroup && editingGroup.name.toLowerCase() === group.dataset.name.toLowerCase()) {
-            showSponsorInfoView();
-            // Expand the group in the list
-            group.classList.add("expanded");
+            handleClearForm();
+            refreshSponsorsList();
+            return;
           } else {
             editGroup(group.dataset.name);
           }
@@ -238,7 +238,13 @@
       } else if (e.target.closest(".duplicate-sponsor-btn")) {
         duplicateSponsor(id);
       } else if (!e.target.closest(".sponsor-card-actions")) {
-        editSponsor(id);
+        const isAlreadyEditing = !editingGroup && card.classList.contains("editing");
+        if (isAlreadyEditing) {
+          handleClearForm();
+          refreshSponsorsList();
+        } else {
+          editSponsor(id);
+        }
       }
     });
   }

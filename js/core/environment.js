@@ -402,15 +402,39 @@ class Environment {
         inputWhite: { value: 1.0 },
         outputBlack: { value: 0.0 },
         outputWhite: { value: 1.0 },
+        moonRadius: { value: 1.0 },
       },
       vertexShader: `
                 varying vec3 vNormal;
                 varying vec3 vWorldPosition;
                 varying vec2 vUv;
+                uniform float moonRadius;
                 void main() {
                     vNormal = normalize(mat3(modelMatrix) * normal);
                     vWorldPosition = (modelMatrix * vec4(position, 1.0)).xyz;
-                    vUv = uv;
+
+                    // Frontal projection toward planet center (matches admin portal)
+                    // Compute projection basis in world space from moon center
+                    vec3 moonCenter = (modelMatrix * vec4(0.0, 0.0, 0.0, 1.0)).xyz;
+                    vec3 localPos = vWorldPosition - moonCenter;
+                    vec3 forward = normalize(-moonCenter);
+                    vec3 worldUp = vec3(0.0, 1.0, 0.0);
+                    vec3 right = cross(worldUp, forward);
+                    if (dot(right, right) < 0.001) {
+                        right = vec3(1.0, 0.0, 0.0);
+                    }
+                    right = normalize(right);
+                    vec3 up = normalize(cross(forward, right));
+
+                    float invR = 1.0 / moonRadius;
+                    float projR = dot(localPos, right) * invR;
+                    float projU = dot(localPos, up) * invR;
+                    vUv = vec2(projR * 0.5 + 0.5, projU * 0.5 + 0.5);
+                    // Back hemisphere (facing away from planet): flip U so texture reads correctly
+                    if (dot(localPos, forward) < 0.0) {
+                        vUv.x = 1.0 - vUv.x;
+                    }
+
                     gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
                 }
             `,
@@ -449,7 +473,9 @@ class Environment {
                     vec3 n = normalize(vNormal);
                     vec3 baseColor;
                     if (hasTexture > 0.5) {
-                        vec2 uv = vUv * textureScale + vec2(textureOffsetX, textureOffsetY);
+                        // Scale/offset matching admin: zoom centered, then shift
+                        vec2 uv = (vUv - 0.5) / textureScale + 0.5;
+                        uv += vec2(textureOffsetX, textureOffsetY) * 0.5;
                         baseColor = texture2D(moonTexture, uv).rgb;
                         baseColor = applyLevels(baseColor);
                         float gray = dot(baseColor, vec3(0.2126, 0.7152, 0.0722));
@@ -467,9 +493,11 @@ class Environment {
     });
 
     configs.forEach((cfg) => {
+      const mat = moonMaterial.clone();
+      mat.uniforms.moonRadius.value = cfg.radius;
       const moon = new THREE.Mesh(
         new THREE.SphereGeometry(cfg.radius, 16, 16),
-        moonMaterial.clone(),
+        mat,
       );
       moon.userData = cfg;
       this.scene.add(moon);
