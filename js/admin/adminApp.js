@@ -556,10 +556,17 @@
           logoImage: formData.logoImage,
         };
 
+        // Detect territory type from selection
+        let territoryType = null;
+        if (selectedTiles.length > 0) territoryType = 'hex';
+        else if (selectedMoonsForGroupSave.length > 0) territoryType = 'moon';
+        else if (selectedBillboardsForGroupSave.length > 0) territoryType = 'billboard';
+
         try {
           await SponsorStorage.update(activeId, {
             ...sharedFields,
             cluster: { tileIndices: selectedTiles },
+            territoryType: territoryType,
             patternImage: formData.patternImage,
             patternAdjustment: formData.patternAdjustment,
             rewards: rewards,
@@ -595,9 +602,16 @@
         const selectedMoonsForSave = hexSelector ? hexSelector.getSelectedMoons() : [];
         const selectedBillboardsForSave = hexSelector ? hexSelector.getSelectedBillboards() : [];
 
+        // Detect territory type from selection
+        let singleTerritoryType = null;
+        if (selectedTiles.length > 0) singleTerritoryType = 'hex';
+        else if (selectedMoonsForSave.length > 0) singleTerritoryType = 'moon';
+        else if (selectedBillboardsForSave.length > 0) singleTerritoryType = 'billboard';
+
         const sponsor = {
           ...formData,
           cluster: { tileIndices: selectedTiles },
+          territoryType: singleTerritoryType,
           rewards: rewards,
         };
 
@@ -851,9 +865,12 @@
           groupRevenue += rev.total;
           totalMonthly += rev.total;
 
-          // Detect territory type from stored data
+          // Detect territory type from stored field
           let typeLabel, typeClass;
-          if (tileCount > 0) { typeLabel = "Hex Cluster"; typeClass = "type-hex"; }
+          const tt = s.territoryType;
+          if (tt === 'hex' || (!tt && tileCount > 0)) { typeLabel = "Hex Cluster"; typeClass = "type-hex"; }
+          else if (tt === 'moon') { typeLabel = "Moon"; typeClass = "type-moon"; }
+          else if (tt === 'billboard') { typeLabel = "Billboard"; typeClass = "type-billboard"; }
           else { typeLabel = "Empty"; typeClass = "type-empty"; }
 
           const revSpan = rev.total > 0
@@ -1061,8 +1078,17 @@
     // Update hex selector: exclude all other sponsors AND sibling clusters
     updateGroupAssignedTiles(id);
 
-    // Load this cluster's tiles
-    if (sponsor.cluster?.tileIndices) {
+    // Load this territory's selection based on its type
+    const tt = sponsor.territoryType;
+    if (tt === 'moon') {
+      hexSelector.clearSelection();
+      const moonIndices = moonManager ? moonManager.getMoonsForSponsor(editingGroup.name) : [];
+      if (moonIndices.length > 0) hexSelector.setSelectedMoons(moonIndices);
+    } else if (tt === 'billboard') {
+      hexSelector.clearSelection();
+      const bbIndices = billboardManager ? billboardManager.getBillboardsForSponsor(editingGroup.name) : [];
+      if (bbIndices.length > 0) hexSelector.setSelectedBillboards(bbIndices);
+    } else if (sponsor.cluster?.tileIndices?.length > 0) {
       hexSelector.setSelectedTiles(sponsor.cluster.tileIndices);
       hexSelector.transitionToCluster(sponsor.cluster.tileIndices);
     } else {
@@ -1099,14 +1125,31 @@
     const id = editingGroup.ids[editingGroup.activeIndex];
     const formData = sponsorForm.getFormData();
     const selectedTiles = hexSelector.getSelectedTiles();
+    const selectedMoonsCS = hexSelector.getSelectedMoons();
+    const selectedBillboardsCS = hexSelector.getSelectedBillboards();
     const rewards = rewardConfig.getRewards();
+
+    // Detect territory type from current selection
+    let csType = null;
+    if (selectedTiles.length > 0) csType = 'hex';
+    else if (selectedMoonsCS.length > 0) csType = 'moon';
+    else if (selectedBillboardsCS.length > 0) csType = 'billboard';
 
     await SponsorStorage.update(id, {
       cluster: { tileIndices: selectedTiles },
+      territoryType: csType,
       patternImage: formData.patternImage,
       patternAdjustment: formData.patternAdjustment,
       rewards: rewards,
     });
+
+    // Also persist moon/billboard assignments
+    if (moonManager && csType === 'moon') {
+      await moonManager.saveMoonsForSponsor(selectedMoonsCS, formData);
+    }
+    if (billboardManager && csType === 'billboard') {
+      await billboardManager.saveBillboardsForSponsor(selectedBillboardsCS, formData);
+    }
   }
 
   /**

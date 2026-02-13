@@ -3343,6 +3343,7 @@
   const sharedFrustum = new THREE.Frustum();
   const sharedProjMatrix = new THREE.Matrix4();
   const moonOriginalMats = new Array(3); // Preallocated for bloom pass moon swap
+  const bbChildMats = []; // Preallocated for bloom pass billboard material swap
   const _shadowTargetTemp = new THREE.Vector3(); // Reused for orbital shadow target
 
   function animate() {
@@ -3530,7 +3531,7 @@
     bloomCamera.quaternion.copy(camera.quaternion);
     bloomCamera.updateMatrixWorld();
 
-    // Enable occlusion for sun in bloom pass (planet sphere + 3 moons)
+    // Enable occlusion for sun in bloom pass (planet sphere + moons + billboards)
     // Planet sphere already has occlusion material, just enable layer
     occlusionSphereMesh.layers.enable(BLOOM_LAYER);
 
@@ -3541,14 +3542,31 @@
       environment.moons[i].layers.enable(BLOOM_LAYER);
     }
 
+    // Billboards: swap child mesh materials + enable bloom layer
+    let bbMatIdx = 0;
+    for (let i = 0; i < environment.billboards.length; i++) {
+      const bb = environment.billboards[i];
+      if (!bb.visible) continue;
+      bb.traverse((child) => {
+        if (!child.isMesh) return;
+        bbChildMats[bbMatIdx++] = { mesh: child, mat: child.material, layer: child.layers.mask };
+        child.material = bloomOcclusionMaterial;
+        child.layers.enable(BLOOM_LAYER);
+      });
+    }
+
     // Pass 1: Render bloom objects with occlusion
     bloomComposer.render();
 
-    // Restore occluder layers, moon materials, and cliff wall
+    // Restore occluder layers, moon materials, and billboard materials
     occlusionSphereMesh.layers.disable(BLOOM_LAYER);
     for (let i = 0; i < environment.moons.length; i++) {
       environment.moons[i].material = moonOriginalMats[i];
       environment.moons[i].layers.disable(BLOOM_LAYER);
+    }
+    for (let i = 0; i < bbMatIdx; i++) {
+      bbChildMats[i].mesh.material = bbChildMats[i].mat;
+      bbChildMats[i].mesh.layers.mask = bbChildMats[i].layer;
     }
     // Pass 2: Render full scene with bloom overlay
     finalComposer.render();

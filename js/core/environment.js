@@ -801,8 +801,11 @@ class Environment {
         const ascendingNode = Math.random() * Math.PI * 2;
         const orbitalAngle = Math.random() * Math.PI * 2;
 
+        // Per-billboard distance offset (±30 units) to stagger orbits and avoid collisions
+        const distanceOffset = (Math.random() - 0.5) * 60;
+
         // Orbital speed — slower for higher orbits, random direction
-        const speed = 0.004 * Math.sqrt(this.sphereRadius / orbit.distance) * (Math.random() > 0.5 ? 1 : -1);
+        const speed = 0.008 * Math.sqrt(this.sphereRadius / orbit.distance) * (Math.random() > 0.5 ? 1 : -1);
 
         // Slight random orientation wobble (±5° on each axis)
         const wobbleRange = 0.087; // ~5° in radians
@@ -813,7 +816,7 @@ class Environment {
         group.userData = {
           isBillboard: true,
           billboardIndex: globalIndex,
-          orbitRadius: orbit.distance,
+          orbitRadius: orbit.distance + distanceOffset,
           inclination,
           ascendingNode,
           orbitalAngle,
@@ -1132,6 +1135,9 @@ class Environment {
       moon.position.x = Math.cos(a) * d;
       moon.position.z = Math.sin(a) * d;
       moon.position.y = Math.sin(a) * d * Math.sin(inc);
+
+      // Tidal lock: always face outward from planet center
+      moon.lookAt(0, 0, 0);
 
       // Apply visibility culling
       this._updateSpaceObjectVisibility(

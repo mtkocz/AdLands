@@ -367,10 +367,12 @@ class GameRoom {
     const result = [];
     for (const orbit of orbits) {
       for (let i = 0; i < orbit.count; i++) {
+        // Per-billboard distance offset (±30 units) to stagger orbits
+        const distanceOffset = (Math.random() - 0.5) * 60;
         result.push({
           orbitalAngle: Math.random() * Math.PI * 2,
-          speed: 0.004 * Math.sqrt(480 / orbit.distance) * (Math.random() > 0.5 ? 1 : -1),
-          orbitRadius: orbit.distance,
+          speed: 0.008 * Math.sqrt(480 / orbit.distance) * (Math.random() > 0.5 ? 1 : -1),
+          orbitRadius: orbit.distance + distanceOffset,
           inclination: Math.random() * maxInclination,
           ascendingNode: Math.random() * Math.PI * 2,
           wobbleX: (Math.random() - 0.5) * 2 * wobbleRange,
