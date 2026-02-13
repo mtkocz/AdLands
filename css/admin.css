@@ -1575,107 +1575,6 @@ body {
 }
 
 /* ========================
-   CLUSTER TABS (Editor)
-   ======================== */
-
-#cluster-tabs-container {
-    padding: var(--space-sm) 0;
-    margin-bottom: var(--space-xs);
-    border-top: 1px solid rgba(255, 255, 255, 0.08);
-    border-bottom: 1px solid rgba(255, 255, 255, 0.08);
-}
-
-.cluster-tabs {
-    display: flex;
-    flex-wrap: wrap;
-    gap: var(--space-xs);
-    align-items: center;
-}
-
-.cluster-tabs-label {
-    font-family: var(--font-small);
-    font-size: var(--font-size-small);
-    color: var(--text-muted);
-    margin-right: var(--space-xs);
-}
-
-.cluster-tab {
-    font-family: var(--font-small);
-    font-size: var(--font-size-small);
-    padding: var(--space-xxs) var(--space-sm);
-    background: rgba(255, 255, 255, 0.06);
-    border: 1px solid rgba(255, 255, 255, 0.1);
-    color: var(--text-muted);
-    cursor: pointer;
-    transition: all 0.15s ease;
-}
-
-.cluster-tab:hover {
-    background: rgba(255, 255, 255, 0.1);
-    color: var(--text-primary);
-}
-
-.cluster-tab.active {
-    background: rgba(0, 200, 200, 0.15);
-    border-color: var(--accent-cyan);
-    color: var(--accent-cyan);
-}
-
-.cluster-tab-add {
-    font-family: var(--font-small);
-    font-size: var(--font-size-body);
-    padding: var(--space-xxs) var(--space-sm);
-    background: transparent;
-    border: 1px dashed rgba(255, 255, 255, 0.15);
-    color: var(--text-muted);
-    cursor: pointer;
-    transition: all 0.15s ease;
-}
-
-.cluster-tab-add:hover {
-    border-color: var(--accent-cyan);
-    color: var(--accent-cyan);
-}
-
-/* ========================
-   FORM VIEW TAB BAR
-   ======================== */
-
-.form-tab-bar {
-    display: flex;
-    gap: 0;
-    margin: calc(-1 * var(--space-lg));
-    margin-bottom: var(--space-md);
-    background: var(--bg-highlight);
-    border-bottom: var(--border-width) solid var(--border-dark);
-}
-
-.form-tab {
-    flex: 1;
-    padding: var(--space-sm) var(--space-lg);
-    background: transparent;
-    border: none;
-    border-bottom: 3px solid transparent;
-    font-family: var(--font-body);
-    font-size: var(--font-size-body);
-    color: var(--text-muted);
-    cursor: pointer;
-    transition: all 0.15s ease;
-    letter-spacing: 1px;
-}
-
-.form-tab:hover {
-    color: var(--text-secondary);
-    background: rgba(255, 255, 255, 0.03);
-}
-
-.form-tab.active {
-    color: var(--accent-gold);
-    border-bottom-color: var(--accent-gold);
-    background: rgba(255, 255, 255, 0.05);
-}
-
-/* ========================
    FORM VIEW SWITCHING
    ======================== */
 
@@ -1692,60 +1591,6 @@ body {
     gap: var(--space-sm);
     justify-content: flex-start;
     padding-top: var(--space-md);
-}
-
-/* ========================
-   HEX SELECTOR LOCK STATE
-   ======================== */
-
-#hex-selector-panel.hex-locked {
-    position: relative;
-}
-
-#hex-selector-panel.hex-locked #hex-canvas-container {
-    pointer-events: none;
-    opacity: 0.35;
-    transition: opacity 0.25s ease;
-}
-
-#hex-selector-panel.hex-locked #selection-info {
-    pointer-events: none;
-    opacity: 0.35;
-}
-
-#hex-selector-panel.hex-locked .help-text {
-    color: var(--text-dim);
-}
-
-#hex-selector-panel.hex-locked::after {
-    content: "Switch to Territories to edit";
-    position: absolute;
-    top: 50%;
-    left: 50%;
-    transform: translate(-50%, -50%);
-    font-family: var(--font-small);
-    font-size: var(--font-size-small);
-    color: var(--text-muted);
-    background: rgba(10, 10, 10, 0.85);
-    padding: var(--space-sm) var(--space-lg);
-    clip-path: var(--clip-rounded-8);
-    pointer-events: none;
-    z-index: 10;
-    text-align: center;
-    max-width: 200px;
-    filter: drop-shadow(2px 0 0 var(--border-dark))
-        drop-shadow(-2px 0 0 var(--border-dark))
-        drop-shadow(0 2px 0 var(--border-dark))
-        drop-shadow(0 -2px 0 var(--border-dark));
-}
-
-#hex-selector-panel #hex-canvas-container {
-    transition: opacity 0.25s ease;
-}
-
-#hex-selector-panel.hex-locked #clear-selection-btn {
-    pointer-events: none;
-    opacity: 0.3;
 }
 
 /* ========================
@@ -1767,22 +1612,41 @@ body {
 }
 
 /* ========================
-   ENHANCED CLUSTER TABS (in territory view)
+   TERRITORY TYPE BADGES (in sponsor list)
    ======================== */
 
-#view-territories #cluster-tabs-container {
-    border-top: none;
-    padding-top: 0;
+.sponsor-cluster-row-type {
+    font-family: var(--font-small);
+    font-size: 10px;
+    padding: 1px 6px;
+    margin-left: var(--space-xs);
 }
 
-#view-territories .cluster-tab {
-    padding: var(--space-xs) var(--space-md);
-    font-family: var(--font-body);
-    font-size: var(--font-size-body);
+.sponsor-cluster-row-type.type-hex {
+    color: var(--accent-cyan);
+    background: rgba(0, 200, 200, 0.1);
 }
 
-#view-territories .cluster-tab.active {
-    background: rgba(0, 200, 200, 0.2);
-    filter: drop-shadow(0 0 4px rgba(0, 255, 255, 0.2));
+.sponsor-cluster-row-type.type-moon {
+    color: var(--accent-gold);
+    background: rgba(255, 255, 255, 0.08);
+}
+
+.sponsor-cluster-row-type.type-billboard {
+    color: var(--viridian);
+    background: rgba(74, 222, 128, 0.1);
+}
+
+.sponsor-cluster-row-type.type-empty {
+    color: var(--text-dim);
+    background: rgba(255, 255, 255, 0.04);
+}
+
+/* Active territory row indicator */
+.sponsor-cluster-row.active-territory {
+    background: rgba(0, 200, 200, 0.08);
+    border-left-color: var(--accent-gold);
+    border-left-width: 3px;
+    color: var(--text-primary);
 }
 

@@ -110,6 +110,10 @@ class HexSelector {
     this.selectedBillboards = new Set();
     this.assignedBillboards = new Map(); // billboardIndex → sponsorName
 
+    // Exclusive selection type lock: null | 'tiles' | 'moons' | 'billboards'
+    // When locked, only the locked type can be selected/deselected
+    this.selectionTypeLock = null;
+
     // Callbacks
     this.onSelectionChange = options.onSelectionChange || null;
 
@@ -558,6 +562,12 @@ class HexSelector {
       }
     }
 
+    // Set type lock if billboards were loaded
+    if (this.selectedBillboards.size > 0) {
+      this.selectionTypeLock = 'billboards';
+      this._updateTypeLockVisuals();
+    }
+
     this._needsRender = true;
   }
 
@@ -811,6 +821,8 @@ class HexSelector {
         const dy = Math.abs(e.clientY - this.dragStartMouse.y);
 
         if (!this.isPainting && (dx > 5 || dy > 5)) {
+          // Block paint-drag if type-locked to non-tiles
+          if (this.selectionTypeLock && this.selectionTypeLock !== 'tiles') return;
           // Crossed drag threshold — enter paint mode
           this.isPainting = true;
           // Determine mode from the tile under the initial mousedown position
@@ -1036,9 +1048,12 @@ class HexSelector {
     if (this.billboardAdPanels.length > 0) {
       const bbIntersects = this.raycaster.intersectObjects(this.billboardAdPanels);
       if (bbIntersects.length > 0) {
+        // Reject if type-locked to something else
+        if (this.selectionTypeLock && this.selectionTypeLock !== 'billboards') return;
         const bbIndex = bbIntersects[0].object.userData.billboardIndex;
         if (!this.assignedBillboards.has(bbIndex)) {
           this._toggleBillboardSelection(bbIndex);
+          this._checkAndUpdateTypeLock();
         }
         return;
       }
@@ -1048,11 +1063,13 @@ class HexSelector {
     if (this.moonMeshes.length > 0) {
       const moonIntersects = this.raycaster.intersectObjects(this.moonMeshes);
       if (moonIntersects.length > 0) {
+        // Reject if type-locked to something else
+        if (this.selectionTypeLock && this.selectionTypeLock !== 'moons') return;
         const moonMesh = moonIntersects[0].object;
         const moonIndex = moonMesh.userData.moonIndex;
-        // Skip moons assigned to other sponsors
         if (!this.assignedMoons.has(moonIndex)) {
           this._toggleMoonSelection(moonIndex);
+          this._checkAndUpdateTypeLock();
         }
         return;
       }
@@ -1062,6 +1079,8 @@ class HexSelector {
     const intersects = this.raycaster.intersectObjects(this.tileMeshes);
 
     if (intersects.length > 0) {
+      // Reject if type-locked to something else
+      if (this.selectionTypeLock && this.selectionTypeLock !== 'tiles') return;
       const mesh = intersects[0].object;
       const tileIndex = mesh.userData.tileIndex;
 
@@ -1070,7 +1089,84 @@ class HexSelector {
       if (this.assignedTiles.has(tileIndex)) return;
 
       this._toggleSelection(tileIndex);
+      this._checkAndUpdateTypeLock();
     }
+  }
+
+  /**
+   * Check current selection state and update the type lock accordingly.
+   * Sets lock when items are selected; clears lock when all items are deselected.
+   */
+  _checkAndUpdateTypeLock() {
+    const hasTiles = this.selectedTiles.size > 0;
+    const hasMoons = this.selectedMoons.size > 0;
+    const hasBillboards = this.selectedBillboards.size > 0;
+
+    if (hasTiles) this.selectionTypeLock = 'tiles';
+    else if (hasMoons) this.selectionTypeLock = 'moons';
+    else if (hasBillboards) this.selectionTypeLock = 'billboards';
+    else this.selectionTypeLock = null;
+
+    this._updateTypeLockVisuals();
+  }
+
+  /**
+   * Get the current selection type lock
+   * @returns {string|null} 'tiles' | 'moons' | 'billboards' | null
+   */
+  getSelectionType() {
+    return this.selectionTypeLock;
+  }
+
+  /**
+   * Update visual dimming for non-selectable object types based on type lock
+   */
+  _updateTypeLockVisuals() {
+    const lock = this.selectionTypeLock;
+
+    // Dim/undim tile meshes
+    for (const mesh of this.tileMeshes) {
+      if (mesh.userData.isExcluded) continue;
+      if (this.assignedTiles.has(mesh.userData.tileIndex)) continue;
+      if (this.selectedTiles.has(mesh.userData.tileIndex)) continue;
+      if (lock && lock !== 'tiles') {
+        mesh.material.opacity = 0.15;
+        mesh.material.transparent = true;
+      } else {
+        mesh.material.opacity = 1.0;
+        mesh.material.transparent = false;
+      }
+    }
+
+    // Dim/undim moon meshes
+    for (let i = 0; i < this.moonMeshes.length; i++) {
+      const mesh = this.moonMeshes[i];
+      if (this.assignedMoons.has(i)) continue;
+      if (this.selectedMoons.has(i)) continue;
+      if (lock && lock !== 'moons') {
+        mesh.material.opacity = 0.2;
+        mesh.material.transparent = true;
+      } else {
+        mesh.material.opacity = 1.0;
+        mesh.material.transparent = false;
+      }
+    }
+
+    // Dim/undim billboard ad panels
+    for (let i = 0; i < this.billboardAdPanels.length; i++) {
+      const adPanel = this.billboardAdPanels[i];
+      if (this.assignedBillboards.has(i)) continue;
+      if (this.selectedBillboards.has(i)) continue;
+      if (lock && lock !== 'billboards') {
+        adPanel.material.opacity = 0.2;
+        adPanel.material.transparent = true;
+      } else {
+        adPanel.material.opacity = 1.0;
+        adPanel.material.transparent = false;
+      }
+    }
+
+    this._needsRender = true;
   }
 
   /**
@@ -1158,6 +1254,13 @@ class HexSelector {
         mesh.material.emissive.setHex(0x333300);
       }
     }
+
+    // Set type lock if moons were loaded
+    if (this.selectedMoons.size > 0) {
+      this.selectionTypeLock = 'moons';
+      this._updateTypeLockVisuals();
+    }
+
     this._needsRender = true;
   }
 
@@ -1259,6 +1362,7 @@ class HexSelector {
     }
 
     this._updateSelectableHighlights();
+    this._checkAndUpdateTypeLock();
 
     if (this.onSelectionChange) {
       this.onSelectionChange(this.getSelectedTiles());
@@ -1812,6 +1916,12 @@ class HexSelector {
       }
     }
 
+    // Set type lock if tiles were loaded
+    if (this.selectedTiles.size > 0) {
+      this.selectionTypeLock = 'tiles';
+      this._updateTypeLockVisuals();
+    }
+
     // Update visual hints for selectable tiles
     this._updateSelectableHighlights();
 
@@ -1873,6 +1983,10 @@ class HexSelector {
       }
     }
     this.selectedBillboards.clear();
+
+    // Reset type lock
+    this.selectionTypeLock = null;
+    this._updateTypeLockVisuals();
 
     // Update visual hints (all tiles become selectable again)
     this._updateSelectableHighlights();

@@ -31,21 +31,18 @@
   const importFileInput = document.getElementById("import-file");
   const addSponsorBtn = document.getElementById("add-sponsor-btn");
   const toastContainer = document.getElementById("toast-container");
-  const clusterTabsContainer = document.getElementById("cluster-tabs-container");
-  const clusterTabsEl = document.getElementById("cluster-tabs");
 
-  // Form view tab elements
-  const formTabs = document.querySelectorAll(".form-tab");
+  // Form view elements
+  const formPanelTitle = document.getElementById("form-panel-title");
   const viewSponsorInfo = document.getElementById("view-sponsor-info");
   const viewTerritories = document.getElementById("view-territories");
-  const hexSelectorPanel = document.getElementById("hex-selector-panel");
   const saveSponsorInfoBtn = document.getElementById("save-sponsor-info-btn");
   const saveTerritoryBtn = document.getElementById("save-territory-btn");
   const clearFormBtnInfo = document.getElementById("clear-form-btn-info");
   const clearFormBtnTerritory = document.getElementById("clear-form-btn-territory");
 
   // Currently active form view: 'info' or 'territories'
-  let activeFormTab = "info";
+  let activeView = "info";
 
   // ========================
   // INITIALIZATION
@@ -145,25 +142,12 @@
     setLoadingProgress(95, "Rendering tiles...");
     updateAssignedTiles();
 
-    // Show initial cluster tabs
-    renderClusterTabs();
-
-    // Start with hex selector locked (Sponsor Info tab is default)
-    hexSelectorPanel.classList.add("hex-locked");
-
     // Done — fade out loading overlay
     setLoadingProgress(100, "Ready");
     hideLoading();
   }
 
   function setupEventListeners() {
-    // Form view tab switching
-    formTabs.forEach((tab) => {
-      tab.addEventListener("click", () => {
-        switchFormTab(tab.dataset.tab);
-      });
-    });
-
     // Save buttons (both views)
     saveSponsorInfoBtn.addEventListener("click", handleSaveSponsor);
     saveTerritoryBtn.addEventListener("click", handleSaveSponsor);
@@ -194,30 +178,44 @@
 
     // Sponsor list — single delegated handler (survives innerHTML rebuilds)
     sponsorsListEl.addEventListener("click", (e) => {
-      // Handle group header clicks (expand/collapse or edit)
+      // Handle group header clicks → show sponsor info
       const groupHeader = e.target.closest(".sponsor-group-header");
       if (groupHeader) {
         const group = groupHeader.closest(".sponsor-group");
         if (e.target.closest(".add-cluster-btn")) {
           addClusterToGroup(group.dataset.name);
-        } else if (e.target.closest(".edit-group-btn")) {
-          editGroup(group.dataset.name);
         } else {
-          group.classList.toggle("expanded");
+          // Clicking group header loads sponsor info view
+          // If already editing this group, just switch to info view
+          if (editingGroup && editingGroup.name.toLowerCase() === group.dataset.name.toLowerCase()) {
+            showSponsorInfoView();
+            // Expand the group in the list
+            group.classList.add("expanded");
+          } else {
+            editGroup(group.dataset.name);
+          }
         }
         return;
       }
 
-      // Handle cluster row clicks within groups
+      // Handle territory row clicks within groups → show territory view
       const clusterRow = e.target.closest(".sponsor-cluster-row");
       if (clusterRow) {
         const id = clusterRow.dataset.id;
         if (e.target.closest(".delete-sponsor-btn")) {
           deleteSponsor(id);
         } else {
-          // Edit the whole group, starting at this cluster
           const group = clusterRow.closest(".sponsor-group");
-          editGroup(group.dataset.name, id);
+          // If already editing this group, just switch territory (saves unsaved changes)
+          if (editingGroup && editingGroup.name.toLowerCase() === group.dataset.name.toLowerCase()) {
+            const idx = editingGroup.ids.indexOf(id);
+            if (idx !== -1 && idx !== editingGroup.activeIndex) {
+              switchCluster(idx);
+            }
+            showTerritoryView();
+          } else {
+            editGroup(group.dataset.name, id);
+          }
         }
         return;
       }
@@ -235,44 +233,30 @@
         editSponsor(id);
       }
     });
-
-    // Cluster tabs — delegated handler
-    clusterTabsEl.addEventListener("click", (e) => {
-      const tab = e.target.closest(".cluster-tab");
-      if (tab && !tab.classList.contains("active")) {
-        const index = parseInt(tab.dataset.index, 10);
-        switchCluster(index);
-        return;
-      }
-      if (e.target.closest(".cluster-tab-add")) {
-        addCluster();
-      }
-    });
   }
 
   // ========================
-  // FORM VIEW TAB SWITCHING
+  // VIEW SWITCHING (driven by sponsor list clicks)
   // ========================
 
   /**
-   * Switch between "Sponsor Info" and "Territories" views in the form panel.
-   * Controls hex selector lock state.
-   * @param {'info' | 'territories'} tabName
+   * Show the sponsor info view in the form panel
    */
-  function switchFormTab(tabName) {
-    activeFormTab = tabName;
+  function showSponsorInfoView() {
+    activeView = "info";
+    viewSponsorInfo.classList.add("active");
+    viewTerritories.classList.remove("active");
+    formPanelTitle.textContent = "Sponsor Information";
+  }
 
-    // Update tab active states
-    formTabs.forEach((tab) => {
-      tab.classList.toggle("active", tab.dataset.tab === tabName);
-    });
-
-    // Toggle views
-    viewSponsorInfo.classList.toggle("active", tabName === "info");
-    viewTerritories.classList.toggle("active", tabName === "territories");
-
-    // Lock/unlock hex selector
-    hexSelectorPanel.classList.toggle("hex-locked", tabName === "info");
+  /**
+   * Show the territory settings view in the form panel
+   */
+  function showTerritoryView() {
+    activeView = "territories";
+    viewSponsorInfo.classList.remove("active");
+    viewTerritories.classList.add("active");
+    formPanelTitle.textContent = "Territory Settings";
   }
 
   // ========================
@@ -505,7 +489,7 @@
         return;
       }
 
-      if (activeFormTab === "info") {
+      if (activeView === "info") {
         // === SPONSOR INFO SAVE ===
         // Save only shared fields, propagate to all clusters in group
         const sharedFields = {
@@ -520,7 +504,7 @@
             for (const id of editingGroup.ids) {
               await SponsorStorage.update(id, sharedFields);
             }
-            showToast(`Sponsor "${formData.name}" info updated (${editingGroup.ids.length} clusters)`, "success");
+            showToast(`Sponsor "${formData.name}" info updated (${editingGroup.ids.length} territories)`, "success");
           } catch (e) {
             showToast(e.message || "Failed to save sponsor info", "error");
             return;
@@ -536,8 +520,18 @@
               return;
             }
           } else {
-            showToast("Switch to Territories tab to assign tiles before saving a new sponsor", "error");
-            return;
+            // New sponsor — create with empty territory (user can add tiles later)
+            try {
+              await SponsorStorage.create({
+                ...sharedFields,
+                cluster: { tileIndices: [] },
+                rewards: [],
+              });
+              showToast(`Sponsor "${formData.name}" created`, "success");
+            } catch (e) {
+              showToast(e.message || "Failed to create sponsor", "error");
+              return;
+            }
           }
         }
 
@@ -559,7 +553,7 @@
 
           const selectedMoonsForGroupSave = hexSelector ? hexSelector.getSelectedMoons() : [];
           if (selectedTiles.length === 0 && selectedMoonsForGroupSave.length === 0) {
-            showToast("Active cluster must have at least one tile or moon", "error");
+            showToast("Active territory must have at least one tile, moon, or billboard", "error");
             return;
           }
 
@@ -603,7 +597,7 @@
               await SponsorStorage.update(id, sharedFields);
             }
 
-            showToast(`Group "${formData.name}" saved (${editingGroup.ids.length} clusters)`, "success");
+            showToast(`"${formData.name}" saved (${editingGroup.ids.length} territories)`, "success");
           } catch (e) {
             showToast(e.message || "Failed to save group", "error");
             return;
@@ -692,8 +686,7 @@
     updateAssignedMoons();
     updateAssignedBillboards();
     selectedTilesListEl.textContent = "";
-    renderClusterTabs();
-    switchFormTab("info");
+    showSponsorInfoView();
   }
 
   function handleExport() {
@@ -881,22 +874,31 @@
 
         // Aggregate revenue across all clusters + moons
         let groupRevenue = 0;
+        const activeEditId = editingGroup ? editingGroup.ids[editingGroup.activeIndex] : null;
         const clusterRows = members.map((s, i) => {
           const tileCount = s.cluster?.tileIndices?.length || 0;
           const rev = calcRevenueForTiles(s.cluster?.tileIndices, tierMap);
           groupRevenue += rev.total;
           totalMonthly += rev.total;
 
+          // Detect territory type from stored data
+          let typeLabel, typeClass;
+          if (tileCount > 0) { typeLabel = "Hex Cluster"; typeClass = "type-hex"; }
+          else { typeLabel = "Empty"; typeClass = "type-empty"; }
+
           const revSpan = rev.total > 0
             ? `<span class="sponsor-cluster-row-revenue">$${fmtUSD(rev.total)}/mo</span>`
             : "";
 
+          const isActive = s.id === activeEditId;
+
           return `
-            <div class="sponsor-cluster-row" data-id="${s.id}">
-                <span class="sponsor-cluster-row-label">Cluster ${i + 1}</span>
+            <div class="sponsor-cluster-row${isActive ? " active-territory" : ""}" data-id="${s.id}">
+                <span class="sponsor-cluster-row-label">Territory ${i + 1}</span>
+                <span class="sponsor-cluster-row-type ${typeClass}">${typeLabel}</span>
                 <span class="sponsor-cluster-row-stats">${tileCount} tiles, ${s.rewards?.length || 0} rewards</span>
                 ${revSpan}
-                <button class="icon-btn delete-sponsor-btn" title="Delete cluster">&times;</button>
+                <button class="icon-btn delete-sponsor-btn" title="Delete territory">&times;</button>
             </div>
           `;
         }).join("");
@@ -929,15 +931,14 @@
                     </div>
                     <div class="sponsor-card-info">
                         <div class="sponsor-card-name">${escapeHtml(first.name)}</div>
-                        <span class="sponsor-group-badge">${members.length} clusters</span>
+                        <span class="sponsor-group-badge">${members.length} territories</span>
                         <div class="sponsor-card-stats">
                             ${totalTiles} tiles${groupMoonCount > 0 ? ", " + groupMoonCount + " moons" : ""}${groupBbCount > 0 ? ", " + groupBbCount + " billboards" : ""}, ${totalRewards} rewards
                         </div>
                         ${groupRevHtml}
                     </div>
                     <div class="sponsor-card-actions">
-                        <button class="icon-btn add-cluster-btn" title="Add cluster">+</button>
-                        <button class="icon-btn edit-group-btn" title="Edit all clusters">&#x270E;</button>
+                        <button class="icon-btn add-cluster-btn" title="Add territory">+</button>
                     </div>
                 </div>
                 <div class="sponsor-group-clusters">
@@ -972,35 +973,45 @@
     // Load into form
     sponsorForm.loadSponsor(sponsor);
 
-    // Load tiles and transition camera to cluster
-    if (sponsor.cluster?.tileIndices) {
-      hexSelector.setSelectedTiles(sponsor.cluster.tileIndices);
-      hexSelector.transitionToCluster(sponsor.cluster.tileIndices);
-    }
-
-    // Load moon assignments for this sponsor
-    if (moonManager && sponsor.name) {
-      const moonIndices = moonManager.getMoonsForSponsor(sponsor.name);
-      hexSelector.setSelectedMoons(moonIndices);
-      updateAssignedMoons(sponsor.name);
-    }
-
-    // Load billboard assignments for this sponsor
-    if (billboardManager && sponsor.name) {
-      const bbIndices = billboardManager.getBillboardsForSponsor(sponsor.name);
-      hexSelector.setSelectedBillboards(bbIndices);
-      updateAssignedBillboards(sponsor.name);
-    }
+    // Auto-select the territory's selection in hex selector
+    loadTerritorySelection(sponsor);
 
     // Load rewards
     if (sponsor.rewards) {
       rewardConfig.loadRewards(sponsor.rewards);
     }
 
-    renderClusterTabs();
-    switchFormTab("info");
+    showSponsorInfoView();
+    refreshSponsorsList();
     window.scrollTo({ top: 0, behavior: "smooth" });
     showToast(`Editing "${sponsor.name}"`, "success");
+  }
+
+  /**
+   * Load a territory's hex/moon/billboard selection into the hex selector.
+   * Only loads one type (exclusive territory model).
+   */
+  function loadTerritorySelection(sponsor) {
+    // Clear current selection first
+    hexSelector.clearSelection();
+
+    const hasTiles = sponsor.cluster?.tileIndices?.length > 0;
+    const moonIndices = moonManager && sponsor.name ? moonManager.getMoonsForSponsor(sponsor.name) : [];
+    const bbIndices = billboardManager && sponsor.name ? billboardManager.getBillboardsForSponsor(sponsor.name) : [];
+
+    // Load the territory's type-specific selection
+    if (hasTiles) {
+      hexSelector.setSelectedTiles(sponsor.cluster.tileIndices);
+      hexSelector.transitionToCluster(sponsor.cluster.tileIndices);
+    } else if (moonIndices.length > 0) {
+      hexSelector.setSelectedMoons(moonIndices);
+    } else if (bbIndices.length > 0) {
+      hexSelector.setSelectedBillboards(bbIndices);
+    }
+
+    // Update assigned items (exclude current sponsor)
+    if (moonManager && sponsor.name) updateAssignedMoons(sponsor.name);
+    if (billboardManager && sponsor.name) updateAssignedBillboards(sponsor.name);
   }
 
   // ========================
@@ -1043,7 +1054,6 @@
       name: sponsorName,
       ids: members.map((s) => s.id),
       activeIndex: activeIndex,
-      // Cache cluster states so unsaved changes survive tab switching
       clusterStates: new Map(),
     };
 
@@ -1051,31 +1061,19 @@
     const first = members[0];
     sponsorForm.loadSponsor(first);
 
-    // Load active cluster
+    // Load active cluster's data into hex selector
     loadClusterAtIndex(activeIndex);
 
-    // Load moon assignments for this sponsor group
-    if (moonManager && sponsorName) {
-      const moonIndices = moonManager.getMoonsForSponsor(sponsorName);
-      hexSelector.setSelectedMoons(moonIndices);
-      updateAssignedMoons(sponsorName);
+    // Route: territory view if clicking a specific territory row, info view for header click
+    if (startAtId) {
+      showTerritoryView();
+    } else {
+      showSponsorInfoView();
     }
 
-    // Load billboard assignments for this sponsor group
-    if (billboardManager && sponsorName) {
-      const bbIndices = billboardManager.getBillboardsForSponsor(sponsorName);
-      hexSelector.setSelectedBillboards(bbIndices);
-      updateAssignedBillboards(sponsorName);
-    }
-
-    // Render cluster tabs
-    renderClusterTabs();
-
-    // Route to correct tab: territory view if clicking a specific cluster, info view otherwise
-    switchFormTab(startAtId ? "territories" : "info");
-
+    refreshSponsorsList();
     window.scrollTo({ top: 0, behavior: "smooth" });
-    showToast(`Editing group "${sponsorName}" (${members.length} clusters)`, "success");
+    showToast(`Editing "${sponsorName}" (${members.length} territories)`, "success");
   }
 
   /**
@@ -1149,9 +1147,9 @@
     if (busy) return;
     busy = true;
 
-    // Ensure we're on the territories tab when switching clusters
-    if (activeFormTab !== "territories") {
-      switchFormTab("territories");
+    // Ensure we're on the territory view when switching territories
+    if (activeView !== "territories") {
+      showTerritoryView();
     }
 
     try {
@@ -1161,10 +1159,9 @@
       // Switch
       editingGroup.activeIndex = index;
       loadClusterAtIndex(index);
-      renderClusterTabs();
       refreshSponsorsList();
     } catch (e) {
-      showToast(e.message || "Failed to switch cluster", "error");
+      showToast(e.message || "Failed to switch territory", "error");
     } finally {
       busy = false;
     }
@@ -1199,116 +1196,20 @@
         rewards: [],
       });
 
-      // Enter group edit mode on the new cluster
+      // Enter group edit mode on the new territory
       refreshSponsorsList();
       editGroup(sponsorName, newSponsor.id);
 
-      showToast(`New cluster added to "${sponsorName}"`, "success");
+      showToast(`New territory added to "${sponsorName}"`, "success");
     } catch (e) {
-      showToast(e.message || "Failed to add cluster", "error");
+      showToast(e.message || "Failed to add territory", "error");
     } finally {
       busy = false;
     }
   }
 
-  /**
-   * Add a new cluster to the current editing group.
-   * If editing a single sponsor (no group), promotes it to a group first.
-   */
-  async function addCluster() {
-    if (busy) return;
-    busy = true;
 
-    try {
-      // If editing a single sponsor, promote to group first
-      if (!editingGroup) {
-        const editingId = sponsorForm ? sponsorForm.getEditingSponsorId() : null;
-        if (!editingId) return; // Can't add cluster to a new unsaved sponsor
 
-        // Save the current sponsor's data
-        const formData = sponsorForm.getFormData();
-        const selectedTiles = hexSelector.getSelectedTiles();
-        const rewards = rewardConfig.getRewards();
-        await SponsorStorage.update(editingId, {
-          ...formData,
-          cluster: { tileIndices: selectedTiles },
-          rewards: rewards,
-        });
-
-        // Set up editingGroup with the single sponsor
-        editingGroup = {
-          name: formData.name,
-          ids: [editingId],
-          activeIndex: 0,
-          clusterStates: new Map(),
-        };
-      } else {
-        // Save current cluster state
-        await saveCurrentClusterState();
-      }
-
-      // Get shared fields from form
-      const formData = sponsorForm.getFormData();
-
-      // Create new entry with shared fields but empty cluster
-      const newSponsor = await SponsorStorage.create({
-        name: formData.name,
-        tagline: formData.tagline,
-        websiteUrl: formData.websiteUrl,
-        logoImage: formData.logoImage,
-        cluster: { tileIndices: [] },
-        rewards: [],
-      });
-
-      // Add to group
-      editingGroup.ids.push(newSponsor.id);
-      editingGroup.activeIndex = editingGroup.ids.length - 1;
-
-      // Load the new empty cluster
-      loadClusterAtIndex(editingGroup.activeIndex);
-      renderClusterTabs();
-      refreshSponsorsList();
-
-      showToast("New cluster added", "success");
-    } catch (e) {
-      showToast(e.message || "Failed to add cluster", "error");
-    } finally {
-      busy = false;
-    }
-  }
-
-  /**
-   * Render cluster tabs — always visible.
-   * Shows group cluster tabs when editing a group, or a single "Cluster 1" tab otherwise.
-   */
-  function renderClusterTabs() {
-    if (editingGroup) {
-      // Multi-cluster group
-      const tabs = editingGroup.ids.map((id, i) => {
-        const sponsor = SponsorStorage.getById(id);
-        const tileCount = sponsor?.cluster?.tileIndices?.length || 0;
-        const active = i === editingGroup.activeIndex ? " active" : "";
-        return `<button class="cluster-tab${active}" data-index="${i}">Cluster ${i + 1} (${tileCount})</button>`;
-      });
-
-      clusterTabsEl.innerHTML =
-        `<span class="cluster-tabs-label">Clusters:</span>` +
-        tabs.join("") +
-        `<button class="cluster-tab-add" title="Add cluster">+</button>`;
-    } else {
-      // Single cluster (new sponsor or editing single sponsor)
-      const editingId = sponsorForm ? sponsorForm.getEditingSponsorId() : null;
-      const showAdd = !!editingId; // Show "+" only when editing an existing sponsor
-      const tileCount = editingId
-        ? (SponsorStorage.getById(editingId)?.cluster?.tileIndices?.length || 0)
-        : (hexSelector ? hexSelector.getSelectedTiles().length : 0);
-
-      clusterTabsEl.innerHTML =
-        `<span class="cluster-tabs-label">Clusters:</span>` +
-        `<button class="cluster-tab active" data-index="0">Cluster 1 (${tileCount})</button>` +
-        (showAdd ? `<button class="cluster-tab-add" title="Add cluster">+</button>` : "");
-    }
-  }
 
   /**
    * Update assigned tiles for group editing — excludes all group members,
@@ -1412,14 +1313,14 @@
     if (!sponsor) return;
 
     const label = editingGroup
-      ? `Delete cluster from "${sponsor.name}"?`
+      ? `Delete territory from "${sponsor.name}"?`
       : `Are you sure you want to delete "${sponsor.name}"?`;
     if (!confirm(label)) return;
 
     busy = true;
     try {
       await SponsorStorage.delete(id);
-      showToast(`Cluster deleted from "${sponsor.name}"`, "success");
+      showToast(`Territory deleted from "${sponsor.name}"`, "success");
 
       // Check if this sponsor name still exists — if not, clear its moon and billboard assignments
       if (sponsor.name) {
@@ -1438,7 +1339,7 @@
         if (idx !== -1) editingGroup.ids.splice(idx, 1);
 
         if (editingGroup.ids.length === 0) {
-          // No clusters left — clear form
+          // No territories left — clear form
           handleClearForm();
         } else {
           // Adjust active index
@@ -1446,7 +1347,6 @@
             editingGroup.activeIndex = editingGroup.ids.length - 1;
           }
           loadClusterAtIndex(editingGroup.activeIndex);
-          renderClusterTabs();
         }
       } else if (sponsorForm.getEditingSponsorId() === id) {
         handleClearForm();
