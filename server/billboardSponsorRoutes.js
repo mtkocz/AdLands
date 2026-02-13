@@ -6,6 +6,7 @@
 
 const { Router } = require("express");
 const fs = require("fs");
+const fsp = require("fs").promises;
 const path = require("path");
 
 const MAX_INDEX = 20; // 0-20 = 21 slots
@@ -14,9 +15,9 @@ const MAX_INDEX = 20; // 0-20 = 21 slots
  * Extract base64 billboard sponsor images to static PNG files on disk.
  * Returns a map of billboardIndex → { patternUrl }.
  */
-function extractBillboardSponsorImages(billboardSponsorStore, gameDir) {
+async function extractBillboardSponsorImages(billboardSponsorStore, gameDir) {
   const texDir = path.join(gameDir, "sponsor-textures");
-  if (!fs.existsSync(texDir)) fs.mkdirSync(texDir);
+  if (!fs.existsSync(texDir)) await fsp.mkdir(texDir, { recursive: true });
 
   const urlMap = {};
   const sponsors = billboardSponsorStore.getAll();
@@ -28,11 +29,10 @@ function extractBillboardSponsorImages(billboardSponsorStore, gameDir) {
     if (match) {
       const ext = match[1] === "jpeg" ? "jpg" : match[1];
       const filePath = path.join(texDir, `billboard_${i}.${ext}`);
-      fs.writeFileSync(filePath, Buffer.from(match[2], "base64"));
+      await fsp.writeFile(filePath, Buffer.from(match[2], "base64"));
       urlMap[i] = { patternUrl: `/sponsor-textures/billboard_${i}.${ext}` };
     }
   }
-  console.log(`[BillboardSponsorRoutes] Extracted ${Object.keys(urlMap).length} billboard sponsor images to ${texDir}`);
   return urlMap;
 }
 
@@ -47,11 +47,10 @@ function createBillboardSponsorRoutes(billboardSponsorStore, gameRoom, { imageUr
     }
   }
 
-  function reExtractImages() {
-    if (gameDir) {
-      _imageUrls = extractBillboardSponsorImages(billboardSponsorStore, gameDir);
-      if (gameRoom) gameRoom.billboardSponsorImageUrls = _imageUrls;
-    }
+  async function reExtractImages() {
+    if (!gameDir) return;
+    _imageUrls = await extractBillboardSponsorImages(billboardSponsorStore, gameDir);
+    if (gameRoom) gameRoom.billboardSponsorImageUrls = _imageUrls;
   }
 
   /**
@@ -90,31 +89,31 @@ function createBillboardSponsorRoutes(billboardSponsorStore, gameRoom, { imageUr
   });
 
   // PUT /api/billboard-sponsors/:billboardIndex — assign sponsor to a billboard
-  router.put("/:billboardIndex", (req, res) => {
+  router.put("/:billboardIndex", async (req, res) => {
     const billboardIndex = parseInt(req.params.billboardIndex, 10);
     if (isNaN(billboardIndex) || billboardIndex < 0 || billboardIndex > MAX_INDEX) {
       return res.status(400).json({ errors: [`billboardIndex must be 0 through ${MAX_INDEX}`] });
     }
 
-    const result = billboardSponsorStore.assign(billboardIndex, req.body);
+    const result = await billboardSponsorStore.assign(billboardIndex, req.body);
     if (result.errors) return res.status(400).json({ errors: result.errors });
 
-    reExtractImages();
+    await reExtractImages();
     reloadIfLive();
     res.json(result.sponsor);
   });
 
   // DELETE /api/billboard-sponsors/:billboardIndex — clear a billboard's sponsor
-  router.delete("/:billboardIndex", (req, res) => {
+  router.delete("/:billboardIndex", async (req, res) => {
     const billboardIndex = parseInt(req.params.billboardIndex, 10);
     if (isNaN(billboardIndex) || billboardIndex < 0 || billboardIndex > MAX_INDEX) {
       return res.status(400).json({ errors: [`billboardIndex must be 0 through ${MAX_INDEX}`] });
     }
 
-    const cleared = billboardSponsorStore.clear(billboardIndex);
+    const cleared = await billboardSponsorStore.clear(billboardIndex);
     if (!cleared) return res.status(404).json({ errors: ["Billboard has no sponsor to clear"] });
 
-    reExtractImages();
+    await reExtractImages();
     reloadIfLive();
     res.json({ success: true });
   });

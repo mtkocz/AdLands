@@ -252,10 +252,10 @@ class Planet {
       );
     }
 
-    this._createTileMeshes(hexasphere.tiles);
-
-    // Generate shared rock texture for cliff walls and polar opening walls
+    // Generate shared rock texture for cliff walls, polar walls, and terrain surface
     this._createRockWallTexture();
+
+    this._createTileMeshes(hexasphere.tiles);
 
     // Create cliff wall geometry for terrain elevation transitions
     if (this.terrainElevation) {
@@ -899,11 +899,10 @@ class Planet {
           side: THREE.FrontSide,
         });
       } else if (clusterId === undefined) {
-        if (!this._neutralTexture) {
-          this._neutralTexture = this._createPatternTexture("solid", 58);
-        }
+        const g = 58 / 255;
         material = new THREE.MeshStandardMaterial({
-          map: this._neutralTexture,
+          map: this._rockWallTexture,
+          color: new THREE.Color(g, g, g),
           flatShading: true,
           roughness: 0.8,
           metalness: 0.1,
@@ -911,14 +910,10 @@ class Planet {
         });
       } else {
         const pattern = this.clusterPatterns.get(clusterId);
-        if (!this.clusterTextures.has(clusterId)) {
-          this.clusterTextures.set(
-            clusterId,
-            this._createPatternTexture(pattern.type, pattern.grayValue),
-          );
-        }
+        const g = pattern.grayValue / 255;
         material = new THREE.MeshStandardMaterial({
-          map: this.clusterTextures.get(clusterId),
+          map: this._rockWallTexture,
+          color: new THREE.Color(g, g, g),
           flatShading: true,
           roughness: pattern.roughness,
           metalness: pattern.metalness,
@@ -2474,6 +2469,19 @@ class Planet {
     this.sponsorClusters.clear();
     this.sponsorHoldTimers.clear();
     this.sponsorTileIndices.clear();
+  }
+
+  /**
+   * Dispose and clear all cached sponsor textures.
+   * Must be called before preloadSponsorTextures() during live reload so that
+   * updated images (served at the same URL with a new cache-bust param) are
+   * re-fetched instead of served from the stale in-memory cache.
+   */
+  clearSponsorTextureCache() {
+    for (const texture of this._sponsorTextureCache.values()) {
+      texture.dispose();
+    }
+    this._sponsorTextureCache.clear();
   }
 
   /**

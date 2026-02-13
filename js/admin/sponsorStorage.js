@@ -240,14 +240,18 @@ const SponsorStorage = {
   async fetchFull(id) {
     if (!this._useAPI) return this.getById(id);
 
-    // Already have full data cached
+    // Check if we already have full data cached.
+    // The lite response deletes patternImage entirely (it becomes undefined).
+    // A sponsor with no pattern has patternImage: null (explicitly set).
+    // We also mark entries with _hasFull after a successful fetch.
     const cached = this.getById(id);
-    if (cached && cached.patternImage !== undefined) return cached;
+    if (cached && cached._hasFull) return cached;
 
     try {
       const res = await fetch(`${this._apiBase}/${encodeURIComponent(id)}`);
       if (!res.ok) return cached;
       const full = await res.json();
+      full._hasFull = true;
       // Merge full data into cache
       const index = this._cache.sponsors.findIndex((s) => s.id === id);
       if (index !== -1) this._cache.sponsors[index] = full;
@@ -312,8 +316,8 @@ const SponsorStorage = {
       const updated = await res.json();
       const index = this._cache.sponsors.findIndex((s) => s.id === id);
       if (index !== -1) {
-        // Merge with existing cache to preserve client-only fields (logoUrl, etc.)
-        this._cache.sponsors[index] = { ...this._cache.sponsors[index], ...updated };
+        // Merge with existing cache to preserve client-only fields (logoUrl, _hasFull, etc.)
+        this._cache.sponsors[index] = { ...this._cache.sponsors[index], ...updated, _hasFull: true };
       }
       return updated;
     }

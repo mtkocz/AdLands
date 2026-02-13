@@ -1163,19 +1163,24 @@
       if (!planet || !data.world) return;
       console.log("[Multiplayer] Sponsors reloaded by admin, re-applying...");
 
-      // Clear existing sponsor state
+      // Clear existing sponsor state and stale texture cache so updated
+      // images (cache-busted URLs) are re-fetched from the server.
       planet.clearSponsorData();
+      planet.clearSponsorTextureCache();
 
       // Re-apply full world data (clusters, tile mappings, elevation)
       planet.applyServerWorld(data.world);
 
-      // Re-apply sponsor visuals
+      // Preload updated sponsor textures, then apply visuals
       if (data.world.sponsors && data.world.sponsors.length > 0) {
-        planet.applySponsorVisuals(data.world.sponsors);
-        planet.deElevateSponsorTiles();
+        planet.preloadSponsorTextures(data.world.sponsors).then(() => {
+          planet.applySponsorVisuals(data.world.sponsors);
+          planet.deElevateSponsorTiles();
+          console.log(`[Multiplayer] Sponsors reloaded: ${data.world.sponsors.length} active`);
+        });
+      } else {
+        console.log("[Multiplayer] Sponsors reloaded: 0 active");
       }
-
-      console.log(`[Multiplayer] Sponsors reloaded: ${data.world.sponsors?.length || 0} active`);
     };
 
     // Admin changed moon sponsors — update moon textures

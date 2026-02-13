@@ -5,6 +5,7 @@
  */
 
 const fs = require("fs");
+const fsp = require("fs").promises;
 const path = require("path");
 
 class MoonSponsorStore {
@@ -46,11 +47,11 @@ class MoonSponsorStore {
   /**
    * Atomic write: write to .tmp then rename to prevent corruption.
    */
-  _saveToDisk() {
+  async _saveToDisk() {
     this._cache.lastModified = new Date().toISOString();
     const tmp = this.filePath + ".tmp";
-    fs.writeFileSync(tmp, JSON.stringify(this._cache, null, 2), "utf8");
-    fs.renameSync(tmp, this.filePath);
+    await fsp.writeFile(tmp, JSON.stringify(this._cache, null, 2), "utf8");
+    await fsp.rename(tmp, this.filePath);
   }
 
   /** Get all 3 moon sponsor slots */
@@ -75,7 +76,7 @@ class MoonSponsorStore {
    * @param {Object} sponsorData - Sponsor data (name, tagline, etc.)
    * @returns {{ sponsor?: Object, errors?: string[] }}
    */
-  assign(moonIndex, sponsorData) {
+  async assign(moonIndex, sponsorData) {
     if (moonIndex < 0 || moonIndex > 2) {
       return { errors: ["moonIndex must be 0, 1, or 2"] };
     }
@@ -96,7 +97,7 @@ class MoonSponsorStore {
     };
 
     this._cache.moonSponsors[moonIndex] = sponsor;
-    this._saveToDisk();
+    await this._saveToDisk();
     return { sponsor };
   }
 
@@ -105,11 +106,11 @@ class MoonSponsorStore {
    * @param {number} moonIndex - 0, 1, or 2
    * @returns {boolean}
    */
-  clear(moonIndex) {
+  async clear(moonIndex) {
     if (moonIndex < 0 || moonIndex > 2) return false;
     if (this._cache.moonSponsors[moonIndex] === null) return false;
     this._cache.moonSponsors[moonIndex] = null;
-    this._saveToDisk();
+    await this._saveToDisk();
     return true;
   }
 

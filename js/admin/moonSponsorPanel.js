@@ -73,18 +73,18 @@ class MoonSponsorManager {
     const moonSet = new Set(moonIndices);
     const nameLower = sponsorData.name.toLowerCase();
 
-    // Clear moons that were ours but aren't anymore
+    // Clear moons that were ours but aren't anymore (in parallel)
+    const clearOps = [];
     for (let i = 0; i < 3; i++) {
       const s = this.sponsors[i];
       if (s && s.name && s.name.toLowerCase() === nameLower && !moonSet.has(i)) {
-        await this._clearMoon(i);
+        clearOps.push(this._clearMoon(i));
       }
     }
+    await Promise.all(clearOps);
 
-    // Assign selected moons
-    for (const mi of moonIndices) {
-      await this._saveMoon(mi, sponsorData);
-    }
+    // Assign selected moons (in parallel)
+    await Promise.all(moonIndices.map(mi => this._saveMoon(mi, sponsorData)));
   }
 
   /**
@@ -94,12 +94,14 @@ class MoonSponsorManager {
   async clearMoonsForSponsor(sponsorName) {
     if (!sponsorName) return;
     const nameLower = sponsorName.toLowerCase();
+    const ops = [];
     for (let i = 0; i < 3; i++) {
       const s = this.sponsors[i];
       if (s && s.name && s.name.toLowerCase() === nameLower) {
-        await this._clearMoon(i);
+        ops.push(this._clearMoon(i));
       }
     }
+    await Promise.all(ops);
   }
 
   async _saveMoon(moonIndex, sponsorData) {

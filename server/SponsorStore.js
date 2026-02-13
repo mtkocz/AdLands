@@ -5,6 +5,7 @@
  */
 
 const fs = require("fs");
+const fsp = require("fs").promises;
 const path = require("path");
 
 class SponsorStore {
@@ -42,12 +43,13 @@ class SponsorStore {
 
   /**
    * Atomic write: write to .tmp then rename to prevent corruption.
+   * Async to avoid blocking the event loop during large JSON writes.
    */
-  _saveToDisk() {
+  async _saveToDisk() {
     this._cache.lastModified = new Date().toISOString();
     const tmp = this.filePath + ".tmp";
-    fs.writeFileSync(tmp, JSON.stringify(this._cache, null, 2), "utf8");
-    fs.renameSync(tmp, this.filePath);
+    await fsp.writeFile(tmp, JSON.stringify(this._cache, null, 2), "utf8");
+    await fsp.rename(tmp, this.filePath);
   }
 
   /** Get all sponsors */
@@ -67,9 +69,9 @@ class SponsorStore {
 
   /**
    * Create a new sponsor.
-   * @returns {{ sponsor?: Object, errors?: string[] }}
+   * @returns {Promise<{ sponsor?: Object, errors?: string[] }>}
    */
-  create(sponsor) {
+  async create(sponsor) {
     // Validate name only — tiles may be empty for duplicated/draft sponsors
     if (!sponsor.name || sponsor.name.trim().length === 0) {
       return { errors: ["Name is required"] };
@@ -91,15 +93,15 @@ class SponsorStore {
       active: sponsor.active !== undefined ? sponsor.active : true,
     };
     this._cache.sponsors.push(newSponsor);
-    this._saveToDisk();
+    await this._saveToDisk();
     return { sponsor: newSponsor };
   }
 
   /**
    * Update an existing sponsor.
-   * @returns {{ sponsor?: Object, errors?: string[] }}
+   * @returns {Promise<{ sponsor?: Object, errors?: string[] }>}
    */
-  update(id, updates) {
+  async update(id, updates) {
     const index = this._cache.sponsors.findIndex((s) => s.id === id);
     if (index === -1) return { errors: ["Sponsor not found"] };
 
@@ -116,19 +118,19 @@ class SponsorStore {
 
     merged.updatedAt = new Date().toISOString();
     this._cache.sponsors[index] = merged;
-    this._saveToDisk();
+    await this._saveToDisk();
     return { sponsor: merged };
   }
 
   /**
    * Delete a sponsor by ID.
-   * @returns {boolean}
+   * @returns {Promise<boolean>}
    */
-  delete(id) {
+  async delete(id) {
     const initialLength = this._cache.sponsors.length;
     this._cache.sponsors = this._cache.sponsors.filter((s) => s.id !== id);
     if (this._cache.sponsors.length < initialLength) {
-      this._saveToDisk();
+      await this._saveToDisk();
       return true;
     }
     return false;
@@ -213,7 +215,7 @@ class SponsorStore {
    * @param {boolean} merge - If true, merge with existing; if false, replace all.
    * @returns {{ success: boolean, imported: number, errors: string[] }}
    */
-  importJSON(imported, merge = true) {
+  async importJSON(imported, merge = true) {
     const errors = [];
     let importedCount = 0;
 
@@ -254,7 +256,7 @@ class SponsorStore {
       importedCount++;
     }
 
-    this._saveToDisk();
+    await this._saveToDisk();
     return { success: true, imported: importedCount, errors };
   }
 }

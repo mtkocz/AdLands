@@ -6,6 +6,7 @@
  */
 
 const fs = require("fs");
+const fsp = require("fs").promises;
 const path = require("path");
 
 const SLOT_COUNT = 21;
@@ -49,11 +50,11 @@ class BillboardSponsorStore {
   /**
    * Atomic write: write to .tmp then rename to prevent corruption.
    */
-  _saveToDisk() {
+  async _saveToDisk() {
     this._cache.lastModified = new Date().toISOString();
     const tmp = this.filePath + ".tmp";
-    fs.writeFileSync(tmp, JSON.stringify(this._cache, null, 2), "utf8");
-    fs.renameSync(tmp, this.filePath);
+    await fsp.writeFile(tmp, JSON.stringify(this._cache, null, 2), "utf8");
+    await fsp.rename(tmp, this.filePath);
   }
 
   /** Get all 21 billboard sponsor slots */
@@ -78,7 +79,7 @@ class BillboardSponsorStore {
    * @param {Object} sponsorData - Sponsor data (name, tagline, etc.)
    * @returns {{ sponsor?: Object, errors?: string[] }}
    */
-  assign(billboardIndex, sponsorData) {
+  async assign(billboardIndex, sponsorData) {
     if (billboardIndex < 0 || billboardIndex >= SLOT_COUNT) {
       return { errors: [`billboardIndex must be 0 through ${SLOT_COUNT - 1}`] };
     }
@@ -99,7 +100,7 @@ class BillboardSponsorStore {
     };
 
     this._cache.billboardSponsors[billboardIndex] = sponsor;
-    this._saveToDisk();
+    await this._saveToDisk();
     return { sponsor };
   }
 
@@ -108,11 +109,11 @@ class BillboardSponsorStore {
    * @param {number} billboardIndex - 0 through 20
    * @returns {boolean}
    */
-  clear(billboardIndex) {
+  async clear(billboardIndex) {
     if (billboardIndex < 0 || billboardIndex >= SLOT_COUNT) return false;
     if (this._cache.billboardSponsors[billboardIndex] === null) return false;
     this._cache.billboardSponsors[billboardIndex] = null;
-    this._saveToDisk();
+    await this._saveToDisk();
     return true;
   }
 

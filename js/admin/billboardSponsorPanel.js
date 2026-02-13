@@ -76,18 +76,18 @@ class BillboardSponsorManager {
     const bbSet = new Set(billboardIndices);
     const nameLower = sponsorData.name.toLowerCase();
 
-    // Clear billboards that were ours but aren't anymore
+    // Clear billboards that were ours but aren't anymore (in parallel)
+    const clearOps = [];
     for (let i = 0; i < BILLBOARD_SLOT_COUNT; i++) {
       const s = this.sponsors[i];
       if (s && s.name && s.name.toLowerCase() === nameLower && !bbSet.has(i)) {
-        await this._clearBillboard(i);
+        clearOps.push(this._clearBillboard(i));
       }
     }
+    await Promise.all(clearOps);
 
-    // Assign selected billboards
-    for (const bi of billboardIndices) {
-      await this._saveBillboard(bi, sponsorData);
-    }
+    // Assign selected billboards (in parallel)
+    await Promise.all(billboardIndices.map(bi => this._saveBillboard(bi, sponsorData)));
   }
 
   /**
@@ -97,12 +97,14 @@ class BillboardSponsorManager {
   async clearBillboardsForSponsor(sponsorName) {
     if (!sponsorName) return;
     const nameLower = sponsorName.toLowerCase();
+    const ops = [];
     for (let i = 0; i < BILLBOARD_SLOT_COUNT; i++) {
       const s = this.sponsors[i];
       if (s && s.name && s.name.toLowerCase() === nameLower) {
-        await this._clearBillboard(i);
+        ops.push(this._clearBillboard(i));
       }
     }
+    await Promise.all(ops);
   }
 
   async _saveBillboard(billboardIndex, sponsorData) {

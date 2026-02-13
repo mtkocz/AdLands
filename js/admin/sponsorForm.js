@@ -74,6 +74,12 @@ class SponsorForm {
 
         // Callbacks
         this.onFormChange = options.onFormChange || null;
+        // Separate callback for adjustment-only changes (sliders) — avoids full texture reload
+        this.onAdjustmentChange = options.onAdjustmentChange || null;
+
+        // Throttle timer for slider-driven changes
+        this._adjustThrottleTimer = null;
+        this._adjustThrottleDelay = 30; // ~33fps max for slider updates
 
         this._setupEventListeners();
     }
@@ -102,9 +108,7 @@ class SponsorForm {
             this.patternScale = parseFloat(e.target.value);
             this.patternScaleValue.textContent = this.patternScale.toFixed(2) + 'x';
             this._updatePatternPreviewTransform();
-            if (this.onFormChange) {
-                this.onFormChange(this.getFormData());
-            }
+            this._fireAdjustmentChange();
         });
 
         // Pattern position drag
@@ -178,68 +182,54 @@ class SponsorForm {
         // Input levels sliders
         this.patternInputBlackSlider.addEventListener('input', (e) => {
             this.patternInputBlack = parseInt(e.target.value);
-            // Ensure black doesn't exceed white
             if (this.patternInputBlack >= this.patternInputWhite) {
                 this.patternInputBlack = this.patternInputWhite - 1;
                 this.patternInputBlackSlider.value = this.patternInputBlack;
             }
             this.patternInputBlackValue.textContent = this.patternInputBlack;
             this._updatePatternPreviewColors();
-            if (this.onFormChange) {
-                this.onFormChange(this.getFormData());
-            }
+            this._fireAdjustmentChange();
         });
 
         this.patternInputGammaSlider.addEventListener('input', (e) => {
             this.patternInputGamma = parseFloat(e.target.value);
             this.patternInputGammaValue.textContent = this.patternInputGamma.toFixed(2);
             this._updatePatternPreviewColors();
-            if (this.onFormChange) {
-                this.onFormChange(this.getFormData());
-            }
+            this._fireAdjustmentChange();
         });
 
         this.patternInputWhiteSlider.addEventListener('input', (e) => {
             this.patternInputWhite = parseInt(e.target.value);
-            // Ensure white doesn't go below black
             if (this.patternInputWhite <= this.patternInputBlack) {
                 this.patternInputWhite = this.patternInputBlack + 1;
                 this.patternInputWhiteSlider.value = this.patternInputWhite;
             }
             this.patternInputWhiteValue.textContent = this.patternInputWhite;
             this._updatePatternPreviewColors();
-            if (this.onFormChange) {
-                this.onFormChange(this.getFormData());
-            }
+            this._fireAdjustmentChange();
         });
 
         // Output levels sliders
         this.patternOutputBlackSlider.addEventListener('input', (e) => {
             this.patternOutputBlack = parseInt(e.target.value);
-            // Ensure black doesn't exceed white
             if (this.patternOutputBlack >= this.patternOutputWhite) {
                 this.patternOutputBlack = this.patternOutputWhite - 1;
                 this.patternOutputBlackSlider.value = this.patternOutputBlack;
             }
             this.patternOutputBlackValue.textContent = this.patternOutputBlack;
             this._updatePatternPreviewColors();
-            if (this.onFormChange) {
-                this.onFormChange(this.getFormData());
-            }
+            this._fireAdjustmentChange();
         });
 
         this.patternOutputWhiteSlider.addEventListener('input', (e) => {
             this.patternOutputWhite = parseInt(e.target.value);
-            // Ensure white doesn't go below black
             if (this.patternOutputWhite <= this.patternOutputBlack) {
                 this.patternOutputWhite = this.patternOutputBlack + 1;
                 this.patternOutputWhiteSlider.value = this.patternOutputWhite;
             }
             this.patternOutputWhiteValue.textContent = this.patternOutputWhite;
             this._updatePatternPreviewColors();
-            if (this.onFormChange) {
-                this.onFormChange(this.getFormData());
-            }
+            this._fireAdjustmentChange();
         });
 
         // Saturation slider
@@ -247,10 +237,25 @@ class SponsorForm {
             this.patternSaturation = parseFloat(e.target.value);
             this.patternSaturationValue.textContent = this.patternSaturation.toFixed(2);
             this._updatePatternPreviewColors();
-            if (this.onFormChange) {
+            this._fireAdjustmentChange();
+        });
+    }
+
+    /**
+     * Throttled callback for adjustment-only slider changes.
+     * Uses onAdjustmentChange (lightweight — updates uniforms only)
+     * instead of onFormChange (heavyweight — reloads texture from base64).
+     */
+    _fireAdjustmentChange() {
+        if (this._adjustThrottleTimer) return;
+        this._adjustThrottleTimer = setTimeout(() => {
+            this._adjustThrottleTimer = null;
+            if (this.onAdjustmentChange) {
+                this.onAdjustmentChange(this.getFormData().patternAdjustment);
+            } else if (this.onFormChange) {
                 this.onFormChange(this.getFormData());
             }
-        });
+        }, this._adjustThrottleDelay);
     }
 
     _updatePatternPreviewColors() {

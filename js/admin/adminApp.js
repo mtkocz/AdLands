@@ -104,6 +104,7 @@
     // Initialize sponsor form
     sponsorForm = new SponsorForm({
       onFormChange: handleFormChange,
+      onAdjustmentChange: handleAdjustmentChange,
     });
 
     // Initialize reward config
@@ -303,11 +304,14 @@
     // Update pattern preview when selection changes (tiles, moons, or billboards)
     const formData = sponsorForm.getFormData();
     if (formData.patternImage && (selectedTiles.length > 0 || selectedMoons.length > 0 || selectedBillboards.length > 0)) {
+      // Selection changed — need full texture apply (but track image to avoid redundant reload)
+      _lastPatternImage = formData.patternImage;
       hexSelector.setPatternPreview(
         formData.patternImage,
         formData.patternAdjustment,
       );
     } else {
+      _lastPatternImage = null;
       hexSelector.setPatternPreview(null);
     }
 
@@ -466,19 +470,41 @@
     console.log("[AdminApp] Tier filter:", tierId);
   }
 
+  // Track the last pattern image data URL to avoid redundant texture reloads
+  let _lastPatternImage = null;
+
   function handleFormChange(formData) {
     // Update pattern preview on selected tiles, moons, and billboards in real-time
     const selectedTiles = hexSelector.getSelectedTiles();
     const selectedMoons = hexSelector.getSelectedMoons();
     const selectedBillboards = hexSelector.getSelectedBillboards();
-    if (formData.patternImage && (selectedTiles.length > 0 || selectedMoons.length > 0 || selectedBillboards.length > 0)) {
-      hexSelector.setPatternPreview(
-        formData.patternImage,
-        formData.patternAdjustment,
-      );
-    } else {
-      hexSelector.setPatternPreview(null);
+    const hasSelection = selectedTiles.length > 0 || selectedMoons.length > 0 || selectedBillboards.length > 0;
+
+    if (formData.patternImage && hasSelection) {
+      // Only do the expensive full texture reload when the image itself changed
+      if (formData.patternImage !== _lastPatternImage) {
+        _lastPatternImage = formData.patternImage;
+        hexSelector.setPatternPreview(
+          formData.patternImage,
+          formData.patternAdjustment,
+        );
+      }
+      // If just text fields changed (name/tagline/url), skip pattern update entirely
+    } else if (!formData.patternImage) {
+      if (_lastPatternImage !== null) {
+        _lastPatternImage = null;
+        hexSelector.setPatternPreview(null);
+      }
     }
+  }
+
+  /**
+   * Lightweight handler for adjustment-only slider changes.
+   * Uses updatePatternAdjustment which only updates shader uniforms
+   * instead of re-parsing the base64 image and recreating textures.
+   */
+  function handleAdjustmentChange(adjustment) {
+    hexSelector.updatePatternAdjustment(adjustment);
   }
 
   function handleRewardsChange(rewards) {
@@ -719,6 +745,7 @@
 
   function handleClearForm() {
     editingGroup = null;
+    _lastPatternImage = null;
     sponsorForm.clear();
     hexSelector.clearSelection();
     hexSelector.setPatternPreview(null);
@@ -1164,11 +1191,15 @@
   /**
    * Load a specific cluster by index within the editing group
    */
-  function loadClusterAtIndex(index) {
+  async function loadClusterAtIndex(index) {
     if (!editingGroup) return;
     const id = editingGroup.ids[index];
-    const sponsor = SponsorStorage.getById(id);
+    // Ensure full data (with base64 images) is fetched before loading
+    let sponsor = SponsorStorage.getById(id);
     if (!sponsor) return;
+    if (!sponsor._hasFull) {
+      sponsor = await SponsorStorage.fetchFull(id) || sponsor;
+    }
 
     // Set the form's editing ID to this cluster's entry
     sponsorForm.editingSponsorId = id;
@@ -1289,21 +1320,33 @@
    */
   async function switchCluster(index) {
     if (!editingGroup || index === editingGroup.activeIndex) return;
-
-    // Ensure we're on the territory view when switching territories
-    if (activeView !== "territories") {
-      showTerritoryView();
+    if (busy) {
+      showToast("Please wait for the current operation to finish", "info");
+      return;
     }
+    busy = true;
 
-    // Fire-and-forget save of current state (don't block the UI)
-    saveCurrentClusterState().catch((e) =>
-      console.warn("[AdminApp] Auto-save failed:", e)
-    );
+    try {
+      // Ensure we're on the territory view when switching territories
+      if (activeView !== "territories") {
+        showTerritoryView();
+      }
 
-    // Switch immediately
-    editingGroup.activeIndex = index;
-    loadClusterAtIndex(index);
-    refreshSponsorsList();
+      // Await save of current state to prevent data loss
+      try {
+        await saveCurrentClusterState();
+      } catch (e) {
+        console.warn("[AdminApp] Auto-save failed:", e);
+        showToast("Failed to auto-save current territory", "error");
+      }
+
+      // Switch after save completes
+      editingGroup.activeIndex = index;
+      loadClusterAtIndex(index);
+      refreshSponsorsList();
+    } finally {
+      busy = false;
+    }
   }
 
   /**

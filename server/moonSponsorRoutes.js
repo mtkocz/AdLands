@@ -6,15 +6,16 @@
 
 const { Router } = require("express");
 const fs = require("fs");
+const fsp = require("fs").promises;
 const path = require("path");
 
 /**
  * Extract base64 moon sponsor images to static PNG files on disk.
  * Returns a map of moonIndex → { patternUrl }.
  */
-function extractMoonSponsorImages(moonSponsorStore, gameDir) {
+async function extractMoonSponsorImages(moonSponsorStore, gameDir) {
   const texDir = path.join(gameDir, "sponsor-textures");
-  if (!fs.existsSync(texDir)) fs.mkdirSync(texDir);
+  if (!fs.existsSync(texDir)) await fsp.mkdir(texDir, { recursive: true });
 
   const urlMap = {};
   const sponsors = moonSponsorStore.getAll();
@@ -26,11 +27,10 @@ function extractMoonSponsorImages(moonSponsorStore, gameDir) {
     if (match) {
       const ext = match[1] === "jpeg" ? "jpg" : match[1];
       const filePath = path.join(texDir, `moon_${i}.${ext}`);
-      fs.writeFileSync(filePath, Buffer.from(match[2], "base64"));
+      await fsp.writeFile(filePath, Buffer.from(match[2], "base64"));
       urlMap[i] = { patternUrl: `/sponsor-textures/moon_${i}.${ext}` };
     }
   }
-  console.log(`[MoonSponsorRoutes] Extracted ${Object.keys(urlMap).length} moon sponsor images to ${texDir}`);
   return urlMap;
 }
 
@@ -45,12 +45,10 @@ function createMoonSponsorRoutes(moonSponsorStore, gameRoom, { imageUrls, gameDi
     }
   }
 
-  function reExtractImages() {
-    if (gameDir) {
-      _imageUrls = extractMoonSponsorImages(moonSponsorStore, gameDir);
-      // Update GameRoom's reference too
-      if (gameRoom) gameRoom.moonSponsorImageUrls = _imageUrls;
-    }
+  async function reExtractImages() {
+    if (!gameDir) return;
+    _imageUrls = await extractMoonSponsorImages(moonSponsorStore, gameDir);
+    if (gameRoom) gameRoom.moonSponsorImageUrls = _imageUrls;
   }
 
   /**
@@ -89,31 +87,31 @@ function createMoonSponsorRoutes(moonSponsorStore, gameRoom, { imageUrls, gameDi
   });
 
   // PUT /api/moon-sponsors/:moonIndex — assign sponsor to a moon
-  router.put("/:moonIndex", (req, res) => {
+  router.put("/:moonIndex", async (req, res) => {
     const moonIndex = parseInt(req.params.moonIndex, 10);
     if (isNaN(moonIndex) || moonIndex < 0 || moonIndex > 2) {
       return res.status(400).json({ errors: ["moonIndex must be 0, 1, or 2"] });
     }
 
-    const result = moonSponsorStore.assign(moonIndex, req.body);
+    const result = await moonSponsorStore.assign(moonIndex, req.body);
     if (result.errors) return res.status(400).json({ errors: result.errors });
 
-    reExtractImages();
+    await reExtractImages();
     reloadIfLive();
     res.json(result.sponsor);
   });
 
   // DELETE /api/moon-sponsors/:moonIndex — clear a moon's sponsor
-  router.delete("/:moonIndex", (req, res) => {
+  router.delete("/:moonIndex", async (req, res) => {
     const moonIndex = parseInt(req.params.moonIndex, 10);
     if (isNaN(moonIndex) || moonIndex < 0 || moonIndex > 2) {
       return res.status(400).json({ errors: ["moonIndex must be 0, 1, or 2"] });
     }
 
-    const cleared = moonSponsorStore.clear(moonIndex);
+    const cleared = await moonSponsorStore.clear(moonIndex);
     if (!cleared) return res.status(404).json({ errors: ["Moon has no sponsor to clear"] });
 
-    reExtractImages();
+    await reExtractImages();
     reloadIfLive();
     res.json({ success: true });
   });

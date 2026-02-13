@@ -6,43 +6,76 @@
 
 const { Router } = require("express");
 const fs = require("fs");
+const fsp = require("fs").promises;
 const path = require("path");
 
 /**
+ * Extract a single sponsor's base64 images to static PNG files on disk.
+ * @returns {{ patternUrl?: string, logoUrl?: string }}
+ */
+async function extractSponsorImage(sponsor, texDir) {
+  const urls = {};
+  if (sponsor.patternImage) {
+    const match = sponsor.patternImage.match(/^data:image\/(\w+);base64,(.+)$/);
+    if (match) {
+      const ext = match[1] === "jpeg" ? "jpg" : match[1];
+      const filePath = path.join(texDir, `${sponsor.id}.${ext}`);
+      await fsp.writeFile(filePath, Buffer.from(match[2], "base64"));
+      urls.patternUrl = `/sponsor-textures/${sponsor.id}.${ext}`;
+    }
+  }
+  if (sponsor.logoImage) {
+    const match = sponsor.logoImage.match(/^data:image\/(\w+);base64,(.+)$/);
+    if (match) {
+      const ext = match[1] === "jpeg" ? "jpg" : match[1];
+      const filePath = path.join(texDir, `${sponsor.id}_logo.${ext}`);
+      await fsp.writeFile(filePath, Buffer.from(match[2], "base64"));
+      urls.logoUrl = `/sponsor-textures/${sponsor.id}_logo.${ext}`;
+    }
+  }
+  return urls;
+}
+
+/**
  * Extract base64 sponsor images to static PNG files on disk.
+ * If onlyId is provided, only re-extracts that single sponsor's images.
  * Returns a map of sponsorId → { patternUrl, logoUrl }.
  */
-function extractSponsorImages(sponsorStore, gameDir) {
+async function extractSponsorImages(sponsorStore, gameDir, onlyId) {
   const texDir = path.join(gameDir, "sponsor-textures");
-  if (!fs.existsSync(texDir)) fs.mkdirSync(texDir);
+  if (!fs.existsSync(texDir)) await fsp.mkdir(texDir, { recursive: true });
 
   const urlMap = {};
-  for (const s of sponsorStore.getAll()) {
-    const urls = {};
-    if (s.patternImage) {
-      const match = s.patternImage.match(/^data:image\/(\w+);base64,(.+)$/);
-      if (match) {
-        const ext = match[1] === "jpeg" ? "jpg" : match[1];
-        const filePath = path.join(texDir, `${s.id}.${ext}`);
-        fs.writeFileSync(filePath, Buffer.from(match[2], "base64"));
-        urls.patternUrl = `/sponsor-textures/${s.id}.${ext}`;
-      }
-    }
-    if (s.logoImage) {
-      const match = s.logoImage.match(/^data:image\/(\w+);base64,(.+)$/);
-      if (match) {
-        const ext = match[1] === "jpeg" ? "jpg" : match[1];
-        const filePath = path.join(texDir, `${s.id}_logo.${ext}`);
-        fs.writeFileSync(filePath, Buffer.from(match[2], "base64"));
-        urls.logoUrl = `/sponsor-textures/${s.id}_logo.${ext}`;
-      }
-    }
+  const sponsors = onlyId
+    ? [sponsorStore.getById(onlyId)].filter(Boolean)
+    : sponsorStore.getAll();
+
+  for (const s of sponsors) {
+    const urls = await extractSponsorImage(s, texDir);
     if (urls.patternUrl || urls.logoUrl) {
       urlMap[s.id] = urls;
     }
   }
-  console.log(`[SponsorRoutes] Extracted ${Object.keys(urlMap).length} sponsor image sets to ${texDir}`);
   return urlMap;
+}
+
+/**
+ * Remove orphaned image files for a deleted sponsor.
+ */
+async function cleanupSponsorImageFiles(sponsorId, texDir) {
+  if (!texDir) return;
+  try {
+    const files = await fsp.readdir(texDir);
+    const prefix = sponsorId + ".";
+    const logoPrefix = sponsorId + "_logo.";
+    for (const file of files) {
+      if (file.startsWith(prefix) || file.startsWith(logoPrefix)) {
+        await fsp.unlink(path.join(texDir, file));
+      }
+    }
+  } catch (e) {
+    console.warn("[SponsorRoutes] Cleanup failed for", sponsorId, e.message);
+  }
 }
 
 function createSponsorRoutes(sponsorStore, gameRoom, { imageUrls, gameDir } = {}) {
@@ -62,12 +95,30 @@ function createSponsorRoutes(sponsorStore, gameRoom, { imageUrls, gameDir } = {}
 
   /**
    * Re-extract sponsor images and update the URL map.
+   * If onlyId is provided, only re-extracts that sponsor (faster for single edits).
    * Called after mutations so static files stay in sync.
    */
-  function reExtractImages() {
-    if (gameDir) {
-      _imageUrls = extractSponsorImages(sponsorStore, gameDir);
+  async function reExtractImages(onlyId) {
+    if (!gameDir) return;
+    const newUrls = await extractSponsorImages(sponsorStore, gameDir, onlyId);
+    if (onlyId) {
+      // Merge single sponsor's URLs into the map
+      if (newUrls[onlyId]) {
+        _imageUrls[onlyId] = newUrls[onlyId];
+      }
+    } else {
+      _imageUrls = newUrls;
     }
+  }
+
+  /**
+   * Remove orphaned image files for a deleted sponsor.
+   */
+  async function cleanupSponsorImages(sponsorId) {
+    if (!gameDir) return;
+    const texDir = path.join(gameDir, "sponsor-textures");
+    await cleanupSponsorImageFiles(sponsorId, texDir);
+    delete _imageUrls[sponsorId];
   }
 
   /**
@@ -121,40 +172,43 @@ function createSponsorRoutes(sponsorStore, gameRoom, { imageUrls, gameDir } = {}
   });
 
   // POST /api/sponsors — create new sponsor
-  router.post("/", (req, res) => {
-    const result = sponsorStore.create(req.body);
+  router.post("/", async (req, res) => {
+    const result = await sponsorStore.create(req.body);
     if (result.errors) return res.status(400).json({ errors: result.errors });
-    reExtractImages();
+    await reExtractImages(result.sponsor.id);
     reloadIfLive();
     res.status(201).json(result.sponsor);
   });
 
   // POST /api/sponsors/import — bulk import
-  router.post("/import", (req, res) => {
+  router.post("/import", async (req, res) => {
     const merge = req.body.merge !== false; // default true
-    const result = sponsorStore.importJSON(req.body, merge);
-    reExtractImages();
+    const result = await sponsorStore.importJSON(req.body, merge);
+    await reExtractImages();
     reloadIfLive();
     res.json(result);
   });
 
   // PUT /api/sponsors/:id — update existing sponsor
-  router.put("/:id", (req, res) => {
-    const result = sponsorStore.update(req.params.id, req.body);
+  router.put("/:id", async (req, res) => {
+    const result = await sponsorStore.update(req.params.id, req.body);
     if (result.errors) {
       const status = result.errors.includes("Sponsor not found") ? 404 : 400;
       return res.status(status).json({ errors: result.errors });
     }
-    reExtractImages();
+    await reExtractImages(req.params.id);
     reloadIfLive();
     res.json(result.sponsor);
   });
 
   // DELETE /api/sponsors/:id — delete sponsor
-  router.delete("/:id", (req, res) => {
-    const deleted = sponsorStore.delete(req.params.id);
+  router.delete("/:id", async (req, res) => {
+    // Capture sponsor files before deleting from store
+    const deletedId = req.params.id;
+    const deleted = await sponsorStore.delete(deletedId);
     if (!deleted) return res.status(404).json({ errors: ["Sponsor not found"] });
-    reExtractImages();
+    // Remove orphaned image files for deleted sponsor
+    await cleanupSponsorImages(deletedId);
     reloadIfLive();
     res.json({ success: true });
   });
