@@ -949,6 +949,16 @@ class Dashboard {
       this.initLoadout(this.playerLevel || 1);
     }
 
+    // Update territory list when expanded
+    if (panelId === "territory" && state.expanded) {
+      this._renderTerritoryList();
+    }
+
+    // Reset camera pullback when territory panel is collapsed
+    if (panelId === "territory" && !state.expanded) {
+      this._cancelTerritoryPreview();
+    }
+
     this._saveState();
   }
 
@@ -1755,6 +1765,445 @@ class Dashboard {
           btn.disabled = false;
         });
       };
+    }
+  }
+
+  // ========================
+  // TERRITORY SYSTEM
+  // ========================
+
+  /**
+   * Set planet, tank, and camera references for territory claiming
+   */
+  setTerritoryRefs(planet, tank, gameCamera) {
+    this._territoryPlanet = planet;
+    this._territoryTank = tank;
+    this._territoryCamera = gameCamera;
+
+    // Restore saved territories from localStorage
+    this._loadPlayerTerritories();
+  }
+
+  _selectTerritoryTier(tierName) {
+    if (!this._territoryPlanet || !this._territoryTank) return;
+
+    const ringMap = { outpost: 0, compound: 1, stronghold: 2 };
+    const pullbackMap = { outpost: 0.15, compound: 0.5, stronghold: 1.0 };
+    const ringCount = ringMap[tierName];
+    if (ringCount === undefined) return;
+
+    this._selectedTerritoryTier = tierName;
+
+    // Highlight selected card
+    const cards = this.container.querySelectorAll(".territory-tier-card");
+    cards.forEach((c) =>
+      c.classList.toggle("selected", c.dataset.tier === tierName),
+    );
+
+    // Get player's current tile from tank position
+    const planet = this._territoryPlanet;
+    const tankPos = this._territoryTank.getPosition();
+    const centerTile = planet.getTileIndexAtPosition(tankPos);
+
+    if (centerTile < 0) return;
+
+    // Expand hex rings
+    const rawTiles = planet.getHexRing(centerTile, ringCount);
+
+    // Filter out sponsor tiles, portal tiles, and player's own existing territories
+    const ownedTiles = new Set();
+    for (const t of this._playerTerritories) {
+      for (const idx of t.tileIndices) ownedTiles.add(idx);
+    }
+
+    let filtered = rawTiles.filter((idx) => {
+      if (planet.sponsorTileIndices.has(idx)) return false;
+      if (planet.portalTileIndices.has(idx)) return false;
+      if (ownedTiles.has(idx)) return false;
+      return true;
+    });
+
+    // Also filter RESTRICTED tier tiles
+    const tierMap = planet.getTierMap();
+    if (tierMap) {
+      filtered = filtered.filter((idx) => tierMap.get(idx) !== "RESTRICTED");
+    }
+
+    // Calculate pricing
+    let pricing = null;
+    if (tierMap && typeof HexTierSystem !== "undefined") {
+      pricing = HexTierSystem.calculatePricing(filtered, tierMap);
+    }
+
+    this._territoryPreview = {
+      centerTile,
+      rawCount: rawTiles.length,
+      tileIndices: filtered,
+      pricing,
+    };
+
+    // Trigger camera pullback
+    if (this._territoryCamera) {
+      this._territoryCamera.setTerritoryPreviewPullback(pullbackMap[tierName]);
+    }
+
+    // Update preview UI
+    this._renderTerritoryPreview();
+  }
+
+  _renderTerritoryPreview() {
+    const preview = this._territoryPreview;
+    if (!preview) return;
+
+    const previewEl = document.getElementById("territory-preview");
+    const hexCountEl = document.getElementById("territory-hex-count");
+    const overlapEl = document.getElementById("territory-overlap-warning");
+    const pricingEl = document.getElementById("territory-pricing");
+
+    if (!previewEl) return;
+    previewEl.classList.remove("hidden");
+
+    // Hex count
+    if (hexCountEl) {
+      if (preview.tileIndices.length === 0) {
+        hexCountEl.textContent = "No available hexes at this location";
+      } else {
+        hexCountEl.textContent = `${preview.tileIndices.length} hex${preview.tileIndices.length !== 1 ? "es" : ""}`;
+      }
+    }
+
+    // Show overlap warning if tiles were lost
+    if (overlapEl) {
+      const lost = preview.rawCount - preview.tileIndices.length;
+      if (lost > 0) {
+        overlapEl.textContent = `${lost} hex${lost > 1 ? "es" : ""} excluded (sponsor/portal overlap)`;
+        overlapEl.classList.remove("hidden");
+      } else {
+        overlapEl.classList.add("hidden");
+      }
+    }
+
+    // Pricing breakdown
+    if (pricingEl && preview.pricing) {
+      const p = preview.pricing;
+      let html = '<div class="pricing-breakdown">';
+
+      for (const tierId of HexTierSystem.TIER_ORDER) {
+        const count = p.byTier[tierId];
+        if (!count) continue;
+        const tier = HexTierSystem.TIERS[tierId];
+        html += `<div class="pricing-row">
+          <span style="color:${tier.textColor}">${tier.icon} ${tier.name}</span>
+          <span>${count} x $${tier.price} = $${(count * tier.price).toFixed(2)}</span>
+        </div>`;
+      }
+
+      if (p.discount > 0) {
+        html += `<div class="pricing-row pricing-discount">
+          <span>${p.label || "Cluster Discount"}</span>
+          <span>-${p.discount.toFixed(1)}% (-$${p.discountAmount.toFixed(2)})</span>
+        </div>`;
+      }
+
+      html += `<div class="pricing-row pricing-total">
+        <span>Monthly Total</span>
+        <span>$${p.total.toFixed(2)}/mo</span>
+      </div>`;
+      html += "</div>";
+
+      pricingEl.innerHTML = html;
+    }
+
+    // Disable claim button if no tiles available
+    const claimBtn = document.getElementById("btn-territory-claim");
+    if (claimBtn) {
+      claimBtn.disabled = preview.tileIndices.length === 0;
+    }
+  }
+
+  _claimTerritory() {
+    const preview = this._territoryPreview;
+    if (!preview || preview.tileIndices.length === 0) return;
+    if (!this._territoryPlanet) return;
+
+    const planet = this._territoryPlanet;
+    const playerName = this.playerName || "Player";
+
+    // Generate unique territory ID
+    const territoryId = `territory_${Date.now()}_${Math.random().toString(36).substr(2, 6)}`;
+
+    // Generate placeholder texture (canvas with player name)
+    const patternImage = this._generateTerritoryTexture(playerName);
+
+    // Create virtual sponsor object (matches applySponsorCluster interface)
+    const virtualSponsor = {
+      id: territoryId,
+      name: playerName,
+      cluster: {
+        tileIndices: preview.tileIndices,
+      },
+      patternImage: patternImage,
+      patternAdjustment: {
+        scale: 1.0,
+        offsetX: 0,
+        offsetY: 0,
+        saturation: 1.0,
+        inputBlack: 0,
+        inputGamma: 1.0,
+        inputWhite: 255,
+        outputBlack: 0,
+        outputWhite: 255,
+      },
+    };
+
+    // Apply through sponsor pipeline
+    planet.applySponsorCluster(virtualSponsor);
+    planet.deElevateSponsorTiles();
+
+    // Track territory
+    const tierName = this._selectedTerritoryTier;
+    const territoryRecord = {
+      id: territoryId,
+      tierName: tierName,
+      tileIndices: preview.tileIndices,
+      timestamp: Date.now(),
+      patternImage: patternImage,
+    };
+    this._playerTerritories.push(territoryRecord);
+
+    // Save to localStorage
+    this._savePlayerTerritories();
+
+    // Reset preview state and camera
+    this._territoryPreview = null;
+    this._selectedTerritoryTier = null;
+
+    if (this._territoryCamera) {
+      this._territoryCamera.setTerritoryPreviewPullback(0);
+    }
+
+    // Update UI
+    const previewEl = document.getElementById("territory-preview");
+    if (previewEl) previewEl.classList.add("hidden");
+
+    const cards = this.container.querySelectorAll(".territory-tier-card");
+    cards.forEach((c) => c.classList.remove("selected"));
+
+    this._renderTerritoryList();
+
+    // Show notification
+    const tierLabels = { outpost: "Outpost", compound: "Compound", stronghold: "Stronghold" };
+    this.addNotification(
+      `Territory claimed: ${tierLabels[tierName] || "Territory"} (${preview.tileIndices.length} hexes)`,
+      "achievement",
+    );
+  }
+
+  _cancelTerritoryPreview() {
+    this._territoryPreview = null;
+    this._selectedTerritoryTier = null;
+
+    if (this._territoryCamera) {
+      this._territoryCamera.setTerritoryPreviewPullback(0);
+    }
+
+    const previewEl = document.getElementById("territory-preview");
+    if (previewEl) previewEl.classList.add("hidden");
+
+    const cards = this.container.querySelectorAll(".territory-tier-card");
+    cards.forEach((c) => c.classList.remove("selected"));
+  }
+
+  _generateTerritoryTexture(playerName) {
+    const canvas = document.createElement("canvas");
+    canvas.width = 512;
+    canvas.height = 512;
+    const ctx = canvas.getContext("2d");
+
+    // Faction-tinted colors
+    const factionColors = {
+      rust: { bg: "#3d1f1a", accent: "#b4503c", text: "#e8a090" },
+      cobalt: { bg: "#1a2240", accent: "#3c64b4", text: "#90a8e8" },
+      viridian: { bg: "#1a3020", accent: "#3c8c50", text: "#90e8a0" },
+    };
+    const colors = factionColors[this.playerFaction] || factionColors.rust;
+
+    // Base fill
+    ctx.fillStyle = colors.bg;
+    ctx.fillRect(0, 0, 512, 512);
+
+    // Diagonal stripe pattern
+    ctx.strokeStyle = colors.accent;
+    ctx.lineWidth = 8;
+    ctx.globalAlpha = 0.3;
+    for (let i = -512; i < 1024; i += 40) {
+      ctx.beginPath();
+      ctx.moveTo(i, 0);
+      ctx.lineTo(i + 512, 512);
+      ctx.stroke();
+    }
+    ctx.globalAlpha = 1.0;
+
+    // Player name text (centered)
+    ctx.fillStyle = colors.text;
+    ctx.font = "bold 48px monospace";
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+
+    const displayName =
+      playerName.length > 12
+        ? playerName.substring(0, 11) + "\u2026"
+        : playerName;
+
+    ctx.fillText(displayName, 256, 240);
+
+    // Flag icon below name
+    ctx.font = "64px serif";
+    ctx.fillText("\u2691", 256, 320);
+
+    return canvas.toDataURL("image/png");
+  }
+
+  _handleTerritoryUpload(inputEl, territoryId) {
+    const file = inputEl.files[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      const dataUrl = e.target.result;
+
+      const territory = this._playerTerritories.find((t) => t.id === territoryId);
+      if (!territory) return;
+
+      territory.patternImage = dataUrl;
+      this._savePlayerTerritories();
+
+      // Re-apply texture through Planet
+      if (this._territoryPlanet) {
+        const sponsor = {
+          id: territoryId,
+          patternImage: dataUrl,
+          patternAdjustment: {
+            scale: 1.0,
+            offsetX: 0,
+            offsetY: 0,
+            saturation: 1.0,
+            inputBlack: 0,
+            inputGamma: 1.0,
+            inputWhite: 255,
+            outputBlack: 0,
+            outputWhite: 255,
+          },
+        };
+        this._territoryPlanet._applySponsorTexture(sponsor, territory.tileIndices);
+      }
+
+      this._renderTerritoryList();
+    };
+    reader.readAsDataURL(file);
+  }
+
+  _renderTerritoryList() {
+    const listEl = document.getElementById("territory-list");
+    if (!listEl) return;
+
+    if (this._playerTerritories.length === 0) {
+      listEl.innerHTML = '<div class="empty-state">No territories claimed</div>';
+      return;
+    }
+
+    const tierLabels = { outpost: "Outpost", compound: "Compound", stronghold: "Stronghold" };
+
+    listEl.innerHTML = this._playerTerritories
+      .map((t) => {
+        const label = tierLabels[t.tierName] || "Territory";
+        const age = this._formatTimeAgo(t.timestamp);
+        return `
+          <div class="territory-owned-item" data-territory-id="${t.id}">
+              <div class="territory-item-info">
+                  <span class="territory-item-name">${label}</span>
+                  <span class="territory-item-hexes">${t.tileIndices.length} hex${t.tileIndices.length !== 1 ? "es" : ""}</span>
+              </div>
+              <div class="territory-item-meta">${age}</div>
+              <button class="territory-item-upload" data-territory-id="${t.id}">
+                  Replace Image
+              </button>
+          </div>
+        `;
+      })
+      .join("");
+  }
+
+  _formatTimeAgo(timestamp) {
+    const seconds = Math.floor((Date.now() - timestamp) / 1000);
+    if (seconds < 60) return "just now";
+    if (seconds < 3600) return `${Math.floor(seconds / 60)}m ago`;
+    if (seconds < 86400) return `${Math.floor(seconds / 3600)}h ago`;
+    return `${Math.floor(seconds / 86400)}d ago`;
+  }
+
+  _savePlayerTerritories() {
+    try {
+      localStorage.setItem(
+        "adlands_player_territories",
+        JSON.stringify(this._playerTerritories),
+      );
+    } catch (e) {
+      console.warn("[Dashboard] Failed to save territories:", e);
+    }
+  }
+
+  _loadPlayerTerritories() {
+    try {
+      const saved = localStorage.getItem("adlands_player_territories");
+      if (!saved) return;
+
+      const territories = JSON.parse(saved);
+      if (!Array.isArray(territories) || !this._territoryPlanet) return;
+
+      for (const territory of territories) {
+        if (!territory.tileIndices || territory.tileIndices.length === 0) continue;
+
+        // Check that tiles are still available (not taken by sponsors since last session)
+        const planet = this._territoryPlanet;
+        const validTiles = territory.tileIndices.filter(
+          (idx) =>
+            !planet.sponsorTileIndices.has(idx) &&
+            !planet.portalTileIndices.has(idx),
+        );
+
+        if (validTiles.length === 0) continue;
+
+        territory.tileIndices = validTiles;
+
+        const virtualSponsor = {
+          id: territory.id,
+          name: this.playerName || "Player",
+          cluster: { tileIndices: validTiles },
+          patternImage: territory.patternImage,
+          patternAdjustment: {
+            scale: 1.0,
+            offsetX: 0,
+            offsetY: 0,
+            saturation: 1.0,
+            inputBlack: 0,
+            inputGamma: 1.0,
+            inputWhite: 255,
+            outputBlack: 0,
+            outputWhite: 255,
+          },
+        };
+
+        planet.applySponsorCluster(virtualSponsor);
+        this._playerTerritories.push(territory);
+      }
+
+      if (this._playerTerritories.length > 0) {
+        this._territoryPlanet.deElevateSponsorTiles();
+        this._renderTerritoryList();
+      }
+    } catch (e) {
+      console.warn("[Dashboard] Failed to load territories:", e);
     }
   }
 

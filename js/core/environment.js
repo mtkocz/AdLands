@@ -869,6 +869,17 @@ gl_FragColor = vec4( outgoingLight, diffuseColor.a );`
               diffuseColor *= texelColor;
             #endif`
           );
+          // Flip emissive map UV on back face too (sponsor glow)
+          shader.fragmentShader = shader.fragmentShader.replace(
+            '#include <emissivemap_fragment>',
+            `#ifdef USE_EMISSIVEMAP
+              vec2 emissiveMapUv = vUv;
+              if (!gl_FrontFacing) emissiveMapUv.x = 1.0 - emissiveMapUv.x;
+              vec4 emissiveColor = texture2D(emissiveMap, emissiveMapUv);
+              emissiveColor.rgb = emissiveMapTexelToLinear(emissiveColor).rgb;
+              totalEmissiveRadiance *= emissiveColor.rgb;
+            #endif`
+          );
         };
         // Chain planet shadow onto the ad panel material (preserves UV flip above)
         this._applyPlanetShadow(panelMat);
@@ -1450,11 +1461,14 @@ gl_FragColor = vec4( outgoingLight, diffuseColor.a );`
     if (!adPanel) return;
 
     if (!sponsorData || !sponsorData.patternImage) {
-      // Clear sponsor — revert to default gray
+      // Clear sponsor — revert to default gray, remove from bloom
       adPanel.material.color.setHex(0x888888);
       adPanel.material.emissive.setHex(0x111111);
+      adPanel.material.emissiveMap = null;
+      adPanel.material.emissiveIntensity = 1;
       adPanel.material.map = null;
       adPanel.material.needsUpdate = true;
+      adPanel.layers.set(0);
       bb.userData.sponsor = null;
       return;
     }
@@ -1492,8 +1506,12 @@ gl_FragColor = vec4( outgoingLight, diffuseColor.a );`
 
       adPanel.material.map = texture;
       adPanel.material.color.setHex(0xffffff);
-      adPanel.material.emissive.setHex(0x000000);
+      adPanel.material.emissive.setHex(0xffffff);
+      adPanel.material.emissiveMap = texture;
+      adPanel.material.emissiveIntensity = 0.85;
       adPanel.material.needsUpdate = true;
+      // Add to bloom layer so sponsor textures cause subtle glow
+      adPanel.layers.enable(1);
     };
     img.src = sponsorData.patternImage;
   }

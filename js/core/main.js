@@ -1164,6 +1164,9 @@
   );
   window.dashboard = dashboard; // Global reference for debugging
 
+  // Territory system - give dashboard access to planet, tank, and camera
+  dashboard.setTerritoryRefs(planet, tank, gameCamera);
+
   // Badge System (track achievements and unlock badges)
   const badgeSystem = new BadgeSystem();
   dashboard.setBadgeSystem(badgeSystem);
