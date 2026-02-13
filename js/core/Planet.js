@@ -865,7 +865,7 @@ class Planet {
         const r = Math.sqrt(origX * origX + origY * origY + origZ * origZ);
         const theta = Math.atan2(origZ, origX);
         const phi = Math.acos(origY / r);
-        const scale = 60.0;
+        const scale = extrusionScale > 1 ? 240.0 : 60.0;
         uvs.push((theta / Math.PI + 1) * 0.5 * scale, (phi / Math.PI) * scale);
       }
 
