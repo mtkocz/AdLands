@@ -252,10 +252,10 @@ class Planet {
       );
     }
 
-    this._createTileMeshes(hexasphere.tiles);
-
-    // Generate shared rock texture for cliff walls and polar opening walls
+    // Generate shared rock texture for cliff walls, polar walls, and elevated terrain tops
     this._createRockWallTexture();
+
+    this._createTileMeshes(hexasphere.tiles);
 
     // Create cliff wall geometry for terrain elevation transitions
     if (this.terrainElevation) {
@@ -914,28 +914,22 @@ class Planet {
         const isElevated = this.terrainElevation && this.terrainElevation.getElevationAtTileIndex(index) > 0;
 
         if (isElevated) {
-          if (!this._elevatedTerrainTexture) {
-            const sz = 8;
-            const c = document.createElement("canvas");
-            c.width = sz;
-            c.height = sz;
-            const cx = c.getContext("2d");
-            const rng = this._createSeededRandom(999);
-            for (let y = 0; y < sz; y++) {
-              for (let x = 0; x < sz; x++) {
-                const v = Math.floor(150 + rng() * 105);
-                cx.fillStyle = `rgb(${v}, ${v}, ${v})`;
-                cx.fillRect(x, y, 1, 1);
-              }
-            }
-            const tex = new THREE.CanvasTexture(c);
-            tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
-            tex.minFilter = THREE.NearestFilter;
-            tex.magFilter = THREE.NearestFilter;
-            this._elevatedTerrainTexture = tex;
+          // Add vertex colors matching cliff wall tint
+          const variation = (this.random() - 0.5) * 0.06;
+          const cr = 0.45 + variation;
+          const cg = 0.42 + variation * 0.8;
+          const cb = 0.40 + variation * 0.6;
+          const colors = [];
+          for (let i = 0; i < n; i++) {
+            colors.push(cr, cg, cb);
           }
+          geometry.setAttribute(
+            "color",
+            new THREE.Float32BufferAttribute(colors, 3),
+          );
           material = new THREE.MeshStandardMaterial({
-            map: this._elevatedTerrainTexture,
+            map: this._rockWallTexture,
+            vertexColors: true,
             flatShading: true,
             roughness: 0.95,
             metalness: 0.05,
