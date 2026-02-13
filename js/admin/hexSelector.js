@@ -604,7 +604,7 @@ class HexSelector {
   }
 
   _createBillboardPatternMaterial() {
-    const adj = this.patternAdjustment;
+    const adj = this.patternAdjustment || {};
     const inputBlack = (adj.inputBlack ?? 0) / 255.0;
     const inputWhite = (adj.inputWhite ?? 255) / 255.0;
     const gamma = adj.inputGamma ?? 1.0;
@@ -1865,6 +1865,105 @@ class HexSelector {
     this.orbitalVelocity.phi = 0;
 
     // Start transition
+    this.transitioning = true;
+    this.transitionProgress = 0;
+  }
+
+  /**
+   * Transition camera to face selected moon(s)
+   * @param {number[]} moonIndices - Moon indices to focus on
+   */
+  transitionToMoon(moonIndices) {
+    if (!moonIndices || moonIndices.length === 0) return;
+    if (this.transitioning) return;
+
+    // Calculate average position of target moons
+    let sumX = 0, sumY = 0, sumZ = 0, count = 0;
+    for (const mi of moonIndices) {
+      const mesh = this.moonMeshes[mi];
+      if (mesh) {
+        sumX += mesh.position.x;
+        sumY += mesh.position.y;
+        sumZ += mesh.position.z;
+        count++;
+      }
+    }
+    if (count === 0) return;
+
+    const cx = sumX / count;
+    const cy = sumY / count;
+    const cz = sumZ / count;
+
+    const targetTheta = Math.atan2(cz, cx);
+    const r = Math.sqrt(cx * cx + cy * cy + cz * cz);
+    const targetPhi = Math.acos(cy / r);
+
+    const minPhi = (10 * Math.PI) / 180;
+    const maxPhi = (170 * Math.PI) / 180;
+    const clampedPhi = Math.max(minPhi, Math.min(maxPhi, targetPhi));
+
+    this.transitionStart = {
+      theta: this.orbitalTheta,
+      phi: this.orbitalPhi,
+      distance: this.orbitalDistance,
+    };
+    this.transitionTarget = {
+      theta: targetTheta,
+      phi: clampedPhi,
+      distance: Math.max(250, r * 1.5),
+    };
+
+    this.orbitalVelocity.theta = 0;
+    this.orbitalVelocity.phi = 0;
+    this.transitioning = true;
+    this.transitionProgress = 0;
+  }
+
+  /**
+   * Transition camera to face selected billboard(s)
+   * @param {number[]} billboardIndices - Billboard indices to focus on
+   */
+  transitionToBillboard(billboardIndices) {
+    if (!billboardIndices || billboardIndices.length === 0) return;
+    if (this.transitioning) return;
+
+    let sumX = 0, sumY = 0, sumZ = 0, count = 0;
+    for (const bi of billboardIndices) {
+      const group = this.billboardGroups[bi];
+      if (group) {
+        sumX += group.position.x;
+        sumY += group.position.y;
+        sumZ += group.position.z;
+        count++;
+      }
+    }
+    if (count === 0) return;
+
+    const cx = sumX / count;
+    const cy = sumY / count;
+    const cz = sumZ / count;
+
+    const targetTheta = Math.atan2(cz, cx);
+    const r = Math.sqrt(cx * cx + cy * cy + cz * cz);
+    const targetPhi = Math.acos(cy / r);
+
+    const minPhi = (10 * Math.PI) / 180;
+    const maxPhi = (170 * Math.PI) / 180;
+    const clampedPhi = Math.max(minPhi, Math.min(maxPhi, targetPhi));
+
+    this.transitionStart = {
+      theta: this.orbitalTheta,
+      phi: this.orbitalPhi,
+      distance: this.orbitalDistance,
+    };
+    this.transitionTarget = {
+      theta: targetTheta,
+      phi: clampedPhi,
+      distance: Math.max(220, r * 1.3),
+    };
+
+    this.orbitalVelocity.theta = 0;
+    this.orbitalVelocity.phi = 0;
     this.transitioning = true;
     this.transitionProgress = 0;
   }

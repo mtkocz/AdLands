@@ -1007,8 +1007,10 @@
       hexSelector.transitionToCluster(sponsor.cluster.tileIndices);
     } else if (moonIndices.length > 0) {
       hexSelector.setSelectedMoons(moonIndices);
+      hexSelector.transitionToMoon(moonIndices);
     } else if (bbIndices.length > 0) {
       hexSelector.setSelectedBillboards(bbIndices);
+      hexSelector.transitionToBillboard(bbIndices);
     }
 
     // Update assigned items (exclude current sponsor)
@@ -1091,12 +1093,13 @@
     sponsorForm.editingSponsorId = id;
 
     // === STEP 1: Load form data FIRST (so selection callbacks see correct pattern) ===
+    const currentFormData = sponsorForm.getFormData();
     const patternData = {
       id: id,
-      name: sponsorForm.getFormData().name,
-      tagline: sponsorForm.getFormData().tagline,
-      websiteUrl: sponsorForm.getFormData().websiteUrl,
-      logoImage: sponsorForm.getFormData().logoImage,
+      name: currentFormData.name,
+      tagline: currentFormData.tagline,
+      websiteUrl: currentFormData.websiteUrl,
+      logoImage: currentFormData.logoImage,
       patternImage: sponsor.patternImage || null,
       patternAdjustment: sponsor.patternAdjustment || null,
     };
@@ -1125,11 +1128,17 @@
     if (tt === 'moon') {
       hexSelector.clearSelection();
       const moonIndices = moonManager ? moonManager.getMoonsForSponsor(editingGroup.name) : [];
-      if (moonIndices.length > 0) hexSelector.setSelectedMoons(moonIndices);
+      if (moonIndices.length > 0) {
+        hexSelector.setSelectedMoons(moonIndices);
+        hexSelector.transitionToMoon(moonIndices);
+      }
     } else if (tt === 'billboard') {
       hexSelector.clearSelection();
       const bbIndices = billboardManager ? billboardManager.getBillboardsForSponsor(editingGroup.name) : [];
-      if (bbIndices.length > 0) hexSelector.setSelectedBillboards(bbIndices);
+      if (bbIndices.length > 0) {
+        hexSelector.setSelectedBillboards(bbIndices);
+        hexSelector.transitionToBillboard(bbIndices);
+      }
     } else if (sponsor.cluster?.tileIndices?.length > 0) {
       hexSelector.setSelectedTiles(sponsor.cluster.tileIndices);
       hexSelector.transitionToCluster(sponsor.cluster.tileIndices);
@@ -1222,12 +1231,12 @@
       // Copy shared fields + texture from the last member
       const last = members[members.length - 1];
       await SponsorStorage.fetchFull(last.id);
-      const lastFull = SponsorStorage.getById(last.id);
+      const lastFull = SponsorStorage.getById(last.id) || last;
       const newSponsor = await SponsorStorage.create({
-        name: lastFull.name,
-        tagline: lastFull.tagline,
-        websiteUrl: lastFull.websiteUrl,
-        logoImage: lastFull.logoImage,
+        name: lastFull.name || last.name,
+        tagline: lastFull.tagline || last.tagline || "",
+        websiteUrl: lastFull.websiteUrl || last.websiteUrl || "",
+        logoImage: lastFull.logoImage || last.logoImage || null,
         patternImage: lastFull.patternImage || null,
         patternAdjustment: lastFull.patternAdjustment || null,
         cluster: { tileIndices: [] },
