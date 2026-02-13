@@ -784,9 +784,9 @@ float calcPlanetShadow(vec3 pos, vec3 lightDir, float radius) {
       );
 
       shader.fragmentShader = shader.fragmentShader.replace(
-        '#include <output_fragment>',
+        'gl_FragColor = vec4( outgoingLight, diffuseColor.a );',
         `outgoingLight *= mix(0.3, 1.0, calcPlanetShadow(vWorldPos, uSunDirection, uPlanetRadius));
-#include <output_fragment>`
+gl_FragColor = vec4( outgoingLight, diffuseColor.a );`
       );
     };
   }

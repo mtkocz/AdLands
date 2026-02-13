@@ -107,6 +107,7 @@ class MoonSponsorManager {
       name: sponsorData.name,
       tagline: sponsorData.tagline || "",
       websiteUrl: sponsorData.websiteUrl || "",
+      logoImage: sponsorData.logoImage || null,
       patternImage: sponsorData.patternImage || null,
       patternAdjustment: sponsorData.patternAdjustment || {
         scale: 1, offsetX: 0, offsetY: 0, saturation: 1,

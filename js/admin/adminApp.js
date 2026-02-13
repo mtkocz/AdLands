@@ -575,6 +575,10 @@
         else if (selectedMoonsForGroupSave.length > 0) territoryType = 'moon';
         else if (selectedBillboardsForGroupSave.length > 0) territoryType = 'billboard';
 
+        // Check previous territory type to detect type changes
+        const prevGroupSponsor = SponsorStorage.getById(activeId);
+        const prevGroupType = prevGroupSponsor?.territoryType || null;
+
         try {
           await SponsorStorage.update(activeId, {
             ...sharedFields,
@@ -596,22 +600,28 @@
           return;
         }
 
-        // Save moon assignments
-        try {
-          if (moonManager) {
-            await moonManager.saveMoonsForSponsor(selectedMoonsForGroupSave, formData);
+        // Save moon assignments (only when this territory involves moons,
+        // or was previously a moon territory that is changing type)
+        if (territoryType === 'moon' || prevGroupType === 'moon') {
+          try {
+            if (moonManager) {
+              await moonManager.saveMoonsForSponsor(selectedMoonsForGroupSave, formData);
+            }
+          } catch (e) {
+            console.warn("[AdminApp] Moon save failed:", e);
           }
-        } catch (e) {
-          console.warn("[AdminApp] Moon save failed:", e);
         }
 
-        // Save billboard assignments
-        try {
-          if (billboardManager) {
-            await billboardManager.saveBillboardsForSponsor(selectedBillboardsForGroupSave, formData);
+        // Save billboard assignments (only when this territory involves billboards,
+        // or was previously a billboard territory that is changing type)
+        if (territoryType === 'billboard' || prevGroupType === 'billboard') {
+          try {
+            if (billboardManager) {
+              await billboardManager.saveBillboardsForSponsor(selectedBillboardsForGroupSave, formData);
+            }
+          } catch (e) {
+            console.warn("[AdminApp] Billboard save failed:", e);
           }
-        } catch (e) {
-          console.warn("[AdminApp] Billboard save failed:", e);
         }
 
         handleClearForm();
@@ -637,6 +647,10 @@
         };
 
         const editingId = sponsorForm.getEditingSponsorId();
+
+        // Check previous territory type to detect type changes
+        const prevSponsor = editingId ? SponsorStorage.getById(editingId) : null;
+        const prevType = prevSponsor?.territoryType || null;
 
         // Tile conflict check
         if (selectedTiles.length > 0) {
@@ -664,22 +678,28 @@
           return;
         }
 
-        // Save moon assignments
-        try {
-          if (moonManager) {
-            await moonManager.saveMoonsForSponsor(selectedMoonsForSave, formData);
+        // Save moon assignments (only when this territory involves moons,
+        // or was previously a moon territory that is changing type)
+        if (singleTerritoryType === 'moon' || prevType === 'moon') {
+          try {
+            if (moonManager) {
+              await moonManager.saveMoonsForSponsor(selectedMoonsForSave, formData);
+            }
+          } catch (e) {
+            console.warn("[AdminApp] Moon save failed:", e);
           }
-        } catch (e) {
-          console.warn("[AdminApp] Moon save failed:", e);
         }
 
-        // Save billboard assignments
-        try {
-          if (billboardManager) {
-            await billboardManager.saveBillboardsForSponsor(selectedBillboardsForSave, formData);
+        // Save billboard assignments (only when this territory involves billboards,
+        // or was previously a billboard territory that is changing type)
+        if (singleTerritoryType === 'billboard' || prevType === 'billboard') {
+          try {
+            if (billboardManager) {
+              await billboardManager.saveBillboardsForSponsor(selectedBillboardsForSave, formData);
+            }
+          } catch (e) {
+            console.warn("[AdminApp] Billboard save failed:", e);
           }
-        } catch (e) {
-          console.warn("[AdminApp] Billboard save failed:", e);
         }
 
         if (createdSponsor) {

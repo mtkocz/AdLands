@@ -3059,12 +3059,18 @@
       urlSection.classList.add("hidden");
     }
 
-    // Show joined date
-    document.getElementById("intel-joined").textContent = formatTimeAgo(
-      sponsor.createdAt,
-    );
+    // Show joined date (hide row if createdAt unavailable)
+    const joinedRow = document.getElementById("intel-joined").closest(".stat-row");
+    if (sponsor.createdAt) {
+      document.getElementById("intel-joined").textContent = formatTimeAgo(
+        sponsor.createdAt,
+      );
+      joinedRow.classList.remove("hidden");
+    } else {
+      joinedRow.classList.add("hidden");
+    }
 
-    // Hide cluster-specific stat rows (keep Joined visible)
+    // Hide cluster-specific stat rows
     document.getElementById("intel-hex-count").closest(".stat-row").classList.add("hidden");
     document.getElementById("intel-faction").closest(".stat-row").classList.add("hidden");
     document.getElementById("intel-duration").closest(".stat-row").classList.add("hidden");
@@ -3135,11 +3141,25 @@
       return; // Block click from reaching planet surface
     }
 
-    // Check sponsored moons
-    const moonHits = intelRaycaster.intersectObjects(environment.moons);
-    if (moonHits.length > 0) {
-      const moon = moonHits[0].object;
-      const sponsor = moon?.userData?.sponsor;
+    // Check sponsored moons (screen-space projection for reliable hit detection)
+    let hitMoon = null;
+    const _moonProj = new THREE.Vector3();
+    for (const moon of environment.moons) {
+      if (!moon.visible) continue;
+      _moonProj.copy(moon.position).project(camera);
+      if (_moonProj.z > 1) continue; // behind camera
+      const sx = (_moonProj.x + 1) / 2 * window.innerWidth;
+      const sy = (-_moonProj.y + 1) / 2 * window.innerHeight;
+      const r = moon.geometry.parameters.radius;
+      const d = camera.position.distanceTo(moon.position);
+      const projR = (r / d) * window.innerHeight / (2 * Math.tan(camera.fov * Math.PI / 360));
+      if (Math.hypot(clickX - sx, clickY - sy) <= projR) {
+        hitMoon = moon;
+        break;
+      }
+    }
+    if (hitMoon) {
+      const sponsor = hitMoon.userData?.sponsor;
       if (sponsor) {
         showSpaceSponsorPopup(clickX, clickY, sponsor, "Moon");
       }

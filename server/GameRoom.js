@@ -343,6 +343,8 @@ class GameRoom {
         websiteUrl: sponsor.websiteUrl,
         patternImage: urls.patternUrl || null,
         patternAdjustment: sponsor.patternAdjustment,
+        createdAt: sponsor.createdAt,
+        logoImage: sponsor.logoImage || null,
       };
     });
   }
@@ -402,6 +404,8 @@ class GameRoom {
         websiteUrl: sponsor.websiteUrl,
         patternImage: urls.patternUrl || null,
         patternAdjustment: sponsor.patternAdjustment,
+        createdAt: sponsor.createdAt,
+        logoImage: sponsor.logoImage || null,
       };
     });
   }
