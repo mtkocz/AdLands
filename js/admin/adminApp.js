@@ -171,7 +171,7 @@
     importFileInput.addEventListener("change", handleImport);
 
     // Add new sponsor
-    addSponsorBtn.addEventListener("click", handleClearForm);
+    addSponsorBtn.addEventListener("click", handleNewSponsor);
 
     // Window resize
     window.addEventListener("resize", handleResize);
@@ -689,6 +689,15 @@
     updateAssignedBillboards();
     selectedTilesListEl.textContent = "";
     showSponsorInfoView();
+  }
+
+  function handleNewSponsor() {
+    handleClearForm();
+    refreshSponsorsList();
+    const nameInput = document.getElementById("sponsor-name");
+    if (nameInput) {
+      nameInput.focus();
+    }
   }
 
   function handleExport() {

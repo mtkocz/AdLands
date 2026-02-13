@@ -501,6 +501,8 @@ class Environment {
       name: sponsorData.name,
       tagline: sponsorData.tagline,
       websiteUrl: sponsorData.websiteUrl,
+      logoImage: sponsorData.logoImage,
+      createdAt: sponsorData.createdAt,
     };
 
     // Load texture from URL
@@ -1432,6 +1434,8 @@ float calcPlanetShadow(vec3 pos, vec3 lightDir, float radius) {
       name: sponsorData.name,
       tagline: sponsorData.tagline,
       websiteUrl: sponsorData.websiteUrl,
+      logoImage: sponsorData.logoImage,
+      createdAt: sponsorData.createdAt,
     };
 
     // Load texture from URL

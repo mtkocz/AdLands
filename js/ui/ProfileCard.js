@@ -290,18 +290,12 @@ class ProfileCard {
 
   _formatTimeAgo(isoString) {
     if (!isoString) return "Unknown";
-    const seconds = Math.floor(
-      (Date.now() - new Date(isoString).getTime()) / 1000,
-    );
-    const days = Math.floor(seconds / 86400);
-    if (days >= 365) return `${Math.floor(days / 365)}y ago`;
-    if (days >= 30) return `${Math.floor(days / 30)}mo ago`;
-    if (days >= 1) return `${days}d ago`;
-    const hours = Math.floor(seconds / 3600);
-    if (hours >= 1) return `${hours}h ago`;
-    const minutes = Math.floor(seconds / 60);
-    if (minutes >= 1) return `${minutes}m ago`;
-    return "Just now";
+    const date = new Date(isoString);
+    const months = [
+      "Jan", "Feb", "Mar", "Apr", "May", "Jun",
+      "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
+    ];
+    return `${months[date.getMonth()]} ${date.getFullYear()}`;
   }
 
   // ========================

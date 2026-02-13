@@ -2731,18 +2731,12 @@
 
   function formatTimeAgo(isoString) {
     if (!isoString) return "Unknown";
-    const seconds = Math.floor(
-      (Date.now() - new Date(isoString).getTime()) / 1000,
-    );
-    const days = Math.floor(seconds / 86400);
-    if (days >= 365) return `${Math.floor(days / 365)}y ago`;
-    if (days >= 30) return `${Math.floor(days / 30)}mo ago`;
-    if (days >= 1) return `${days}d ago`;
-    const hours = Math.floor(seconds / 3600);
-    if (hours >= 1) return `${hours}h ago`;
-    const minutes = Math.floor(seconds / 60);
-    if (minutes >= 1) return `${minutes}m ago`;
-    return "Just now";
+    const date = new Date(isoString);
+    const months = [
+      "Jan", "Feb", "Mar", "Apr", "May", "Jun",
+      "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
+    ];
+    return `${months[date.getMonth()]} ${date.getFullYear()}`;
   }
 
   // Format seconds as compact time string for Y-axis labels
@@ -3031,7 +3025,12 @@
 
   function showSpaceSponsorPopup(clickX, clickY, sponsor, type) {
     const logoEl = document.getElementById("intel-logo");
-    logoEl.classList.add("hidden");
+    if (sponsor.logoImage) {
+      logoEl.src = sponsor.logoImage;
+      logoEl.classList.remove("hidden");
+    } else {
+      logoEl.classList.add("hidden");
+    }
 
     document.getElementById("intel-name").textContent =
       sponsor.name || "Unknown Sponsor";
@@ -3048,8 +3047,17 @@
       urlSection.classList.add("hidden");
     }
 
-    // Hide cluster-specific sections
-    document.querySelector("#territory-intel-popup .intel-stats").classList.add("hidden");
+    // Show joined date
+    document.getElementById("intel-joined").textContent = formatTimeAgo(
+      sponsor.createdAt,
+    );
+
+    // Hide cluster-specific stat rows (keep Joined visible)
+    document.getElementById("intel-hex-count").closest(".stat-row").classList.add("hidden");
+    document.getElementById("intel-faction").closest(".stat-row").classList.add("hidden");
+    document.getElementById("intel-duration").closest(".stat-row").classList.add("hidden");
+
+    // Hide activity and rewards sections
     const sectionEls = document.querySelectorAll("#territory-intel-popup .intel-section");
     sectionEls.forEach((el) => {
       if (el.querySelector("h4")) el.classList.add("hidden");
@@ -3065,6 +3073,9 @@
     if (statsEl) statsEl.classList.remove("hidden");
     const sectionEls = document.querySelectorAll("#territory-intel-popup .intel-section");
     sectionEls.forEach((el) => el.classList.remove("hidden"));
+    // Restore individual stat rows hidden by space sponsor popup
+    document.querySelectorAll("#territory-intel-popup .stat-row")
+      .forEach((el) => el.classList.remove("hidden"));
   }
 
   // Right-click detection for sponsor clusters
