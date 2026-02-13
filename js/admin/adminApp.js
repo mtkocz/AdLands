@@ -489,9 +489,9 @@
         return;
       }
 
-      if (activeView === "info") {
-        // === SPONSOR INFO SAVE ===
-        // Save only shared fields, propagate to all clusters in group
+      if (activeView === "info" && editingGroup) {
+        // === GROUP INFO-ONLY SAVE ===
+        // Save only shared fields, propagate to all territories in group
         const sharedFields = {
           name: formData.name,
           tagline: formData.tagline,
@@ -499,47 +499,23 @@
           logoImage: formData.logoImage,
         };
 
-        if (editingGroup) {
-          try {
-            for (const id of editingGroup.ids) {
-              await SponsorStorage.update(id, sharedFields);
-            }
-            showToast(`Sponsor "${formData.name}" info updated (${editingGroup.ids.length} territories)`, "success");
-          } catch (e) {
-            showToast(e.message || "Failed to save sponsor info", "error");
-            return;
+        try {
+          for (const id of editingGroup.ids) {
+            await SponsorStorage.update(id, sharedFields);
           }
-        } else {
-          const editingId = sponsorForm.getEditingSponsorId();
-          if (editingId) {
-            try {
-              await SponsorStorage.update(editingId, sharedFields);
-              showToast(`Sponsor "${formData.name}" info updated`, "success");
-            } catch (e) {
-              showToast(e.message || "Failed to save sponsor info", "error");
-              return;
-            }
-          } else {
-            // New sponsor — create with empty territory (user can add tiles later)
-            try {
-              await SponsorStorage.create({
-                ...sharedFields,
-                cluster: { tileIndices: [] },
-                rewards: [],
-              });
-              showToast(`Sponsor "${formData.name}" created`, "success");
-            } catch (e) {
-              showToast(e.message || "Failed to create sponsor", "error");
-              return;
-            }
-          }
+          showToast(`Sponsor "${formData.name}" info updated (${editingGroup.ids.length} territories)`, "success");
+        } catch (e) {
+          showToast(e.message || "Failed to save sponsor info", "error");
+          return;
         }
 
         refreshSponsorsList();
-      } else {
-        // === TERRITORIES SAVE ===
+      } else if (editingGroup) {
+        // === GROUP TERRITORY SAVE ===
         const selectedTiles = hexSelector.getSelectedTiles();
         const rewards = rewardConfig.getRewards();
+        const selectedMoonsForGroupSave = hexSelector ? hexSelector.getSelectedMoons() : [];
+        const selectedBillboardsForGroupSave = hexSelector ? hexSelector.getSelectedBillboards() : [];
 
         const rewardValidation = rewardConfig.validate();
         if (!rewardValidation.valid) {
@@ -547,92 +523,88 @@
           return;
         }
 
-        if (editingGroup) {
-          // --- Group territory save ---
-          const activeId = editingGroup.ids[editingGroup.activeIndex];
+        const activeId = editingGroup.ids[editingGroup.activeIndex];
 
-          const selectedMoonsForGroupSave = hexSelector ? hexSelector.getSelectedMoons() : [];
-          if (selectedTiles.length === 0 && selectedMoonsForGroupSave.length === 0) {
-            showToast("Active territory must have at least one tile, moon, or billboard", "error");
-            return;
-          }
+        if (selectedTiles.length === 0 && selectedMoonsForGroupSave.length === 0 && selectedBillboardsForGroupSave.length === 0) {
+          showToast("Active territory must have at least one tile, moon, or billboard", "error");
+          return;
+        }
 
-          // Tile conflict check (exclude all group members)
-          for (const id of editingGroup.ids) {
-            const tiles = id === activeId
-              ? selectedTiles
-              : (SponsorStorage.getById(id)?.cluster?.tileIndices || []);
-            if (tiles.length === 0) continue;
-            const check = SponsorStorage.areTilesUsed(tiles, id);
-            if (check.isUsed) {
-              const groupIdSet = new Set(editingGroup.ids);
-              const conflictSponsor = SponsorStorage.getAll().find(
-                (s) => !groupIdSet.has(s.id) && s.cluster?.tileIndices?.some((t) => tiles.includes(t))
-              );
-              if (conflictSponsor) {
-                showToast(`Tiles conflict with "${conflictSponsor.name}"`, "error");
-                return;
-              }
+        // Tile conflict check (exclude all group members)
+        for (const id of editingGroup.ids) {
+          const tiles = id === activeId
+            ? selectedTiles
+            : (SponsorStorage.getById(id)?.cluster?.tileIndices || []);
+          if (tiles.length === 0) continue;
+          const check = SponsorStorage.areTilesUsed(tiles, id);
+          if (check.isUsed) {
+            const groupIdSet = new Set(editingGroup.ids);
+            const conflictSponsor = SponsorStorage.getAll().find(
+              (s) => !groupIdSet.has(s.id) && s.cluster?.tileIndices?.some((t) => tiles.includes(t))
+            );
+            if (conflictSponsor) {
+              showToast(`Tiles conflict with "${conflictSponsor.name}"`, "error");
+              return;
             }
           }
+        }
 
-          const sharedFields = {
-            name: formData.name,
-            tagline: formData.tagline,
-            websiteUrl: formData.websiteUrl,
-            logoImage: formData.logoImage,
-          };
+        const sharedFields = {
+          name: formData.name,
+          tagline: formData.tagline,
+          websiteUrl: formData.websiteUrl,
+          logoImage: formData.logoImage,
+        };
 
-          try {
-            await SponsorStorage.update(activeId, {
-              ...sharedFields,
-              cluster: { tileIndices: selectedTiles },
-              patternImage: formData.patternImage,
-              patternAdjustment: formData.patternAdjustment,
-              rewards: rewards,
-            });
-
-            for (const id of editingGroup.ids) {
-              if (id === activeId) continue;
-              await SponsorStorage.update(id, sharedFields);
-            }
-
-            showToast(`"${formData.name}" saved (${editingGroup.ids.length} territories)`, "success");
-          } catch (e) {
-            showToast(e.message || "Failed to save group", "error");
-            return;
-          }
-
-          // Save moon assignments
-          if (moonManager) {
-            const selectedMoons = hexSelector.getSelectedMoons();
-            await moonManager.saveMoonsForSponsor(selectedMoons, formData);
-          }
-
-          // Save billboard assignments
-          if (billboardManager) {
-            const selectedBillboards = hexSelector.getSelectedBillboards();
-            await billboardManager.saveBillboardsForSponsor(selectedBillboards, formData);
-          }
-
-          handleClearForm();
-          refreshSponsorsList();
-        } else {
-          // --- Single territory save ---
-          const sponsor = {
-            ...formData,
+        try {
+          await SponsorStorage.update(activeId, {
+            ...sharedFields,
             cluster: { tileIndices: selectedTiles },
+            patternImage: formData.patternImage,
+            patternAdjustment: formData.patternAdjustment,
             rewards: rewards,
-          };
+          });
 
-          const selectedMoonsForSave = hexSelector ? hexSelector.getSelectedMoons() : [];
-          const selectedBillboardsForSave = hexSelector ? hexSelector.getSelectedBillboards() : [];
-          if (selectedTiles.length === 0 && selectedMoonsForSave.length === 0 && selectedBillboardsForSave.length === 0) {
-            showToast("Please select at least one tile, moon, or billboard", "error");
-            return;
+          for (const id of editingGroup.ids) {
+            if (id === activeId) continue;
+            await SponsorStorage.update(id, sharedFields);
           }
 
-          const editingId = sponsorForm.getEditingSponsorId();
+          showToast(`"${formData.name}" saved (${editingGroup.ids.length} territories)`, "success");
+        } catch (e) {
+          showToast(e.message || "Failed to save group", "error");
+          return;
+        }
+
+        // Save moon assignments
+        if (moonManager) {
+          await moonManager.saveMoonsForSponsor(selectedMoonsForGroupSave, formData);
+        }
+
+        // Save billboard assignments
+        if (billboardManager) {
+          await billboardManager.saveBillboardsForSponsor(selectedBillboardsForGroupSave, formData);
+        }
+
+        handleClearForm();
+        refreshSponsorsList();
+      } else {
+        // === SINGLE SPONSOR SAVE (always full save — info + territory) ===
+        const selectedTiles = hexSelector.getSelectedTiles();
+        const rewards = rewardConfig.getRewards();
+        const selectedMoonsForSave = hexSelector ? hexSelector.getSelectedMoons() : [];
+        const selectedBillboardsForSave = hexSelector ? hexSelector.getSelectedBillboards() : [];
+
+        const sponsor = {
+          ...formData,
+          cluster: { tileIndices: selectedTiles },
+          rewards: rewards,
+        };
+
+        const editingId = sponsorForm.getEditingSponsorId();
+
+        // Tile conflict check
+        if (selectedTiles.length > 0) {
           const tileCheck = SponsorStorage.areTilesUsed(selectedTiles, editingId);
           if (tileCheck.isUsed) {
             showToast(
@@ -641,35 +613,33 @@
             );
             return;
           }
-
-          try {
-            if (editingId) {
-              await SponsorStorage.update(editingId, sponsor);
-              showToast(`Sponsor "${sponsor.name}" updated successfully`, "success");
-            } else {
-              await SponsorStorage.create(sponsor);
-              showToast(`Sponsor "${sponsor.name}" created successfully`, "success");
-            }
-          } catch (e) {
-            showToast(e.message || "Failed to save sponsor", "error");
-            return;
-          }
-
-          // Save moon assignments
-          if (moonManager) {
-            const selectedMoons = hexSelector.getSelectedMoons();
-            await moonManager.saveMoonsForSponsor(selectedMoons, formData);
-          }
-
-          // Save billboard assignments
-          if (billboardManager) {
-            const selectedBillboards = hexSelector.getSelectedBillboards();
-            await billboardManager.saveBillboardsForSponsor(selectedBillboards, formData);
-          }
-
-          handleClearForm();
-          refreshSponsorsList();
         }
+
+        try {
+          if (editingId) {
+            await SponsorStorage.update(editingId, sponsor);
+            showToast(`Sponsor "${sponsor.name}" updated`, "success");
+          } else {
+            await SponsorStorage.create(sponsor);
+            showToast(`Sponsor "${sponsor.name}" created`, "success");
+          }
+        } catch (e) {
+          showToast(e.message || "Failed to save sponsor", "error");
+          return;
+        }
+
+        // Save moon assignments
+        if (moonManager) {
+          await moonManager.saveMoonsForSponsor(selectedMoonsForSave, formData);
+        }
+
+        // Save billboard assignments
+        if (billboardManager) {
+          await billboardManager.saveBillboardsForSponsor(selectedBillboardsForSave, formData);
+        }
+
+        handleClearForm();
+        refreshSponsorsList();
       }
     } finally {
       busy = false;

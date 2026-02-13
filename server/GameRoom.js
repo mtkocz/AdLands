@@ -359,10 +359,11 @@ class GameRoom {
   _generateBillboardOrbits() {
     const orbits = [
       { distance: 538, count: 12 },
-      { distance: 658, count: 6 },
-      { distance: 749, count: 3 },
+      { distance: 850, count: 6 },
+      { distance: 920, count: 3 },
     ];
     const maxInclination = Math.PI / 3; // 60° — never pass over poles
+    const wobbleRange = 0.087; // ~5° orientation wobble
     const result = [];
     for (const orbit of orbits) {
       for (let i = 0; i < orbit.count; i++) {
@@ -372,6 +373,9 @@ class GameRoom {
           orbitRadius: orbit.distance,
           inclination: Math.random() * maxInclination,
           ascendingNode: Math.random() * Math.PI * 2,
+          wobbleX: (Math.random() - 0.5) * 2 * wobbleRange,
+          wobbleY: (Math.random() - 0.5) * 2 * wobbleRange,
+          wobbleZ: (Math.random() - 0.5) * 2 * wobbleRange,
         });
       }
     }
@@ -508,6 +512,7 @@ class GameRoom {
           orbitalAngle: b.orbitalAngle, speed: b.speed,
           orbitRadius: b.orbitRadius, inclination: b.inclination,
           ascendingNode: b.ascendingNode,
+          wobbleX: b.wobbleX, wobbleY: b.wobbleY, wobbleZ: b.wobbleZ,
         })),
       },
     });

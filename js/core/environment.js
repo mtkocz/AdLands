@@ -13,6 +13,8 @@ const _bbRight = new THREE.Vector3();
 const _bbUp = new THREE.Vector3();
 const _bbWorldUp = new THREE.Vector3(0, 1, 0);
 const _bbMatrix = new THREE.Matrix4();
+const _bbWobbleQuat = new THREE.Quaternion();
+const _bbWobbleEuler = new THREE.Euler();
 
 class Environment {
   constructor(scene, sphereRadius) {
@@ -722,9 +724,9 @@ class Environment {
     // 21 billboard slots across 3 orbital tiers
     // Admin uses sphereRadius 100 with distances 112/137/156 → scale to game (×4.8)
     const orbits = [
-      { distance: 538, count: 12 },  // LOW orbit
-      { distance: 658, count: 6 },   // MID orbit
-      { distance: 749, count: 3 },   // HIGH orbit
+      { distance: 538, count: 12 },  // LOW orbit (below moons)
+      { distance: 850, count: 6 },   // MID orbit (above moons, clear of 600/720/820)
+      { distance: 920, count: 3 },   // HIGH orbit (near camera orbit at 960)
     ];
 
     const panelWidth = 57.6;   // 12 × 4.8 scale
@@ -802,6 +804,12 @@ class Environment {
         // Orbital speed — slower for higher orbits, random direction
         const speed = 0.004 * Math.sqrt(this.sphereRadius / orbit.distance) * (Math.random() > 0.5 ? 1 : -1);
 
+        // Slight random orientation wobble (±5° on each axis)
+        const wobbleRange = 0.087; // ~5° in radians
+        const wobbleX = (Math.random() - 0.5) * 2 * wobbleRange;
+        const wobbleY = (Math.random() - 0.5) * 2 * wobbleRange;
+        const wobbleZ = (Math.random() - 0.5) * 2 * wobbleRange;
+
         group.userData = {
           isBillboard: true,
           billboardIndex: globalIndex,
@@ -810,6 +818,9 @@ class Environment {
           ascendingNode,
           orbitalAngle,
           speed,
+          wobbleX,
+          wobbleY,
+          wobbleZ,
         };
 
         this.scene.add(group);
@@ -1236,6 +1247,11 @@ class Environment {
       _bbMatrix.makeBasis(right, up, forward);
       bb.quaternion.setFromRotationMatrix(_bbMatrix);
 
+      // Apply per-billboard orientation wobble
+      _bbWobbleEuler.set(bb.userData.wobbleX, bb.userData.wobbleY, bb.userData.wobbleZ);
+      _bbWobbleQuat.setFromEuler(_bbWobbleEuler);
+      bb.quaternion.multiply(_bbWobbleQuat);
+
       // Visibility culling (billboard bounding radius ~40)
       this._updateSpaceObjectVisibility(bb, zoomOpacity, cameraPos, 40);
     });
@@ -1285,6 +1301,11 @@ class Environment {
           b.userData.orbitRadius = srv.orbitRadius;
           b.userData.inclination = srv.inclination;
           b.userData.ascendingNode = srv.ascendingNode;
+          if (srv.wobbleX !== undefined) {
+            b.userData.wobbleX = srv.wobbleX;
+            b.userData.wobbleY = srv.wobbleY;
+            b.userData.wobbleZ = srv.wobbleZ;
+          }
         }
       });
     }

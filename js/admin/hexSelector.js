@@ -1102,12 +1102,16 @@ class HexSelector {
     const hasMoons = this.selectedMoons.size > 0;
     const hasBillboards = this.selectedBillboards.size > 0;
 
-    if (hasTiles) this.selectionTypeLock = 'tiles';
-    else if (hasMoons) this.selectionTypeLock = 'moons';
-    else if (hasBillboards) this.selectionTypeLock = 'billboards';
-    else this.selectionTypeLock = null;
+    let newLock = null;
+    if (hasTiles) newLock = 'tiles';
+    else if (hasMoons) newLock = 'moons';
+    else if (hasBillboards) newLock = 'billboards';
 
-    this._updateTypeLockVisuals();
+    // Only update visuals if the lock actually changed
+    if (newLock !== this.selectionTypeLock) {
+      this.selectionTypeLock = newLock;
+      this._updateTypeLockVisuals();
+    }
   }
 
   /**
