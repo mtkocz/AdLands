@@ -104,7 +104,6 @@ class HexSelector {
     this.assignedMoons = new Map(); // moonIndex → sponsorName (moons belonging to other sponsors)
 
     // Billboard state
-    this.billboardsVisible = false;
     this.billboardConfigs = [];
     this.billboardGroups = []; // THREE.Group per billboard
     this.billboardAdPanels = []; // Ad panel meshes for raycasting
@@ -145,10 +144,9 @@ class HexSelector {
     // Create orbiting moons
     this._createMoons();
 
-    // Create orbital billboards (hidden until toggled)
+    // Create orbital billboards (always visible)
     this._buildBillboardConfigs();
     this._createBillboards();
-    this._createBillboardToggleButton();
 
     // Setup controls
     this._setupControls();
@@ -347,9 +345,9 @@ class HexSelector {
     this.billboardConfigs = [];
 
     const orbits = [
-      { distance: 200, count: 12, inclinationRange: 0.25 }, // Low orbit
-      { distance: 280, count: 6, inclinationRange: 0.20 },  // Mid orbit
-      { distance: 380, count: 3, inclinationRange: 0.15 },  // High orbit
+      { distance: 112, count: 12, inclinationRange: 0.25 }, // Low orbit (satellite distance)
+      { distance: 137, count: 6, inclinationRange: 0.20 },  // Mid orbit (between Moon 1 & Moon 3)
+      { distance: 156, count: 3, inclinationRange: 0.15 },  // High orbit (asteroid belt distance)
     ];
 
     let globalIndex = 0;
@@ -364,7 +362,7 @@ class HexSelector {
           distance: orbit.distance,
           angle,
           inclination,
-          orbit: orbit.distance === 200 ? "LOW" : orbit.distance === 280 ? "MID" : "HIGH",
+          orbit: orbit.distance === 112 ? "LOW" : orbit.distance === 137 ? "MID" : "HIGH",
         });
         globalIndex++;
       }
@@ -466,85 +464,7 @@ class HexSelector {
       }
 
       this.billboardGroups.push(group);
-      // NOT added to scene — toggle handles visibility
-    }
-  }
-
-  _createBillboardToggleButton() {
-    const btn = document.createElement("button");
-    btn.className = "billboard-toggle-btn";
-    btn.textContent = "Billboards";
-    btn.title = "Toggle Orbital Billboards";
-    btn.style.cssText = `
-      position: absolute; top: 8px; right: 8px; z-index: 10;
-      padding: 4px 10px; font-size: 11px; cursor: pointer;
-      background: rgba(30,30,30,0.85); color: #888;
-      border: 1px solid #333; border-radius: 3px;
-      font-family: monospace;
-    `;
-    btn.addEventListener("click", () => this._toggleBillboardLayer());
-    this.container.style.position = "relative";
-    this.container.appendChild(btn);
-    this._billboardToggleBtn = btn;
-  }
-
-  _toggleBillboardLayer() {
-    this.billboardsVisible = !this.billboardsVisible;
-
-    if (this.billboardsVisible) {
-      for (const group of this.billboardGroups) {
-        this.scene.add(group);
-      }
-      // Zoom out to show billboard orbits
-      this.transitionStart = {
-        theta: this.orbitalTheta,
-        phi: this.orbitalPhi,
-        distance: this.orbitalDistance,
-      };
-      this.transitionTarget = {
-        theta: this.orbitalTheta,
-        phi: this.orbitalPhi,
-        distance: 500,
-      };
-      this.orbitalVelocity.theta = 0;
-      this.orbitalVelocity.phi = 0;
-      this.transitioning = true;
-      this.transitionProgress = 0;
-
-      this._refreshBillboardVisuals();
-    } else {
-      for (const group of this.billboardGroups) {
-        this.scene.remove(group);
-      }
-      // Zoom back in
-      this.transitionStart = {
-        theta: this.orbitalTheta,
-        phi: this.orbitalPhi,
-        distance: this.orbitalDistance,
-      };
-      this.transitionTarget = {
-        theta: this.orbitalTheta,
-        phi: this.orbitalPhi,
-        distance: 220,
-      };
-      this.orbitalVelocity.theta = 0;
-      this.orbitalVelocity.phi = 0;
-      this.transitioning = true;
-      this.transitionProgress = 0;
-    }
-
-    this._updateBillboardToggleButton();
-    this._needsRender = true;
-  }
-
-  _updateBillboardToggleButton() {
-    if (!this._billboardToggleBtn) return;
-    if (this.billboardsVisible) {
-      this._billboardToggleBtn.style.color = "#ffd700";
-      this._billboardToggleBtn.style.borderColor = "#ffd700";
-    } else {
-      this._billboardToggleBtn.style.color = "#888";
-      this._billboardToggleBtn.style.borderColor = "#333";
+      this.scene.add(group);
     }
   }
 
@@ -636,11 +556,6 @@ class HexSelector {
         adPanel.material.color.setHex(0xffd700);
         adPanel.material.emissive.setHex(0x333300);
       }
-    }
-
-    // Auto-show billboard layer if any selected
-    if (billboardIndices.length > 0 && !this.billboardsVisible) {
-      this._toggleBillboardLayer();
     }
 
     this._needsRender = true;
@@ -1117,8 +1032,8 @@ class HexSelector {
 
     this.raycaster.setFromCamera(this.mouse, this.camera);
 
-    // Check billboard intersections first (when visible, they're farthest out)
-    if (this.billboardsVisible && this.billboardAdPanels.length > 0) {
+    // Check billboard intersections first
+    if (this.billboardAdPanels.length > 0) {
       const bbIntersects = this.raycaster.intersectObjects(this.billboardAdPanels);
       if (bbIntersects.length > 0) {
         const bbIndex = bbIntersects[0].object.userData.billboardIndex;
@@ -2948,9 +2863,6 @@ class HexSelector {
         if (child.userData && child.userData.originalMaterial) child.userData.originalMaterial.dispose();
       });
     });
-    if (this._billboardToggleBtn) {
-      this._billboardToggleBtn.remove();
-    }
 
     // Dispose pattern texture
     if (this.patternTexture) {

@@ -1,7 +1,6 @@
 /**
  * AdLands - Onboarding Screen
  * Name & faction selection screen shown after loading, before portal selection.
- * 3 faction orbs orbit slowly around a central name input.
  */
 
 class OnboardingScreen {
@@ -22,32 +21,17 @@ class OnboardingScreen {
       <div class="onboarding-panel">
         <div class="onboarding-title">Deploy As</div>
 
-        <div class="onboarding-orbit">
-          <div class="onboarding-name-center">
-            <input type="text" id="onboarding-name-input"
-                   class="onboarding-input"
-                   placeholder="Enter name..."
-                   maxlength="20"
-                   autocomplete="off"
-                   spellcheck="false">
-          </div>
-          <div class="onboarding-orbit-ring">
-            <div class="faction-orb-anchor" style="--orb-angle: 0deg">
-              <button class="faction-orb" data-faction="rust" style="--faction-color: var(--rust)">
-                <span class="faction-orb-label">Rust</span>
-              </button>
-            </div>
-            <div class="faction-orb-anchor" style="--orb-angle: 120deg">
-              <button class="faction-orb" data-faction="cobalt" style="--faction-color: var(--cobalt)">
-                <span class="faction-orb-label">Cobalt</span>
-              </button>
-            </div>
-            <div class="faction-orb-anchor" style="--orb-angle: 240deg">
-              <button class="faction-orb" data-faction="viridian" style="--faction-color: var(--viridian)">
-                <span class="faction-orb-label">Viridian</span>
-              </button>
-            </div>
-          </div>
+        <input type="text" id="onboarding-name-input"
+               class="onboarding-input"
+               placeholder="Enter name..."
+               maxlength="20"
+               autocomplete="off"
+               spellcheck="false">
+
+        <div class="onboarding-factions">
+          <button class="faction-btn" data-faction="rust">Rust</button>
+          <button class="faction-btn" data-faction="cobalt">Cobalt</button>
+          <button class="faction-btn" data-faction="viridian">Viridian</button>
         </div>
 
         <button class="onboarding-confirm" id="onboarding-confirm" disabled>
@@ -60,16 +44,15 @@ class OnboardingScreen {
 
     this.nameInput = this.overlay.querySelector("#onboarding-name-input");
     this.confirmBtn = this.overlay.querySelector("#onboarding-confirm");
-    this.orbs = this.overlay.querySelectorAll(".faction-orb");
+    this.factionBtns = this.overlay.querySelectorAll(".faction-btn");
   }
 
   _setupEvents() {
-    // Faction orb clicks
-    this.orbs.forEach((orb) => {
-      orb.addEventListener("click", (e) => {
+    // Faction button clicks
+    this.factionBtns.forEach((btn) => {
+      btn.addEventListener("click", (e) => {
         e.stopPropagation();
-        const faction = orb.dataset.faction;
-        this._selectFaction(faction);
+        this._selectFaction(btn.dataset.faction);
       });
     });
 
@@ -103,18 +86,9 @@ class OnboardingScreen {
   _selectFaction(faction) {
     this.selectedFaction = faction;
 
-    // Update orb visuals
-    this.orbs.forEach((orb) => {
-      if (orb.dataset.faction === faction) {
-        orb.classList.add("selected");
-      } else {
-        orb.classList.remove("selected");
-      }
+    this.factionBtns.forEach((btn) => {
+      btn.classList.toggle("selected", btn.dataset.faction === faction);
     });
-
-    // Add class to orbit container so unselected orbs dim
-    const orbit = this.overlay.querySelector(".onboarding-orbit");
-    orbit.classList.add("has-selection");
 
     this._updateConfirmState();
   }
