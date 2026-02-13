@@ -430,8 +430,8 @@ class Environment {
                     float invR = 1.0 / moonRadius;
                     float projR = dot(localPos, right) * invR;
                     float projU = dot(localPos, up) * invR;
-                    vUv = vec2(projR * 0.5 + 0.5, projU * 0.5 + 0.5);
-                    // How much this vertex faces the projection direction (1=center, 0=edge, <0=back)
+                    vUv = vec2(1.0 - (projR * 0.5 + 0.5), projU * 0.5 + 0.5);
+                    // How much this vertex faces outward (1=away from planet, 0=edge, <0=toward planet)
                     vFacingFactor = -dot(normalize(localPos), forward);
 
                     gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
