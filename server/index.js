@@ -41,19 +41,14 @@ sponsorStore.load();
 
 // Extract base64 sponsor images to static PNG files (avoids sending MB of base64 over WebSocket)
 const gameDir = path.join(__dirname, "..");
-const sponsorImageUrls = extractSponsorImages(sponsorStore, gameDir);
 
-// Moon sponsor store + image extraction
+// Moon sponsor store
 const moonSponsorStore = new MoonSponsorStore(path.join(__dirname, "..", "data", "moonSponsors.json"));
 moonSponsorStore.load();
-const moonSponsorImageUrls = extractMoonSponsorImages(moonSponsorStore, gameDir);
 
-// Billboard sponsor store + image extraction
+// Billboard sponsor store
 const billboardSponsorStore = new BillboardSponsorStore(path.join(__dirname, "..", "data", "billboardSponsors.json"));
 billboardSponsorStore.load();
-const billboardSponsorImageUrls = extractBillboardSponsorImages(billboardSponsorStore, gameDir);
-
-// Routes mounted after GameRoom creation (below) so live reload can reference mainRoom
 
 // Socket.IO with CORS for development (allows connecting from file:// or other origins)
 const io = new Server(server, {
@@ -86,30 +81,55 @@ app.get("/", (req, res) => {
 });
 
 // ========================
-// GAME ROOM MANAGEMENT
+// GAME ROOM + ROUTES (async — image extraction must finish first)
 // ========================
 
-// For now: one global room. Later you'd add matchmaking / multiple rooms.
-const mainRoom = new GameRoom(io, "main", sponsorStore, sponsorImageUrls, moonSponsorStore, moonSponsorImageUrls, billboardSponsorStore, billboardSponsorImageUrls);
-mainRoom.start();
+let mainRoom;
 
-// Mount sponsor API routes (after GameRoom so live reload can broadcast)
-app.use("/api/sponsors", createSponsorRoutes(sponsorStore, mainRoom, {
-  imageUrls: sponsorImageUrls,
-  gameDir,
-}));
+(async () => {
+  // Await image extraction so URL maps are ready for routes and GameRoom
+  const sponsorImageUrls = await extractSponsorImages(sponsorStore, gameDir);
+  const moonSponsorImageUrls = await extractMoonSponsorImages(moonSponsorStore, gameDir);
+  const billboardSponsorImageUrls = await extractBillboardSponsorImages(billboardSponsorStore, gameDir);
 
-// Mount moon sponsor API routes
-app.use("/api/moon-sponsors", createMoonSponsorRoutes(moonSponsorStore, mainRoom, {
-  imageUrls: moonSponsorImageUrls,
-  gameDir,
-}));
+  // For now: one global room. Later you'd add matchmaking / multiple rooms.
+  mainRoom = new GameRoom(io, "main", sponsorStore, sponsorImageUrls, moonSponsorStore, moonSponsorImageUrls, billboardSponsorStore, billboardSponsorImageUrls);
+  mainRoom.start();
 
-// Mount billboard sponsor API routes
-app.use("/api/billboard-sponsors", createBillboardSponsorRoutes(billboardSponsorStore, mainRoom, {
-  imageUrls: billboardSponsorImageUrls,
-  gameDir,
-}));
+  // Mount sponsor API routes (after GameRoom so live reload can broadcast)
+  app.use("/api/sponsors", createSponsorRoutes(sponsorStore, mainRoom, {
+    imageUrls: sponsorImageUrls,
+    gameDir,
+  }));
+
+  // Mount moon sponsor API routes
+  app.use("/api/moon-sponsors", createMoonSponsorRoutes(moonSponsorStore, mainRoom, {
+    imageUrls: moonSponsorImageUrls,
+    gameDir,
+  }));
+
+  // Mount billboard sponsor API routes
+  app.use("/api/billboard-sponsors", createBillboardSponsorRoutes(billboardSponsorStore, mainRoom, {
+    imageUrls: billboardSponsorImageUrls,
+    gameDir,
+  }));
+
+  console.log("[Server] Sponsor images extracted, routes mounted");
+
+  // Start listening only after images are extracted and routes are ready
+  server.listen(PORT, () => {
+    console.log("");
+    console.log("═══════════════════════════════════════════════");
+    console.log("  AdLands - Multiplayer Server");
+    console.log("  A Limited Liability Company");
+    console.log("═══════════════════════════════════════════════");
+    console.log(`  Local:   http://localhost:${PORT}`);
+    console.log(`  Network: http://<your-ip>:${PORT}`);
+    console.log(`  Tick:    ${mainRoom.tickRate}/sec`);
+    console.log("═══════════════════════════════════════════════");
+    console.log("");
+  });
+})();
 
 // ========================
 // CONNECTION HANDLING
@@ -246,19 +266,3 @@ io.on("connection", (socket) => {
   });
 });
 
-// ========================
-// START
-// ========================
-
-server.listen(PORT, () => {
-  console.log("");
-  console.log("═══════════════════════════════════════════════");
-  console.log("  AdLands - Multiplayer Server");
-  console.log("  A Limited Liability Company");
-  console.log("═══════════════════════════════════════════════");
-  console.log(`  Local:   http://localhost:${PORT}`);
-  console.log(`  Network: http://<your-ip>:${PORT}`);
-  console.log(`  Tick:    ${mainRoom.tickRate}/sec`);
-  console.log("═══════════════════════════════════════════════");
-  console.log("");
-});
