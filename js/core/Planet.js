@@ -911,19 +911,51 @@ class Planet {
         });
       } else {
         const pattern = this.clusterPatterns.get(clusterId);
-        if (!this.clusterTextures.has(clusterId)) {
-          this.clusterTextures.set(
-            clusterId,
-            this._createPatternTexture(pattern.type, pattern.grayValue),
-          );
+        const isElevated = this.terrainElevation && this.terrainElevation.getElevationAtTileIndex(index) > 0;
+
+        if (isElevated) {
+          if (!this._elevatedTerrainTexture) {
+            const sz = 8;
+            const c = document.createElement("canvas");
+            c.width = sz;
+            c.height = sz;
+            const cx = c.getContext("2d");
+            const rng = this._createSeededRandom(999);
+            for (let y = 0; y < sz; y++) {
+              for (let x = 0; x < sz; x++) {
+                const v = Math.floor(150 + rng() * 105);
+                cx.fillStyle = `rgb(${v}, ${v}, ${v})`;
+                cx.fillRect(x, y, 1, 1);
+              }
+            }
+            const tex = new THREE.CanvasTexture(c);
+            tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
+            tex.minFilter = THREE.NearestFilter;
+            tex.magFilter = THREE.NearestFilter;
+            this._elevatedTerrainTexture = tex;
+          }
+          material = new THREE.MeshStandardMaterial({
+            map: this._elevatedTerrainTexture,
+            flatShading: true,
+            roughness: 0.95,
+            metalness: 0.05,
+            side: THREE.FrontSide,
+          });
+        } else {
+          if (!this.clusterTextures.has(clusterId)) {
+            this.clusterTextures.set(
+              clusterId,
+              this._createPatternTexture(pattern.type, pattern.grayValue),
+            );
+          }
+          material = new THREE.MeshStandardMaterial({
+            map: this.clusterTextures.get(clusterId),
+            flatShading: true,
+            roughness: pattern.roughness,
+            metalness: pattern.metalness,
+            side: THREE.FrontSide,
+          });
         }
-        material = new THREE.MeshStandardMaterial({
-          map: this.clusterTextures.get(clusterId),
-          flatShading: true,
-          roughness: pattern.roughness,
-          metalness: pattern.metalness,
-          side: THREE.FrontSide,
-        });
       }
 
       const mesh = new THREE.Mesh(geometry, material);
@@ -2636,9 +2668,10 @@ class Planet {
   preloadSponsorTextures(sponsors, onProgress) {
     const toLoad = [];
     for (const sponsor of sponsors) {
-      if (!sponsor.patternImage) continue;
-      if (this._sponsorTextureCache.has(sponsor.patternImage)) continue;
-      toLoad.push(sponsor);
+      const src = sponsor.patternImage || sponsor.patternUrl;
+      if (!src) continue;
+      if (this._sponsorTextureCache.has(src)) continue;
+      toLoad.push({ sponsor, src });
     }
     if (toLoad.length === 0) {
       if (onProgress) onProgress(1);
@@ -2647,7 +2680,7 @@ class Planet {
     const total = toLoad.length;
     let loaded = 0;
     console.log(`[Planet] Preloading ${total} sponsor texture(s)...`);
-    const loads = toLoad.map((sponsor) => new Promise((resolve) => {
+    const loads = toLoad.map(({ sponsor, src }) => new Promise((resolve) => {
       const img = new Image();
       img.onload = () => {
         const texture = new THREE.Texture(img);
@@ -2655,7 +2688,7 @@ class Planet {
         texture.minFilter = THREE.NearestFilter;
         texture.magFilter = THREE.NearestFilter;
         texture.needsUpdate = true;
-        this._sponsorTextureCache.set(sponsor.patternImage, texture);
+        this._sponsorTextureCache.set(src, texture);
         loaded++;
         if (onProgress) onProgress(loaded / total);
         resolve();
@@ -2666,7 +2699,7 @@ class Planet {
         if (onProgress) onProgress(loaded / total);
         resolve(); // Don't block on failures — fallback pattern will be used
       };
-      img.src = sponsor.patternImage;
+      img.src = src;
     }));
     return Promise.all(loads).then(() => {
       console.log(`[Planet] Sponsor textures preloaded (${this._sponsorTextureCache.size} cached)`);
@@ -2680,9 +2713,10 @@ class Planet {
    * @param {number[]} tileIndices
    */
   _applySponsorTexture(sponsor, tileIndices) {
-    if (sponsor.patternImage) {
+    const src = sponsor.patternImage || sponsor.patternUrl;
+    if (src) {
       // Use cached texture if available (preloaded during loading screen)
-      const cached = this._sponsorTextureCache.get(sponsor.patternImage);
+      const cached = this._sponsorTextureCache.get(src);
       if (cached) {
         // Defer to microtask: callers run deElevateSponsorTiles() after this,
         // which rebuilds meshes. UV mapping must target the rebuilt meshes.
@@ -2701,11 +2735,11 @@ class Planet {
         texture.magFilter = THREE.NearestFilter;
         texture.needsUpdate = true;
 
-        this._sponsorTextureCache.set(sponsor.patternImage, texture);
+        this._sponsorTextureCache.set(src, texture);
         // Update materials with tiled spherical UV projection
         this._updateSponsorTileMaterialsTiled(tileIndices, texture, sponsor);
       };
-      img.src = sponsor.patternImage;
+      img.src = src;
     } else {
       // Use a default sponsor pattern (distinct cyan/teal color)
       const canvas = document.createElement("canvas");
