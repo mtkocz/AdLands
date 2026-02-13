@@ -7,6 +7,13 @@
 const _envSunDir = new THREE.Vector3(1, 0, 0);
 const _envFillDir = new THREE.Vector3(-1, 0, 0);
 
+// Preallocated temps for billboard orientation (avoid per-frame allocation)
+const _bbForward = new THREE.Vector3();
+const _bbRight = new THREE.Vector3();
+const _bbUp = new THREE.Vector3();
+const _bbWorldUp = new THREE.Vector3(0, 1, 0);
+const _bbMatrix = new THREE.Matrix4();
+
 class Environment {
   constructor(scene, sphereRadius) {
     this.scene = scene;
@@ -15,6 +22,7 @@ class Environment {
     this.moons = [];
     this.satellites = [];
     this.spaceStations = [];
+    this.billboards = [];
     this.earth = null;
     this.clouds = null;
     this.atmosphereMaterial = null;
@@ -57,6 +65,7 @@ class Environment {
     this._createMoons();
     this._createSatellites();
     this._createSpaceStations();
+    this._createBillboards();
     this._createBackgroundEarth();
     this._createAsteroidBelt();
   }
@@ -709,6 +718,107 @@ class Environment {
     });
   }
 
+  _createBillboards() {
+    // 21 billboard slots across 3 orbital tiers
+    // Admin uses sphereRadius 100 with distances 112/137/156 → scale to game (×4.8)
+    const orbits = [
+      { distance: 538, count: 12 },  // LOW orbit
+      { distance: 658, count: 6 },   // MID orbit
+      { distance: 749, count: 3 },   // HIGH orbit
+    ];
+
+    const panelWidth = 57.6;   // 12 × 4.8 scale
+    const panelHeight = 38.4;  // 8 × 4.8 scale
+    const bt = 1.44;           // beam thickness
+    const bd = 2.4;            // beam depth
+    const sw = 19.2;           // solar wing width
+    const sh = 14.4;           // solar wing height
+
+    const frameMat = new THREE.MeshLambertMaterial({ color: 0x444444, emissive: 0x080808 });
+    const solarMat = new THREE.MeshLambertMaterial({ color: 0x1a1a3a, emissive: 0x050510, side: THREE.DoubleSide });
+    const hubMat = new THREE.MeshLambertMaterial({ color: 0x555555 });
+
+    let globalIndex = 0;
+    for (const orbit of orbits) {
+      for (let i = 0; i < orbit.count; i++) {
+        const group = new THREE.Group();
+
+        // Central ad panel
+        const panelMat = new THREE.MeshLambertMaterial({
+          color: 0x888888,
+          emissive: 0x111111,
+          side: THREE.DoubleSide,
+        });
+        const adPanel = new THREE.Mesh(new THREE.PlaneGeometry(panelWidth, panelHeight), panelMat);
+        adPanel.userData.isAdPanel = true;
+        group.add(adPanel);
+
+        // Frame beams
+        const topBeam = new THREE.Mesh(new THREE.BoxGeometry(panelWidth + bt * 2, bt, bd), frameMat);
+        topBeam.position.set(0, panelHeight / 2 + bt / 2, 0);
+        group.add(topBeam);
+
+        const bottomBeam = new THREE.Mesh(new THREE.BoxGeometry(panelWidth + bt * 2, bt, bd), frameMat);
+        bottomBeam.position.set(0, -panelHeight / 2 - bt / 2, 0);
+        group.add(bottomBeam);
+
+        const leftBeam = new THREE.Mesh(new THREE.BoxGeometry(bt, panelHeight, bd), frameMat);
+        leftBeam.position.set(-panelWidth / 2 - bt / 2, 0, 0);
+        group.add(leftBeam);
+
+        const rightBeam = new THREE.Mesh(new THREE.BoxGeometry(bt, panelHeight, bd), frameMat);
+        rightBeam.position.set(panelWidth / 2 + bt / 2, 0, 0);
+        group.add(rightBeam);
+
+        // Solar wings
+        const leftSolar = new THREE.Mesh(new THREE.PlaneGeometry(sw, sh), solarMat);
+        leftSolar.position.set(-panelWidth / 2 - bt - sw / 2 - 2.4, 0, 0);
+        group.add(leftSolar);
+
+        const rightSolar = new THREE.Mesh(new THREE.PlaneGeometry(sw, sh), solarMat);
+        rightSolar.position.set(panelWidth / 2 + bt + sw / 2 + 2.4, 0, 0);
+        group.add(rightSolar);
+
+        // Hub connectors
+        const hubGeom = new THREE.CylinderGeometry(1.92, 1.92, 3.84, 8);
+        const leftHub = new THREE.Mesh(hubGeom, hubMat);
+        leftHub.rotation.z = Math.PI / 2;
+        leftHub.position.set(-panelWidth / 2 - bt - 0.96, 0, 0);
+        group.add(leftHub);
+
+        const rightHub = new THREE.Mesh(hubGeom, hubMat);
+        rightHub.rotation.z = Math.PI / 2;
+        rightHub.position.set(panelWidth / 2 + bt + 0.96, 0, 0);
+        group.add(rightHub);
+
+        // Random orbital parameters — avoid poles by clamping inclination
+        // inclination 0 = equatorial, π/2 = polar
+        // Clamp to ~60° max so orbits never pass directly over poles
+        const maxInclination = Math.PI / 3; // 60°
+        const inclination = Math.random() * maxInclination;
+        const ascendingNode = Math.random() * Math.PI * 2;
+        const orbitalAngle = Math.random() * Math.PI * 2;
+
+        // Orbital speed — slower for higher orbits, random direction
+        const speed = 0.004 * Math.sqrt(this.sphereRadius / orbit.distance) * (Math.random() > 0.5 ? 1 : -1);
+
+        group.userData = {
+          isBillboard: true,
+          billboardIndex: globalIndex,
+          orbitRadius: orbit.distance,
+          inclination,
+          ascendingNode,
+          orbitalAngle,
+          speed,
+        };
+
+        this.scene.add(group);
+        this.billboards.push(group);
+        globalIndex++;
+      }
+    }
+  }
+
   _createAtmosphereGlow() {
     // Realistic atmospheric scattering for background Earth
     // Earth model is ~1344 radius (3.5 base × 384 scale)
@@ -1092,6 +1202,44 @@ class Environment {
       this._updateSpaceObjectVisibility(station, zoomOpacity, cameraPos, 30);
     });
 
+    // Update billboards with orbital animation and north-up orientation
+    this.billboards.forEach((bb) => {
+      if (!this.isMultiplayer) bb.userData.orbitalAngle += bb.userData.speed * deltaTime;
+
+      const angle = bb.userData.orbitalAngle;
+      const r = bb.userData.orbitRadius;
+      const inc = bb.userData.inclination;
+      const node = bb.userData.ascendingNode;
+
+      // Position in orbital plane (same formula as satellites/stations)
+      const xOrbit = Math.cos(angle);
+      const yOrbit = Math.sin(angle);
+
+      const x = r * (Math.cos(node) * xOrbit - Math.sin(node) * Math.cos(inc) * yOrbit);
+      const y = r * Math.sin(inc) * yOrbit;
+      const z = r * (Math.sin(node) * xOrbit + Math.cos(node) * Math.cos(inc) * yOrbit);
+
+      bb.position.set(x, y, z);
+
+      // Orient billboard: face planet center with top pointing north (world Y+)
+      // Forward = direction from billboard toward planet center (negative position)
+      // Build orthonormal basis: Z-forward toward planet, Y-up toward north
+      const forward = _bbForward.copy(bb.position).negate().normalize();
+      const worldUp = _bbWorldUp; // (0, 1, 0)
+      // Right = worldUp × forward (cross product gives rightward direction)
+      const right = _bbRight.crossVectors(worldUp, forward).normalize();
+      // Recompute up to ensure orthonormal (forward × right)
+      const up = _bbUp.crossVectors(forward, right);
+
+      // Construct rotation matrix from basis vectors
+      // Three.js Matrix4 column-major: col0=right, col1=up, col2=forward
+      _bbMatrix.makeBasis(right, up, forward);
+      bb.quaternion.setFromRotationMatrix(_bbMatrix);
+
+      // Visibility culling (billboard bounding radius ~40)
+      this._updateSpaceObjectVisibility(bb, zoomOpacity, cameraPos, 40);
+    });
+
     // Update asteroid belt
     if (this.asteroidBelt) {
       this.asteroidBelt.update(camera, zoomOpacity, cameraPos, this._frustum);
@@ -1127,6 +1275,63 @@ class Environment {
           s.userData.localRotation = srv.localRotation;
         }
       });
+    }
+    if (config.billboards) {
+      config.billboards.forEach((srv, i) => {
+        if (i < this.billboards.length) {
+          const b = this.billboards[i];
+          b.userData.orbitalAngle = srv.orbitalAngle;
+          b.userData.speed = srv.speed;
+          b.userData.orbitRadius = srv.orbitRadius;
+          b.userData.inclination = srv.inclination;
+          b.userData.ascendingNode = srv.ascendingNode;
+        }
+      });
+    }
+  }
+
+  /**
+   * Apply a sponsor's pattern texture to a billboard's ad panel.
+   * @param {number} billboardIndex - 0-20
+   * @param {Object|null} sponsorData - { patternImage, patternAdjustment } or null to clear
+   */
+  applyBillboardSponsor(billboardIndex, sponsorData) {
+    if (billboardIndex < 0 || billboardIndex >= this.billboards.length) return;
+    const bb = this.billboards[billboardIndex];
+    const adPanel = bb.children.find((c) => c.userData.isAdPanel);
+    if (!adPanel) return;
+
+    if (!sponsorData || !sponsorData.patternImage) {
+      // Clear sponsor — revert to default gray
+      adPanel.material.color.setHex(0x888888);
+      adPanel.material.emissive.setHex(0x111111);
+      adPanel.material.map = null;
+      adPanel.material.needsUpdate = true;
+      return;
+    }
+
+    // Load texture from URL
+    const img = new Image();
+    img.crossOrigin = "anonymous";
+    img.onload = () => {
+      const texture = new THREE.Texture(img);
+      texture.wrapS = texture.wrapT = THREE.RepeatWrapping;
+      texture.minFilter = THREE.NearestFilter;
+      texture.magFilter = THREE.NearestFilter;
+      texture.needsUpdate = true;
+
+      adPanel.material.map = texture;
+      adPanel.material.color.setHex(0xffffff);
+      adPanel.material.emissive.setHex(0x222222);
+      adPanel.material.needsUpdate = true;
+    };
+    img.src = sponsorData.patternImage;
+  }
+
+  /** Clear all billboard sponsor textures. */
+  clearBillboardSponsors() {
+    for (let i = 0; i < this.billboards.length; i++) {
+      this.applyBillboardSponsor(i, null);
     }
   }
 

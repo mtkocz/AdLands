@@ -4412,6 +4412,15 @@ body.colorblind-tritanopia {
     color: var(--text-muted);
 }
 
+/* Faction prompt label */
+.onboarding-faction-prompt {
+    font-size: 0.75rem;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    color: var(--text-secondary);
+    margin-top: 4px;
+}
+
 /* Faction buttons row */
 .onboarding-factions {
     display: flex;

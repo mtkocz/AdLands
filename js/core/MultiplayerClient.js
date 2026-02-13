@@ -198,6 +198,13 @@
             mp.environment.applyMoonSponsor(i, sponsor);
           });
         }
+
+        // Apply billboard sponsor textures
+        if (data.world.billboardSponsors && mp.environment) {
+          data.world.billboardSponsors.forEach((sponsor, i) => {
+            mp.environment.applyBillboardSponsor(i, sponsor);
+          });
+        }
       } else {
         mp.setSponsorTexturesReady();
       }
@@ -539,6 +546,31 @@
             s.userData.inclination = arr[2];
             s.userData.ascendingNode = arr[3];
             s.userData.orbitRadius = arr[4];
+          }
+        });
+      }
+
+      // Sync billboard orbital angles and params
+      if (data.ba && mp.environment) {
+        const billboards = mp.environment.billboards;
+        data.ba.forEach((arr, i) => {
+          if (i >= billboards.length) return;
+          const b = billboards[i];
+
+          let orbDrift = arr[0] - b.userData.orbitalAngle;
+          while (orbDrift > Math.PI) orbDrift -= Math.PI * 2;
+          while (orbDrift < -Math.PI) orbDrift += Math.PI * 2;
+          if (Math.abs(orbDrift) > 0.01) {
+            b.userData.orbitalAngle = arr[0];
+          } else if (Math.abs(orbDrift) > 0.001) {
+            b.userData.orbitalAngle += orbDrift * 0.2;
+          }
+
+          // Full orbital params (sent every ~5s)
+          if (arr.length >= 4) {
+            b.userData.inclination = arr[1];
+            b.userData.ascendingNode = arr[2];
+            b.userData.orbitRadius = arr[3];
           }
         });
       }
@@ -1153,6 +1185,16 @@
       mp.environment.clearMoonSponsors();
       data.moonSponsors.forEach((sponsor, i) => {
         mp.environment.applyMoonSponsor(i, sponsor);
+      });
+    };
+
+    // Admin changed billboard sponsors — update billboard textures
+    net.onBillboardSponsorsReloaded = (data) => {
+      if (!mp.environment || !data.billboardSponsors) return;
+      console.log("[Multiplayer] Billboard sponsors reloaded by admin");
+      mp.environment.clearBillboardSponsors();
+      data.billboardSponsors.forEach((sponsor, i) => {
+        mp.environment.applyBillboardSponsor(i, sponsor);
       });
     };
 

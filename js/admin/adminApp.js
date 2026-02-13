@@ -25,8 +25,6 @@
   const selectionCountEl = document.getElementById("selection-count");
   const selectedTilesListEl = document.getElementById("selected-tiles-list");
   const sponsorsListEl = document.getElementById("sponsors-list");
-  const saveBtn = document.getElementById("save-sponsor-btn");
-  const clearFormBtn = document.getElementById("clear-form-btn");
   const clearSelectionBtn = document.getElementById("clear-selection-btn");
   const exportBtn = document.getElementById("export-btn");
   const importBtn = document.getElementById("import-btn");
@@ -35,6 +33,19 @@
   const toastContainer = document.getElementById("toast-container");
   const clusterTabsContainer = document.getElementById("cluster-tabs-container");
   const clusterTabsEl = document.getElementById("cluster-tabs");
+
+  // Form view tab elements
+  const formTabs = document.querySelectorAll(".form-tab");
+  const viewSponsorInfo = document.getElementById("view-sponsor-info");
+  const viewTerritories = document.getElementById("view-territories");
+  const hexSelectorPanel = document.getElementById("hex-selector-panel");
+  const saveSponsorInfoBtn = document.getElementById("save-sponsor-info-btn");
+  const saveTerritoryBtn = document.getElementById("save-territory-btn");
+  const clearFormBtnInfo = document.getElementById("clear-form-btn-info");
+  const clearFormBtnTerritory = document.getElementById("clear-form-btn-territory");
+
+  // Currently active form view: 'info' or 'territories'
+  let activeFormTab = "info";
 
   // ========================
   // INITIALIZATION
@@ -137,17 +148,29 @@
     // Show initial cluster tabs
     renderClusterTabs();
 
+    // Start with hex selector locked (Sponsor Info tab is default)
+    hexSelectorPanel.classList.add("hex-locked");
+
     // Done — fade out loading overlay
     setLoadingProgress(100, "Ready");
     hideLoading();
   }
 
   function setupEventListeners() {
-    // Save sponsor
-    saveBtn.addEventListener("click", handleSaveSponsor);
+    // Form view tab switching
+    formTabs.forEach((tab) => {
+      tab.addEventListener("click", () => {
+        switchFormTab(tab.dataset.tab);
+      });
+    });
 
-    // Clear form
-    clearFormBtn.addEventListener("click", handleClearForm);
+    // Save buttons (both views)
+    saveSponsorInfoBtn.addEventListener("click", handleSaveSponsor);
+    saveTerritoryBtn.addEventListener("click", handleSaveSponsor);
+
+    // Clear buttons (both views)
+    clearFormBtnInfo.addEventListener("click", handleClearForm);
+    clearFormBtnTerritory.addEventListener("click", handleClearForm);
 
     // Clear selection
     clearSelectionBtn.addEventListener("click", () => {
@@ -225,6 +248,31 @@
         addCluster();
       }
     });
+  }
+
+  // ========================
+  // FORM VIEW TAB SWITCHING
+  // ========================
+
+  /**
+   * Switch between "Sponsor Info" and "Territories" views in the form panel.
+   * Controls hex selector lock state.
+   * @param {'info' | 'territories'} tabName
+   */
+  function switchFormTab(tabName) {
+    activeFormTab = tabName;
+
+    // Update tab active states
+    formTabs.forEach((tab) => {
+      tab.classList.toggle("active", tab.dataset.tab === tabName);
+    });
+
+    // Toggle views
+    viewSponsorInfo.classList.toggle("active", tabName === "info");
+    viewTerritories.classList.toggle("active", tabName === "territories");
+
+    // Lock/unlock hex selector
+    hexSelectorPanel.classList.toggle("hex-locked", tabName === "info");
   }
 
   // ========================
@@ -449,55 +497,17 @@
 
     try {
       const formData = sponsorForm.getFormData();
-      const selectedTiles = hexSelector.getSelectedTiles();
-      const rewards = rewardConfig.getRewards();
 
-      // Validate shared fields
+      // Validate shared fields always
       const formValidation = sponsorForm.validate();
       if (!formValidation.valid) {
         showToast(formValidation.errors.join(". "), "error");
         return;
       }
 
-      const rewardValidation = rewardConfig.validate();
-      if (!rewardValidation.valid) {
-        showToast(rewardValidation.errors.join(". "), "error");
-        return;
-      }
-
-      if (editingGroup) {
-        // === GROUP SAVE MODE ===
-        // Save active cluster's per-cluster data
-        const activeId = editingGroup.ids[editingGroup.activeIndex];
-
-        const selectedMoonsForGroupSave = hexSelector ? hexSelector.getSelectedMoons() : [];
-        if (selectedTiles.length === 0 && selectedMoonsForGroupSave.length === 0) {
-          showToast("Active cluster must have at least one tile or moon", "error");
-          return;
-        }
-
-        // Tile conflict check (exclude all group members)
-        for (const id of editingGroup.ids) {
-          const tiles = id === activeId
-            ? selectedTiles
-            : (SponsorStorage.getById(id)?.cluster?.tileIndices || []);
-          if (tiles.length === 0) continue;
-          // Check against sponsors NOT in this group
-          const check = SponsorStorage.areTilesUsed(tiles, id);
-          if (check.isUsed) {
-            const groupIdSet = new Set(editingGroup.ids);
-            // Only flag if the conflict is with a sponsor outside the group
-            const conflictSponsor = SponsorStorage.getAll().find(
-              (s) => !groupIdSet.has(s.id) && s.cluster?.tileIndices?.some((t) => tiles.includes(t))
-            );
-            if (conflictSponsor) {
-              showToast(`Tiles conflict with "${conflictSponsor.name}"`, "error");
-              return;
-            }
-          }
-        }
-
-        // Shared fields to propagate
+      if (activeFormTab === "info") {
+        // === SPONSOR INFO SAVE ===
+        // Save only shared fields, propagate to all clusters in group
         const sharedFields = {
           name: formData.name,
           tagline: formData.tagline,
@@ -505,94 +515,167 @@
           logoImage: formData.logoImage,
         };
 
-        try {
-          // Update active cluster with full data
-          await SponsorStorage.update(activeId, {
-            ...sharedFields,
-            cluster: { tileIndices: selectedTiles },
-            patternImage: formData.patternImage,
-            patternAdjustment: formData.patternAdjustment,
-            rewards: rewards,
-          });
-
-          // Propagate shared fields to sibling clusters
-          for (const id of editingGroup.ids) {
-            if (id === activeId) continue;
-            await SponsorStorage.update(id, sharedFields);
+        if (editingGroup) {
+          try {
+            for (const id of editingGroup.ids) {
+              await SponsorStorage.update(id, sharedFields);
+            }
+            showToast(`Sponsor "${formData.name}" info updated (${editingGroup.ids.length} clusters)`, "success");
+          } catch (e) {
+            showToast(e.message || "Failed to save sponsor info", "error");
+            return;
           }
-
-          showToast(`Group "${formData.name}" saved (${editingGroup.ids.length} clusters)`, "success");
-        } catch (e) {
-          showToast(e.message || "Failed to save group", "error");
-          return;
+        } else {
+          const editingId = sponsorForm.getEditingSponsorId();
+          if (editingId) {
+            try {
+              await SponsorStorage.update(editingId, sharedFields);
+              showToast(`Sponsor "${formData.name}" info updated`, "success");
+            } catch (e) {
+              showToast(e.message || "Failed to save sponsor info", "error");
+              return;
+            }
+          } else {
+            showToast("Switch to Territories tab to assign tiles before saving a new sponsor", "error");
+            return;
+          }
         }
 
-        // Save moon assignments
-        if (moonManager) {
-          const selectedMoons = hexSelector.getSelectedMoons();
-          await moonManager.saveMoonsForSponsor(selectedMoons, formData);
-        }
-
-        // Save billboard assignments
-        if (billboardManager) {
-          const selectedBillboards = hexSelector.getSelectedBillboards();
-          await billboardManager.saveBillboardsForSponsor(selectedBillboards, formData);
-        }
-
-        handleClearForm();
         refreshSponsorsList();
       } else {
-        // === SINGLE SAVE MODE (unchanged) ===
-        const sponsor = {
-          ...formData,
-          cluster: { tileIndices: selectedTiles },
-          rewards: rewards,
-        };
+        // === TERRITORIES SAVE ===
+        const selectedTiles = hexSelector.getSelectedTiles();
+        const rewards = rewardConfig.getRewards();
 
-        const selectedMoonsForSave = hexSelector ? hexSelector.getSelectedMoons() : [];
-        const selectedBillboardsForSave = hexSelector ? hexSelector.getSelectedBillboards() : [];
-        if (selectedTiles.length === 0 && selectedMoonsForSave.length === 0 && selectedBillboardsForSave.length === 0) {
-          showToast("Please select at least one tile, moon, or billboard", "error");
+        const rewardValidation = rewardConfig.validate();
+        if (!rewardValidation.valid) {
+          showToast(rewardValidation.errors.join(". "), "error");
           return;
         }
 
-        const editingId = sponsorForm.getEditingSponsorId();
-        const tileCheck = SponsorStorage.areTilesUsed(selectedTiles, editingId);
-        if (tileCheck.isUsed) {
-          showToast(
-            `Some tiles are already assigned to "${tileCheck.sponsorName}"`,
-            "error",
-          );
-          return;
-        }
+        if (editingGroup) {
+          // --- Group territory save ---
+          const activeId = editingGroup.ids[editingGroup.activeIndex];
 
-        try {
-          if (editingId) {
-            await SponsorStorage.update(editingId, sponsor);
-            showToast(`Sponsor "${sponsor.name}" updated successfully`, "success");
-          } else {
-            await SponsorStorage.create(sponsor);
-            showToast(`Sponsor "${sponsor.name}" created successfully`, "success");
+          const selectedMoonsForGroupSave = hexSelector ? hexSelector.getSelectedMoons() : [];
+          if (selectedTiles.length === 0 && selectedMoonsForGroupSave.length === 0) {
+            showToast("Active cluster must have at least one tile or moon", "error");
+            return;
           }
-        } catch (e) {
-          showToast(e.message || "Failed to save sponsor", "error");
-          return;
-        }
 
-        // Save moon assignments
-        if (moonManager) {
-          const selectedMoons = hexSelector.getSelectedMoons();
-          await moonManager.saveMoonsForSponsor(selectedMoons, formData);
-        }
+          // Tile conflict check (exclude all group members)
+          for (const id of editingGroup.ids) {
+            const tiles = id === activeId
+              ? selectedTiles
+              : (SponsorStorage.getById(id)?.cluster?.tileIndices || []);
+            if (tiles.length === 0) continue;
+            const check = SponsorStorage.areTilesUsed(tiles, id);
+            if (check.isUsed) {
+              const groupIdSet = new Set(editingGroup.ids);
+              const conflictSponsor = SponsorStorage.getAll().find(
+                (s) => !groupIdSet.has(s.id) && s.cluster?.tileIndices?.some((t) => tiles.includes(t))
+              );
+              if (conflictSponsor) {
+                showToast(`Tiles conflict with "${conflictSponsor.name}"`, "error");
+                return;
+              }
+            }
+          }
 
-        // Save billboard assignments
-        if (billboardManager) {
-          const selectedBillboards = hexSelector.getSelectedBillboards();
-          await billboardManager.saveBillboardsForSponsor(selectedBillboards, formData);
-        }
+          const sharedFields = {
+            name: formData.name,
+            tagline: formData.tagline,
+            websiteUrl: formData.websiteUrl,
+            logoImage: formData.logoImage,
+          };
 
-        handleClearForm();
-        refreshSponsorsList();
+          try {
+            await SponsorStorage.update(activeId, {
+              ...sharedFields,
+              cluster: { tileIndices: selectedTiles },
+              patternImage: formData.patternImage,
+              patternAdjustment: formData.patternAdjustment,
+              rewards: rewards,
+            });
+
+            for (const id of editingGroup.ids) {
+              if (id === activeId) continue;
+              await SponsorStorage.update(id, sharedFields);
+            }
+
+            showToast(`Group "${formData.name}" saved (${editingGroup.ids.length} clusters)`, "success");
+          } catch (e) {
+            showToast(e.message || "Failed to save group", "error");
+            return;
+          }
+
+          // Save moon assignments
+          if (moonManager) {
+            const selectedMoons = hexSelector.getSelectedMoons();
+            await moonManager.saveMoonsForSponsor(selectedMoons, formData);
+          }
+
+          // Save billboard assignments
+          if (billboardManager) {
+            const selectedBillboards = hexSelector.getSelectedBillboards();
+            await billboardManager.saveBillboardsForSponsor(selectedBillboards, formData);
+          }
+
+          handleClearForm();
+          refreshSponsorsList();
+        } else {
+          // --- Single territory save ---
+          const sponsor = {
+            ...formData,
+            cluster: { tileIndices: selectedTiles },
+            rewards: rewards,
+          };
+
+          const selectedMoonsForSave = hexSelector ? hexSelector.getSelectedMoons() : [];
+          const selectedBillboardsForSave = hexSelector ? hexSelector.getSelectedBillboards() : [];
+          if (selectedTiles.length === 0 && selectedMoonsForSave.length === 0 && selectedBillboardsForSave.length === 0) {
+            showToast("Please select at least one tile, moon, or billboard", "error");
+            return;
+          }
+
+          const editingId = sponsorForm.getEditingSponsorId();
+          const tileCheck = SponsorStorage.areTilesUsed(selectedTiles, editingId);
+          if (tileCheck.isUsed) {
+            showToast(
+              `Some tiles are already assigned to "${tileCheck.sponsorName}"`,
+              "error",
+            );
+            return;
+          }
+
+          try {
+            if (editingId) {
+              await SponsorStorage.update(editingId, sponsor);
+              showToast(`Sponsor "${sponsor.name}" updated successfully`, "success");
+            } else {
+              await SponsorStorage.create(sponsor);
+              showToast(`Sponsor "${sponsor.name}" created successfully`, "success");
+            }
+          } catch (e) {
+            showToast(e.message || "Failed to save sponsor", "error");
+            return;
+          }
+
+          // Save moon assignments
+          if (moonManager) {
+            const selectedMoons = hexSelector.getSelectedMoons();
+            await moonManager.saveMoonsForSponsor(selectedMoons, formData);
+          }
+
+          // Save billboard assignments
+          if (billboardManager) {
+            const selectedBillboards = hexSelector.getSelectedBillboards();
+            await billboardManager.saveBillboardsForSponsor(selectedBillboards, formData);
+          }
+
+          handleClearForm();
+          refreshSponsorsList();
+        }
       }
     } finally {
       busy = false;
@@ -610,6 +693,7 @@
     updateAssignedBillboards();
     selectedTilesListEl.textContent = "";
     renderClusterTabs();
+    switchFormTab("info");
   }
 
   function handleExport() {
@@ -747,6 +831,8 @@
     const tierMap = hexSelector ? hexSelector.getTierMap() : null;
     let totalMonthly = 0;
     const htmlParts = [];
+    const currentEditingId = sponsorForm ? sponsorForm.getEditingSponsorId() : null;
+    const currentEditingGroupName = editingGroup ? editingGroup.name : null;
 
     for (const [, members] of groups) {
       if (members.length === 1) {
@@ -758,9 +844,10 @@
         const sponsorTotal = rev.total + moonRev + bbRev;
         totalMonthly += sponsorTotal;
 
+        const isEditing = sponsor.id === currentEditingId;
         const logoSrc = sponsor.logoUrl || sponsor.logoImage;
         htmlParts.push(`
-            <div class="sponsor-card" data-id="${sponsor.id}">
+            <div class="sponsor-card${isEditing ? " editing" : ""}" data-id="${sponsor.id}">
                 <div class="sponsor-card-logo">
                     ${
                       logoSrc
@@ -827,9 +914,10 @@
           ? `<div class="sponsor-card-revenue"><span class="sponsor-card-revenue-total">$${fmtUSD(groupRevenue)}/mo</span></div>`
           : "";
 
+        const isGroupEditing = currentEditingGroupName && currentEditingGroupName.toLowerCase() === (first.name || "").toLowerCase();
         const groupLogoSrc = first.logoUrl || first.logoImage;
         htmlParts.push(`
-            <div class="sponsor-group" data-name="${escapeHtml(first.name)}">
+            <div class="sponsor-group${isGroupEditing ? " editing expanded" : ""}" data-name="${escapeHtml(first.name)}">
                 <div class="sponsor-group-header">
                     <span class="sponsor-group-chevron">&#x25B6;</span>
                     <div class="sponsor-card-logo">
@@ -910,6 +998,7 @@
     }
 
     renderClusterTabs();
+    switchFormTab("info");
     window.scrollTo({ top: 0, behavior: "smooth" });
     showToast(`Editing "${sponsor.name}"`, "success");
   }
@@ -981,6 +1070,9 @@
 
     // Render cluster tabs
     renderClusterTabs();
+
+    // Route to correct tab: territory view if clicking a specific cluster, info view otherwise
+    switchFormTab(startAtId ? "territories" : "info");
 
     window.scrollTo({ top: 0, behavior: "smooth" });
     showToast(`Editing group "${sponsorName}" (${members.length} clusters)`, "success");
@@ -1056,6 +1148,11 @@
     if (!editingGroup || index === editingGroup.activeIndex) return;
     if (busy) return;
     busy = true;
+
+    // Ensure we're on the territories tab when switching clusters
+    if (activeFormTab !== "territories") {
+      switchFormTab("territories");
+    }
 
     try {
       // Save current cluster state first

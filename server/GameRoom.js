@@ -64,6 +64,9 @@ class GameRoom {
       { orbitalAngle: 3.64, speed: 0.0036, orbitRadius: 750, inclination: 0.7, ascendingNode: 2.5, rotationSpeed: 0.048, localRotation: 0 },
     ];
 
+    // Server-authoritative billboard orbital parameters (21 billboards across 3 tiers)
+    this.billboardOrbits = this._generateBillboardOrbits();
+
     // Tick loop: 20 ticks/second
     this.tickRate = 20;
     this.tickDelta = 1 / this.tickRate;
@@ -353,6 +356,28 @@ class GameRoom {
     console.log(`[Room ${this.roomId}] Moon sponsors reloaded: ${active} active, broadcast to clients`);
   }
 
+  _generateBillboardOrbits() {
+    const orbits = [
+      { distance: 538, count: 12 },
+      { distance: 658, count: 6 },
+      { distance: 749, count: 3 },
+    ];
+    const maxInclination = Math.PI / 3; // 60° — never pass over poles
+    const result = [];
+    for (const orbit of orbits) {
+      for (let i = 0; i < orbit.count; i++) {
+        result.push({
+          orbitalAngle: Math.random() * Math.PI * 2,
+          speed: 0.004 * Math.sqrt(480 / orbit.distance) * (Math.random() > 0.5 ? 1 : -1),
+          orbitRadius: orbit.distance,
+          inclination: Math.random() * maxInclination,
+          ascendingNode: Math.random() * Math.PI * 2,
+        });
+      }
+    }
+    return result;
+  }
+
   _buildBillboardSponsorPayload() {
     if (!this.billboardSponsorStore) return new Array(21).fill(null);
     return this.billboardSponsorStore.getAll().map((sponsor, i) => {
@@ -478,6 +503,11 @@ class GameRoom {
           orbitRadius: s.orbitRadius, inclination: s.inclination,
           ascendingNode: s.ascendingNode, rotationSpeed: s.rotationSpeed,
           localRotation: s.localRotation,
+        })),
+        billboards: this.billboardOrbits.map(b => ({
+          orbitalAngle: b.orbitalAngle, speed: b.speed,
+          orbitRadius: b.orbitRadius, inclination: b.inclination,
+          ascendingNode: b.ascendingNode,
         })),
       },
     });
@@ -776,6 +806,7 @@ class GameRoom {
       s.orbitalAngle += s.speed * dt;
       s.localRotation += s.rotationSpeed * dt;
     }
+    for (const b of this.billboardOrbits) b.orbitalAngle += b.speed * dt;
 
     // 1. Apply inputs and simulate all player tanks
     for (const [id, player] of this.players) {
@@ -1670,7 +1701,7 @@ class GameRoom {
     }
 
     // Reuse payload object
-    if (!this._statePayload) this._statePayload = { tick: 0, players: null, bg: null, pr: 0, ma: [], sa: [] };
+    if (!this._statePayload) this._statePayload = { tick: 0, players: null, bg: null, pr: 0, ma: [], sa: [], ba: [] };
     const statePayload = this._statePayload;
     statePayload.tick = this.tick;
     statePayload.players = playerStates;
@@ -1693,6 +1724,19 @@ class GameRoom {
         statePayload.sa[i][0] = s.orbitalAngle;
         statePayload.sa[i][1] = s.localRotation;
         statePayload.sa[i].length = 2;
+      }
+    }
+
+    // Update billboard orbital angles in-place
+    if (this.tick % 100 === 0) {
+      // Full orbital params every ~5s
+      statePayload.ba = this.billboardOrbits.map(b => [b.orbitalAngle, b.inclination, b.ascendingNode, b.orbitRadius]);
+    } else {
+      statePayload.ba.length = this.billboardOrbits.length;
+      for (let i = 0; i < this.billboardOrbits.length; i++) {
+        if (!statePayload.ba[i]) statePayload.ba[i] = [0];
+        statePayload.ba[i][0] = this.billboardOrbits[i].orbitalAngle;
+        statePayload.ba[i].length = 1;
       }
     }
 

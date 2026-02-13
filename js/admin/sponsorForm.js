@@ -430,6 +430,19 @@ class SponsorForm {
     }
 
     /**
+     * Get only the shared sponsor-level fields (no pattern/adjustment data)
+     * @returns {Object}
+     */
+    getSharedFormData() {
+        return {
+            name: this.nameInput.value.trim(),
+            tagline: this.taglineInput.value.trim(),
+            websiteUrl: this.websiteInput.value.trim(),
+            logoImage: this.logoImageData,
+        };
+    }
+
+    /**
      * Validate the form
      * @returns {{ valid: boolean, errors: string[] }}
      */

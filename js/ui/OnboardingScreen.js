@@ -28,6 +28,7 @@ class OnboardingScreen {
                autocomplete="off"
                spellcheck="false">
 
+        <div class="onboarding-faction-prompt">Choose Faction</div>
         <div class="onboarding-factions">
           <button class="faction-btn" data-faction="rust">Rust</button>
           <button class="faction-btn" data-faction="cobalt">Cobalt</button>
