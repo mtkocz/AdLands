@@ -1092,58 +1092,79 @@
     // Set the form's editing ID to this cluster's entry
     sponsorForm.editingSponsorId = id;
 
-    // === STEP 1: Load form data FIRST (so selection callbacks see correct pattern) ===
-    const currentFormData = sponsorForm.getFormData();
-    const patternData = {
-      id: id,
-      name: currentFormData.name,
-      tagline: currentFormData.tagline,
-      websiteUrl: currentFormData.websiteUrl,
-      logoImage: currentFormData.logoImage,
-      patternImage: sponsor.patternImage || null,
-      patternAdjustment: sponsor.patternAdjustment || null,
-    };
-    sponsorForm.loadSponsor(patternData);
+    // === Suppress callbacks during batch load to avoid redundant work ===
+    const savedFormChange = sponsorForm.onFormChange;
+    const savedSelectionChange = hexSelector.onSelectionChange;
+    sponsorForm.onFormChange = null;
+    hexSelector.onSelectionChange = null;
 
-    // === STEP 2: Load rewards ===
-    if (sponsor.rewards) {
-      rewardConfig.loadRewards(sponsor.rewards);
-    } else {
-      rewardConfig.clear();
+    try {
+      // === STEP 1: Load form data ===
+      const currentFormData = sponsorForm.getFormData();
+      const patternData = {
+        id: id,
+        name: currentFormData.name,
+        tagline: currentFormData.tagline,
+        websiteUrl: currentFormData.websiteUrl,
+        logoImage: currentFormData.logoImage,
+        patternImage: sponsor.patternImage || null,
+        patternAdjustment: sponsor.patternAdjustment || null,
+      };
+      sponsorForm.loadSponsor(patternData);
+
+      // === STEP 2: Load rewards ===
+      if (sponsor.rewards) {
+        rewardConfig.loadRewards(sponsor.rewards);
+      } else {
+        rewardConfig.clear();
+      }
+
+      // === STEP 3: Update hex selector and set selection ===
+      updateGroupAssignedTiles(id);
+
+      let tt = sponsor.territoryType;
+      if (!tt) {
+        if (sponsor.cluster?.tileIndices?.length > 0) tt = 'hex';
+        else {
+          const fallbackMoons = moonManager ? moonManager.getMoonsForSponsor(editingGroup.name) : [];
+          const fallbackBbs = billboardManager ? billboardManager.getBillboardsForSponsor(editingGroup.name) : [];
+          if (fallbackMoons.length > 0) tt = 'moon';
+          else if (fallbackBbs.length > 0) tt = 'billboard';
+        }
+      }
+
+      // Allow camera transitions to be interrupted
+      hexSelector.transitioning = false;
+
+      if (tt === 'moon') {
+        hexSelector.clearSelection();
+        const moonIndices = moonManager ? moonManager.getMoonsForSponsor(editingGroup.name) : [];
+        if (moonIndices.length > 0) {
+          hexSelector.setSelectedMoons(moonIndices);
+          hexSelector.transitionToMoon(moonIndices);
+        }
+      } else if (tt === 'billboard') {
+        hexSelector.clearSelection();
+        const bbIndices = billboardManager ? billboardManager.getBillboardsForSponsor(editingGroup.name) : [];
+        if (bbIndices.length > 0) {
+          hexSelector.setSelectedBillboards(bbIndices);
+          hexSelector.transitionToBillboard(bbIndices);
+        }
+      } else if (sponsor.cluster?.tileIndices?.length > 0) {
+        hexSelector.setSelectedTiles(sponsor.cluster.tileIndices);
+        hexSelector.transitionToCluster(sponsor.cluster.tileIndices);
+      } else {
+        hexSelector.clearSelection();
+      }
+    } finally {
+      // === Restore callbacks ===
+      sponsorForm.onFormChange = savedFormChange;
+      hexSelector.onSelectionChange = savedSelectionChange;
     }
 
-    // === STEP 3: Update hex selector and set selection LAST ===
-    updateGroupAssignedTiles(id);
-
-    let tt = sponsor.territoryType;
-    if (!tt) {
-      if (sponsor.cluster?.tileIndices?.length > 0) tt = 'hex';
-      else {
-        const fallbackMoons = moonManager ? moonManager.getMoonsForSponsor(editingGroup.name) : [];
-        const fallbackBbs = billboardManager ? billboardManager.getBillboardsForSponsor(editingGroup.name) : [];
-        if (fallbackMoons.length > 0) tt = 'moon';
-        else if (fallbackBbs.length > 0) tt = 'billboard';
-      }
-    }
-    if (tt === 'moon') {
-      hexSelector.clearSelection();
-      const moonIndices = moonManager ? moonManager.getMoonsForSponsor(editingGroup.name) : [];
-      if (moonIndices.length > 0) {
-        hexSelector.setSelectedMoons(moonIndices);
-        hexSelector.transitionToMoon(moonIndices);
-      }
-    } else if (tt === 'billboard') {
-      hexSelector.clearSelection();
-      const bbIndices = billboardManager ? billboardManager.getBillboardsForSponsor(editingGroup.name) : [];
-      if (bbIndices.length > 0) {
-        hexSelector.setSelectedBillboards(bbIndices);
-        hexSelector.transitionToBillboard(bbIndices);
-      }
-    } else if (sponsor.cluster?.tileIndices?.length > 0) {
-      hexSelector.setSelectedTiles(sponsor.cluster.tileIndices);
-      hexSelector.transitionToCluster(sponsor.cluster.tileIndices);
-    } else {
-      hexSelector.clearSelection();
+    // === Fire a single update with correct state ===
+    if (savedSelectionChange) {
+      savedSelectionChange(hexSelector.getSelectedTiles());
     }
   }
 
@@ -1187,27 +1208,21 @@
    */
   async function switchCluster(index) {
     if (!editingGroup || index === editingGroup.activeIndex) return;
-    if (busy) return;
-    busy = true;
 
     // Ensure we're on the territory view when switching territories
     if (activeView !== "territories") {
       showTerritoryView();
     }
 
-    try {
-      // Save current cluster state first
-      await saveCurrentClusterState();
+    // Fire-and-forget save of current state (don't block the UI)
+    saveCurrentClusterState().catch((e) =>
+      console.warn("[AdminApp] Auto-save failed:", e)
+    );
 
-      // Switch
-      editingGroup.activeIndex = index;
-      loadClusterAtIndex(index);
-      refreshSponsorsList();
-    } catch (e) {
-      showToast(e.message || "Failed to switch territory", "error");
-    } finally {
-      busy = false;
-    }
+    // Switch immediately
+    editingGroup.activeIndex = index;
+    loadClusterAtIndex(index);
+    refreshSponsorsList();
   }
 
   /**
@@ -1228,17 +1243,15 @@
         return;
       }
 
-      // Copy shared fields + texture from the last member
-      const last = members[members.length - 1];
-      await SponsorStorage.fetchFull(last.id);
-      const lastFull = SponsorStorage.getById(last.id) || last;
+      // Copy shared fields from the first member (blank territory — no pattern)
+      const first = members[0];
+      await SponsorStorage.fetchFull(first.id);
+      const firstFull = SponsorStorage.getById(first.id) || first;
       const newSponsor = await SponsorStorage.create({
-        name: lastFull.name || last.name,
-        tagline: lastFull.tagline || last.tagline || "",
-        websiteUrl: lastFull.websiteUrl || last.websiteUrl || "",
-        logoImage: lastFull.logoImage || last.logoImage || null,
-        patternImage: lastFull.patternImage || null,
-        patternAdjustment: lastFull.patternAdjustment || null,
+        name: firstFull.name || first.name,
+        tagline: firstFull.tagline || first.tagline || "",
+        websiteUrl: firstFull.websiteUrl || first.websiteUrl || "",
+        logoImage: firstFull.logoImage || first.logoImage || null,
         cluster: { tileIndices: [] },
         rewards: [],
       });

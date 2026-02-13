@@ -853,7 +853,7 @@
     };
 
     // Respawn: server tells us to pick a portal after death
-    net.onRespawnChoosePortal = (data) => {
+    net.onRespawnChoosePortal = () => {
       console.log("[Multiplayer] Respawn — choose a portal");
 
       // Abort the signal lost terminal sequence (started by tank.onDeath in main.js).
@@ -869,11 +869,11 @@
         visualEffects.onSignalLostComplete = null;
       }
 
-      // Full reset: restores charred materials, resets opacity, re-applies faction colors
-      tank.resetForRespawn();
-      tank.hp = data.hp;
+      // Do NOT reset the tank here — keep isDead=true during portal selection.
+      // The tank only resets when the player clicks "Deploy Here!" in
+      // FastTravel._exitFastTravel(), which calls tank.resetForRespawn().
 
-      // Enter fast travel respawn mode
+      // Enter fast travel respawn mode (portal selection screen)
       if (mp.fastTravel) {
         mp.fastTravel.startRespawn();
       }

@@ -615,12 +615,33 @@ class HexSelector {
     const offsetX = adj.offsetX || 0;
     const offsetY = adj.offsetY || 0;
 
+    // Aspect-correct "cover" mapping: fill panel without stretching, crop excess
+    const panelAspect = 12 / 8; // panelWidth / panelHeight
+    const texW = this.patternTexture.image ? this.patternTexture.image.width : 256;
+    const texH = this.patternTexture.image ? this.patternTexture.image.height : 256;
+    const texAspect = texW / texH;
+    let repeatX = 1, repeatY = 1, offX = 0, offY = 0;
+    if (texAspect < panelAspect) {
+      // Texture taller → crop top/bottom
+      repeatY = texAspect / panelAspect;
+      offY = (1 - repeatY) / 2;
+    } else {
+      // Texture wider → crop sides
+      repeatX = panelAspect / texAspect;
+      offX = (1 - repeatX) / 2;
+    }
+
     const isDefault = inputBlack === 0 && inputWhite === 1 && gamma === 1 &&
                       outputBlack === 0 && outputWhite === 1 && saturation === 1;
 
     if (isDefault) {
+      // Set aspect-correct repeat/offset on the texture for MeshBasicMaterial
+      const tex = this.patternTexture;
+      tex.repeat.set(repeatX, repeatY);
+      tex.offset.set(offX, offY);
+
       const mat = new THREE.MeshBasicMaterial({
-        map: this.patternTexture,
+        map: tex,
         color: 0xffff88,
         side: THREE.DoubleSide,
       });
@@ -646,6 +667,10 @@ class HexSelector {
         uScale: { value: scale },
         uOffsetX: { value: offsetX },
         uOffsetY: { value: offsetY },
+        uRepeatX: { value: repeatX },
+        uRepeatY: { value: repeatY },
+        uCoverOffX: { value: offX },
+        uCoverOffY: { value: offY },
         uInputBlack: { value: inputBlack },
         uInputWhite: { value: inputWhite },
         uGamma: { value: gamma },
@@ -658,9 +683,15 @@ class HexSelector {
         uniform float uScale;
         uniform float uOffsetX;
         uniform float uOffsetY;
+        uniform float uRepeatX;
+        uniform float uRepeatY;
+        uniform float uCoverOffX;
+        uniform float uCoverOffY;
         varying vec2 vUv;
         void main() {
-          vUv = (uv - 0.5) / uScale + 0.5 + vec2(uOffsetX, uOffsetY) * 0.5;
+          // Apply cover mapping first, then user scale/offset
+          vec2 coverUv = uv * vec2(uRepeatX, uRepeatY) + vec2(uCoverOffX, uCoverOffY);
+          vUv = (coverUv - 0.5) / uScale + 0.5 + vec2(uOffsetX, uOffsetY) * 0.5;
           gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
         }
       `,

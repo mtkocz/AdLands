@@ -312,9 +312,10 @@ class TankHeadlights {
         return;
       }
 
-      // Detect respawn (was dead, now alive) — reset HP tracking
+      // Detect respawn (was dead, now alive) — reset HP tracking + night state
       if (!data.wasAlive) {
         data.wasAlive = true;
+        data.wasNight = false;
         if (entity) data.lastKnownHP = entity.hp;
       }
 

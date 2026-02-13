@@ -779,9 +779,8 @@
   tank.onFadeComplete = (deadTank) => {
     // Remove damage effects
     tankDamageEffects.removeTank("player");
-    // Hide the tank
-    deadTank.group.visible = false;
-    // Tag already fading from onDeath, no need to remove here
+    // Hide the tank (setVisible sets _hidden flag so LOD system won't restore visibility)
+    deadTank.setVisible(false);
   };
 
   // Player death callback

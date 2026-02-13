@@ -1358,6 +1358,18 @@ class Environment {
       texture.wrapS = texture.wrapT = THREE.RepeatWrapping;
       texture.minFilter = THREE.NearestFilter;
       texture.magFilter = THREE.NearestFilter;
+
+      // Aspect-correct "cover" mapping: fill panel without stretching
+      const panelAspect = 57.6 / 38.4; // 1.5
+      const texAspect = img.width / img.height;
+      if (texAspect < panelAspect) {
+        texture.repeat.set(1, texAspect / panelAspect);
+        texture.offset.set(0, (1 - texAspect / panelAspect) / 2);
+      } else {
+        texture.repeat.set(panelAspect / texAspect, 1);
+        texture.offset.set((1 - panelAspect / texAspect) / 2, 0);
+      }
+
       texture.needsUpdate = true;
 
       adPanel.material.map = texture;

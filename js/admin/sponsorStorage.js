@@ -311,7 +311,10 @@ const SponsorStorage = {
       }
       const updated = await res.json();
       const index = this._cache.sponsors.findIndex((s) => s.id === id);
-      if (index !== -1) this._cache.sponsors[index] = updated;
+      if (index !== -1) {
+        // Merge with existing cache to preserve client-only fields (logoUrl, etc.)
+        this._cache.sponsors[index] = { ...this._cache.sponsors[index], ...updated };
+      }
       return updated;
     }
 
