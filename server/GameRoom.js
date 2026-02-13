@@ -1070,8 +1070,10 @@ class GameRoom {
             // Recompute ranks and commander
             this._markRanksDirty();
 
-            // Respawn after 5 seconds
-            setTimeout(() => this._respawnPlayer(id), 5000);
+            // Respawn after death terminal animation completes (+1s buffer)
+            // Animation: 900ms flicker + 2000ms text + 3500ms progress bar
+            //          + 200ms complete text + 2400ms hold + 300ms glitch = ~9300ms
+            setTimeout(() => this._respawnPlayer(id), 10300);
           }
 
           // Remove projectile on hit
@@ -1177,7 +1179,8 @@ class GameRoom {
 
       player.killStreak = 0;
       player.deathCount = (player.deathCount || 0) + 1;
-      setTimeout(() => this._respawnPlayer(socketId), 5000);
+      // Respawn after death terminal animation completes (+1s buffer)
+      setTimeout(() => this._respawnPlayer(socketId), 10300);
     }
   }
 

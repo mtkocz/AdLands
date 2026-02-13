@@ -4423,7 +4423,6 @@ body.colorblind-tritanopia {
     flex: 1;
     padding: 8px 4px;
     border: 2px solid var(--border-dark);
-    background: var(--bg-highlight);
     color: var(--text-secondary);
     font-family: var(--font-body);
     font-size: 14px;
@@ -4432,9 +4431,35 @@ body.colorblind-tritanopia {
     transition: all 0.15s ease;
 }
 
+.faction-btn[data-faction="rust"] {
+    background: rgba(204, 68, 68, 0.2);
+    border-color: rgba(204, 68, 68, 0.4);
+}
+
+.faction-btn[data-faction="cobalt"] {
+    background: rgba(59, 130, 246, 0.2);
+    border-color: rgba(59, 130, 246, 0.4);
+}
+
+.faction-btn[data-faction="viridian"] {
+    background: rgba(74, 222, 128, 0.2);
+    border-color: rgba(74, 222, 128, 0.4);
+}
+
 .faction-btn:hover {
-    border-color: var(--text-muted);
     color: var(--text-primary);
+}
+
+.faction-btn[data-faction="rust"]:hover {
+    background: rgba(204, 68, 68, 0.35);
+}
+
+.faction-btn[data-faction="cobalt"]:hover {
+    background: rgba(59, 130, 246, 0.35);
+}
+
+.faction-btn[data-faction="viridian"]:hover {
+    background: rgba(74, 222, 128, 0.35);
 }
 
 .faction-btn[data-faction="rust"].selected {
