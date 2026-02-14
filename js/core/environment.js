@@ -427,6 +427,17 @@ class Environment {
                     right = normalize(right);
                     vec3 up = normalize(cross(forward, right));
 
+                    // Back hemisphere: project onto equator so UVs extend edge pixels
+                    vec3 localDir = normalize(localPos);
+                    float behindFactor = dot(localDir, forward);
+                    if (behindFactor > 0.0) {
+                        vec3 equatorDir = localDir - behindFactor * forward;
+                        float eLen = length(equatorDir);
+                        if (eLen > 0.001) {
+                            localPos = normalize(equatorDir) * moonRadius;
+                        }
+                    }
+
                     float invR = 1.0 / moonRadius;
                     float projR = dot(localPos, right) * invR;
                     float projU = dot(localPos, up) * invR;

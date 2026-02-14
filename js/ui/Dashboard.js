@@ -186,7 +186,7 @@ class Dashboard {
             </div>
             <div class="header-crypto">
                 <div class="header-level" id="dashboard-level">1</div>
-                <div class="header-faction-rank" id="dashboard-faction-rank"></div>
+                <div class="header-faction-rank clickable" id="dashboard-faction-rank" title="View faction roster"></div>
                 <div class="header-crypto-amount">¢ <span id="dashboard-crypto-current">0</span></div>
             </div>
             <div class="header-badges" id="dashboard-badges">
@@ -948,6 +948,13 @@ class Dashboard {
       }
     });
 
+    // Faction rank click → expand/scroll to Faction panel
+    this.container.addEventListener("click", (e) => {
+      if (e.target.closest("#dashboard-faction-rank")) {
+        this._openFactionPanel();
+      }
+    });
+
     // Territory panel interactions
     this.container.addEventListener("click", (e) => {
       const tierCard = e.target.closest(".territory-tier-card");
@@ -1173,6 +1180,23 @@ class Dashboard {
     this._saveState();
   }
 
+  /**
+   * Open and scroll to the Faction panel when the rank label is clicked.
+   */
+  _openFactionPanel() {
+    const panel = this.container.querySelector('[data-panel="faction"]');
+    if (!panel) return;
+
+    // Expand if collapsed
+    const header = panel.querySelector(".panel-header");
+    if (header && header.dataset.expanded !== "true") {
+      this._togglePanel(header);
+    }
+
+    // Scroll panel into view
+    panel.scrollIntoView({ behavior: "smooth", block: "nearest" });
+  }
+
   // ========================
   // VISIBILITY
   // ========================
@@ -1348,6 +1372,7 @@ class Dashboard {
     if (nameEl && data.name) nameEl.textContent = data.name;
     if (titleEl && data.title) titleEl.textContent = data.title;
     if (data.faction) {
+      this.playerFaction = data.faction;
       this._updateFactionDropdown(data.faction);
     }
     if (levelEl && data.level !== undefined && this._cachedProfile.level !== data.level) {
@@ -1375,8 +1400,8 @@ class Dashboard {
       if (rankChanged || totalChanged) {
         this._cachedProfile.rank = data.rank;
         if (data.rankTotal !== undefined) this._cachedProfile.rankTotal = data.rankTotal;
-        const totalStr = this._cachedProfile.rankTotal ? ` of ${this._cachedProfile.rankTotal}` : "";
-        rankEl.textContent = `#${data.rank}${totalStr}`;
+        const factionName = (this.playerFaction || "faction").charAt(0).toUpperCase() + (this.playerFaction || "faction").slice(1);
+        rankEl.textContent = `${factionName} Rank #${data.rank}`;
       }
     }
   }

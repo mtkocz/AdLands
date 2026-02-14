@@ -2527,6 +2527,16 @@ body.tip-dragging .chat-mention.tip-highlight {
     color: var(--text-secondary);
 }
 
+.header-faction-rank.clickable {
+    cursor: pointer;
+    transition: color 0.15s;
+}
+
+.header-faction-rank.clickable:hover {
+    color: var(--text-primary);
+    text-decoration: underline;
+}
+
 .header-crypto-amount {
     font-family: var(--font-body);
     font-size: var(--font-size-body);
