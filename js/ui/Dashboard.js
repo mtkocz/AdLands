@@ -873,6 +873,13 @@ class Dashboard {
         input.onchange = () => this._handleTerritoryUpload(input, territoryId);
         input.click();
       }
+
+      // Cancel subscription button
+      const cancelBtn = e.target.closest(".territory-item-cancel");
+      if (cancelBtn) {
+        const territoryId = cancelBtn.dataset.territoryId;
+        this._cancelTerritorySubscription(territoryId);
+      }
     });
 
     // Territory adjustment sliders (scale, offsetX, offsetY)
@@ -2233,6 +2240,52 @@ class Dashboard {
     }
   }
 
+  _cancelTerritorySubscription(territoryId) {
+    const idx = this._playerTerritories.findIndex((t) => t.id === territoryId);
+    if (idx === -1) return;
+
+    const territory = this._playerTerritories[idx];
+
+    // Remove cluster from planet (restores tiles to procedural clusters)
+    if (this._territoryPlanet) {
+      this._territoryPlanet.removeSponsorCluster(territoryId);
+    }
+
+    // Remove from local array
+    this._playerTerritories.splice(idx, 1);
+
+    // Remove from SponsorStorage
+    if (typeof SponsorStorage !== "undefined" && SponsorStorage._cache) {
+      const storageId = territory._sponsorStorageId;
+      if (storageId) {
+        SponsorStorage.delete(storageId).catch((e) =>
+          console.warn("[Dashboard] SponsorStorage delete failed:", e),
+        );
+      } else {
+        // Fallback: find by _territoryId
+        const allSponsors = SponsorStorage.getAll();
+        const match = allSponsors.find((s) => s._territoryId === territoryId);
+        if (match) {
+          SponsorStorage.delete(match.id).catch((e) =>
+            console.warn("[Dashboard] SponsorStorage delete failed:", e),
+          );
+        }
+      }
+    }
+
+    // Update localStorage fallback
+    this._savePlayerTerritories();
+
+    // Update UI
+    this._renderTerritoryList();
+
+    const tierLabels = { outpost: "Outpost", compound: "Compound", stronghold: "Stronghold" };
+    this.addNotification(
+      `Subscription cancelled: ${tierLabels[territory.tierName] || "Territory"}`,
+      "info",
+    );
+  }
+
   _renderTerritoryList() {
     const listEl = document.getElementById("territory-list");
     if (!listEl) return;
@@ -2256,9 +2309,14 @@ class Dashboard {
                   <span class="territory-item-hexes">${t.tileIndices.length} hex${t.tileIndices.length !== 1 ? "es" : ""}</span>
               </div>
               <div class="territory-item-meta">${age}</div>
-              <button class="territory-item-upload" data-territory-id="${t.id}">
-                  Replace Image
-              </button>
+              <div class="territory-item-actions">
+                  <button class="territory-item-upload" data-territory-id="${t.id}">
+                      Replace Image
+                  </button>
+                  <button class="territory-item-cancel" data-territory-id="${t.id}">
+                      Cancel Subscription
+                  </button>
+              </div>
               <div class="territory-controls" data-territory-id="${t.id}">
                   <div class="territory-control-row">
                       <label>Scale</label>
@@ -2354,19 +2412,21 @@ class Dashboard {
 
   _loadPlayerTerritories() {
     let territories = [];
+    let loadedFromStorage = false;
 
-    // Try SponsorStorage first
+    // Try SponsorStorage first (admin-authoritative source)
     if (typeof SponsorStorage !== "undefined" && SponsorStorage._cache) {
       try {
         const allSponsors = SponsorStorage.getAll();
         territories = allSponsors.filter((s) => s.isPlayerTerritory);
+        loadedFromStorage = true; // SponsorStorage is available — trust its results
       } catch (e) {
         console.warn("[Dashboard] SponsorStorage load failed:", e);
       }
     }
 
-    // Fall back to localStorage if SponsorStorage had nothing
-    if (territories.length === 0) {
+    // Fall back to localStorage only if SponsorStorage was unavailable
+    if (!loadedFromStorage) {
       try {
         const saved = localStorage.getItem("adlands_player_territories");
         if (saved) {

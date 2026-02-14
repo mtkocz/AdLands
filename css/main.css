@@ -3554,6 +3554,27 @@ body.tip-dragging .chat-mention.tip-highlight {
     color: var(--accent-cyan);
 }
 
+.territory-item-actions {
+    display: flex;
+    gap: var(--space-xs);
+    margin-top: var(--space-xs);
+}
+
+.territory-item-cancel {
+    font-family: var(--font-small);
+    font-size: var(--font-size-small);
+    background: none;
+    border: var(--border-width) solid var(--border-dark);
+    color: var(--text-muted);
+    padding: 2px var(--space-xs);
+    cursor: pointer;
+}
+
+.territory-item-cancel:hover {
+    border-color: #ef4444;
+    color: #ef4444;
+}
+
 .territory-controls {
     margin-top: var(--space-xs);
     padding-top: var(--space-xs);

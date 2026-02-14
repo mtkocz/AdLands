@@ -2629,6 +2629,146 @@ class Planet {
    * Clear all sponsor-specific state so sponsors can be cleanly re-applied.
    * Called before applyServerWorld() + applySponsorVisuals() during live reload.
    */
+  /**
+   * Remove a sponsor cluster and restore tiles to neighboring procedural clusters.
+   * @param {string} sponsorId - The sponsor/territory ID to remove
+   */
+  removeSponsorCluster(sponsorId) {
+    const sponsorEntry = this.sponsorClusters.get(sponsorId);
+    if (!sponsorEntry) return;
+
+    const { clusterId, tileIndices } = sponsorEntry;
+
+    // Remove tiles from sponsorTileIndices
+    for (const tileIndex of tileIndices) {
+      this.sponsorTileIndices.delete(tileIndex);
+    }
+
+    // Remove sponsor outline
+    if (this.clusterOutlines.has(clusterId)) {
+      const outline = this.clusterOutlines.get(clusterId);
+      this.outlineGroup.remove(outline);
+      outline.geometry.dispose();
+      this.clusterOutlines.delete(clusterId);
+    }
+
+    // Remove capture state and ownership
+    this.clusterCaptureState.delete(clusterId);
+    this.clusterOwnership.delete(clusterId);
+
+    // Clear the cluster data entry
+    if (this.clusterData[clusterId]) {
+      this.clusterData[clusterId].tiles = [];
+      this.clusterData[clusterId].isSponsorCluster = false;
+      this.clusterData[clusterId].sponsorId = null;
+    }
+
+    // Remove sponsor tracking
+    this.sponsorClusters.delete(sponsorId);
+    this.sponsorHoldTimers.delete(sponsorId);
+
+    // Reassign orphaned tiles to neighboring procedural clusters
+    const reassigned = new Set();
+    for (const tileIndex of tileIndices) {
+      const neighbors = this._adjacencyMap.get(tileIndex) || [];
+      let bestCluster = undefined;
+      for (const neighbor of neighbors) {
+        const neighborCluster = this.tileClusterMap.get(neighbor);
+        if (neighborCluster === undefined) continue;
+        if (neighborCluster === clusterId) continue;
+        const clusterEntry = this.clusterData[neighborCluster];
+        if (clusterEntry && !clusterEntry.isSponsorCluster) {
+          bestCluster = neighborCluster;
+          break;
+        }
+      }
+
+      if (bestCluster !== undefined) {
+        this.tileClusterMap.set(tileIndex, bestCluster);
+        this.clusterData[bestCluster].tiles.push(tileIndex);
+        reassigned.add(tileIndex);
+      }
+    }
+
+    // Second pass for any tiles that couldn't find a non-sponsor neighbor
+    for (const tileIndex of tileIndices) {
+      if (reassigned.has(tileIndex)) continue;
+      const neighbors = this._adjacencyMap.get(tileIndex) || [];
+      for (const neighbor of neighbors) {
+        const neighborCluster = this.tileClusterMap.get(neighbor);
+        if (neighborCluster !== undefined && neighborCluster !== clusterId) {
+          this.tileClusterMap.set(tileIndex, neighborCluster);
+          this.clusterData[neighborCluster].tiles.push(tileIndex);
+          reassigned.add(tileIndex);
+          break;
+        }
+      }
+    }
+
+    // Restore procedural materials and recalculate capture state for affected clusters
+    const affectedClusters = new Set();
+    for (const tileIndex of tileIndices) {
+      const newClusterId = this.tileClusterMap.get(tileIndex);
+      if (newClusterId !== undefined) affectedClusters.add(newClusterId);
+
+      // Restore procedural material
+      const mesh = this.hexGroup.children.find(
+        (m) => m.userData?.tileIndex === tileIndex,
+      );
+      if (mesh && newClusterId !== undefined) {
+        mesh.userData.clusterId = newClusterId;
+        mesh.userData.isSponsorTile = false;
+        delete mesh.userData.sponsorId;
+
+        const pattern = this.clusterPatterns.get(newClusterId);
+        if (pattern) {
+          if (!this.clusterTextures.has(newClusterId)) {
+            this.clusterTextures.set(
+              newClusterId,
+              this._createPatternTexture(pattern.type, pattern.grayValue),
+            );
+          }
+          mesh.material.dispose();
+          mesh.material = new THREE.MeshStandardMaterial({
+            map: this.clusterTextures.get(newClusterId),
+            flatShading: true,
+            roughness: pattern.roughness,
+            metalness: pattern.metalness,
+            side: THREE.FrontSide,
+          });
+        }
+      }
+    }
+
+    // Update capture state for clusters that gained tiles
+    for (const affectedId of affectedClusters) {
+      const cluster = this.clusterData[affectedId];
+      if (!cluster) continue;
+      const state = this.clusterCaptureState.get(affectedId);
+      if (state) {
+        state.capacity = cluster.tiles.length * 5;
+      }
+    }
+
+    // Rebuild outlines for affected clusters
+    if (this._tiles && this._adjacencyMap) {
+      for (const affectedId of affectedClusters) {
+        const cluster = this.clusterData[affectedId];
+        if (cluster && cluster.tiles.length > 0) {
+          this._createOutlineForCluster(
+            affectedId,
+            this._tiles,
+            cluster.tiles,
+            this._adjacencyMap,
+          );
+        }
+      }
+    }
+
+    // Note: terrain elevation was cleared when the territory was first applied.
+    // Tiles remain at ground level after removal (elevation cannot be restored).
+  }
+
   clearSponsorData() {
     this.sponsorClusters.clear();
     this.sponsorHoldTimers.clear();
