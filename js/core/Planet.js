@@ -2637,7 +2637,14 @@ class Planet {
     const sponsorEntry = this.sponsorClusters.get(sponsorId);
     if (!sponsorEntry) return;
 
-    const { clusterId, tileIndices } = sponsorEntry;
+    const { sponsor, clusterId, tileIndices } = sponsorEntry;
+
+    // Remove sponsor texture from cache
+    const patternSrc = sponsor?.patternImage || sponsor?.patternUrl;
+    if (patternSrc && this._sponsorTextureCache.has(patternSrc)) {
+      this._sponsorTextureCache.get(patternSrc).dispose();
+      this._sponsorTextureCache.delete(patternSrc);
+    }
 
     // Remove tiles from sponsorTileIndices
     for (const tileIndex of tileIndices) {
@@ -2794,9 +2801,30 @@ class Planet {
       geometry.setIndex(indices);
       geometry.computeVertexNormals();
 
-      // Restore procedural material
+      // Restore correct material based on elevation
       let material;
-      if (newClusterId !== undefined) {
+      if (isElevated && this._rockWallTexture) {
+        // Elevated tiles use rock wall texture with desaturated vertex colors
+        const variation = (this.random() - 0.5) * 0.06;
+        const gray = 0.42 + variation;
+        const vertColors = [];
+        for (let i = 0; i < n; i++) {
+          vertColors.push(gray, gray, gray);
+        }
+        geometry.setAttribute(
+          "color",
+          new THREE.Float32BufferAttribute(vertColors, 3),
+        );
+        material = new THREE.MeshStandardMaterial({
+          map: this._rockWallTexture,
+          vertexColors: true,
+          flatShading: true,
+          roughness: 0.95,
+          metalness: 0.05,
+          side: THREE.FrontSide,
+        });
+      } else if (newClusterId !== undefined) {
+        // Ground-level tiles use procedural cluster pattern
         const pattern = this.clusterPatterns.get(newClusterId);
         if (pattern) {
           if (!this.clusterTextures.has(newClusterId)) {

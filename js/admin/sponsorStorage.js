@@ -296,6 +296,7 @@ const SponsorStorage = {
     };
     data.sponsors.push(newSponsor);
     await this._setData(data);
+    this._broadcast("create", { id: newSponsor.id, sponsor: newSponsor });
     return newSponsor;
   },
 
