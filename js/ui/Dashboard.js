@@ -2307,16 +2307,19 @@ class Dashboard {
     if (typeof SponsorStorage !== "undefined" && SponsorStorage._cache) {
       try {
         const sponsor = {
-          id: territory.id,
+          _territoryId: territory.id,
           name: this.playerName || "Player",
           cluster: { tileIndices: territory.tileIndices },
           patternImage: territory.patternImage,
           patternAdjustment: territory.patternAdjustment,
           isPlayerTerritory: true,
           playerFaction: this.playerFaction,
+          tierName: territory.tierName,
           createdAt: new Date().toISOString(),
         };
-        await SponsorStorage.create(sponsor);
+        const created = await SponsorStorage.create(sponsor);
+        // Store the SponsorStorage-generated ID for future updates
+        territory._sponsorStorageId = created.id;
       } catch (e) {
         console.warn("[Dashboard] SponsorStorage save failed:", e);
       }
@@ -2326,10 +2329,22 @@ class Dashboard {
   }
 
   async _updatePlayerTerritory(territoryId, changes) {
-    // Update in SponsorStorage
+    // Update in SponsorStorage using the stored SponsorStorage ID
     if (typeof SponsorStorage !== "undefined" && SponsorStorage._cache) {
       try {
-        await SponsorStorage.update(territoryId, changes);
+        const territory = this._playerTerritories.find((t) => t.id === territoryId);
+        const storageId = territory?._sponsorStorageId;
+        if (storageId) {
+          await SponsorStorage.update(storageId, changes);
+        } else {
+          // Fallback: find by _territoryId field
+          const allSponsors = SponsorStorage.getAll();
+          const match = allSponsors.find((s) => s._territoryId === territoryId);
+          if (match) {
+            await SponsorStorage.update(match.id, changes);
+            if (territory) territory._sponsorStorageId = match.id;
+          }
+        }
       } catch (e) {
         console.warn("[Dashboard] SponsorStorage update failed:", e);
       }

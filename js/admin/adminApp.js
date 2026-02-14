@@ -923,6 +923,7 @@
         const isEditing = sponsor.id === currentEditingId;
         const logoSrc = sponsor.logoUrl || sponsor.logoImage;
         const isPaused = !!sponsor.paused;
+        const isPlayer = !!sponsor.isPlayerTerritory;
         htmlParts.push(`
             <div class="sponsor-card${isEditing ? " editing" : ""}${isPaused ? " paused" : ""}" data-id="${sponsor.id}" data-name="${escapeHtml(sponsor.name)}">
                 <div class="sponsor-card-logo">
@@ -933,7 +934,7 @@
                     }
                 </div>
                 <div class="sponsor-card-info">
-                    <div class="sponsor-card-name">${escapeHtml(sponsor.name)}${isPaused ? ' <span class="paused-badge">PAUSED</span>' : ""}</div>
+                    <div class="sponsor-card-name">${escapeHtml(sponsor.name)}${isPlayer ? ' <span class="player-badge">PLAYER</span>' : ""}${isPaused ? ' <span class="paused-badge">PAUSED</span>' : ""}</div>
                     <div class="sponsor-card-stats">
                         ${sponsor.cluster?.tileIndices?.length || 0} tiles${moonRev > 0 ? ", " + moonManager.getMoonsForSponsor(sponsor.name).length + " moons" : ""}${bbRev > 0 ? ", " + (billboardManager ? billboardManager.getBillboardsForSponsor(sponsor.name).length : 0) + " billboards" : ""},
                         ${sponsor.rewards?.length || 0} rewards
@@ -1032,6 +1033,7 @@
         const isGroupEditing = currentEditingGroupName && currentEditingGroupName.toLowerCase() === (first.name || "").toLowerCase();
         const groupLogoSrc = first.logoUrl || first.logoImage;
         const isGroupPaused = members.some((s) => !!s.paused);
+        const isGroupPlayer = members.some((s) => !!s.isPlayerTerritory);
         htmlParts.push(`
             <div class="sponsor-group${isGroupEditing ? " editing expanded" : ""}${isGroupPaused ? " paused" : ""}" data-name="${escapeHtml(first.name)}">
                 <div class="sponsor-group-header">
@@ -1044,7 +1046,7 @@
                         }
                     </div>
                     <div class="sponsor-card-info">
-                        <div class="sponsor-card-name">${escapeHtml(first.name)}${isGroupPaused ? ' <span class="paused-badge">PAUSED</span>' : ""}</div>
+                        <div class="sponsor-card-name">${escapeHtml(first.name)}${isGroupPlayer ? ' <span class="player-badge">PLAYER</span>' : ""}${isGroupPaused ? ' <span class="paused-badge">PAUSED</span>' : ""}</div>
                         <span class="sponsor-group-badge">${members.length} territories</span>
                         <div class="sponsor-card-stats">
                             ${totalTiles} tiles${groupMoonCount > 0 ? ", " + groupMoonCount + " moons" : ""}${groupBbCount > 0 ? ", " + groupBbCount + " billboards" : ""}, ${totalRewards} rewards
