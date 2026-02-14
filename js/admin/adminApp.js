@@ -965,7 +965,8 @@
     const currentEditingGroupName = editingGroup ? editingGroup.name : null;
 
     for (const [, members] of groups) {
-      if (members.length === 1) {
+      const hasPlayerTerritory = members.some((s) => !!s.isPlayerTerritory);
+      if (members.length === 1 && !hasPlayerTerritory) {
         // Single sponsor — render as flat card
         const sponsor = members[0];
         const rev = calcRevenueForTiles(sponsor.cluster?.tileIndices, tierMap);
@@ -1205,8 +1206,8 @@
       return;
     }
 
-    // If only one member, just edit it directly
-    if (members.length === 1) {
+    // If only one member and not a player territory, edit it directly as a flat card
+    if (members.length === 1 && !members[0].isPlayerTerritory) {
       editSponsor(members[0].id);
       return;
     }
