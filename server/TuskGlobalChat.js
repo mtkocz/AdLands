@@ -111,6 +111,13 @@ class TuskGlobalChat {
         "Performance reviews are next week. Just kidding. Or am I?",
         "Fun fact: one of you is secretly my favorite. Guess who. It's probably not you.",
       ],
+      commanderReturns: [
+        "Step aside @{acting}, Daddy @{commander} is home.",
+        "Commander @{commander} is back online. @{acting}, your watch has ended.",
+        "BREAKING: The real Commander @{commander} has returned. Acting Commander @{acting}, please return the gold trim.",
+        "@{commander} is back. @{acting}, it was fun while it lasted.",
+        "The Commander has returned! @{acting}, back to the ranks with you.",
+      ],
     };
 
     // Start periodic timers
@@ -320,6 +327,18 @@ class TuskGlobalChat {
       to: toName || "Unknown",
       amount: amount || 100,
     });
+  }
+
+  onCommanderReturns(commanderName, actingName) {
+    // Always fire (important event, no probability gate)
+    if (!this.canSendMessage()) return;
+    const templates = this.templates.commanderReturns;
+    if (!templates || templates.length === 0) return;
+    const template = templates[Math.floor(Math.random() * templates.length)];
+    const msg = template
+      .replace(/@?\{commander\}/g, `@${commanderName || "Commander"}`)
+      .replace(/@?\{acting\}/g, `@${actingName || "Acting Commander"}`);
+    this._sendMessage(msg);
   }
 }
 

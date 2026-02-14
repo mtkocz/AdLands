@@ -137,7 +137,7 @@ class ProfileCard {
                     </div>
                     <div class="profile-card-info card-header-info">
                         <div class="profile-card-name card-header-name">${player.name}</div>
-                        <div class="profile-card-title card-header-subtitle${player.title === "Commander" ? " commander-title" : ""}">${player.title || "Contractor"}</div>
+                        <div class="profile-card-title card-header-subtitle${(player.title === "Commander" || player.title === "Acting Commander") ? " commander-title" : ""}">${player.title || "Contractor"}</div>
                     </div>
                     <button class="profile-card-close card-close-x"></button>
                 </div>
@@ -434,7 +434,9 @@ class ProfileCard {
     // (avoids cache mutation races between commander events and profile updates)
     const displayPlayer = Object.assign({}, player);
     if (window.commanderSystem?.isCommander(playerId)) {
-      displayPlayer.title = "Commander";
+      const playerFaction = displayPlayer.faction;
+      const isActing = window.commanderSystem.actingCommanders?.[playerFaction] || false;
+      displayPlayer.title = isActing ? "Acting Commander" : "Commander";
     }
 
     this.currentPlayerId = playerId;
@@ -622,7 +624,9 @@ class ProfileCard {
         window.cryptoSystem?.getCryptoRequiredForLevel?.(
           (window.cryptoSystem?.stats?.level || 1) + 1,
         ) || 10000,
-      title: (window.commanderSystem?.isHumanCommander?.()) ? "Commander" : (this.titleSystem?.getTitle() || "Contractor"),
+      title: (window.commanderSystem?.isHumanCommander?.())
+        ? (window.commanderSystem.isHumanActingCommander?.() ? "Acting Commander" : "Commander")
+        : (this.titleSystem?.getTitle() || "Contractor"),
       rank: window.playerRank || null,
       squad: null,
       isOnline: true,

@@ -199,8 +199,9 @@ class PlayerTags {
    * @param {string} tankId - Tank identifier
    * @param {boolean} isCommander - Whether this player is now a commander
    * @param {string} previousTitle - The title to restore when losing commander (optional)
+   * @param {boolean} isActing - Whether this is an Acting Commander (true commander offline)
    */
-  setCommander(tankId, isCommander, previousTitle = null) {
+  setCommander(tankId, isCommander, previousTitle = null, isActing = false) {
     const tag = this.tags.get(tankId);
     if (!tag) return;
 
@@ -213,11 +214,12 @@ class PlayerTags {
       }
       // Add commander class for gold styling
       tag.element.classList.add("commander");
-      // Set title to Commander
+      // Set title to Commander or Acting Commander
+      const displayTitle = isActing ? "Acting Commander" : "Commander";
       if (titleEl) {
-        titleEl.textContent = "Commander";
+        titleEl.textContent = displayTitle;
       }
-      tag.config.title = "Commander";
+      tag.config.title = displayTitle;
     } else {
       // Remove commander class
       tag.element.classList.remove("commander");

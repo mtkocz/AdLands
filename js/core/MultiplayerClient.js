@@ -1369,7 +1369,8 @@
         // Apply commander tag styling if this player is the current commander
         // (handles late-join where commander-update arrived before the tag was created)
         if (window.commanderSystem.isCommander(playerData.id)) {
-          playerTags.setCommander?.(playerData.id, true);
+          const isActing = window.commanderSystem.actingCommanders?.[playerData.faction] || false;
+          playerTags.setCommander?.(playerData.id, true, null, isActing);
         }
       }
 

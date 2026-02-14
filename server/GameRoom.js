@@ -2352,6 +2352,10 @@ class GameRoom {
         }
       } else if (!current || current.id !== newId) {
         // Commander changed
+        // True commander returned, replacing acting commander
+        if (current && current.isActing && !isActing) {
+          this.tuskChat?.onCommanderReturns?.(newName, current.name);
+        }
         this.bodyguardManager.killAllForFaction(faction);
         this.commanders[faction] = {
           id: newId, name: newName, isActing,
@@ -2373,6 +2377,10 @@ class GameRoom {
       } else if (current.isActing !== isActing) {
         // Same person but acting status changed (e.g., true commander came online
         // and IS this person, or true commander went offline)
+        // True commander returned (acting status removed)
+        if (current.isActing && !isActing) {
+          this.tuskChat?.onCommanderReturns?.(current.name, current.name);
+        }
         current.isActing = isActing;
         this.io.to(this.roomId).emit("commander-update", {
           faction,

@@ -989,10 +989,15 @@ class ChatWindow {
         const msgEl = document.createElement('div');
         msgEl.className = 'chat-msg';
 
-        // Check if sender is a commander
+        // Check if sender is a commander (or acting commander)
         const isCommander = window.commanderSystem && tankId && window.commanderSystem.isCommander(tankId);
         if (isCommander) {
-            msgEl.classList.add('commander', faction);
+            const isActing = window.commanderSystem.actingCommanders?.[faction] || false;
+            if (isActing) {
+                msgEl.classList.add('acting-commander', faction);
+            } else {
+                msgEl.classList.add('commander', faction);
+            }
         }
 
         const nameSpan = document.createElement('span');

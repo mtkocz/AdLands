@@ -450,13 +450,14 @@ class CommanderSystem {
       this.commanderSkin.applyTrim(commander.tankRef);
     }
 
-    // Player tag - gold styling and "Commander" title
+    // Player tag - gold styling and "Commander" / "Acting Commander" title
     // Translate socket ID back to "player" for local player's tag lookup
     if (window.playerTags) {
       const tagId = (commander.playerId === this.humanMultiplayerId) ? this.humanPlayerId : commander.playerId;
+      const isActing = this.actingCommanders[faction] || false;
       const tag = window.playerTags.tags?.get(tagId);
       if (tag) {
-        window.playerTags.setCommander(tagId, true);
+        window.playerTags.setCommander(tagId, true, null, isActing);
       } else {
         // Tag not created yet (late join) — mark pending for spawnRemoteTank to pick up
         commander._pendingCommanderTag = tagId;
@@ -720,6 +721,9 @@ class CommanderSystem {
    * @param {string|null} trueCommanderName - Name of the true (offline) commander, if acting
    */
   applyServerCommander(faction, commanderData, isActing = false, trueCommanderName = null) {
+    // Capture previous acting state before updating (for detecting transitions)
+    const wasActing = this.actingCommanders[faction];
+
     // Store acting state regardless of commander identity
     this.actingCommanders[faction] = isActing;
     this.trueCommanderNames[faction] = trueCommanderName;
@@ -760,6 +764,11 @@ class CommanderSystem {
           this._applyCommanderPerks(current, faction);
         }
       }
+      // Update player tag text if acting status changed (same person, different title)
+      if (wasActing !== isActing && window.playerTags) {
+        const tagId = (commanderData.id === this.humanMultiplayerId) ? this.humanPlayerId : commanderData.id;
+        window.playerTags.setCommander(tagId, true, null, isActing);
+      }
       // Always confirm dashboard state (handles override confirmations where
       // the commander was already set — dashboard may be out of sync)
       if (
@@ -771,6 +780,18 @@ class CommanderSystem {
         window.dashboard.updateCommanderStatus(isHuman, isHuman ? isActing : false);
       }
       return;
+    }
+
+    // True commander returned — replacing acting commander
+    if (wasActing && !isActing && current) {
+      // Fire Tusk commentary panel for the local player
+      if (window.tuskCommentary?.onCommanderReturns) {
+        window.tuskCommentary.onCommanderReturns(commanderData.name, current.username);
+      }
+      // Fire Tusk global chat (single-player only — multiplayer uses server-side TuskGlobalChat)
+      if (!this.multiplayerMode && window.tuskCommentary?.tuskChat?.onCommanderReturns) {
+        window.tuskCommentary.tuskChat.onCommanderReturns(commanderData.name, current.username);
+      }
     }
 
     // Look up the player for tankRef

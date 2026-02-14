@@ -39,30 +39,24 @@ class Dashboard {
   constructor() {
     // Panel definitions in order (profile is now in header)
     this.panels = [
-      "notifications",
       "stats",
       "faction",
       "loadout",
       "social",
-      "messages",
       "tasks",
       "territory",
-      "shop",
       "share",
       "settings",
     ];
 
     // Panel metadata
     this.panelMeta = {
-      notifications: { icon: "\u26A0", title: "Notifications", hasBadge: true },
       stats: { icon: "\uD83D\uDCC8", title: "Stats", hasBadge: false },
       faction: { icon: "\u2694", title: "Faction", hasBadge: false },
       loadout: { icon: "\u2699", title: "Loadout", hasBadge: false },
       social: { icon: "\uD83D\uDC65", title: "Social", hasBadge: true },
-      messages: { icon: "\uD83D\uDCAC", title: "Messages", hasBadge: true },
       tasks: { icon: "\uD83D\uDCCB", title: "Tasks", hasBadge: true },
       territory: { icon: "\u2691", title: "Claim Territory", hasBadge: false },
-      shop: { icon: "\uD83D\uDED2", title: "Shop", hasBadge: false },
       share: { icon: "\uD83D\uDCF7", title: "Share", hasBadge: false },
       settings: { icon: "\u2699", title: "Settings", hasBadge: false },
     };
@@ -71,6 +65,7 @@ class Dashboard {
     this.isVisible = true;
     this.panelStates = new Map();
     this.badgeCounts = new Map();
+    this.notificationDots = new Set();
 
     // Loadout state
     this.equippedUpgrades = {}; // slot -> upgradeId
@@ -186,12 +181,7 @@ class Dashboard {
             </div>
             <div class="header-crypto">
                 <div class="header-level" id="dashboard-level">1</div>
-                <div class="header-faction-rank clickable" id="dashboard-faction-rank" title="View faction roster"></div>
                 <div class="header-crypto-amount">¢ <span id="dashboard-crypto-current">0</span></div>
-            </div>
-            <div class="header-badges" id="dashboard-badges">
-                <div class="header-badges-label">Badges (<span id="dashboard-badge-count">0</span>)</div>
-                <div class="header-badges-grid" id="dashboard-badges-grid"></div>
             </div>
             <button class="header-switch-profile hidden" id="dashboard-switch-profile" title="Switch Profile">Switch Profile</button>
         `;
@@ -295,11 +285,6 @@ class Dashboard {
         }
         titleEl.textContent = isActing ? "Acting Commander" : "Commander";
         titleEl.classList.add("commander-title");
-        if (isActing) {
-          titleEl.classList.add("acting-commander-title");
-        } else {
-          titleEl.classList.remove("acting-commander-title");
-        }
       } else {
         // Restore previous title (fallback to title system or default)
         const restored = this._previousTitle
@@ -308,7 +293,6 @@ class Dashboard {
         titleEl.textContent = restored;
         this._previousTitle = null;
         titleEl.classList.remove("commander-title");
-        titleEl.classList.remove("acting-commander-title");
       }
     }
 
@@ -352,8 +336,6 @@ class Dashboard {
 
   _buildPanelContent(panelId) {
     switch (panelId) {
-      case "notifications":
-        return this._buildNotificationsContent();
       case "stats":
         return this._buildStatsContent();
       case "faction":
@@ -362,14 +344,10 @@ class Dashboard {
         return this._buildLoadoutContent();
       case "social":
         return this._buildSocialContent();
-      case "messages":
-        return this._buildMessagesContent();
       case "tasks":
         return this._buildTasksContent();
       case "territory":
         return this._buildTerritoryContent();
-      case "shop":
-        return window.cosmeticsShop ? window.cosmeticsShop.buildContent() : '<div class="panel-inner"><p>Shop loading...</p></div>';
       case "share":
         return this._buildShareContent();
       case "settings":
@@ -383,19 +361,13 @@ class Dashboard {
   // PANEL CONTENT BUILDERS
   // ========================
 
-  _buildNotificationsContent() {
-    return `
-            <div class="panel-inner">
-                <div class="notification-list" id="notification-list">
-                    <div class="empty-state">No notifications</div>
-                </div>
-            </div>
-        `;
-  }
-
   _buildStatsContent() {
     return `
             <div class="panel-inner">
+                <div class="stats-badges" id="dashboard-badges">
+                    <div class="stats-badges-label">Badges (<span id="dashboard-badge-count">0</span>)</div>
+                    <div class="stats-badges-grid" id="dashboard-badges-grid"></div>
+                </div>
                 <div class="stat-row">
                     <span class="stat-label">Kills:</span>
                     <span class="stat-value" id="dashboard-kills">0</span>
@@ -487,7 +459,7 @@ class Dashboard {
         // We can't easily determine this from client data alone, so skip for non-self
       }
 
-      const cmdrRowClass = member.rank === 1 ? "roster-commander" : "";
+      const cmdrRowClass = "";
 
       html += `<div class="roster-member ${cmdrRowClass} ${onlineClass} ${selfClass}">
                 <span class="roster-rank">#${member.rank}</span>
@@ -518,6 +490,8 @@ class Dashboard {
                     <div class="loadout-tank-preview">
                         <canvas id="tank-preview-canvas"></canvas>
                     </div>
+
+                    <button class="cosmetics-store-btn" id="btn-open-cosmetics">Cosmetics Store</button>
                 </div>
             </div>
         `;
@@ -526,6 +500,16 @@ class Dashboard {
   _buildSocialContent() {
     return `
             <div class="panel-inner">
+                <div class="social-section">
+                    <div class="messages-tabs">
+                        <button class="msg-tab active" data-tab="dm">DMs</button>
+                        <button class="msg-tab" data-tab="faction">Faction</button>
+                        <button class="msg-tab" data-tab="global">Global</button>
+                    </div>
+                    <div class="messages-list" id="dashboard-messages">
+                        <div class="empty-state">No messages</div>
+                    </div>
+                </div>
                 <div class="social-section">
                     <div class="section-title">Friends (0)</div>
                     <div class="social-search">
@@ -541,21 +525,6 @@ class Dashboard {
                         <div class="empty-state">Not in a squad</div>
                     </div>
                     <button class="squad-btn" id="btn-open-squad">Open a Squad</button>
-                </div>
-            </div>
-        `;
-  }
-
-  _buildMessagesContent() {
-    return `
-            <div class="panel-inner">
-                <div class="messages-tabs">
-                    <button class="msg-tab active" data-tab="dm">DMs</button>
-                    <button class="msg-tab" data-tab="faction">Faction</button>
-                    <button class="msg-tab" data-tab="global">Global</button>
-                </div>
-                <div class="messages-list" id="dashboard-messages">
-                    <div class="empty-state">No messages</div>
                 </div>
             </div>
         `;
@@ -934,6 +903,13 @@ class Dashboard {
       }
     });
 
+    // Cosmetics Store button
+    this.container.addEventListener("click", (e) => {
+      if (e.target.id === "btn-open-cosmetics") {
+        this._openCosmeticsModal();
+      }
+    });
+
     // Become Commander button
     this.container.addEventListener("click", (e) => {
       if (e.target.id === "btn-become-commander") {
@@ -945,13 +921,6 @@ class Dashboard {
     this.container.addEventListener("click", (e) => {
       if (e.target.id === "dashboard-switch-profile") {
         this._handleSwitchProfile();
-      }
-    });
-
-    // Faction rank click → expand/scroll to Faction panel
-    this.container.addEventListener("click", (e) => {
-      if (e.target.closest("#dashboard-faction-rank")) {
-        this._openFactionPanel();
       }
     });
 
@@ -1156,6 +1125,12 @@ class Dashboard {
     state.expanded = !isExpanded;
     this.panelStates.set(panelId, state);
 
+    // Clear notification dot when panel is expanded
+    if (state.expanded && this.notificationDots.has(panelId)) {
+      this.notificationDots.delete(panelId);
+      this._updateNotificationDot(panelId, false);
+    }
+
     // Initialize loadout when expanded
     if (panelId === "loadout" && state.expanded) {
       this.initLoadout(this.playerLevel || 1);
@@ -1170,11 +1145,6 @@ class Dashboard {
     // Reset camera pullback when territory panel is collapsed
     if (panelId === "territory" && !state.expanded) {
       this._cancelTerritoryPreview();
-    }
-
-    // Refresh shop when expanded
-    if (panelId === "shop" && state.expanded && window.cosmeticsShop) {
-      window.cosmeticsShop.onPanelOpen();
     }
 
     this._saveState();
@@ -1393,15 +1363,14 @@ class Dashboard {
       }
     }
 
-    const rankEl = document.getElementById("dashboard-faction-rank");
-    if (rankEl && data.rank !== undefined) {
+    if (data.rank !== undefined) {
       const rankChanged = this._cachedProfile.rank !== data.rank;
       const totalChanged = data.rankTotal !== undefined && this._cachedProfile.rankTotal !== data.rankTotal;
       if (rankChanged || totalChanged) {
         this._cachedProfile.rank = data.rank;
         if (data.rankTotal !== undefined) this._cachedProfile.rankTotal = data.rankTotal;
         const factionName = (this.playerFaction || "faction").charAt(0).toUpperCase() + (this.playerFaction || "faction").slice(1);
-        rankEl.textContent = `${factionName} Rank #${data.rank}`;
+        this.updatePanelTitle("faction", `${factionName} | Rank #${data.rank}`);
       }
     }
   }
@@ -1571,6 +1540,16 @@ class Dashboard {
   }
 
   /**
+   * Update a panel's header title dynamically.
+   */
+  updatePanelTitle(panelId, newTitle) {
+    const panel = this.panelElements.get(panelId);
+    if (!panel) return;
+    const titleEl = panel.querySelector(".panel-title");
+    if (titleEl) titleEl.textContent = newTitle;
+  }
+
+  /**
    * Update badge count on a panel
    */
   updateBadge(panelId, count) {
@@ -1587,44 +1566,72 @@ class Dashboard {
   }
 
   /**
-   * Add a notification
+   * Add a notification dot to the target panel header.
+   * @param {string} text - Notification text (currently unused, reserved for future toast)
+   * @param {string} type - Notification type (unused, kept for API compat)
+   * @param {string|null} panelId - Panel to show the dot on
    */
-  addNotification(text, type = "info") {
-    const list = document.getElementById("notification-list");
-    if (!list) return;
-
-    // Remove empty state if present
-    const emptyState = list.querySelector(".empty-state");
-    if (emptyState) emptyState.remove();
-
-    const notification = document.createElement("div");
-    notification.className = `notification ${type}`;
-    notification.innerHTML = `
-            <span class="notification-text">${text}</span>
-            <button class="notification-dismiss">&times;</button>
-        `;
-
-    notification
-      .querySelector(".notification-dismiss")
-      .addEventListener("click", () => {
-        notification.remove();
-        this._updateNotificationBadge();
-        // Restore empty state if no notifications left
-        if (list.children.length === 0) {
-          list.innerHTML = '<div class="empty-state">No notifications</div>';
-        }
-      });
-
-    list.insertBefore(notification, list.firstChild);
-    this._updateNotificationBadge();
+  addNotification(text, type = "info", panelId = null) {
+    if (!panelId) return;
+    this.notificationDots.add(panelId);
+    this._updateNotificationDot(panelId, true);
   }
 
-  _updateNotificationBadge() {
-    const list = document.getElementById("notification-list");
-    if (!list) return;
+  /**
+   * Show or hide a cyan notification dot on a panel header.
+   */
+  _updateNotificationDot(panelId, show) {
+    const panel = this.panelElements.get(panelId);
+    if (!panel) return;
+    const header = panel.querySelector(".panel-header");
+    if (!header) return;
+    let dot = header.querySelector(".panel-notification-dot");
+    if (show && !dot) {
+      dot = document.createElement("span");
+      dot.className = "panel-notification-dot";
+      const icon = header.querySelector(".panel-icon");
+      if (icon) icon.after(dot);
+    } else if (!show && dot) {
+      dot.remove();
+    }
+  }
 
-    const count = list.querySelectorAll(".notification").length;
-    this.updateBadge("notifications", count);
+  // ========================
+  // COSMETICS MODAL
+  // ========================
+
+  _openCosmeticsModal() {
+    let overlay = document.getElementById("cosmetics-modal-overlay");
+    if (!overlay) {
+      overlay = document.createElement("div");
+      overlay.id = "cosmetics-modal-overlay";
+      overlay.className = "modal-overlay";
+      overlay.innerHTML = `
+        <div class="modal-container cosmetics-modal">
+          <div class="modal-header">
+            <span class="modal-title">Cosmetics Store</span>
+            <button class="modal-close" id="btn-close-cosmetics">&times;</button>
+          </div>
+          <div class="modal-body" id="cosmetics-modal-body"></div>
+        </div>
+      `;
+      document.body.appendChild(overlay);
+      overlay.querySelector("#btn-close-cosmetics").addEventListener("click", () => this._closeCosmeticsModal());
+      overlay.addEventListener("click", (e) => {
+        if (e.target === overlay) this._closeCosmeticsModal();
+      });
+    }
+    const body = document.getElementById("cosmetics-modal-body");
+    if (body && window.cosmeticsShop) {
+      body.innerHTML = window.cosmeticsShop.buildContent();
+      window.cosmeticsShop.onPanelOpen();
+    }
+    overlay.classList.add("visible");
+  }
+
+  _closeCosmeticsModal() {
+    const overlay = document.getElementById("cosmetics-modal-overlay");
+    if (overlay) overlay.classList.remove("visible");
   }
 
   // ========================
@@ -1888,6 +1895,7 @@ class Dashboard {
         this.addNotification(
           `Badge Unlocked: ${badge.icon} ${badge.name}`,
           "achievement",
+          "stats",
         );
         // Update badge display when new badge unlocked
         this.updateBadgesDisplay();
@@ -1963,22 +1971,21 @@ class Dashboard {
       if (!titleEl) return;
 
       const isCommander = window.commanderSystem?.isHumanCommander?.() || false;
+      const showingCommander = titleEl.textContent === "Commander" || titleEl.textContent === "Acting Commander";
       if (isCommander) {
         // Should be showing "Commander" — correct if not
-        if (!titleEl.classList.contains("commander-title")) {
+        if (!showingCommander) {
           if (!this._previousTitle) this._previousTitle = titleEl.textContent;
           titleEl.textContent = "Commander";
-          titleEl.classList.add("commander-title");
           this._updateBecomeCommanderButton(true);
         }
       } else {
         // Should NOT be showing "Commander" — correct if stuck
-        if (titleEl.classList.contains("commander-title")) {
+        if (showingCommander) {
           const restored = this._previousTitle
             || (this.titleSystem && this.titleSystem.getTitle())
             || "Contractor";
           titleEl.textContent = restored;
-          titleEl.classList.remove("commander-title");
           this._previousTitle = null;
           this._updateBecomeCommanderButton(false);
         } else if (this.titleSystem) {
@@ -2062,6 +2069,7 @@ class Dashboard {
     this.addNotification(
       `Territory removed by admin: ${tierLabels[territory.tierName] || "Territory"}`,
       "info",
+      "territory",
     );
   }
 
@@ -2355,6 +2363,7 @@ class Dashboard {
     this.addNotification(
       `Territory claimed: ${tierLabels[tierName] || "Territory"} (${preview.tileIndices.length} hexes)`,
       "achievement",
+      "territory",
     );
   }
 
@@ -2513,6 +2522,7 @@ class Dashboard {
     this.addNotification(
       `Subscription cancelled: ${tierLabels[territory.tierName] || "Territory"}`,
       "info",
+      "territory",
     );
   }
 

@@ -288,6 +288,13 @@ const TUSK_LINES = {
     "Taking a break from leadership for {duration}? Bold move. Let's see if anyone notices.",
     "Commander out for {duration}. Remember: the throne is always warm when you return. Very warm. Suspiciously warm.",
   ],
+  on_commander_returns: [
+    "Step aside @{acting}, Daddy @{commander} is home.",
+    "The real Commander @{commander} is back. @{acting}, hand over the gold trim.",
+    "BREAKING: @{commander} has returned. @{acting}'s temporary authority has been... terminated.",
+    "Commander @{commander} is online. @{acting}, your audition is over.",
+    "Plot twist! @{commander} returns. @{acting}, please vacate the corner office.",
+  ],
 };
 
 class TuskCommentary {
@@ -359,6 +366,7 @@ class TuskCommentary {
       on_tip_received: 0, // Always notify recipient
       on_tip_sent: 0, // Always notify sender
       on_commander_drawing: 120000,
+      on_commander_returns: 0, // Always announce when true commander returns
     };
 
     // Suppression flag — prevents _show() during terminal sequence
@@ -903,6 +911,19 @@ class TuskCommentary {
       );
     }
   }
+
+  /**
+   * Called when the true commander returns online, replacing an acting commander
+   */
+  onCommanderReturns(commanderName, actingName) {
+    if (!this._shouldTrigger("on_commander_returns")) return;
+    if (!this._canTrigger("on_commander_returns")) return;
+    let line = this._getRandomLine("on_commander_returns");
+    if (line) {
+      line = line.replace("{commander}", commanderName).replace("{acting}", actingName);
+      this._queueMessage(line);
+    }
+  }
 }
 
 /**
@@ -1011,6 +1032,13 @@ class TuskGlobalChat {
       randomChaos: [
         "Performance reviews are next week. Just kidding. Or am I?",
         "Fun fact: one of you is secretly my favorite. Guess who. It's probably not you.",
+      ],
+      commanderReturns: [
+        "Step aside @{acting}, Daddy @{commander} is home.",
+        "Commander @{commander} is back online. @{acting}, your watch has ended.",
+        "BREAKING: The real Commander @{commander} has returned. Acting Commander @{acting}, please return the gold trim.",
+        "@{commander} is back. @{acting}, it was fun while it lasted.",
+        "The Commander has returned! @{acting}, back to the ranks with you.",
       ],
     };
 
@@ -1224,5 +1252,19 @@ class TuskGlobalChat {
    */
   onPlayerMilestone(playerName, count) {
     this.onEvent("playerMilestone", { player: playerName, count });
+  }
+
+  /**
+   * Call this when the true commander returns online, replacing an acting commander
+   * Always fires (important event, no probability gate)
+   */
+  onCommanderReturns(commanderName, actingName) {
+    if (this.tusk.commentaryMode === "off") return;
+    if (!this.canSendMessage()) return;
+    const msg = this._generateMessage("commanderReturns", {
+      commander: commanderName,
+      acting: actingName,
+    });
+    if (msg) this._sendMessage(msg);
   }
 }

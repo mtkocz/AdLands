@@ -3518,6 +3518,7 @@
   const sharedProjMatrix = new THREE.Matrix4();
   const moonOriginalMats = new Array(3); // Preallocated for bloom pass moon swap
   const bbChildMats = []; // Preallocated for bloom pass billboard material swap
+  const ssChildMats = []; // Preallocated for bloom pass space station material swap
   const _shadowTargetTemp = new THREE.Vector3(); // Reused for orbital shadow target
 
   function animate() {
@@ -3729,10 +3730,23 @@
       });
     }
 
+    // Space stations: swap child mesh materials + enable bloom layer
+    let ssMatIdx = 0;
+    for (let i = 0; i < environment.spaceStations.length; i++) {
+      const ss = environment.spaceStations[i];
+      if (!ss.visible) continue;
+      ss.traverse((child) => {
+        if (!child.isMesh) return;
+        ssChildMats[ssMatIdx++] = { mesh: child, mat: child.material, layer: child.layers.mask };
+        child.material = bloomOcclusionMaterial;
+        child.layers.enable(BLOOM_LAYER);
+      });
+    }
+
     // Pass 1: Render bloom objects with occlusion
     bloomComposer.render();
 
-    // Restore occluder layers, moon materials, and billboard materials
+    // Restore occluder layers, moon materials, billboard materials, and station materials
     occlusionSphereMesh.layers.disable(BLOOM_LAYER);
     for (let i = 0; i < environment.moons.length; i++) {
       environment.moons[i].material = moonOriginalMats[i];
@@ -3741,6 +3755,10 @@
     for (let i = 0; i < bbMatIdx; i++) {
       bbChildMats[i].mesh.material = bbChildMats[i].mat;
       bbChildMats[i].mesh.layers.mask = bbChildMats[i].layer;
+    }
+    for (let i = 0; i < ssMatIdx; i++) {
+      ssChildMats[i].mesh.material = ssChildMats[i].mat;
+      ssChildMats[i].mesh.layers.mask = ssChildMats[i].layer;
     }
     // Pass 2: Render full scene with bloom overlay
     finalComposer.render();

@@ -353,6 +353,7 @@ class CosmeticsShop {
         window.dashboard.addNotification(
           `Purchased: ${item.name}`,
           "achievement",
+          "loadout",
         );
       }
     }
