@@ -947,7 +947,8 @@
     const currentEditingGroupName = editingGroup ? editingGroup.name : null;
 
     for (const [, members] of groups) {
-      if (members.length === 1) {
+      const hasPlayerTerritory = members.some((s) => !!s.isPlayerTerritory);
+      if (members.length === 1 && !hasPlayerTerritory) {
         // Single sponsor — render as flat card
         const sponsor = members[0];
         const rev = calcRevenueForTiles(sponsor.cluster?.tileIndices, tierMap);

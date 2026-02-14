@@ -2765,8 +2765,80 @@ class Planet {
       }
     }
 
-    // Note: terrain elevation was cleared when the territory was first applied.
-    // Tiles remain at ground level after removal (elevation cannot be restored).
+    // Restore terrain elevation that was cleared when territory was first applied
+    if (this.terrainElevation) {
+      const restored = this.terrainElevation.restoreElevationForTiles(tileIndices);
+      if (restored.size > 0) {
+        // Rebuild meshes with correct extrusion for restored tiles
+        for (const tileIndex of restored) {
+          const meshIdx = this.hexGroup.children.findIndex(
+            (m) => m.userData?.tileIndex === tileIndex,
+          );
+          if (meshIdx === -1) continue;
+
+          const oldMesh = this.hexGroup.children[meshIdx];
+          const oldMaterial = oldMesh.material;
+          const oldUserData = { ...oldMesh.userData };
+
+          oldMesh.geometry.dispose();
+          this.hexGroup.remove(oldMesh);
+
+          const tile = this._tiles[tileIndex];
+          const boundary = tile.boundary;
+          const n = boundary.length;
+          const vertices = [];
+          const uvs = [];
+
+          const elevation = this.terrainElevation.getElevationAtTileIndex(tileIndex);
+          const extrusionScale = this.terrainElevation.getExtrusion(elevation);
+
+          // Build tangent-plane basis for distortion-free UVs on elevated tiles
+          const cp = tile.centerPoint;
+          const normal = new THREE.Vector3(
+            parseFloat(cp.x), parseFloat(cp.y), parseFloat(cp.z),
+          ).normalize();
+          const up = Math.abs(normal.y) < 0.99
+            ? new THREE.Vector3(0, 1, 0)
+            : new THREE.Vector3(1, 0, 0);
+          const tanU = new THREE.Vector3().crossVectors(up, normal).normalize();
+          const tanV = new THREE.Vector3().crossVectors(normal, tanU);
+
+          for (let i = 0; i < n; i++) {
+            const origX = parseFloat(boundary[i].x);
+            const origY = parseFloat(boundary[i].y);
+            const origZ = parseFloat(boundary[i].z);
+            vertices.push(origX * extrusionScale, origY * extrusionScale, origZ * extrusionScale);
+
+            const u = (origX * tanU.x + origY * tanU.y + origZ * tanU.z) / ROCK_TEXTURE_WORLD_SIZE;
+            const v = (origX * tanV.x + origY * tanV.y + origZ * tanV.z) / ROCK_TEXTURE_WORLD_SIZE;
+            uvs.push(u, v);
+          }
+
+          const indices = [];
+          for (let i = 1; i < n - 1; i++) {
+            indices.push(0, i, i + 1);
+          }
+
+          const geometry = new THREE.BufferGeometry();
+          geometry.setAttribute(
+            "position",
+            new THREE.Float32BufferAttribute(vertices, 3),
+          );
+          geometry.setAttribute("uv", new THREE.Float32BufferAttribute(uvs, 2));
+          geometry.setIndex(indices);
+          geometry.computeVertexNormals();
+
+          const newMesh = new THREE.Mesh(geometry, oldMaterial);
+          newMesh.userData = oldUserData;
+          newMesh.receiveShadow = true;
+          newMesh.castShadow = true;
+          this.hexGroup.add(newMesh);
+        }
+
+        // Rebuild cliff walls with restored elevation data
+        this.terrainElevation.rebuildCliffWalls(this._tiles, this._adjacencyMap);
+      }
+    }
   }
 
   clearSponsorData() {
@@ -3138,6 +3210,61 @@ class Planet {
       mesh.userData.sponsorId = sponsor.id;
       mesh.userData.isSponsorTile = true;
     });
+  }
+
+  /**
+   * Lightweight UV-only update for sponsor tiles.
+   * Skips material/texture recreation — only recalculates UV coordinates.
+   * Used for real-time scale/offset slider adjustments.
+   * @param {number[]} tileIndices
+   * @param {Object} adjustment - { scale, offsetX, offsetY }
+   */
+  _updateSponsorTileUVs(tileIndices, adjustment) {
+    const tileSet = new Set(tileIndices);
+    const scale = adjustment.scale || 1.0;
+    const offsetX = adjustment.offsetX || 0;
+    const offsetY = adjustment.offsetY || 0;
+
+    const clusterCenter = this._calculateClusterCenter(tileIndices);
+    const { tanU, tanV } = this._calculateClusterTangentBasis(clusterCenter);
+    const bounds = this._calculateClusterTangentBounds(tileIndices, tanU, tanV);
+
+    const clusterWidth = bounds.maxU - bounds.minU;
+    const clusterHeight = bounds.maxV - bounds.minV;
+
+    // Get texture aspect from existing material
+    let textureAspect = 1;
+    for (const mesh of this.hexGroup.children) {
+      if (mesh.userData && tileSet.has(mesh.userData.tileIndex) && mesh.material?.map?.image) {
+        textureAspect = mesh.material.map.image.width / mesh.material.map.image.height;
+        break;
+      }
+    }
+
+    const uniformScale = Math.max(clusterWidth, clusterHeight * textureAspect);
+    const centerU = (bounds.minU + bounds.maxU) / 2;
+    const centerV = (bounds.minV + bounds.maxV) / 2;
+    const uvScale = 1.0 / scale;
+
+    for (const mesh of this.hexGroup.children) {
+      if (!mesh.userData || !tileSet.has(mesh.userData.tileIndex)) continue;
+      if (!mesh.geometry?.attributes?.position) continue;
+
+      const positions = mesh.geometry.attributes.position.array;
+      const uvAttr = mesh.geometry.attributes.uv;
+      const uvArray = uvAttr.array;
+
+      for (let i = 0, vi = 0; i < positions.length; i += 3, vi += 2) {
+        const x = positions[i], y = positions[i + 1], z = positions[i + 2];
+        const localU = x * tanU.x + y * tanU.y + z * tanU.z;
+        const localV = x * tanV.x + y * tanV.y + z * tanV.z;
+
+        uvArray[vi] = ((localV - centerV) / uniformScale + 0.5) * uvScale + offsetX * 0.5;
+        uvArray[vi + 1] = (((localU - centerU) / uniformScale) * textureAspect + 0.5) * uvScale + offsetY * 0.5;
+      }
+
+      uvAttr.needsUpdate = true;
+    }
   }
 
   /**

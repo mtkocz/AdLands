@@ -614,11 +614,14 @@ class TerrainElevation {
    * Returns the set of tiles whose elevation actually changed (were > 0).
    */
   clearElevationForTiles(tileIndices) {
+    if (!this._clearedElevationBackup) this._clearedElevationBackup = new Map();
     const changed = new Set();
     for (const idx of tileIndices) {
       const elev = this.tileElevation.get(idx);
       if (elev && elev > 0) {
         changed.add(idx);
+        // Backup original elevation and region for later restoration
+        this._clearedElevationBackup.set(idx, { elevation: elev });
         this.tileElevation.delete(idx);
         this.elevatedTileSet.delete(idx);
         // Remove from region tile sets
@@ -631,6 +634,47 @@ class TerrainElevation {
       this._buildSpatialHash();
     }
     return changed;
+  }
+
+  /**
+   * Restore previously cleared elevation for specific tiles.
+   * Re-adds them to tileElevation, elevatedTileSet, and matching regions.
+   * @param {number[]} tileIndices - Tiles to restore elevation for
+   * @returns {Set} Tiles that were actually restored
+   */
+  restoreElevationForTiles(tileIndices) {
+    if (!this._clearedElevationBackup) return new Set();
+    const restored = new Set();
+    for (const idx of tileIndices) {
+      const backup = this._clearedElevationBackup.get(idx);
+      if (!backup) continue;
+      this.tileElevation.set(idx, backup.elevation);
+      this.elevatedTileSet.add(idx);
+      this._clearedElevationBackup.delete(idx);
+      restored.add(idx);
+    }
+    if (restored.size > 0) {
+      // Re-add tiles to their matching elevation regions
+      for (const idx of restored) {
+        const elev = this.tileElevation.get(idx);
+        // Find a region at the same level that contains a neighbor of this tile
+        const neighbors = this.planet._adjacencyMap?.get(idx) || [];
+        let assigned = false;
+        for (const region of this.elevationRegions) {
+          if (region.level !== elev) continue;
+          for (const neighbor of neighbors) {
+            if (region.tiles.has(neighbor)) {
+              region.tiles.add(idx);
+              assigned = true;
+              break;
+            }
+          }
+          if (assigned) break;
+        }
+      }
+      this._buildSpatialHash();
+    }
+    return restored;
   }
 
   /**

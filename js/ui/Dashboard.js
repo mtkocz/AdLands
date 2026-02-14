@@ -883,7 +883,9 @@ class Dashboard {
     });
 
     // Territory adjustment sliders (scale, offsetX, offsetY)
-    this._territoryAdjustmentTimer = null;
+    // "input" → lightweight UV-only update (fast, no material recreation)
+    // "change" → full texture + storage save (on slider release)
+    this._territoryUVTimer = null;
     this.container.addEventListener("input", (e) => {
       const slider = e.target;
       if (!slider.classList.contains("territory-scale-slider") &&
@@ -905,11 +907,44 @@ class Dashboard {
       else if (slider.classList.contains("territory-offsetx-slider")) key = "offsetX";
       else key = "offsetY";
 
-      // Throttle texture re-application (30ms)
-      clearTimeout(this._territoryAdjustmentTimer);
-      this._territoryAdjustmentTimer = setTimeout(() => {
-        this._handleTerritoryAdjustment(territoryId, key, value);
-      }, 30);
+      // Update local state immediately (no storage write)
+      const territory = this._playerTerritories.find((t) => t.id === territoryId);
+      if (!territory) return;
+      if (!territory.patternAdjustment) {
+        territory.patternAdjustment = {
+          scale: 1.0, offsetX: 0, offsetY: 0,
+          saturation: 0.7, inputBlack: 30, inputGamma: 1.0,
+          inputWhite: 225, outputBlack: 40, outputWhite: 215,
+        };
+      }
+      territory.patternAdjustment[key] = value;
+
+      // Lightweight UV-only update (no material/texture recreation)
+      clearTimeout(this._territoryUVTimer);
+      this._territoryUVTimer = setTimeout(() => {
+        if (this._territoryPlanet) {
+          this._territoryPlanet._updateSponsorTileUVs(
+            territory.tileIndices,
+            territory.patternAdjustment,
+          );
+        }
+      }, 16); // ~60fps cap
+    });
+
+    // On slider release, persist to storage
+    this.container.addEventListener("change", (e) => {
+      const slider = e.target;
+      if (!slider.classList.contains("territory-scale-slider") &&
+          !slider.classList.contains("territory-offsetx-slider") &&
+          !slider.classList.contains("territory-offsety-slider")) return;
+
+      const territoryId = slider.dataset.territoryId;
+      const territory = this._playerTerritories.find((t) => t.id === territoryId);
+      if (!territory) return;
+
+      this._updatePlayerTerritory(territoryId, {
+        patternAdjustment: territory.patternAdjustment,
+      });
     });
 
     // Note: H key toggle is handled by main.js to coordinate with chat window
@@ -2248,33 +2283,6 @@ class Dashboard {
       this._renderTerritoryList();
     };
     reader.readAsDataURL(file);
-  }
-
-  _handleTerritoryAdjustment(territoryId, key, value) {
-    const territory = this._playerTerritories.find((t) => t.id === territoryId);
-    if (!territory) return;
-
-    if (!territory.patternAdjustment) {
-      territory.patternAdjustment = {
-        scale: 1.0, offsetX: 0, offsetY: 0,
-        saturation: 0.7, inputBlack: 30, inputGamma: 1.0,
-        inputWhite: 225, outputBlack: 40, outputWhite: 215,
-      };
-    }
-    territory.patternAdjustment[key] = value;
-    this._updatePlayerTerritory(territoryId, {
-      patternAdjustment: territory.patternAdjustment,
-    });
-
-    // Re-apply texture with updated adjustment
-    if (this._territoryPlanet) {
-      const sponsor = {
-        id: territoryId,
-        patternImage: territory.patternImage,
-        patternAdjustment: territory.patternAdjustment,
-      };
-      this._territoryPlanet._applySponsorTexture(sponsor, territory.tileIndices);
-    }
   }
 
   _cancelTerritorySubscription(territoryId) {
