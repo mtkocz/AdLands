@@ -55,18 +55,6 @@ class AuthScreen {
               <span class="auth-btn-icon">G</span>
               Continue with Google
             </button>
-            <button class="auth-btn auth-btn-apple" data-provider="apple">
-              <span class="auth-btn-icon">\uF8FF</span>
-              Continue with Apple
-            </button>
-            <button class="auth-btn auth-btn-github" data-provider="github">
-              <span class="auth-btn-icon">\u2B21</span>
-              Continue with GitHub
-            </button>
-            <button class="auth-btn auth-btn-twitter" data-provider="twitter">
-              <span class="auth-btn-icon">\u2B23</span>
-              Continue with X
-            </button>
             <button class="auth-btn auth-btn-email" data-provider="email">
               <span class="auth-btn-icon">\u2709</span>
               Continue with Email
@@ -126,7 +114,7 @@ class AuthScreen {
 
         <!-- Stage 3: Profile Creation -->
         <div class="auth-stage hidden" id="auth-stage-create">
-          <div class="auth-title">Create Profile</div>
+          <div class="auth-title" id="auth-create-title">Create Profile</div>
 
           <input type="text" id="auth-profile-name"
                  class="auth-input"
@@ -286,15 +274,6 @@ class AuthScreen {
         case "google":
           await this.auth.signInWithGoogle();
           break;
-        case "apple":
-          await this.auth.signInWithApple();
-          break;
-        case "github":
-          await this.auth.signInWithGitHub();
-          break;
-        case "twitter":
-          await this.auth.signInWithTwitter();
-          break;
         case "email":
           this._setButtonsDisabled(false);
           this._showStage("email");
@@ -304,8 +283,12 @@ class AuthScreen {
           break;
       }
 
-      // Auth succeeded — move to profile selection
-      await this._loadAndShowProfiles();
+      // Auth succeeded — guests skip to create screen, others go to profile selection
+      if (provider === "guest") {
+        await this._loadAndShowGuestCreate();
+      } else {
+        await this._loadAndShowProfiles();
+      }
     } catch (err) {
       this._setButtonsDisabled(false);
       if (err.code === "auth/popup-closed-by-user") return; // User cancelled
@@ -531,16 +514,76 @@ class AuthScreen {
     }
   }
 
-  _startCreateProfile(index) {
+  /**
+   * Guest flow: skip profile selector, go straight to create screen.
+   * Creates account doc if needed, then shows "Deploy As" form.
+   */
+  async _loadAndShowGuestCreate() {
+    this._setButtonsDisabled(false);
+    const uid = this.auth.uid;
+    if (!uid) return;
+
+    try {
+      const accountRef = firebaseDb.collection("accounts").doc(uid);
+      const accountDoc = await accountRef.get();
+
+      if (!accountDoc.exists) {
+        await accountRef.set({
+          email: null,
+          displayName: null,
+          photoURL: null,
+          linkedProviders: [],
+          isAnonymous: true,
+          createdAt: firebase.firestore.FieldValue.serverTimestamp(),
+          lastLoginAt: firebase.firestore.FieldValue.serverTimestamp(),
+          activeProfileIndex: 0,
+          cosmeticsPurchased: [],
+          profiles: [null, null, null],
+          settings: {},
+        });
+        this._profiles = [null, null, null];
+      } else {
+        accountRef.update({
+          lastLoginAt: firebase.firestore.FieldValue.serverTimestamp(),
+          isAnonymous: true,
+        });
+        this._profiles = accountDoc.data().profiles || [null, null, null];
+      }
+
+      // Go straight to create form for slot 0
+      this._startCreateProfile(0, true);
+    } catch (err) {
+      console.error("[AuthScreen] Guest create error:", err);
+      this._showError("auth-error", "Failed to start. Please try again.");
+      this._showStage("auth");
+    }
+  }
+
+  _startCreateProfile(index, isGuest = false) {
     this._selectedIndex = index;
     this._selectedFaction = null;
+
+    // Set title and button text based on guest vs. regular
+    const title = this.overlay.querySelector("#auth-create-title");
+    const confirmBtn = this.overlay.querySelector("#auth-create-confirm");
+    const backBtn = this.overlay.querySelector("#auth-create-back");
+
+    if (isGuest) {
+      title.textContent = "Deploy As";
+      confirmBtn.textContent = "Deploy";
+      backBtn.style.display = "none";
+    } else {
+      title.textContent = "Create Profile";
+      confirmBtn.textContent = "Create Profile";
+      backBtn.style.display = "";
+    }
 
     // Reset create form
     this.overlay.querySelector("#auth-profile-name").value = "";
     this.overlay.querySelectorAll(".auth-factions .faction-btn").forEach((btn) => {
       btn.classList.remove("selected");
     });
-    this.overlay.querySelector("#auth-create-confirm").disabled = true;
+    confirmBtn.disabled = true;
 
     // Pre-fill name from auth if available
     if (this.auth.displayName) {
