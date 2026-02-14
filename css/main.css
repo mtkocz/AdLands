@@ -2311,6 +2311,106 @@ body.tip-dragging .chat-mention.tip-highlight {
     text-shadow: 0 0 4px rgba(255, 215, 0, 0.5);
 }
 
+/* Acting Commander title - silver styling */
+.header-title.acting-commander-title {
+    color: silver !important;
+    text-shadow: 0 0 4px rgba(192, 192, 192, 0.5) !important;
+}
+
+/* ========================
+   FACTION ROSTER PANEL
+   ======================== */
+.faction-roster-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 8px;
+}
+
+.faction-roster-title {
+    font-weight: 600;
+    font-size: 13px;
+}
+
+.faction-roster-count {
+    font-size: 11px;
+    opacity: 0.6;
+}
+
+.faction-roster-list {
+    max-height: 250px;
+    overflow-y: auto;
+    overflow-x: hidden;
+}
+
+.roster-member {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 4px 6px;
+    border-radius: 4px;
+    font-size: 12px;
+}
+
+.roster-member.roster-self {
+    background: rgba(255, 255, 255, 0.08);
+}
+
+.roster-member.roster-commander {
+    border-left: 2px solid gold;
+}
+
+.roster-rank {
+    min-width: 28px;
+    font-weight: 600;
+    opacity: 0.7;
+}
+
+.roster-dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    flex-shrink: 0;
+}
+
+.roster-dot.online {
+    background: #4caf50;
+}
+
+.roster-dot.offline {
+    background: #666;
+}
+
+.roster-name {
+    flex: 1;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.roster-level {
+    font-size: 11px;
+    opacity: 0.6;
+}
+
+.roster-role {
+    font-size: 9px;
+    font-weight: 700;
+    padding: 1px 4px;
+    border-radius: 3px;
+    text-transform: uppercase;
+}
+
+.roster-role.commander {
+    background: rgba(255, 215, 0, 0.3);
+    color: gold;
+}
+
+.roster-role.acting {
+    background: rgba(192, 192, 192, 0.3);
+    color: silver;
+}
+
 .header-faction {
     position: absolute;
     right: 0;
@@ -2673,6 +2773,31 @@ body.tip-dragging .chat-mention.tip-highlight {
 
 .header-badge:hover {
     transform: scale(1.3);
+}
+
+/* Switch Profile Button */
+.header-switch-profile {
+    width: 100%;
+    padding: var(--space-xs) var(--space-sm);
+    background: transparent;
+    border: var(--border-width) dashed var(--border-light);
+    border-radius: var(--radius-sm);
+    color: var(--text-muted);
+    font-family: var(--font-small);
+    font-size: var(--font-size-small);
+    cursor: pointer;
+    transition: all 0.15s ease;
+    margin-top: var(--space-xs);
+}
+
+.header-switch-profile:hover {
+    border-color: var(--text-dim);
+    color: var(--text-dim);
+    background: rgba(255, 255, 255, 0.03);
+}
+
+.header-switch-profile.hidden {
+    display: none;
 }
 
 .header-badge-more {
@@ -4919,4 +5044,165 @@ body.colorblind-tritanopia {
 
 .ping-arrow-appear {
     animation: ping-arrow-appear 0.5s ease-in-out forwards;
+}
+
+/* ========================
+   COSMETICS SHOP
+   ======================== */
+
+.shop-panel {
+    display: flex;
+    flex-direction: column;
+    gap: calc(var(--grid) * 2);
+}
+
+.shop-description {
+    color: var(--fg-dim);
+    font-size: 11px;
+    line-height: 1.4;
+}
+
+.shop-tabs {
+    display: flex;
+    gap: calc(var(--grid));
+    flex-wrap: wrap;
+}
+
+.shop-tab {
+    padding: calc(var(--grid)) calc(var(--grid) * 2);
+    background: rgba(255, 255, 255, 0.05);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: calc(var(--grid));
+    color: var(--fg-dim);
+    font-size: 10px;
+    cursor: pointer;
+    transition: all 0.15s;
+    font-family: inherit;
+}
+
+.shop-tab:hover {
+    background: rgba(255, 255, 255, 0.1);
+    color: var(--fg);
+}
+
+.shop-tab.active {
+    background: rgba(255, 255, 255, 0.15);
+    border-color: var(--fg-dim);
+    color: var(--fg);
+}
+
+.shop-items {
+    display: flex;
+    flex-direction: column;
+    gap: calc(var(--grid) * 2);
+    max-height: 300px;
+    overflow-y: auto;
+}
+
+.shop-item-card {
+    display: flex;
+    align-items: center;
+    gap: calc(var(--grid) * 2);
+    padding: calc(var(--grid) * 2);
+    background: rgba(255, 255, 255, 0.03);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    border-radius: calc(var(--grid));
+    transition: all 0.15s;
+}
+
+.shop-item-card:hover {
+    background: rgba(255, 255, 255, 0.06);
+    border-color: rgba(255, 255, 255, 0.15);
+}
+
+.shop-item-card.equipped {
+    border-color: rgba(100, 200, 100, 0.4);
+    background: rgba(100, 200, 100, 0.05);
+}
+
+.shop-item-preview {
+    width: calc(var(--grid) * 10);
+    height: calc(var(--grid) * 10);
+    border: 2px solid rgba(255, 255, 255, 0.2);
+    border-radius: calc(var(--grid));
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    background: rgba(0, 0, 0, 0.3);
+}
+
+.shop-item-icon {
+    font-size: 20px;
+}
+
+.shop-item-info {
+    flex: 1;
+    min-width: 0;
+}
+
+.shop-item-name {
+    font-size: 12px;
+    font-weight: bold;
+    color: var(--fg);
+}
+
+.shop-item-rarity {
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+.shop-item-desc {
+    font-size: 10px;
+    color: var(--fg-dim);
+    margin-top: 2px;
+}
+
+.shop-item-action {
+    flex-shrink: 0;
+}
+
+.shop-item-btn {
+    padding: calc(var(--grid)) calc(var(--grid) * 2);
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    border-radius: calc(var(--grid));
+    background: rgba(255, 255, 255, 0.05);
+    color: var(--fg);
+    font-size: 10px;
+    cursor: pointer;
+    font-family: inherit;
+    transition: all 0.15s;
+    white-space: nowrap;
+}
+
+.shop-item-btn:hover {
+    background: rgba(255, 255, 255, 0.1);
+}
+
+.shop-item-buy {
+    border-color: rgba(230, 168, 23, 0.4);
+    color: #e6a817;
+}
+
+.shop-item-buy:hover {
+    background: rgba(230, 168, 23, 0.15);
+}
+
+.shop-item-equip {
+    border-color: rgba(74, 158, 74, 0.4);
+    color: #4a9e4a;
+}
+
+.shop-item-equip:hover {
+    background: rgba(74, 158, 74, 0.15);
+}
+
+.shop-item-unequip {
+    border-color: rgba(200, 100, 100, 0.4);
+    color: #c86464;
+}
+
+.shop-item-unequip:hover {
+    background: rgba(200, 100, 100, 0.15);
 }

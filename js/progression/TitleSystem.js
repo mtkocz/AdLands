@@ -424,6 +424,10 @@ class TitleSystem {
       } catch (e) {
         console.warn("[TitleSystem] Failed to save stats:", e);
       }
+      // Also sync to Firestore via ProfileManager (debounced)
+      if (window.profileManager && window.profileManager.loaded) {
+        window.profileManager.saveProfile();
+      }
     }, 5000);
   }
 

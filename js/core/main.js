@@ -477,7 +477,15 @@
     fastTravel.enterFastTravelAtStart();
   }
 
-  // Onboarding screen (name & faction selection)
+  // Auth manager (Firebase Auth state management)
+  const authManager = new AuthManager();
+  window.authManager = authManager;
+
+  // Auth screen (replaces OnboardingScreen — multi-stage login + profile selection)
+  const authScreen = new AuthScreen(authManager);
+  window._authScreenInstance = authScreen; // Expose for Dashboard profile switching
+
+  // Legacy onboarding screen kept as fallback for offline mode
   const onboardingScreen = new OnboardingScreen();
 
   // Dust shockwave effect system (create early so fastTravel can use it)
@@ -531,6 +539,11 @@
   cannonSystem.setBotTanks(botTanks);
   cannonSystem.setDustShockwave(dustShockwave);
   cannonSystem.setPlanet(planet);
+
+  // Weapon Slot System (computes loadout modifiers for combat)
+  const weaponSlotSystem = new WeaponSlotSystem();
+  cannonSystem.weaponSlotSystem = weaponSlotSystem;
+  window.weaponSlotSystem = weaponSlotSystem;
 
   // Crypto System (initialized early, connected to cannon system below)
   const cryptoSystem = new CryptoSystem();
@@ -1164,6 +1177,10 @@
   );
   window.dashboard = dashboard; // Global reference for debugging
 
+  // Cosmetics Shop (account-level purchases, profile-level equipping)
+  const cosmeticsShop = new CosmeticsShop();
+  window.cosmeticsShop = cosmeticsShop;
+
   // Initialize SponsorStorage for player territory persistence
   if (typeof SponsorStorage !== "undefined") {
     SponsorStorage.init().catch((e) =>
@@ -1189,6 +1206,18 @@
   // Update player tag with current title (tag was created before titleSystem)
   playerTags.updateTitle("player", titleSystem.getTitle());
   window.titleSystem = titleSystem; // Global reference for debugging
+
+  // Firestore sync and profile manager
+  const firestoreSync = new FirestoreSync();
+  const profileManager = new ProfileManager(firestoreSync);
+  profileManager.cryptoSystem = cryptoSystem;
+  profileManager.badgeSystem = badgeSystem;
+  profileManager.titleSystem = titleSystem;
+  profileManager.dashboard = dashboard;
+  profileManager.settingsManager = settingsManager;
+  profileManager.weaponSlotSystem = weaponSlotSystem;
+  window.firestoreSync = firestoreSync;
+  window.profileManager = profileManager;
 
   // Profile Card System (right-click player profiles)
   const profileCard = new ProfileCard(badgeSystem, titleSystem);
@@ -1427,7 +1456,37 @@
     setSponsorTexturesReady: () => { sponsorLoadProgress = 1; sponsorTexturesReady = true; },
   };
 
-  // Wire onboarding screen confirm callback
+  // Wire auth screen confirm callback (used when Firebase is available)
+  authScreen.onConfirm = ({ name, faction, profileIndex, profileData }) => {
+    // Store profile context for other systems
+    window.activeProfileIndex = profileIndex;
+    window.activeProfileData = profileData;
+
+    // Load profile data into all game systems via ProfileManager
+    profileManager.loadProfile(profileIndex, profileData);
+
+    // Load cosmetics purchases + equipped items from Firestore
+    cosmeticsShop.loadFromFirestore();
+
+    // Update local state via the mp interface
+    window._mp.setPlayerFaction(faction);
+    window._mp.setPlayerName(name);
+
+    // Send chosen identity to server (token already sent via Socket.IO handshake)
+    if (window.networkManager) {
+      window.networkManager.sendIdentity(name, faction);
+    }
+
+    // Show "Switch Profile" button in dashboard
+    dashboard.showSwitchProfileButton(true);
+
+    // Fade out auth screen, then reveal sky beams + portal selection
+    authScreen.hide(() => {
+      startPortalSelection();
+    });
+  };
+
+  // Wire legacy onboarding screen confirm callback (offline/fallback)
   onboardingScreen.onConfirm = ({ name, faction }) => {
     // Update local state via the mp interface
     window._mp.setPlayerFaction(faction);
@@ -3743,8 +3802,12 @@
 
       if (isReady) {
         loadingScreen.classList.add("fade-out");
-        // Show onboarding screen as loading fades out
-        onboardingScreen.show();
+        // Show auth screen (Firebase) or onboarding screen (offline fallback)
+        if (typeof firebase !== "undefined" && typeof firebaseAuth !== "undefined") {
+          authScreen.show();
+        } else {
+          onboardingScreen.show();
+        }
         setTimeout(() => {
           loadingScreen.classList.add("hidden");
         }, 500);
@@ -3755,6 +3818,10 @@
   // Save stats on page unload
   window.addEventListener("beforeunload", () => {
     titleSystem.dispose();
+    // Flush profile data to Firestore before page closes
+    if (profileManager.loaded) {
+      profileManager.saveNow();
+    }
   });
 
   // Pre-compile all shaders while loading screen is still visible.

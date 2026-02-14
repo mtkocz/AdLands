@@ -193,6 +193,15 @@ class GameRoom {
 
     // Server-authoritative bodyguards (2 per commander, synced to all clients)
     this.bodyguardManager = new BodyguardManager(480, this.terrain, this.worldGen);
+
+    // ---- All-profile faction ranking cache ----
+    // Stores ALL profiles from Firestore (online + offline) for true faction ranking.
+    // Updated live as connected players' stats change.
+    this.factionProfileCache = { rust: [], cobalt: [], viridian: [] };
+    this.profileCacheIndex = new Map();  // "uid:profileIndex" → cache entry reference
+    this.profileCacheReady = false;
+    this.factionMemberCounts = { rust: 0, cobalt: 0, viridian: 0 };
+    this._factionRosters = {};           // faction → sorted member array (set by _recomputeRanks)
   }
 
   start() {
@@ -200,6 +209,56 @@ class GameRoom {
     this._nextTickTime = Date.now();
     this._scheduleTick();
     console.log(`[Room ${this.roomId}] Started at ${this.tickRate} ticks/sec`);
+
+    // Load all Firestore profiles into cache (async, non-blocking)
+    this._loadAllProfiles();
+  }
+
+  /**
+   * Load all player profiles from Firestore into the faction profile cache.
+   * Called once on startup. Cache is then updated live as players connect/disconnect.
+   */
+  async _loadAllProfiles() {
+    try {
+      const { getFirestore } = require("./firebaseAdmin");
+      const db = getFirestore();
+
+      const snapshot = await db.collectionGroup("profiles").get();
+
+      for (const doc of snapshot.docs) {
+        const data = doc.data();
+        if (!data.faction || !FACTIONS.includes(data.faction)) continue;
+
+        // Extract uid and profileIndex from path: accounts/{uid}/profiles/{index}
+        const pathParts = doc.ref.path.split("/");
+        const uid = pathParts[1];
+        const profileIndex = parseInt(pathParts[3], 10);
+
+        const cacheKey = `${uid}:${profileIndex}`;
+        const entry = {
+          uid,
+          profileIndex,
+          name: data.name || "Unknown",
+          faction: data.faction,
+          level: data.level || 1,
+          totalCrypto: data.totalCrypto || 0,
+          territoryCaptured: (data.hexesCaptured || 0) + (data.clustersCaptured || 0),
+          lastPlayedAt: data.lastPlayedAt || null,
+          isOnline: false,
+          socketId: null,
+        };
+
+        this.factionProfileCache[data.faction].push(entry);
+        this.profileCacheIndex.set(cacheKey, entry);
+      }
+
+      this.profileCacheReady = true;
+      this._markRanksDirty();
+      console.log(`[Room ${this.roomId}] Loaded ${snapshot.size} profiles from Firestore`);
+    } catch (err) {
+      console.warn(`[Room ${this.roomId}] Failed to load profiles from Firestore:`, err.message);
+      this.profileCacheReady = false;
+    }
   }
 
   stop() {
@@ -428,15 +487,22 @@ class GameRoom {
   // ========================
 
   addPlayer(socket) {
-    // Assign faction for team balance
-    const faction = this._getLeastPopulatedFaction();
+    // Use authenticated profile data if available, otherwise defaults
+    const profileData = socket.profileData;
+
+    // Assign faction: from profile if authenticated, otherwise balance teams
+    const faction = profileData?.faction || this._getLeastPopulatedFaction();
 
     // Spawn near a random portal (or mid-latitudes if portals not yet received)
     const spawn = this._getSpawnPosition(socket.id);
 
     const player = {
       id: socket.id,
-      name: this._pickName(),
+      uid: socket.uid || null,               // Firebase UID (null for guests)
+      profileIndex: socket.profileIndex || 0, // Active profile slot (0-2)
+      isAuthenticated: !!socket.uid,
+
+      name: profileData?.name || this._pickName(),
       faction: faction,
 
       // Physics state (authoritative)
@@ -461,8 +527,8 @@ class GameRoom {
       lastInputSeq: 0,
 
       // Stats for commander ranking (level primary, crypto tiebreaker)
-      level: 1,
-      crypto: 0,
+      level: profileData?.level || 1,
+      crypto: profileData?.totalCrypto || 0,
 
       // Territory contribution counter (tic deltas accumulated)
       territoryCaptured: 0,
@@ -473,14 +539,56 @@ class GameRoom {
       // Cannon cooldown (server-authoritative)
       lastFireTime: 0,
 
-      // Profile data (sent by client after connect)
-      badges: [],
-      totalCrypto: 0,
-      title: "Contractor",
+      // Profile data (from Firestore or sent by client after connect)
+      badges: profileData?.unlockedBadges?.map(b => b.id) || [],
+      totalCrypto: profileData?.totalCrypto || 0,
+      title: profileData?.titleStats?.currentTitle || "Contractor",
+      profilePicture: profileData?.profilePicture || null,
+      loadout: profileData?.loadout || {},
+      tankUpgrades: profileData?.tankUpgrades || { armor: 0, speed: 0, fireRate: 0, damage: 0 },
+
+      // Session tracking for Firestore saves (deltas accumulated this session)
+      _sessionKills: 0,
+      _sessionDeaths: 0,
+      _sessionDamageDealt: 0,
+      _sessionHexes: 0,
+      _sessionClusters: 0,
+      _sessionTics: 0,
+      _sessionDefendTime: 0,
     };
 
     this.players.set(socket.id, player);
     socket.join(this.roomId);
+
+    // Update faction profile cache (mark this player as online)
+    if (player.uid && this.profileCacheReady) {
+      const cacheKey = `${player.uid}:${player.profileIndex}`;
+      let entry = this.profileCacheIndex.get(cacheKey);
+      if (entry) {
+        entry.isOnline = true;
+        entry.socketId = socket.id;
+        entry.name = player.name;
+        entry.level = player.level || 1;
+        entry.totalCrypto = player.totalCrypto || 0;
+        entry.territoryCaptured = player.territoryCaptured || 0;
+      } else {
+        // New player not yet in cache — add them
+        entry = {
+          uid: player.uid,
+          profileIndex: player.profileIndex,
+          name: player.name,
+          faction: player.faction,
+          level: player.level || 1,
+          totalCrypto: player.totalCrypto || 0,
+          territoryCaptured: player.territoryCaptured || 0,
+          lastPlayedAt: null,
+          isOnline: true,
+          socketId: socket.id,
+        };
+        this.factionProfileCache[player.faction].push(entry);
+        this.profileCacheIndex.set(cacheKey, entry);
+      }
+    }
 
     // Build current capture state snapshot (only non-empty clusters to save bandwidth)
     const captureState = {};
@@ -502,6 +610,7 @@ class GameRoom {
         name: player.name,
         faction: player.faction,
         waitingForPortal: true,
+        factionTotal: this.factionMemberCounts[player.faction] || 0,
       },
       players: this._getAllPlayerStates(),
       bodyguards: this.bodyguardManager.getFullStatesForWelcome(),
@@ -560,10 +669,24 @@ class GameRoom {
     const player = this.players.get(socketId);
     if (!player) return;
 
+    // Mark offline in profile cache (keep in roster)
+    if (player.uid && this.profileCacheReady) {
+      const cacheKey = `${player.uid}:${player.profileIndex}`;
+      const entry = this.profileCacheIndex.get(cacheKey);
+      if (entry) {
+        entry.isOnline = false;
+        entry.socketId = null;
+        // Persist latest stats so offline ranking stays accurate
+        entry.level = player.level || entry.level;
+        entry.totalCrypto = player.totalCrypto || entry.totalCrypto;
+        entry.territoryCaptured = player.territoryCaptured || entry.territoryCaptured;
+      }
+    }
+
     this.players.delete(socketId);
     this.resignedPlayers.delete(socketId);
 
-    // Recompute ranks and commander (removed player no longer eligible)
+    // Recompute ranks and commander (player now offline — may trigger Acting Commander)
     this._markRanksDirty();
 
     // Tell everyone the player left
@@ -571,6 +694,205 @@ class GameRoom {
 
     console.log(
       `[Room ${this.roomId}] ${player.name} left. Players: ${this.players.size}`
+    );
+  }
+
+  // ========================
+  // PROFILE PERSISTENCE
+  // ========================
+
+  /**
+   * Save a player's session stats to Firestore.
+   * Called periodically (every 60s), on disconnect, and before profile switch.
+   */
+  async savePlayerProfile(socketId) {
+    const player = this.players.get(socketId);
+    if (!player || !player.uid) return; // Skip guests
+
+    try {
+      const { getFirestore } = require("./firebaseAdmin");
+      const db = getFirestore();
+      const admin = require("firebase-admin");
+
+      const profileRef = db
+        .collection("accounts").doc(player.uid)
+        .collection("profiles").doc(String(player.profileIndex));
+
+      // Use increments for session deltas (avoids race conditions)
+      const updates = {
+        lastPlayedAt: admin.firestore.FieldValue.serverTimestamp(),
+        level: player.level,
+        totalCrypto: player.totalCrypto,
+      };
+
+      // Only increment stats that have accumulated this session
+      if (player._sessionKills > 0) {
+        updates.kills = admin.firestore.FieldValue.increment(player._sessionKills);
+        player._sessionKills = 0;
+      }
+      if (player._sessionDeaths > 0) {
+        updates.deaths = admin.firestore.FieldValue.increment(player._sessionDeaths);
+        player._sessionDeaths = 0;
+      }
+      if (player._sessionDamageDealt > 0) {
+        updates.damageDealt = admin.firestore.FieldValue.increment(player._sessionDamageDealt);
+        player._sessionDamageDealt = 0;
+      }
+      if (player._sessionHexes > 0) {
+        updates.hexesCaptured = admin.firestore.FieldValue.increment(player._sessionHexes);
+        player._sessionHexes = 0;
+      }
+      if (player._sessionClusters > 0) {
+        updates.clustersCaptured = admin.firestore.FieldValue.increment(player._sessionClusters);
+        player._sessionClusters = 0;
+      }
+      if (player._sessionTics > 0) {
+        updates.ticsContributed = admin.firestore.FieldValue.increment(player._sessionTics);
+        player._sessionTics = 0;
+      }
+      if (player._sessionDefendTime > 0) {
+        updates.timeDefending = admin.firestore.FieldValue.increment(player._sessionDefendTime);
+        player._sessionDefendTime = 0;
+      }
+
+      await profileRef.update(updates);
+
+      // Also update denormalized level on account profiles array
+      await db.collection("accounts").doc(player.uid).update({
+        [`profiles.${player.profileIndex}.level`]: player.level,
+      });
+
+      // Keep faction profile cache in sync
+      if (this.profileCacheReady) {
+        const cacheKey = `${player.uid}:${player.profileIndex}`;
+        const entry = this.profileCacheIndex.get(cacheKey);
+        if (entry) {
+          entry.level = player.level;
+          entry.totalCrypto = player.totalCrypto;
+          entry.territoryCaptured = player.territoryCaptured || entry.territoryCaptured;
+        }
+      }
+    } catch (err) {
+      console.warn(`[Room ${this.roomId}] Failed to save profile for ${socketId}:`, err.message);
+    }
+  }
+
+  /**
+   * Handle a player switching their active profile mid-game.
+   * Resets player state with new profile data and broadcasts to all clients.
+   */
+  handleProfileSwitch(socketId, profileData) {
+    const player = this.players.get(socketId);
+    if (!player) return;
+
+    const oldFaction = player.faction;
+
+    // Update player data from new profile
+    player.name = profileData.name || player.name;
+    player.faction = profileData.faction || player.faction;
+    player.level = profileData.level || 1;
+    player.totalCrypto = profileData.totalCrypto || 0;
+    player.crypto = profileData.totalCrypto || 0;
+    player.badges = profileData.unlockedBadges?.map(b => b.id) || [];
+    player.title = profileData.titleStats?.currentTitle || "Contractor";
+    player.profilePicture = profileData.profilePicture || null;
+    player.loadout = profileData.loadout || {};
+    player.tankUpgrades = profileData.tankUpgrades || { armor: 0, speed: 0, fireRate: 0, damage: 0 };
+
+    // Reset session stats
+    player._sessionKills = 0;
+    player._sessionDeaths = 0;
+    player._sessionDamageDealt = 0;
+    player._sessionHexes = 0;
+    player._sessionClusters = 0;
+    player._sessionTics = 0;
+    player._sessionDefendTime = 0;
+
+    // Reset combat state
+    player.hp = player.maxHp;
+    player.isDead = false;
+    player.waitingForPortal = true;
+    player.territoryCaptured = 0;
+
+    // Broadcast to all clients
+    this.io.to(this.roomId).emit("player-profile-switched", {
+      id: socketId,
+      name: player.name,
+      faction: player.faction,
+      level: player.level,
+      badges: player.badges,
+      title: player.title,
+      totalCrypto: player.totalCrypto,
+      rank: player.rank || 0,
+      profilePicture: player.profilePicture,
+    });
+
+    // Update faction profile cache for profile switch
+    if (player.uid && this.profileCacheReady) {
+      // Mark old cache entry offline
+      const oldCacheKey = `${player.uid}:${player._prevProfileIndex ?? player.profileIndex}`;
+      const oldEntry = this.profileCacheIndex.get(oldCacheKey);
+      if (oldEntry) {
+        oldEntry.isOnline = false;
+        oldEntry.socketId = null;
+      }
+
+      // Update or create entry for new profile
+      const newProfileIndex = profileData.profileIndex ?? player.profileIndex;
+      player.profileIndex = newProfileIndex;
+      const newCacheKey = `${player.uid}:${newProfileIndex}`;
+      let newEntry = this.profileCacheIndex.get(newCacheKey);
+      if (newEntry) {
+        // If faction changed, move between arrays
+        if (oldFaction !== player.faction) {
+          const oldArr = this.factionProfileCache[oldFaction];
+          const idx = oldArr.indexOf(newEntry);
+          if (idx !== -1) oldArr.splice(idx, 1);
+          this.factionProfileCache[player.faction].push(newEntry);
+          newEntry.faction = player.faction;
+        }
+        newEntry.isOnline = true;
+        newEntry.socketId = socketId;
+        newEntry.name = player.name;
+        newEntry.level = player.level;
+        newEntry.totalCrypto = player.totalCrypto;
+      } else {
+        // New profile not in cache
+        newEntry = {
+          uid: player.uid,
+          profileIndex: newProfileIndex,
+          name: player.name,
+          faction: player.faction,
+          level: player.level || 1,
+          totalCrypto: player.totalCrypto || 0,
+          territoryCaptured: 0,
+          lastPlayedAt: null,
+          isOnline: true,
+          socketId,
+        };
+        this.factionProfileCache[player.faction].push(newEntry);
+        this.profileCacheIndex.set(newCacheKey, newEntry);
+      }
+    }
+
+    // Handle faction change implications
+    if (oldFaction !== player.faction) {
+      // If they were commander, remove them
+      if (this.commanders[oldFaction]?.id === socketId) {
+        this.bodyguardManager.despawnForFaction(oldFaction);
+        this.commanders[oldFaction] = null;
+        this.io.to(this.roomId).emit("commander-update", {
+          faction: oldFaction,
+          commander: null,
+          isActing: false,
+          trueCommanderName: null,
+        });
+      }
+      this._markRanksDirty();
+    }
+
+    console.log(
+      `[Room ${this.roomId}] ${player.name} switched profile → ${player.faction} Lv${player.level}`
     );
   }
 
@@ -932,11 +1254,29 @@ class GameRoom {
       this._recomputeRanks();
     }
 
+    // 6b. Broadcast faction rosters (every 10 seconds)
+    if (this.tick % (this.tickRate * 10) === 0 && this.profileCacheReady) {
+      this._broadcastFactionRosters();
+    }
+
     // 7. Award holding crypto (every 60 seconds)
     this.holdingCryptoCounter++;
     if (this.holdingCryptoCounter >= this.holdingCryptoInterval) {
       this.holdingCryptoCounter = 0;
       this._awardHoldingCrypto();
+    }
+
+    // 8. Save authenticated player profiles to Firestore (every 60 seconds)
+    this._profileSaveCounter = (this._profileSaveCounter || 0) + 1;
+    if (this._profileSaveCounter >= this.tickRate * 60) {
+      this._profileSaveCounter = 0;
+      for (const [socketId, player] of this.players) {
+        if (player.uid) {
+          this.savePlayerProfile(socketId).catch((err) =>
+            console.warn(`[Room ${this.roomId}] Profile save failed for ${socketId}:`, err.message)
+          );
+        }
+      }
     }
 
     this.lastTickTime = now;
@@ -1381,7 +1721,9 @@ class GameRoom {
       const cmdr = this.commanders[player.faction];
       socket.emit("commander-update", {
         faction: player.faction,
-        commander: cmdr,
+        commander: cmdr ? { id: cmdr.id, name: cmdr.name } : null,
+        isActing: cmdr?.isActing || false,
+        trueCommanderName: cmdr?.trueCommanderName || null,
       });
     }
   }
@@ -1716,6 +2058,7 @@ class GameRoom {
       state.seq = p.lastInputSeq;
       state.f = p.faction;
       state.r = p.rank || 0;
+      state.rt = this.factionMemberCounts[p.faction] || 0;
     }
 
     // Reuse payload object
@@ -1881,79 +2224,173 @@ class GameRoom {
 
   /**
    * Recompute faction ranks for all factions and update commanders.
-   * Ranks include ALL connected players (even dead/waiting) except resigned.
+   * When profileCacheReady, ranks include ALL profiles (online + offline).
+   * Falls back to connected-only ranking if Firestore cache isn't loaded.
    * Sorted by: level DESC → totalCrypto DESC → territoryCaptured DESC.
-   * Assigns player.rank (1-based, unique per faction).
-   * Commander is ALWAYS the #1 ranked player — switches instantly.
+   * Commander = rank #1 overall. If offline, highest-ranked online player
+   * becomes Acting Commander with full privileges.
    */
   _recomputeRanks() {
     const now = Date.now();
     for (const faction of FACTIONS) {
-      const members = [];
-      for (const [id, p] of this.players) {
-        if (p.faction !== faction) continue;
-        // Exclude resigned players (auto-clear expired resignations)
-        const resignedUntil = this.resignedPlayers.get(id);
-        if (resignedUntil) {
-          if (now < resignedUntil) continue;
-          this.resignedPlayers.delete(id);
+      const allMembers = [];
+
+      if (this.profileCacheReady) {
+        // ---- All-profile ranking (online + offline from Firestore cache) ----
+        // First, update cache entries for connected players with live stats
+        for (const [id, p] of this.players) {
+          if (p.faction !== faction || !p.uid) continue;
+          const cacheKey = `${p.uid}:${p.profileIndex}`;
+          const entry = this.profileCacheIndex.get(cacheKey);
+          if (entry) {
+            entry.level = p.level || 1;
+            entry.totalCrypto = p.totalCrypto || 0;
+            entry.territoryCaptured = p.territoryCaptured || entry.territoryCaptured;
+          }
         }
-        members.push(p);
+
+        for (const entry of this.factionProfileCache[faction]) {
+          // Exclude resigned players (only applies to online players)
+          if (entry.socketId) {
+            const resignedUntil = this.resignedPlayers.get(entry.socketId);
+            if (resignedUntil) {
+              if (now < resignedUntil) continue;
+              this.resignedPlayers.delete(entry.socketId);
+            }
+          }
+          allMembers.push(entry);
+        }
+      } else {
+        // ---- Fallback: connected players only (original behavior) ----
+        for (const [id, p] of this.players) {
+          if (p.faction !== faction) continue;
+          const resignedUntil = this.resignedPlayers.get(id);
+          if (resignedUntil) {
+            if (now < resignedUntil) continue;
+            this.resignedPlayers.delete(id);
+          }
+          allMembers.push({
+            uid: p.uid,
+            socketId: id,
+            name: p.name,
+            level: p.level || 1,
+            totalCrypto: p.totalCrypto || 0,
+            territoryCaptured: p.territoryCaptured || 0,
+            isOnline: true,
+          });
+        }
       }
-      members.sort((a, b) => {
+
+      // Sort: level DESC → totalCrypto DESC → territoryCaptured DESC
+      allMembers.sort((a, b) => {
         const aLevel = a.level || 1, bLevel = b.level || 1;
         if (bLevel !== aLevel) return bLevel - aLevel;
         const aCrypto = a.totalCrypto || 0, bCrypto = b.totalCrypto || 0;
         if (bCrypto !== aCrypto) return bCrypto - aCrypto;
         return (b.territoryCaptured || 0) - (a.territoryCaptured || 0);
       });
-      for (let i = 0; i < members.length; i++) {
-        members[i].rank = i + 1;
+
+      // Assign ranks (1-based)
+      for (let i = 0; i < allMembers.length; i++) {
+        allMembers[i].rank = i + 1;
+        // Update connected player's rank field
+        if (allMembers[i].socketId) {
+          const player = this.players.get(allMembers[i].socketId);
+          if (player) player.rank = i + 1;
+        }
       }
 
-      // Check for active commander override (dev testing — locks for 60s)
+      this.factionMemberCounts[faction] = allMembers.length;
+      this._factionRosters[faction] = allMembers;
+
+      // ---- Commander / Acting Commander ----
+      // Check for active override (dev testing — locks for 60s)
       const override = this.commanderOverrides.get(faction);
-      let overridePlayer = null;
+      let overrideEntry = null;
       if (override) {
         if (now < override.until) {
-          overridePlayer = members.find(m => m.id === override.id) || null;
+          overrideEntry = allMembers.find(m => m.socketId === override.id) || null;
         } else {
           this.commanderOverrides.delete(faction);
         }
       }
 
-      // Commander is the override player (if active) or the #1 ranked player
-      const current = this.commanders[faction];
-      const topPlayer = overridePlayer || members[0] || null;
+      // True Commander = rank #1 overall (override or top-ranked)
+      const trueCommander = overrideEntry || allMembers[0] || null;
 
-      if (!topPlayer) {
+      // Determine active commander (who actually gets perks right now)
+      let activeCommander = null;
+      let isActing = false;
+
+      if (!trueCommander) {
+        activeCommander = null;
+      } else if (trueCommander.isOnline && trueCommander.socketId) {
+        // True commander is online — they are the active commander
+        activeCommander = trueCommander;
+        isActing = false;
+      } else {
+        // True commander is offline — highest-ranked online player is Acting Commander
+        isActing = true;
+        activeCommander = allMembers.find(m => m.isOnline && m.socketId) || null;
+      }
+
+      const current = this.commanders[faction];
+      const newId = activeCommander?.socketId || null;
+      const newName = activeCommander?.name || null;
+
+      if (!activeCommander) {
+        // No online commander
         if (current) {
           this.bodyguardManager.despawnForFaction(faction);
           this.commanders[faction] = null;
           this.io.to(this.roomId).emit("commander-update", {
             faction,
             commander: null,
+            isActing: false,
+            trueCommanderName: trueCommander?.name || null,
           });
         }
-      } else if (!current || current.id !== topPlayer.id) {
+      } else if (!current || current.id !== newId) {
+        // Commander changed
         this.bodyguardManager.killAllForFaction(faction);
-        this.commanders[faction] = { id: topPlayer.id, name: topPlayer.name };
+        this.commanders[faction] = {
+          id: newId, name: newName, isActing,
+          trueCommanderName: isActing ? (trueCommander?.name || null) : null,
+        };
+
         // Only spawn bodyguards if new commander is on the planet surface
-        if (!topPlayer.isDead && !topPlayer.waitingForPortal) {
-          this.bodyguardManager.scheduleRespawn(faction, topPlayer.id, 4);
+        const player = this.players.get(newId);
+        if (player && !player.isDead && !player.waitingForPortal) {
+          this.bodyguardManager.scheduleRespawn(faction, newId, 4);
         }
+
         this.io.to(this.roomId).emit("commander-update", {
           faction,
-          commander: { id: topPlayer.id, name: topPlayer.name },
+          commander: { id: newId, name: newName },
+          isActing,
+          trueCommanderName: isActing ? (trueCommander?.name || null) : null,
         });
-      } else if (topPlayer && !topPlayer.isDead && !topPlayer.waitingForPortal) {
-        // Same commander, alive & deployed — respawn bodyguards if dead or missing
-        if (!this.bodyguardManager.hasPendingRespawn(faction)) {
-          const hasDead = this.bodyguardManager.hasDeadBodyguards(faction);
-          const hasBg = this.bodyguardManager.hasBodyguards(faction);
-          if (hasDead || !hasBg) {
-            this.bodyguardManager.killAllForFaction(faction);
-            this.bodyguardManager.scheduleRespawn(faction, topPlayer.id, 4);
+      } else if (current.isActing !== isActing) {
+        // Same person but acting status changed (e.g., true commander came online
+        // and IS this person, or true commander went offline)
+        current.isActing = isActing;
+        this.io.to(this.roomId).emit("commander-update", {
+          faction,
+          commander: { id: current.id, name: current.name },
+          isActing,
+          trueCommanderName: isActing ? (trueCommander?.name || null) : null,
+        });
+      } else {
+        // Same commander, same acting status — handle bodyguard respawn
+        const player = this.players.get(newId);
+        if (player && !player.isDead && !player.waitingForPortal) {
+          if (!this.bodyguardManager.hasPendingRespawn(faction)) {
+            const hasDead = this.bodyguardManager.hasDeadBodyguards(faction);
+            const hasBg = this.bodyguardManager.hasBodyguards(faction);
+            if (hasDead || !hasBg) {
+              this.bodyguardManager.killAllForFaction(faction);
+              this.bodyguardManager.scheduleRespawn(faction, newId, 4);
+            }
           }
         }
       }
@@ -1962,15 +2399,71 @@ class GameRoom {
 
   /**
    * Build a snapshot of current commanders for the welcome packet.
+   * Includes isActing and trueCommanderName for Acting Commander support.
    */
   _getCommanderSnapshot() {
     const snapshot = {};
     for (const faction of FACTIONS) {
-      snapshot[faction] = this.commanders[faction]
-        ? { id: this.commanders[faction].id, name: this.commanders[faction].name }
+      const cmdr = this.commanders[faction];
+      snapshot[faction] = cmdr
+        ? {
+            id: cmdr.id,
+            name: cmdr.name,
+            isActing: cmdr.isActing || false,
+            trueCommanderName: cmdr.isActing ? (cmdr.trueCommanderName || null) : null,
+          }
         : null;
     }
     return snapshot;
+  }
+
+  /**
+   * Broadcast faction roster to each connected player (their own faction only).
+   * Sends top 50 + the player's own entry if outside top 50.
+   */
+  _broadcastFactionRosters() {
+    for (const [socketId, player] of this.players) {
+      const roster = this._factionRosters[player.faction];
+      if (!roster) continue;
+
+      const socket = this.io.sockets.sockets.get(socketId);
+      if (!socket) continue;
+
+      const condensed = [];
+      let playerFound = false;
+
+      for (let i = 0; i < Math.min(roster.length, 50); i++) {
+        const m = roster[i];
+        condensed.push({
+          rank: m.rank,
+          name: m.name,
+          level: m.level || 1,
+          online: m.isOnline,
+          isSelf: m.socketId === socketId,
+        });
+        if (m.socketId === socketId) playerFound = true;
+      }
+
+      // If player is outside top 50, append their entry
+      if (!playerFound) {
+        const selfEntry = roster.find(m => m.socketId === socketId);
+        if (selfEntry) {
+          condensed.push({
+            rank: selfEntry.rank,
+            name: selfEntry.name,
+            level: selfEntry.level || 1,
+            online: true,
+            isSelf: true,
+          });
+        }
+      }
+
+      socket.emit("faction-roster", {
+        faction: player.faction,
+        total: roster.length,
+        members: condensed,
+      });
+    }
   }
 
   // ========================

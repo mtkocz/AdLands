@@ -41,11 +41,13 @@ class Dashboard {
     this.panels = [
       "notifications",
       "stats",
+      "faction",
       "loadout",
       "social",
       "messages",
       "tasks",
       "territory",
+      "shop",
       "share",
       "settings",
     ];
@@ -54,11 +56,13 @@ class Dashboard {
     this.panelMeta = {
       notifications: { icon: "\u26A0", title: "Notifications", hasBadge: true },
       stats: { icon: "\uD83D\uDCC8", title: "Stats", hasBadge: false },
+      faction: { icon: "\u2694", title: "Faction", hasBadge: false },
       loadout: { icon: "\u2699", title: "Loadout", hasBadge: false },
       social: { icon: "\uD83D\uDC65", title: "Social", hasBadge: true },
       messages: { icon: "\uD83D\uDCAC", title: "Messages", hasBadge: true },
       tasks: { icon: "\uD83D\uDCCB", title: "Tasks", hasBadge: true },
       territory: { icon: "\u2691", title: "Claim Territory", hasBadge: false },
+      shop: { icon: "\uD83D\uDED2", title: "Shop", hasBadge: false },
       share: { icon: "\uD83D\uDCF7", title: "Share", hasBadge: false },
       settings: { icon: "\u2699", title: "Settings", hasBadge: false },
     };
@@ -91,7 +95,7 @@ class Dashboard {
 
     // Cached values for dirty-checking (skip DOM writes when unchanged)
     this._cachedStats = { kills: null, deaths: null, kd: null, damage: null, tics: null, hexes: null, clusters: null };
-    this._cachedProfile = { level: null, crypto: null, rank: null };
+    this._cachedProfile = { level: null, crypto: null, rank: null, rankTotal: null };
     this._formattedStrings = { damage: "", tics: "", crypto: "" };
     this._serverCryptoMode = false; // When true, updateCrypto() owns the roller (skip updateProfile crypto)
 
@@ -189,6 +193,7 @@ class Dashboard {
                 <div class="header-badges-label">Badges (<span id="dashboard-badge-count">0</span>)</div>
                 <div class="header-badges-grid" id="dashboard-badges-grid"></div>
             </div>
+            <button class="header-switch-profile hidden" id="dashboard-switch-profile" title="Switch Profile">Switch Profile</button>
         `;
 
     // Setup resign dropdown after header is created
@@ -263,9 +268,10 @@ class Dashboard {
 
   /**
    * Update commander badge visibility and button state
-   * @param {boolean} isCommander - Whether the player is currently commander
+   * @param {boolean} isCommander - Whether the player is currently commander (or acting)
+   * @param {boolean} isActing - Whether the player is an Acting Commander (true commander offline)
    */
-  updateCommanderStatus(isCommander) {
+  updateCommanderStatus(isCommander, isActing = false) {
     // Update resign dropdown visibility
     const resignDropdown = document.getElementById("commander-resign-dropdown");
     if (resignDropdown) {
@@ -279,7 +285,7 @@ class Dashboard {
       }
     }
 
-    // Update title to "Commander" (gold) or restore previous title
+    // Update title to "Commander" / "Acting Commander" or restore previous title
     const titleEl = document.getElementById("dashboard-player-title");
     if (titleEl) {
       if (isCommander) {
@@ -287,8 +293,13 @@ class Dashboard {
         if (!this._previousTitle) {
           this._previousTitle = titleEl.textContent;
         }
-        titleEl.textContent = "Commander";
+        titleEl.textContent = isActing ? "Acting Commander" : "Commander";
         titleEl.classList.add("commander-title");
+        if (isActing) {
+          titleEl.classList.add("acting-commander-title");
+        } else {
+          titleEl.classList.remove("acting-commander-title");
+        }
       } else {
         // Restore previous title (fallback to title system or default)
         const restored = this._previousTitle
@@ -297,6 +308,7 @@ class Dashboard {
         titleEl.textContent = restored;
         this._previousTitle = null;
         titleEl.classList.remove("commander-title");
+        titleEl.classList.remove("acting-commander-title");
       }
     }
 
@@ -344,6 +356,8 @@ class Dashboard {
         return this._buildNotificationsContent();
       case "stats":
         return this._buildStatsContent();
+      case "faction":
+        return this._buildFactionContent();
       case "loadout":
         return this._buildLoadoutContent();
       case "social":
@@ -354,6 +368,8 @@ class Dashboard {
         return this._buildTasksContent();
       case "territory":
         return this._buildTerritoryContent();
+      case "shop":
+        return window.cosmeticsShop ? window.cosmeticsShop.buildContent() : '<div class="panel-inner"><p>Shop loading...</p></div>';
       case "share":
         return this._buildShareContent();
       case "settings":
@@ -410,6 +426,83 @@ class Dashboard {
                 </div>
             </div>
         `;
+  }
+
+  _buildFactionContent() {
+    return `
+            <div class="panel-inner">
+                <div class="faction-roster-header">
+                    <div class="faction-roster-title">Faction Roster</div>
+                    <div class="faction-roster-count" id="faction-roster-count">Loading...</div>
+                </div>
+                <div class="faction-roster-list" id="faction-roster-list">
+                    <div class="empty-state" style="padding:12px;opacity:0.5;font-size:12px;">Waiting for roster data...</div>
+                </div>
+            </div>
+        `;
+  }
+
+  updateFactionRoster(data) {
+    this._lastRosterData = data;
+
+    const countEl = document.getElementById("faction-roster-count");
+    if (countEl) {
+      countEl.textContent = `${data.total} member${data.total !== 1 ? "s" : ""}`;
+    }
+
+    const listEl = document.getElementById("faction-roster-list");
+    if (!listEl) return;
+
+    // Determine who the active commander is
+    const cmdrSystem = window.commanderSystem;
+    const myFaction = cmdrSystem?.humanPlayerFaction;
+    const factionCmdr = myFaction ? cmdrSystem?.commanders[myFaction] : null;
+    const cmdrPlayerId = factionCmdr?.playerId || null;
+    const isActingCmdr = myFaction ? (cmdrSystem?.actingCommanders[myFaction] || false) : false;
+
+    let html = "";
+    for (const member of data.members) {
+      const onlineClass = member.online ? "roster-online" : "roster-offline";
+      const selfClass = member.isSelf ? "roster-self" : "";
+      const statusDot = member.online
+        ? '<span class="roster-dot online"></span>'
+        : '<span class="roster-dot offline"></span>';
+
+      // Determine role tag
+      let roleTag = "";
+      if (member.rank === 1 && !isActingCmdr) {
+        roleTag = '<span class="roster-role commander">CDR</span>';
+      } else if (member.rank === 1 && isActingCmdr && !member.online) {
+        roleTag = '<span class="roster-role commander">CDR</span>';
+      } else if (member.isSelf && cmdrPlayerId && isActingCmdr) {
+        // Check if this player is the acting commander
+        const myId = cmdrSystem?.humanMultiplayerId || cmdrSystem?.humanPlayerId;
+        if (cmdrPlayerId === myId) {
+          roleTag = '<span class="roster-role acting">ACT</span>';
+        }
+      }
+      // Also check if a non-self online member is the acting commander
+      if (!member.isSelf && member.online && member.rank !== 1 && isActingCmdr) {
+        // The acting commander is the highest-ranked online member after rank 1
+        // We can't easily determine this from client data alone, so skip for non-self
+      }
+
+      const cmdrRowClass = member.rank === 1 ? "roster-commander" : "";
+
+      html += `<div class="roster-member ${cmdrRowClass} ${onlineClass} ${selfClass}">
+                <span class="roster-rank">#${member.rank}</span>
+                ${statusDot}
+                <span class="roster-name">${member.name}</span>
+                <span class="roster-level">Lv${member.level}</span>
+                ${roleTag}
+            </div>`;
+    }
+
+    if (data.members.length === 0) {
+      html = '<div class="empty-state" style="padding:12px;opacity:0.5;font-size:12px;">No faction members</div>';
+    }
+
+    listEl.innerHTML = html;
   }
 
   _buildLoadoutContent() {
@@ -848,6 +941,13 @@ class Dashboard {
       }
     });
 
+    // Switch Profile button
+    this.container.addEventListener("click", (e) => {
+      if (e.target.id === "dashboard-switch-profile") {
+        this._handleSwitchProfile();
+      }
+    });
+
     // Territory panel interactions
     this.container.addEventListener("click", (e) => {
       const tierCard = e.target.closest(".territory-tier-card");
@@ -984,6 +1084,39 @@ class Dashboard {
   }
 
   /**
+   * Handle the "Switch Profile" button click.
+   * Shows the auth screen profile selector overlay.
+   */
+  _handleSwitchProfile() {
+    // Find the auth screen instance on the window
+    const authScreen = document.getElementById("auth-screen");
+    if (!authScreen || !window.authManager?.isSignedIn) return;
+
+    // Save current profile before showing selector
+    if (window.profileManager) {
+      window.profileManager.saveNow();
+    }
+
+    // Show the auth screen in profile-selection mode
+    // The AuthScreen instance is on the global scope via main.js
+    if (window._authScreenInstance) {
+      window._authScreenInstance._loadAndShowProfiles();
+      authScreen.classList.remove("auth-hidden");
+    }
+  }
+
+  /**
+   * Show or hide the "Switch Profile" button based on auth state.
+   * @param {boolean} show
+   */
+  showSwitchProfileButton(show) {
+    const btn = document.getElementById("dashboard-switch-profile");
+    if (btn) {
+      btn.classList.toggle("hidden", !show);
+    }
+  }
+
+  /**
    * Update the "Become Commander" button state
    */
   _updateBecomeCommanderButton(isCommander) {
@@ -1030,6 +1163,11 @@ class Dashboard {
     // Reset camera pullback when territory panel is collapsed
     if (panelId === "territory" && !state.expanded) {
       this._cancelTerritoryPreview();
+    }
+
+    // Refresh shop when expanded
+    if (panelId === "shop" && state.expanded && window.cosmeticsShop) {
+      window.cosmeticsShop.onPanelOpen();
     }
 
     this._saveState();
@@ -1231,9 +1369,15 @@ class Dashboard {
     }
 
     const rankEl = document.getElementById("dashboard-faction-rank");
-    if (rankEl && data.rank !== undefined && this._cachedProfile.rank !== data.rank) {
-      this._cachedProfile.rank = data.rank;
-      rankEl.textContent = `#${data.rank}`;
+    if (rankEl && data.rank !== undefined) {
+      const rankChanged = this._cachedProfile.rank !== data.rank;
+      const totalChanged = data.rankTotal !== undefined && this._cachedProfile.rankTotal !== data.rankTotal;
+      if (rankChanged || totalChanged) {
+        this._cachedProfile.rank = data.rank;
+        if (data.rankTotal !== undefined) this._cachedProfile.rankTotal = data.rankTotal;
+        const totalStr = this._cachedProfile.rankTotal ? ` of ${this._cachedProfile.rankTotal}` : "";
+        rankEl.textContent = `#${data.rank}${totalStr}`;
+      }
     }
   }
 
@@ -2149,8 +2293,20 @@ class Dashboard {
     };
     this._playerTerritories.push(territoryRecord);
 
-    // Save to SponsorStorage (and localStorage fallback)
+    // Save to SponsorStorage (and localStorage fallback) + Firestore
     this._savePlayerTerritory(territoryRecord);
+
+    // Emit server event for multiplayer territory broadcast
+    if (window._mp?.net?.socket) {
+      window._mp.net.socket.emit("claim-territory", {
+        territoryId: territoryId,
+        tileIndices: preview.tileIndices,
+        tierName: tierName,
+        patternImage: patternImage,
+        patternAdjustment: virtualSponsor.patternAdjustment,
+        playerName: playerName,
+      });
+    }
 
     // Reset preview state and camera
     this._territoryPreview = null;
@@ -2296,6 +2452,13 @@ class Dashboard {
     // Remove from local array
     this._playerTerritories.splice(idx, 1);
 
+    // Remove from Firestore if authenticated
+    if (window.firestoreSync?.isActive && window.authManager?.uid) {
+      firebase.firestore().collection("territories").doc(territoryId).delete().catch((e) =>
+        console.warn("[Dashboard] Firestore territory delete failed:", e),
+      );
+    }
+
     // Remove from SponsorStorage
     if (typeof SponsorStorage !== "undefined" && SponsorStorage._cache) {
       const storageId = territory._sponsorStorageId;
@@ -2398,6 +2561,27 @@ class Dashboard {
   }
 
   async _savePlayerTerritory(territory) {
+    // Save to Firestore if authenticated (account-level)
+    if (window.firestoreSync?.isActive && window.authManager?.uid) {
+      try {
+        const db = firebase.firestore();
+        await db.collection("territories").doc(territory.id).set({
+          ownerUid: window.authManager.uid,
+          tileIndices: territory.tileIndices,
+          tierName: territory.tierName,
+          patternImage: territory.patternImage,
+          patternAdjustment: territory.patternAdjustment,
+          playerName: this.playerName || "Player",
+          playerFaction: this.playerFaction,
+          purchasedAt: firebase.firestore.FieldValue.serverTimestamp(),
+          active: true,
+        });
+        console.log(`[Dashboard] Territory saved to Firestore: ${territory.id}`);
+      } catch (e) {
+        console.warn("[Dashboard] Firestore territory save failed:", e);
+      }
+    }
+
     // Save individual territory to SponsorStorage (appears in admin portal)
     if (typeof SponsorStorage !== "undefined" && SponsorStorage._cache) {
       try {
@@ -2424,6 +2608,16 @@ class Dashboard {
   }
 
   async _updatePlayerTerritory(territoryId, changes) {
+    // Update in Firestore if authenticated
+    if (window.firestoreSync?.isActive && window.authManager?.uid) {
+      try {
+        const db = firebase.firestore();
+        await db.collection("territories").doc(territoryId).update(changes);
+      } catch (e) {
+        console.warn("[Dashboard] Firestore territory update failed:", e);
+      }
+    }
+
     // Update in SponsorStorage using the stored SponsorStorage ID
     if (typeof SponsorStorage !== "undefined" && SponsorStorage._cache) {
       try {
@@ -2448,6 +2642,45 @@ class Dashboard {
   }
 
   _loadPlayerTerritories() {
+    // If authenticated, load from Firestore (async, then apply)
+    if (window.firestoreSync?.isActive && window.authManager?.uid) {
+      this._loadTerritoriesFromFirestore();
+      return;
+    }
+
+    // Fallback: load from local storage
+    this._loadTerritoriesFromLocal();
+  }
+
+  async _loadTerritoriesFromFirestore() {
+    try {
+      const db = firebase.firestore();
+      const snap = await db.collection("territories")
+        .where("ownerUid", "==", window.authManager.uid)
+        .where("active", "==", true)
+        .get();
+
+      if (snap.empty) {
+        console.log("[Dashboard] No territories found in Firestore");
+        // Still try local as fallback
+        this._loadTerritoriesFromLocal();
+        return;
+      }
+
+      const territories = [];
+      snap.forEach((doc) => {
+        territories.push({ id: doc.id, ...doc.data() });
+      });
+
+      console.log(`[Dashboard] Loaded ${territories.length} territories from Firestore`);
+      this._applyLoadedTerritories(territories);
+    } catch (e) {
+      console.warn("[Dashboard] Firestore territory load failed:", e);
+      this._loadTerritoriesFromLocal();
+    }
+  }
+
+  _loadTerritoriesFromLocal() {
     let territories = [];
     let loadedFromStorage = false;
 
@@ -2456,7 +2689,7 @@ class Dashboard {
       try {
         const allSponsors = SponsorStorage.getAll();
         territories = allSponsors.filter((s) => s.isPlayerTerritory);
-        loadedFromStorage = true; // SponsorStorage is available — trust its results
+        loadedFromStorage = true;
       } catch (e) {
         console.warn("[Dashboard] SponsorStorage load failed:", e);
       }
@@ -2475,6 +2708,12 @@ class Dashboard {
       }
     }
 
+    if (territories.length > 0) {
+      this._applyLoadedTerritories(territories);
+    }
+  }
+
+  _applyLoadedTerritories(territories) {
     if (!this._territoryPlanet || territories.length === 0) return;
 
     for (const territory of territories) {

@@ -371,11 +371,24 @@ class CryptoSystem {
         } catch (e) {
             console.warn('[CryptoSystem] Failed to save stats:', e);
         }
+        // Also sync to Firestore via ProfileManager (debounced)
+        if (window.profileManager && window.profileManager.loaded) {
+            window.profileManager.saveProfile();
+        }
     }
 
     _loadStats() {
         // Crypto resets to zero on each page refresh - no persistence
-        // Stats stay at default values (level 1, 0 crypto)
+        // If authenticated, ProfileManager.loadProfile() will overwrite stats
+        // with Firestore data after auth completes.
+    }
+
+    /**
+     * Recalculate level from totalCrypto.
+     * Called by ProfileManager after loading persistent data.
+     */
+    _recalculateLevel() {
+        this.stats.level = this.getLevelFromCrypto(this.stats.totalCrypto);
     }
 
     /**

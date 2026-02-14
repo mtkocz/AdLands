@@ -62,7 +62,9 @@ class NetworkManager {
     this.onSponsorsReloaded = null; // (data) => { world }
     this.onMoonSponsorsReloaded = null; // (data) => { moonSponsors }
     this.onBillboardSponsorsReloaded = null; // (data) => { billboardSponsors }
-    this.onCommanderUpdate = null;  // (data) => { faction, commander: { id, name } | null }
+    this.onPlayerTerritoryClaimed = null; // (data) => { id, tileIndices, patternImage, ... }
+    this.onCommanderUpdate = null;  // (data) => { faction, commander: { id, name } | null, isActing, trueCommanderName }
+    this.onFactionRoster = null;    // (data) => { faction, total, members: [{ rank, name, level, online, isSelf }] }
     this.onCryptoUpdate = null;     // (cryptoState) => { playerId: amount, ... }
     this.onTipReceived = null;      // (data) => { fromId, fromName, amount, newCrypto }
     this.onTipConfirmed = null;     // (data) => { targetId, targetName, amount, newBudget }
@@ -70,22 +72,35 @@ class NetworkManager {
     this.onBodyguardKilled = null;  // (data) => { id, faction, killerFaction }
     this.onCommanderPing = null;    // (data) => { id, faction, x, y, z }
     this.onCommanderDrawing = null; // (data) => { id, faction, points }
+    this.onPlayerProfileSwitched = null; // (data) => { id, name, faction, level, ... }
   }
 
   // ========================
   // CONNECTION
   // ========================
 
-  connect() {
-    // Socket.IO auto-connects to the server that served the page
-    this.socket = io({
+  /**
+   * Connect to the server.
+   * @param {Object} [options] - Connection options
+   * @param {string} [options.token] - Firebase ID token for authentication
+   */
+  connect(options = {}) {
+    const connectOpts = {
       transports: ["websocket"],     // Skip HTTP long-polling, go straight to WebSocket
       upgrade: false,                // Don't attempt transport upgrade
       reconnection: true,
       reconnectionAttempts: 10,
       reconnectionDelay: 1000,
       reconnectionDelayMax: 5000,
-    });
+    };
+
+    // Attach Firebase auth token if available
+    if (options.token) {
+      connectOpts.auth = { token: options.token };
+    }
+
+    // Socket.IO auto-connects to the server that served the page
+    this.socket = io(connectOpts);
 
     this.socket.on("connect", () => {
       this.connected = true;
@@ -229,6 +244,11 @@ class NetworkManager {
       if (this.onBillboardSponsorsReloaded) this.onBillboardSponsorsReloaded(data);
     });
 
+    // Another player claimed a territory — apply it visually
+    this.socket.on("player-territory-claimed", (data) => {
+      if (this.onPlayerTerritoryClaimed) this.onPlayerTerritoryClaimed(data);
+    });
+
     // Server-authoritative commander change (immediate)
     this.socket.on("commander-update", (data) => {
       if (this.onCommanderUpdate) this.onCommanderUpdate(data);
@@ -237,6 +257,11 @@ class NetworkManager {
     // Server-authoritative commander full sync (periodic, every 5 seconds)
     this.socket.on("commander-sync", (data) => {
       if (this.onCommanderSync) this.onCommanderSync(data);
+    });
+
+    // Server-authoritative faction roster (broadcast every 10 seconds)
+    this.socket.on("faction-roster", (data) => {
+      if (this.onFactionRoster) this.onFactionRoster(data);
     });
 
     // Server-authoritative crypto balances (broadcast every 5 seconds)
@@ -268,6 +293,11 @@ class NetworkManager {
     // Commander drawing (relayed by server to faction members)
     this.socket.on("commander-drawing", (data) => {
       if (this.onCommanderDrawing) this.onCommanderDrawing(data);
+    });
+
+    // Profile switched (player changed their active profile mid-game)
+    this.socket.on("player-profile-switched", (data) => {
+      if (this.onPlayerProfileSwitched) this.onPlayerProfileSwitched(data);
     });
   }
 
@@ -430,6 +460,26 @@ class NetworkManager {
   sendCommanderDrawing(data) {
     if (!this.connected) return;
     this.socket.emit("commander-drawing", data);
+  }
+
+  /**
+   * Send a refreshed Firebase ID token to the server.
+   * Called periodically (every 45 min) to keep the session authenticated.
+   * @param {string} token - Fresh Firebase ID token
+   */
+  sendRefreshToken(token) {
+    if (!this.connected) return;
+    this.socket.emit("refresh-token", token);
+  }
+
+  /**
+   * Send a profile switch request to the server.
+   * @param {number} profileIndex - 0, 1, or 2
+   * @param {Object} profileData - Full profile data from Firestore
+   */
+  sendSetProfile(profileIndex, profileData) {
+    if (!this.connected) return;
+    this.socket.emit("set-profile", { profileIndex, profileData });
   }
 
   // ========================

@@ -476,13 +476,13 @@ class Environment {
                         // Scale/offset matching admin: zoom centered, then shift
                         vec2 uv = (vUv - 0.5) / textureScale + 0.5;
                         uv += vec2(textureOffsetX, textureOffsetY) * 0.5;
+                        // Clamp UVs so edge pixels extend across the entire moon
+                        uv = clamp(uv, 0.0, 1.0);
                         vec3 texColor = texture2D(moonTexture, uv).rgb;
                         texColor = applyLevels(texColor);
                         float gray = dot(texColor, vec3(0.2126, 0.7152, 0.0722));
                         texColor = mix(vec3(gray), texColor, saturation);
-                        // Fade texture to moonColor near edges to avoid projection artifacts
-                        float texMix = smoothstep(0.0, 0.3, vFacingFactor);
-                        baseColor = mix(moonColor, texColor, texMix);
+                        baseColor = texColor;
                     } else {
                         baseColor = moonColor;
                     }

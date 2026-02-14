@@ -2,3 +2,4 @@
 node_modules/
 *.log
 sponsor-textures/
+server/serviceAccountKey.json

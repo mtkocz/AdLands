@@ -1,0 +1,91 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Helper: authenticated user
+    function isAuth() {
+      return request.auth != null;
+    }
+
+    // Helper: user owns this document
+    function isOwner(uid) {
+      return isAuth() && request.auth.uid == uid;
+    }
+
+    // Helper: admin custom claim
+    function isAdmin() {
+      return isAuth() && request.auth.token.admin == true;
+    }
+
+    // ========================
+    // ACCOUNTS
+    // ========================
+    match /accounts/{uid} {
+      allow read: if isOwner(uid);
+      allow create: if isOwner(uid);
+      allow update: if isOwner(uid)
+        // Prevent client from modifying purchase-related fields directly
+        // (must go through server / Cloud Functions)
+        && !request.resource.data.diff(resource.data).affectedKeys()
+            .hasAny(['cosmeticsPurchased'])
+        || isAdmin();
+      allow delete: if false;
+
+      // ========================
+      // PROFILES (subcollection)
+      // ========================
+      match /profiles/{profileIndex} {
+        allow read: if isOwner(uid);
+
+        // Create: enforce valid index, valid faction, valid name
+        allow create: if isOwner(uid)
+          && profileIndex in ['0', '1', '2']
+          && request.resource.data.faction in ['rust', 'cobalt', 'viridian']
+          && request.resource.data.name is string
+          && request.resource.data.name.size() > 0
+          && request.resource.data.name.size() <= 20;
+
+        // Update: faction CANNOT be changed after creation
+        allow update: if isOwner(uid)
+          && request.resource.data.faction == resource.data.faction;
+
+        allow delete: if isOwner(uid);
+      }
+    }
+
+    // ========================
+    // TERRITORIES (player-rented, account-level)
+    // ========================
+    match /territories/{territoryId} {
+      // Everyone can see territory ownership
+      allow read: if true;
+      // Owner can create their own territories
+      allow create: if isAuth()
+        && request.resource.data.ownerUid == request.auth.uid;
+      // Owner can update their own territories (e.g. pattern adjustment)
+      allow update: if isAuth()
+        && resource.data.ownerUid == request.auth.uid
+        && request.resource.data.ownerUid == resource.data.ownerUid;
+      // Owner can delete their own territories
+      allow delete: if isAuth()
+        && resource.data.ownerUid == request.auth.uid;
+    }
+
+    // ========================
+    // COSMETICS CATALOG
+    // ========================
+    match /cosmetics/{cosmeticId} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
+    // ========================
+    // LEADERBOARDS
+    // ========================
+    match /leaderboards/{leaderboardId} {
+      allow read: if true;
+      // Only Cloud Functions / server write leaderboards
+      allow write: if false;
+    }
+  }
+}

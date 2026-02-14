@@ -592,7 +592,13 @@ class CannonSystem {
     // projectile.damage ranges from 1 (no charge) to 3 (full charge)
     const baseDamage = 25;
     const chargeDamage = (projectile.damage - 1) * 25; // 0 to 50
-    const totalDamage = Math.round(baseDamage + chargeDamage);
+    let totalDamage = Math.round(baseDamage + chargeDamage);
+
+    // Apply weapon slot damage modifier (if this is a player shot)
+    if (this.weaponSlotSystem && projectile.faction === this.playerTank?.faction) {
+      const mods = this.weaponSlotSystem.getModifiers();
+      totalDamage = Math.round(totalDamage * mods.damageMultiplier);
+    }
 
     // Check if this hit will kill the tank
     const willDie = tank.hp - totalDamage <= 0;
@@ -762,17 +768,24 @@ class CannonSystem {
   }
 
   isReady() {
-    return performance.now() / 1000 - this.lastFireTime >= this.config.cooldown;
+    let cooldown = this.config.cooldown;
+    if (this.weaponSlotSystem) {
+      cooldown /= this.weaponSlotSystem.getModifiers().fireRateMultiplier;
+    }
+    return performance.now() / 1000 - this.lastFireTime >= cooldown;
   }
 
   getCurrentRange() {
     const chargeRatio = this.charging.active
       ? this.charging.power / this.charging.maxPower
       : 0;
-    return (
+    let range =
       this.config.maxDistance *
-      (1 + chargeRatio * (this.config.chargeRangeMultiplier - 1))
-    );
+      (1 + chargeRatio * (this.config.chargeRangeMultiplier - 1));
+    if (this.weaponSlotSystem) {
+      range *= this.weaponSlotSystem.getModifiers().rangeMultiplier;
+    }
+    return range;
   }
 
   fire(tank, faction) {
@@ -787,7 +800,11 @@ class CannonSystem {
   _fireWithCharge(tank, faction, chargePower) {
     if (tank.isDead) return;
     const now = performance.now() / 1000;
-    if (now - this.lastFireTime < this.config.cooldown) return;
+    let cooldown = this.config.cooldown;
+    if (this.weaponSlotSystem) {
+      cooldown /= this.weaponSlotSystem.getModifiers().fireRateMultiplier;
+    }
+    if (now - this.lastFireTime < cooldown) return;
     this.lastFireTime = now;
     this._lastChargePower = chargePower;
 
@@ -804,11 +821,16 @@ class CannonSystem {
     const speed =
       this.config.projectileSpeed *
       (1 + chargeRatio * (this.config.chargeSpeedMultiplier - 1));
-    const range =
+    let range =
       this.config.maxDistance *
       (1 + chargeRatio * (this.config.chargeRangeMultiplier - 1));
     const damage = 1 + chargeRatio * (this.config.chargeDamageMultiplier - 1);
     const sizeScale = 1 + chargeRatio * (this.config.chargeSizeMultiplier - 1);
+
+    // Apply weapon slot range modifier to player shots
+    if (isPlayerShot && this.weaponSlotSystem) {
+      range *= this.weaponSlotSystem.getModifiers().rangeMultiplier;
+    }
 
     // Get muzzle position (barrel tip is at z = -3.2 in turret local space)
     // turretGroup.position.y = 0.8, barrel at y = 0.4 within turret

@@ -17,12 +17,19 @@ const MoonSponsorStore = require("./MoonSponsorStore");
 const { createMoonSponsorRoutes, extractMoonSponsorImages } = require("./moonSponsorRoutes");
 const BillboardSponsorStore = require("./BillboardSponsorStore");
 const { createBillboardSponsorRoutes, extractBillboardSponsorImages } = require("./billboardSponsorRoutes");
+const { initFirebaseAdmin, verifyToken, getFirestore } = require("./firebaseAdmin");
 
 // ========================
 // CONFIG
 // ========================
 
 const PORT = process.env.PORT || 3000;
+
+// ========================
+// FIREBASE ADMIN
+// ========================
+
+initFirebaseAdmin();
 
 // ========================
 // SERVER SETUP
@@ -132,11 +139,66 @@ let mainRoom;
 })();
 
 // ========================
+// AUTH MIDDLEWARE
+// ========================
+
+io.use(async (socket, next) => {
+  const token = socket.handshake.auth?.token;
+  if (!token) {
+    // Guest/anonymous — no Firebase token provided
+    socket.uid = null;
+    socket.isGuest = true;
+    socket.profileData = null;
+    socket.profileIndex = 0;
+    return next();
+  }
+
+  const decoded = await verifyToken(token);
+  if (!decoded) {
+    // Token invalid but don't block connection — treat as guest
+    console.warn(`[Auth] Invalid token from ${socket.id}, allowing as guest`);
+    socket.uid = null;
+    socket.isGuest = true;
+    socket.profileData = null;
+    socket.profileIndex = 0;
+    return next();
+  }
+
+  socket.uid = decoded.uid;
+  socket.isGuest = false;
+
+  // Load active profile from Firestore
+  try {
+    const db = getFirestore();
+    const accountDoc = await db.collection("accounts").doc(decoded.uid).get();
+    if (accountDoc.exists) {
+      const account = accountDoc.data();
+      const profileIndex = account.activeProfileIndex || 0;
+      const profileDoc = await db
+        .collection("accounts").doc(decoded.uid)
+        .collection("profiles").doc(String(profileIndex))
+        .get();
+      socket.profileData = profileDoc.exists ? profileDoc.data() : null;
+      socket.profileIndex = profileIndex;
+    } else {
+      socket.profileData = null;
+      socket.profileIndex = 0;
+    }
+  } catch (err) {
+    console.warn(`[Auth] Failed to load profile for ${decoded.uid}:`, err.message);
+    socket.profileData = null;
+    socket.profileIndex = 0;
+  }
+
+  next();
+});
+
+// ========================
 // CONNECTION HANDLING
 // ========================
 
 io.on("connection", (socket) => {
-  console.log(`[Server] New connection: ${socket.id}`);
+  console.log(`[Server] New connection: ${socket.id}${socket.uid ? ` (uid: ${socket.uid})` : " (guest)"}`);
 
   // Add player to the main room
   const player = mainRoom.addPlayer(socket);
@@ -259,8 +321,84 @@ io.on("connection", (socket) => {
     socket.emit("pong-measure", ts);
   });
 
+  // ---- Token Refresh (long sessions) ----
+  socket.on("refresh-token", async (token) => {
+    const decoded = await verifyToken(token);
+    if (decoded) {
+      socket.uid = decoded.uid;
+    } else {
+      console.warn(`[Auth] Token refresh failed for ${socket.id}`);
+    }
+  });
+
+  // ---- Profile Switch ----
+  socket.on("set-profile", async (data) => {
+    if (!socket.uid) return;
+    const { profileIndex, profileData } = data || {};
+    if (![0, 1, 2].includes(profileIndex)) return;
+    if (!profileData || typeof profileData !== "object") return;
+
+    // Save current profile stats to Firestore
+    await mainRoom.savePlayerProfile(socket.id);
+
+    // Update socket references
+    socket.profileData = profileData;
+    socket.profileIndex = profileIndex;
+
+    // Update active profile on account
+    try {
+      const db = getFirestore();
+      await db.collection("accounts").doc(socket.uid).update({
+        activeProfileIndex: profileIndex,
+      });
+    } catch (err) {
+      console.warn(`[Auth] Failed to update activeProfileIndex:`, err.message);
+    }
+
+    // Reset player in GameRoom with new profile data
+    mainRoom.handleProfileSwitch(socket.id, profileData);
+  });
+
+  // ---- Territory Claim (server-authoritative, persists to Firestore) ----
+  socket.on("claim-territory", async (data) => {
+    if (!socket.uid) return;
+    const { territoryId, tileIndices, tierName, patternImage, patternAdjustment, playerName } = data || {};
+    if (!territoryId || !Array.isArray(tileIndices) || tileIndices.length === 0) return;
+
+    try {
+      const db = getFirestore();
+      await db.collection("territories").doc(territoryId).set({
+        ownerUid: socket.uid,
+        tileIndices,
+        tierName: tierName || "outpost",
+        patternImage: patternImage || null,
+        patternAdjustment: patternAdjustment || {},
+        playerName: playerName || "Player",
+        purchasedAt: require("firebase-admin").firestore.FieldValue.serverTimestamp(),
+        active: true,
+      });
+
+      // Broadcast to all players so they see the new territory
+      io.to(mainRoom.roomId).emit("player-territory-claimed", {
+        id: territoryId,
+        tileIndices,
+        patternImage,
+        patternAdjustment: patternAdjustment || {},
+        playerName: playerName || "Player",
+      });
+
+      console.log(`[Territory] Player ${socket.uid} claimed ${tierName}: ${tileIndices.length} hexes`);
+    } catch (err) {
+      console.warn(`[Territory] Claim failed:`, err.message);
+    }
+  });
+
   // ---- Disconnect ----
-  socket.on("disconnect", (reason) => {
+  socket.on("disconnect", async (reason) => {
+    // Save profile to Firestore on disconnect (fire-and-forget)
+    if (socket.uid) {
+      mainRoom.savePlayerProfile(socket.id).catch(() => {});
+    }
     mainRoom.removePlayer(socket.id);
     console.log(`[Server] Disconnected: ${socket.id} (${reason})`);
   });

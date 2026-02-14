@@ -48,6 +48,11 @@ class CommanderSystem {
     // Multiplayer mode: server determines commanders, skip local ranking
     this.multiplayerMode = false;
 
+    // Acting Commander state: tracks whether each faction's active commander
+    // is the true rank #1 or an acting stand-in (true commander offline)
+    this.actingCommanders = { rust: false, cobalt: false, viridian: false };
+    this.trueCommanderNames = { rust: null, cobalt: null, viridian: null };
+
     // Callbacks
     this.onCommanderChange = null; // (newCommander, oldCommander, faction) => {}
   }
@@ -711,8 +716,14 @@ class CommanderSystem {
    * Apply a server-authoritative commander assignment for a faction.
    * @param {string} faction - "rust", "cobalt", or "viridian"
    * @param {Object|null} commanderData - { id, name } or null to clear
+   * @param {boolean} isActing - Whether this is an Acting Commander (true commander offline)
+   * @param {string|null} trueCommanderName - Name of the true (offline) commander, if acting
    */
-  applyServerCommander(faction, commanderData) {
+  applyServerCommander(faction, commanderData, isActing = false, trueCommanderName = null) {
+    // Store acting state regardless of commander identity
+    this.actingCommanders[faction] = isActing;
+    this.trueCommanderNames[faction] = trueCommanderName;
+
     const current = this.commanders[faction];
 
     if (!commanderData) {
@@ -729,7 +740,7 @@ class CommanderSystem {
           window.dashboard &&
           window.dashboard.updateCommanderStatus
         ) {
-          window.dashboard.updateCommanderStatus(false);
+          window.dashboard.updateCommanderStatus(false, false);
         }
       }
       return;
@@ -756,9 +767,8 @@ class CommanderSystem {
         window.dashboard &&
         window.dashboard.updateCommanderStatus
       ) {
-        window.dashboard.updateCommanderStatus(
-          commanderData.id === this.humanPlayerId || commanderData.id === this.humanMultiplayerId,
-        );
+        const isHuman = commanderData.id === this.humanPlayerId || commanderData.id === this.humanMultiplayerId;
+        window.dashboard.updateCommanderStatus(isHuman, isHuman ? isActing : false);
       }
       return;
     }
@@ -788,10 +798,17 @@ class CommanderSystem {
       window.dashboard &&
       window.dashboard.updateCommanderStatus
     ) {
-      window.dashboard.updateCommanderStatus(
-        commanderData.id === this.humanPlayerId || commanderData.id === this.humanMultiplayerId,
-      );
+      const isHuman = commanderData.id === this.humanPlayerId || commanderData.id === this.humanMultiplayerId;
+      window.dashboard.updateCommanderStatus(isHuman, isHuman ? isActing : false);
     }
+  }
+
+  /**
+   * Check if the human player is currently an Acting Commander.
+   */
+  isHumanActingCommander() {
+    if (!this.humanPlayerFaction) return false;
+    return this.actingCommanders[this.humanPlayerFaction] && this.isHumanCommander();
   }
 
   // ========================

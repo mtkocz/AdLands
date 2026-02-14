@@ -255,8 +255,13 @@
         // Bridge the local "player" ID with the server socket ID so
         // isCommander / applyServerCommander resolve correctly.
         window.commanderSystem.setHumanMultiplayerId(net.playerId);
-        for (const [faction, cmdr] of Object.entries(data.commanders)) {
-          window.commanderSystem.applyServerCommander(faction, cmdr);
+        for (const [faction, cmdrData] of Object.entries(data.commanders)) {
+          window.commanderSystem.applyServerCommander(
+            faction,
+            cmdrData ? { id: cmdrData.id, name: cmdrData.name } : null,
+            cmdrData?.isActing || false,
+            cmdrData?.trueCommanderName || null,
+          );
         }
       }
 
@@ -302,7 +307,11 @@
           // Sync server-authoritative rank
           if (state.r !== undefined && state.r !== window.playerRank) {
             window.playerRank = state.r;
+            window.playerRankTotal = state.rt || 0;
             playerTags.updateRank?.("player", state.r);
+            if (window.dashboard) {
+              window.dashboard.updateProfile({ rank: state.r, rankTotal: state.rt || 0 });
+            }
           }
           continue;
         }
@@ -977,19 +986,37 @@
     // Server-authoritative commander change (immediate, per-faction)
     net.onCommanderUpdate = (data) => {
       if (!window.commanderSystem) return;
-      window.commanderSystem.applyServerCommander(data.faction, data.commander);
+      window.commanderSystem.applyServerCommander(
+        data.faction,
+        data.commander,
+        data.isActing || false,
+        data.trueCommanderName || null,
+      );
     };
 
     // Server-authoritative commander full sync (periodic, all factions)
     net.onCommanderSync = (commanders) => {
       if (!window.commanderSystem) return;
-      for (const [faction, cmdr] of Object.entries(commanders)) {
-        window.commanderSystem.applyServerCommander(faction, cmdr);
+      for (const [faction, cmdrData] of Object.entries(commanders)) {
+        window.commanderSystem.applyServerCommander(
+          faction,
+          cmdrData ? { id: cmdrData.id, name: cmdrData.name } : null,
+          cmdrData?.isActing || false,
+          cmdrData?.trueCommanderName || null,
+        );
       }
       // Force-verify dashboard commander state (catches any desync)
       if (window.dashboard && window.commanderSystem.humanPlayerFaction) {
         const isCommander = window.commanderSystem.isHumanCommander();
-        window.dashboard.updateCommanderStatus(isCommander);
+        const isActing = window.commanderSystem.isHumanActingCommander();
+        window.dashboard.updateCommanderStatus(isCommander, isActing);
+      }
+    };
+
+    // Server-authoritative faction roster (periodic, every 10 seconds)
+    net.onFactionRoster = (data) => {
+      if (window.dashboard) {
+        window.dashboard.updateFactionRoster(data);
       }
     };
 
@@ -1201,6 +1228,23 @@
       data.billboardSponsors.forEach((sponsor, i) => {
         mp.environment.applyBillboardSponsor(i, sponsor);
       });
+    };
+
+    // Another player claimed a territory — apply it visually on the planet
+    net.onPlayerTerritoryClaimed = (data) => {
+      if (!planet || !data || !data.tileIndices) return;
+      console.log(`[Multiplayer] Player territory claimed: ${data.id} (${data.tileIndices.length} hexes)`);
+
+      const virtualSponsor = {
+        id: data.id,
+        name: data.playerName || "Player",
+        cluster: { tileIndices: data.tileIndices },
+        patternImage: data.patternImage,
+        patternAdjustment: data.patternAdjustment || {},
+      };
+
+      planet.applySponsorCluster(virtualSponsor);
+      planet.deElevateSponsorTiles();
     };
 
     // Server-authoritative crypto balances (broadcast every 5 seconds)
@@ -1423,7 +1467,12 @@
       };
     }
 
-    net.connect();
+    // Connect with Firebase auth token if available
+    const connectOpts = {};
+    if (window.authManager && window.authManager.idToken) {
+      connectOpts.token = window.authManager.idToken;
+    }
+    net.connect(connectOpts);
 
     // Expose for debugging
     window._mpState = {

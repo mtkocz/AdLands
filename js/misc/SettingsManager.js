@@ -106,6 +106,26 @@ class SettingsManager {
     } catch (e) {
       console.warn("[SettingsManager] Failed to save settings:", e);
     }
+    // Also sync settings to Firestore at account level (debounced)
+    if (window.firestoreSync && window.firestoreSync.isActive) {
+      window.firestoreSync.writeAccount({ settings: this.settings }, 10000);
+    }
+  }
+
+  /**
+   * Load settings from Firestore account document.
+   * Called after authentication to override localStorage with cloud settings.
+   * @param {Object} accountSettings - Settings object from Firestore
+   */
+  loadFromFirestore(accountSettings) {
+    if (!accountSettings || typeof accountSettings !== "object") return;
+    this.settings = this._deepMerge(this.defaults, accountSettings);
+    // Also update localStorage as fallback
+    try {
+      localStorage.setItem("adlands_settings", JSON.stringify(this.settings));
+    } catch (e) { /* ignore */ }
+    this.applyAll();
+    this.bindToUI();
   }
 
   _deepMerge(target, source) {

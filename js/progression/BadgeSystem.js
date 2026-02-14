@@ -568,6 +568,10 @@ class BadgeSystem {
         } catch (e) {
             console.warn('[BadgeSystem] Failed to save data:', e);
         }
+        // Also sync to Firestore via ProfileManager (debounced)
+        if (window.profileManager && window.profileManager.loaded) {
+            window.profileManager.saveProfile();
+        }
     }
 
     _getDefaultProgress() {

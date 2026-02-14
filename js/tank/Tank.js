@@ -336,8 +336,14 @@ class Tank {
     // Scale physics by deltaTime (normalized to 60 FPS baseline)
     const dt60 = deltaTime * 60;
 
+    // Apply weapon slot speed modifier
+    let baseMaxSpeed = p.maxSpeed;
+    if (window.weaponSlotSystem) {
+      baseMaxSpeed *= window.weaponSlotSystem.getModifiers().speedMultiplier;
+    }
+
     // Sprint mode (5x speed when holding shift)
-    const currentMaxSpeed = keys.shift ? p.maxSpeed * 5 : p.maxSpeed;
+    const currentMaxSpeed = keys.shift ? baseMaxSpeed * 5 : baseMaxSpeed;
 
     // Steering (only when keys pressed) - scaled by deltaTime
     if (keys.a) this.state.heading -= p.turnRate * dt60;
@@ -1189,6 +1195,14 @@ class Tank {
 
   takeDamage(amount, attackerFaction) {
     if (this.isDead) return;
+
+    // Apply armor modifier from weapon slot system (reduces incoming damage)
+    if (window.weaponSlotSystem) {
+      const armorMult = window.weaponSlotSystem.getModifiers().armorMultiplier;
+      if (armorMult > 1) {
+        amount = Math.round(amount / armorMult);
+      }
+    }
 
     this.hp = Math.max(0, this.hp - amount);
     this._updateDamageState();
