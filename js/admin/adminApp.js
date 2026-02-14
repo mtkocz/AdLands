@@ -1090,7 +1090,7 @@
         const isGroupPaused = members.some((s) => !!s.paused);
         const isGroupPlayer = members.some((s) => !!s.isPlayerTerritory);
         htmlParts.push(`
-            <div class="sponsor-group${isGroupEditing ? " editing expanded" : ""}${isGroupPaused ? " paused" : ""}" data-name="${escapeHtml(first.name)}">
+            <div class="sponsor-group${isGroupEditing ? " editing expanded" : ""}${isGroupPlayer ? " expanded" : ""}${isGroupPaused ? " paused" : ""}" data-name="${escapeHtml(first.name)}">
                 <div class="sponsor-group-header">
                     <span class="sponsor-group-chevron">&#x25B6;</span>
                     <div class="sponsor-card-logo">
