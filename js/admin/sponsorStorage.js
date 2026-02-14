@@ -19,6 +19,9 @@ const SponsorStorage = {
   _useLocalStorage: false,
   _useAPI: false,
   _apiBase: "/api/sponsors",
+  _channel: typeof BroadcastChannel !== "undefined"
+    ? new BroadcastChannel("adlands_sponsor_sync")
+    : null,
 
   /**
    * Initialize storage — opens IndexedDB, migrates localStorage if needed,
@@ -342,6 +345,9 @@ const SponsorStorage = {
    * @returns {Promise<boolean>} True if deleted, false if not found
    */
   async delete(id) {
+    // Capture sponsor data before deletion for broadcast
+    const sponsor = this._cache?.sponsors?.find((s) => s.id === id);
+
     if (this._useAPI) {
       const res = await fetch(`${this._apiBase}/${encodeURIComponent(id)}`, {
         method: "DELETE",
@@ -351,6 +357,7 @@ const SponsorStorage = {
         throw new Error(err.errors?.join(". ") || "Failed to delete sponsor");
       }
       this._cache.sponsors = this._cache.sponsors.filter((s) => s.id !== id);
+      this._broadcast("delete", { id, sponsor });
       return true;
     }
 
@@ -359,6 +366,7 @@ const SponsorStorage = {
     data.sponsors = data.sponsors.filter((s) => s.id !== id);
     if (data.sponsors.length < initialLength) {
       await this._setData(data);
+      this._broadcast("delete", { id, sponsor });
       return true;
     }
     return false;
@@ -599,5 +607,12 @@ const SponsorStorage = {
     }
 
     return { valid: errors.length === 0, errors };
+  },
+
+  /** Broadcast a change to other tabs via BroadcastChannel */
+  _broadcast(action, data) {
+    if (this._channel) {
+      try { this._channel.postMessage({ action, ...data }); } catch (e) { /* ignore */ }
+    }
   },
 };

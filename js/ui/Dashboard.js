@@ -1818,8 +1818,45 @@ class Dashboard {
     this._territoryTank = tank;
     this._territoryCamera = gameCamera;
 
-    // Restore saved territories from localStorage
+    // Restore saved territories
     this._loadPlayerTerritories();
+
+    // Listen for admin deletions via BroadcastChannel
+    if (typeof BroadcastChannel !== "undefined") {
+      this._sponsorSyncChannel = new BroadcastChannel("adlands_sponsor_sync");
+      this._sponsorSyncChannel.onmessage = (e) => {
+        if (e.data.action === "delete" && e.data.sponsor?.isPlayerTerritory) {
+          const territoryId = e.data.sponsor._territoryId || e.data.id;
+          this._onAdminDeleteTerritory(territoryId, e.data.id);
+        }
+      };
+    }
+  }
+
+  _onAdminDeleteTerritory(territoryId, sponsorStorageId) {
+    // Find matching territory by original ID or SponsorStorage ID
+    const idx = this._playerTerritories.findIndex(
+      (t) => t.id === territoryId || t._sponsorStorageId === sponsorStorageId,
+    );
+    if (idx === -1) return;
+
+    const territory = this._playerTerritories[idx];
+
+    // Remove cluster from planet
+    if (this._territoryPlanet) {
+      this._territoryPlanet.removeSponsorCluster(territory.id);
+    }
+
+    // Remove from local array
+    this._playerTerritories.splice(idx, 1);
+    this._savePlayerTerritories();
+    this._renderTerritoryList();
+
+    const tierLabels = { outpost: "Outpost", compound: "Compound", stronghold: "Stronghold" };
+    this.addNotification(
+      `Territory removed by admin: ${tierLabels[territory.tierName] || "Territory"}`,
+      "info",
+    );
   }
 
   _selectTerritoryTier(tierName) {
@@ -2304,18 +2341,9 @@ class Dashboard {
         const adj = t.patternAdjustment || { scale: 1.0, offsetX: 0, offsetY: 0 };
         return `
           <div class="territory-owned-item" data-territory-id="${t.id}">
-              <div class="territory-item-info">
+              <div class="territory-item-header">
                   <span class="territory-item-name">${label}</span>
-                  <span class="territory-item-hexes">${t.tileIndices.length} hex${t.tileIndices.length !== 1 ? "es" : ""}</span>
-              </div>
-              <div class="territory-item-meta">${age}</div>
-              <div class="territory-item-actions">
-                  <button class="territory-item-upload" data-territory-id="${t.id}">
-                      Replace Image
-                  </button>
-                  <button class="territory-item-cancel" data-territory-id="${t.id}">
-                      Cancel Subscription
-                  </button>
+                  <span class="territory-item-detail">${t.tileIndices.length} hex${t.tileIndices.length !== 1 ? "es" : ""} · ${age}</span>
               </div>
               <div class="territory-controls" data-territory-id="${t.id}">
                   <div class="territory-control-row">
@@ -2324,15 +2352,19 @@ class Dashboard {
                       <span class="territory-control-value">${adj.scale.toFixed(1)}</span>
                   </div>
                   <div class="territory-control-row">
-                      <label>Offset X</label>
+                      <label>X</label>
                       <input type="range" min="-1" max="1" step="0.05" value="${adj.offsetX}" class="territory-offsetx-slider" data-territory-id="${t.id}">
                       <span class="territory-control-value">${adj.offsetX.toFixed(2)}</span>
                   </div>
                   <div class="territory-control-row">
-                      <label>Offset Y</label>
+                      <label>Y</label>
                       <input type="range" min="-1" max="1" step="0.05" value="${adj.offsetY}" class="territory-offsety-slider" data-territory-id="${t.id}">
                       <span class="territory-control-value">${adj.offsetY.toFixed(2)}</span>
                   </div>
+              </div>
+              <div class="territory-item-actions">
+                  <button class="territory-item-upload" data-territory-id="${t.id}">Replace Image</button>
+                  <button class="territory-item-cancel" data-territory-id="${t.id}">Cancel</button>
               </div>
           </div>
         `;
