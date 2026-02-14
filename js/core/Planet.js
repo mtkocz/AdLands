@@ -2449,6 +2449,65 @@ class Planet {
     return Array.from(inCluster);
   }
 
+  /**
+   * Highlight specific tiles on the planet with a color overlay.
+   * Used to preview territory selections before claiming.
+   * @param {number[]} tileIndices - Tile indices to highlight
+   * @param {number} color - Hex color for the highlight (e.g. 0x00cccc)
+   */
+  highlightTiles(tileIndices, color = 0x00cccc) {
+    if (!this.hexGroup) return;
+    if (!this._highlightedTileIndices) this._highlightedTileIndices = new Set();
+
+    const emissiveColor = 0x003333;
+
+    for (const tileIndex of tileIndices) {
+      const mesh = this.hexGroup.children.find(
+        (m) => m.userData?.tileIndex === tileIndex,
+      );
+      if (!mesh) continue;
+
+      // Save original color if not already saved
+      if (mesh.userData._highlightOriginalColor === undefined) {
+        mesh.userData._highlightOriginalColor = mesh.material.color.getHex();
+        mesh.userData._highlightOriginalEmissive =
+          mesh.material.emissive ? mesh.material.emissive.getHex() : 0x000000;
+      }
+
+      mesh.material.color.setHex(color);
+      if (mesh.material.emissive) {
+        mesh.material.emissive.setHex(emissiveColor);
+      }
+      this._highlightedTileIndices.add(tileIndex);
+    }
+  }
+
+  /**
+   * Clear all highlighted tiles, restoring their original colors.
+   */
+  clearHighlightedTiles() {
+    if (!this._highlightedTileIndices || this._highlightedTileIndices.size === 0) return;
+    if (!this.hexGroup) return;
+
+    for (const tileIndex of this._highlightedTileIndices) {
+      const mesh = this.hexGroup.children.find(
+        (m) => m.userData?.tileIndex === tileIndex,
+      );
+      if (!mesh) continue;
+
+      if (mesh.userData._highlightOriginalColor !== undefined) {
+        mesh.material.color.setHex(mesh.userData._highlightOriginalColor);
+        if (mesh.material.emissive) {
+          mesh.material.emissive.setHex(mesh.userData._highlightOriginalEmissive || 0x000000);
+        }
+        delete mesh.userData._highlightOriginalColor;
+        delete mesh.userData._highlightOriginalEmissive;
+      }
+    }
+
+    this._highlightedTileIndices.clear();
+  }
+
   // ========================
   // SPONSOR CLUSTERS
   // ========================

@@ -1164,6 +1164,13 @@
   );
   window.dashboard = dashboard; // Global reference for debugging
 
+  // Initialize SponsorStorage for player territory persistence
+  if (typeof SponsorStorage !== "undefined") {
+    SponsorStorage.init().catch((e) =>
+      console.warn("[main] SponsorStorage init failed:", e),
+    );
+  }
+
   // Territory system - give dashboard access to planet, tank, and camera
   dashboard.setTerritoryRefs(planet, tank, gameCamera);
 

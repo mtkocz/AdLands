@@ -3334,7 +3334,6 @@ body.tip-dragging .chat-mention.tip-highlight {
     padding: var(--space-sm) 0;
     margin-bottom: var(--space-sm);
     border-bottom: var(--border-width) solid var(--border-dark);
-    font-style: italic;
 }
 
 .territory-tiers {
@@ -3389,7 +3388,7 @@ body.tip-dragging .chat-mention.tip-highlight {
 .tier-card-price {
     font-family: var(--font-small);
     font-size: var(--font-size-small);
-    color: var(--accent-gold);
+    color: var(--accent-cyan);
 }
 
 /* Territory Preview */
@@ -3423,7 +3422,7 @@ body.tip-dragging .chat-mention.tip-highlight {
 .preview-overlap-warning {
     font-family: var(--font-small);
     font-size: var(--font-size-small);
-    color: var(--accent-gold);
+    color: var(--accent-cyan);
     margin-bottom: var(--space-xs);
 }
 
@@ -3444,7 +3443,7 @@ body.tip-dragging .chat-mention.tip-highlight {
 }
 
 .pricing-discount {
-    color: var(--accent-gold);
+    color: var(--accent-cyan);
 }
 
 .pricing-total {
@@ -3553,6 +3552,53 @@ body.tip-dragging .chat-mention.tip-highlight {
 .territory-item-upload:hover {
     border-color: var(--accent-cyan);
     color: var(--accent-cyan);
+}
+
+.territory-controls {
+    margin-top: var(--space-xs);
+    padding-top: var(--space-xs);
+    border-top: var(--border-width) solid var(--border-dark);
+}
+
+.territory-control-row {
+    display: flex;
+    align-items: center;
+    gap: var(--space-xs);
+    margin-bottom: 3px;
+}
+
+.territory-control-row label {
+    font-family: var(--font-small);
+    font-size: var(--font-size-small);
+    color: var(--text-muted);
+    min-width: 52px;
+}
+
+.territory-control-row input[type="range"] {
+    flex: 1;
+    height: 4px;
+    -webkit-appearance: none;
+    appearance: none;
+    background: var(--border-dark);
+    outline: none;
+    cursor: pointer;
+}
+
+.territory-control-row input[type="range"]::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    width: 10px;
+    height: 10px;
+    background: var(--accent-cyan);
+    border-radius: 0;
+    cursor: pointer;
+}
+
+.territory-control-value {
+    font-family: var(--font-small);
+    font-size: var(--font-size-small);
+    color: var(--text-secondary);
+    min-width: 30px;
+    text-align: right;
 }
 
 /* Share Panel */
