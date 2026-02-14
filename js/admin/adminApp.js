@@ -191,8 +191,16 @@
     if (SponsorStorage._channel) {
       SponsorStorage._channel.addEventListener("message", (e) => {
         if (e.data?.action === "create" || e.data?.action === "delete") {
-          // Re-read from storage to pick up the change
-          SponsorStorage.reload().then(() => refreshSponsorsList());
+          SponsorStorage.reload().then(() => {
+            // Auto-switch to "User Territories" tab when a player territory arrives
+            if (e.data.action === "create" && e.data.sponsor?.isPlayerTerritory) {
+              sponsorListFilter = "players";
+              document.querySelectorAll(".sponsor-tab").forEach((t) => {
+                t.classList.toggle("active", t.dataset.filter === "players");
+              });
+            }
+            refreshSponsorsList();
+          });
         }
       });
     }
