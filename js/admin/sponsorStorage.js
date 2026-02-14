@@ -154,6 +154,29 @@ const SponsorStorage = {
   },
 
   /**
+   * Re-read data from underlying storage into cache.
+   * Use this to pick up changes made by other tabs.
+   * @returns {Promise<void>}
+   */
+  async reload() {
+    if (this._useAPI) {
+      try {
+        const res = await fetch(this._apiBase);
+        if (res.ok) {
+          this._cache = await res.json();
+          return;
+        }
+      } catch (e) { /* fall through */ }
+    }
+    if (this._db && !this._useLocalStorage) {
+      const data = await this._readFromIDB();
+      if (data) this._cache = data;
+    } else if (this._useLocalStorage) {
+      this._cache = this._readFromLocalStorage();
+    }
+  },
+
+  /**
    * Write to localStorage (fallback only)
    * @param {Object} data
    */

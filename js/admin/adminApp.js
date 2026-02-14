@@ -192,7 +192,7 @@
       SponsorStorage._channel.addEventListener("message", (e) => {
         if (e.data?.action === "create" || e.data?.action === "delete") {
           // Re-read from storage to pick up the change
-          SponsorStorage.init().then(() => refreshSponsorsList());
+          SponsorStorage.reload().then(() => refreshSponsorsList());
         }
       });
     }

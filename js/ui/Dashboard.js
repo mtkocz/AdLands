@@ -1869,9 +1869,11 @@ class Dashboard {
   }
 
   _onAdminDeleteTerritory(territoryId, sponsorStorageId) {
-    // Find matching territory by original ID or SponsorStorage ID
+    // Find matching territory by original ID, SponsorStorage ID, or direct ID match
     const idx = this._playerTerritories.findIndex(
-      (t) => t.id === territoryId || t._sponsorStorageId === sponsorStorageId,
+      (t) => t.id === territoryId ||
+             t.id === sponsorStorageId ||
+             t._sponsorStorageId === sponsorStorageId,
     );
     if (idx === -1) return;
 
@@ -2498,7 +2500,8 @@ class Dashboard {
       };
 
       const record = {
-        id: territory.id,
+        id: territory._territoryId || territory.id,
+        _sponsorStorageId: territory._territoryId ? territory.id : undefined,
         tierName: territory.tierName || "outpost",
         tileIndices: validTiles,
         timestamp: territory.timestamp || Date.parse(territory.createdAt) || Date.now(),
