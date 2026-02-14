@@ -1707,16 +1707,6 @@ body {
     vertical-align: middle;
 }
 
-.player-badge {
-    font-family: var(--font-small);
-    font-size: 9px;
-    color: var(--accent-cyan, #14b8a6);
-    background: rgba(20, 184, 166, 0.15);
-    padding: 1px 5px;
-    margin-left: var(--space-xs);
-    vertical-align: middle;
-}
-
 /* Delete sponsor button — red on hover */
 .delete-entire-sponsor-btn:hover {
     color: #ef4444 !important;
