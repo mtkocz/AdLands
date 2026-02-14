@@ -228,6 +228,36 @@ body {
     color: var(--text-primary);
 }
 
+/* Sponsor list tabs */
+.sponsor-tabs {
+    display: flex;
+    gap: 0;
+    margin-bottom: var(--space-sm);
+    border-bottom: var(--border-width) solid var(--border-dark);
+}
+
+.sponsor-tab {
+    flex: 1;
+    padding: var(--space-xs) var(--space-sm);
+    background: none;
+    border: none;
+    border-bottom: 2px solid transparent;
+    font-family: var(--font-small);
+    font-size: var(--font-size-small);
+    color: var(--text-muted);
+    cursor: pointer;
+    white-space: nowrap;
+}
+
+.sponsor-tab:hover {
+    color: var(--text-secondary);
+}
+
+.sponsor-tab.active {
+    color: var(--accent-cyan, #14b8a6);
+    border-bottom-color: var(--accent-cyan, #14b8a6);
+}
+
 /* Sponsors panel - left column, full height */
 #sponsors-list-panel {
     grid-column: 1;

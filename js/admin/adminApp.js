@@ -21,6 +21,9 @@
   // { name: string, ids: [id1, id2, ...], activeIndex: number, clusterStates: Map }
   let editingGroup = null;
 
+  // Sponsor list filter: "sponsors" | "players" | "all"
+  let sponsorListFilter = "sponsors";
+
   // UI elements
   const selectionCountEl = document.getElementById("selection-count");
   const selectedTilesListEl = document.getElementById("selected-tiles-list");
@@ -173,6 +176,16 @@
 
     // Add new sponsor
     addSponsorBtn.addEventListener("click", handleNewSponsor);
+
+    // Sponsor list tab filter
+    document.querySelector(".sponsor-tabs")?.addEventListener("click", (e) => {
+      const tab = e.target.closest(".sponsor-tab");
+      if (!tab) return;
+      document.querySelectorAll(".sponsor-tab").forEach((t) => t.classList.remove("active"));
+      tab.classList.add("active");
+      sponsorListFilter = tab.dataset.filter;
+      refreshSponsorsList();
+    });
 
     // Window resize
     window.addEventListener("resize", handleResize);
@@ -881,11 +894,34 @@
   }
 
   function refreshSponsorsList() {
-    const sponsors = SponsorStorage.getAll();
+    const allSponsors = SponsorStorage.getAll();
+
+    // Apply tab filter
+    let sponsors;
+    if (sponsorListFilter === "players") {
+      sponsors = allSponsors.filter((s) => !!s.isPlayerTerritory);
+    } else if (sponsorListFilter === "sponsors") {
+      sponsors = allSponsors.filter((s) => !s.isPlayerTerritory);
+    } else {
+      sponsors = allSponsors;
+    }
+
+    // Update tab counts
+    const playerCount = allSponsors.filter((s) => !!s.isPlayerTerritory).length;
+    const sponsorCount = allSponsors.length - playerCount;
+    const tabEls = document.querySelectorAll(".sponsor-tab");
+    tabEls.forEach((tab) => {
+      const filter = tab.dataset.filter;
+      if (filter === "sponsors") tab.textContent = `Sponsors (${sponsorCount})`;
+      else if (filter === "players") tab.textContent = `User Territories (${playerCount})`;
+      else if (filter === "all") tab.textContent = `All (${allSponsors.length})`;
+    });
 
     if (sponsors.length === 0) {
-      sponsorsListEl.innerHTML =
-        '<div class="empty-state">No sponsors created yet</div>';
+      const emptyMsg = sponsorListFilter === "players"
+        ? "No user territories yet"
+        : "No sponsors created yet";
+      sponsorsListEl.innerHTML = `<div class="empty-state">${emptyMsg}</div>`;
       return;
     }
 
