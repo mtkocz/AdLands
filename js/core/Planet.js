@@ -2705,21 +2705,98 @@ class Planet {
       }
     }
 
-    // Restore procedural materials and recalculate capture state for affected clusters
+    // Restore terrain elevation that was cleared when territory was first applied
+    const restoredElevation = this.terrainElevation
+      ? this.terrainElevation.restoreElevationForTiles(tileIndices)
+      : new Set();
+
+    // Rebuild meshes, restore procedural materials, and fix UVs for all removed tiles
     const affectedClusters = new Set();
     for (const tileIndex of tileIndices) {
       const newClusterId = this.tileClusterMap.get(tileIndex);
       if (newClusterId !== undefined) affectedClusters.add(newClusterId);
 
-      // Restore procedural material
-      const mesh = this.hexGroup.children.find(
+      const meshIdx = this.hexGroup.children.findIndex(
         (m) => m.userData?.tileIndex === tileIndex,
       );
-      if (mesh && newClusterId !== undefined) {
-        mesh.userData.clusterId = newClusterId;
-        mesh.userData.isSponsorTile = false;
-        delete mesh.userData.sponsorId;
+      if (meshIdx === -1) continue;
 
+      const oldMesh = this.hexGroup.children[meshIdx];
+      const oldUserData = { ...oldMesh.userData };
+      oldUserData.clusterId = newClusterId;
+      oldUserData.isSponsorTile = false;
+      delete oldUserData.sponsorId;
+
+      oldMesh.geometry.dispose();
+      oldMesh.material.dispose();
+      this.hexGroup.remove(oldMesh);
+
+      // Rebuild mesh geometry with correct vertices and UVs
+      const tile = this._tiles[tileIndex];
+      const boundary = tile.boundary;
+      const n = boundary.length;
+      const vertices = [];
+      const uvs = [];
+
+      const elevation = this.terrainElevation
+        ? this.terrainElevation.getElevationAtTileIndex(tileIndex)
+        : 0;
+      const extrusionScale = this.terrainElevation
+        ? this.terrainElevation.getExtrusion(elevation)
+        : 1;
+      const isElevated = extrusionScale > 1;
+
+      // Build tangent-plane basis for elevated tile UVs
+      let tanU, tanV;
+      if (isElevated) {
+        const cp = tile.centerPoint;
+        const normal = new THREE.Vector3(
+          parseFloat(cp.x), parseFloat(cp.y), parseFloat(cp.z),
+        ).normalize();
+        const up = Math.abs(normal.y) < 0.99
+          ? new THREE.Vector3(0, 1, 0)
+          : new THREE.Vector3(1, 0, 0);
+        tanU = new THREE.Vector3().crossVectors(up, normal).normalize();
+        tanV = new THREE.Vector3().crossVectors(normal, tanU);
+      }
+
+      for (let i = 0; i < n; i++) {
+        const origX = parseFloat(boundary[i].x);
+        const origY = parseFloat(boundary[i].y);
+        const origZ = parseFloat(boundary[i].z);
+        vertices.push(origX * extrusionScale, origY * extrusionScale, origZ * extrusionScale);
+
+        if (isElevated) {
+          // Tangent-plane UVs for elevated rock textures
+          const u = (origX * tanU.x + origY * tanU.y + origZ * tanU.z) / ROCK_TEXTURE_WORLD_SIZE;
+          const v = (origX * tanV.x + origY * tanV.y + origZ * tanV.z) / ROCK_TEXTURE_WORLD_SIZE;
+          uvs.push(u, v);
+        } else {
+          // Spherical UVs for ground-level procedural textures
+          const r = Math.sqrt(origX * origX + origY * origY + origZ * origZ);
+          const theta = Math.atan2(origZ, origX);
+          const phi = Math.acos(origY / r);
+          uvs.push((theta / Math.PI + 1) * 0.5 * 60.0, (phi / Math.PI) * 60.0);
+        }
+      }
+
+      const indices = [];
+      for (let i = 1; i < n - 1; i++) {
+        indices.push(0, i, i + 1);
+      }
+
+      const geometry = new THREE.BufferGeometry();
+      geometry.setAttribute(
+        "position",
+        new THREE.Float32BufferAttribute(vertices, 3),
+      );
+      geometry.setAttribute("uv", new THREE.Float32BufferAttribute(uvs, 2));
+      geometry.setIndex(indices);
+      geometry.computeVertexNormals();
+
+      // Restore procedural material
+      let material;
+      if (newClusterId !== undefined) {
         const pattern = this.clusterPatterns.get(newClusterId);
         if (pattern) {
           if (!this.clusterTextures.has(newClusterId)) {
@@ -2728,8 +2805,7 @@ class Planet {
               this._createPatternTexture(pattern.type, pattern.grayValue),
             );
           }
-          mesh.material.dispose();
-          mesh.material = new THREE.MeshStandardMaterial({
+          material = new THREE.MeshStandardMaterial({
             map: this.clusterTextures.get(newClusterId),
             flatShading: true,
             roughness: pattern.roughness,
@@ -2738,6 +2814,24 @@ class Planet {
           });
         }
       }
+      if (!material) {
+        material = new THREE.MeshStandardMaterial({
+          color: 0x444444,
+          flatShading: true,
+          side: THREE.FrontSide,
+        });
+      }
+
+      const newMesh = new THREE.Mesh(geometry, material);
+      newMesh.userData = oldUserData;
+      newMesh.receiveShadow = true;
+      newMesh.castShadow = true;
+      this.hexGroup.add(newMesh);
+    }
+
+    // Rebuild cliff walls if any elevation was restored
+    if (restoredElevation.size > 0 && this.terrainElevation) {
+      this.terrainElevation.rebuildCliffWalls(this._tiles, this._adjacencyMap);
     }
 
     // Update capture state for clusters that gained tiles
@@ -2762,81 +2856,6 @@ class Planet {
             this._adjacencyMap,
           );
         }
-      }
-    }
-
-    // Restore terrain elevation that was cleared when territory was first applied
-    if (this.terrainElevation) {
-      const restored = this.terrainElevation.restoreElevationForTiles(tileIndices);
-      if (restored.size > 0) {
-        // Rebuild meshes with correct extrusion for restored tiles
-        for (const tileIndex of restored) {
-          const meshIdx = this.hexGroup.children.findIndex(
-            (m) => m.userData?.tileIndex === tileIndex,
-          );
-          if (meshIdx === -1) continue;
-
-          const oldMesh = this.hexGroup.children[meshIdx];
-          const oldMaterial = oldMesh.material;
-          const oldUserData = { ...oldMesh.userData };
-
-          oldMesh.geometry.dispose();
-          this.hexGroup.remove(oldMesh);
-
-          const tile = this._tiles[tileIndex];
-          const boundary = tile.boundary;
-          const n = boundary.length;
-          const vertices = [];
-          const uvs = [];
-
-          const elevation = this.terrainElevation.getElevationAtTileIndex(tileIndex);
-          const extrusionScale = this.terrainElevation.getExtrusion(elevation);
-
-          // Build tangent-plane basis for distortion-free UVs on elevated tiles
-          const cp = tile.centerPoint;
-          const normal = new THREE.Vector3(
-            parseFloat(cp.x), parseFloat(cp.y), parseFloat(cp.z),
-          ).normalize();
-          const up = Math.abs(normal.y) < 0.99
-            ? new THREE.Vector3(0, 1, 0)
-            : new THREE.Vector3(1, 0, 0);
-          const tanU = new THREE.Vector3().crossVectors(up, normal).normalize();
-          const tanV = new THREE.Vector3().crossVectors(normal, tanU);
-
-          for (let i = 0; i < n; i++) {
-            const origX = parseFloat(boundary[i].x);
-            const origY = parseFloat(boundary[i].y);
-            const origZ = parseFloat(boundary[i].z);
-            vertices.push(origX * extrusionScale, origY * extrusionScale, origZ * extrusionScale);
-
-            const u = (origX * tanU.x + origY * tanU.y + origZ * tanU.z) / ROCK_TEXTURE_WORLD_SIZE;
-            const v = (origX * tanV.x + origY * tanV.y + origZ * tanV.z) / ROCK_TEXTURE_WORLD_SIZE;
-            uvs.push(u, v);
-          }
-
-          const indices = [];
-          for (let i = 1; i < n - 1; i++) {
-            indices.push(0, i, i + 1);
-          }
-
-          const geometry = new THREE.BufferGeometry();
-          geometry.setAttribute(
-            "position",
-            new THREE.Float32BufferAttribute(vertices, 3),
-          );
-          geometry.setAttribute("uv", new THREE.Float32BufferAttribute(uvs, 2));
-          geometry.setIndex(indices);
-          geometry.computeVertexNormals();
-
-          const newMesh = new THREE.Mesh(geometry, oldMaterial);
-          newMesh.userData = oldUserData;
-          newMesh.receiveShadow = true;
-          newMesh.castShadow = true;
-          this.hexGroup.add(newMesh);
-        }
-
-        // Rebuild cliff walls with restored elevation data
-        this.terrainElevation.rebuildCliffWalls(this._tiles, this._adjacencyMap);
       }
     }
   }

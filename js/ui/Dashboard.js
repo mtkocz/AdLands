@@ -2201,13 +2201,8 @@ class Dashboard {
     canvas.height = 512;
     const ctx = canvas.getContext("2d");
 
-    // Faction-tinted colors
-    const factionColors = {
-      rust: { bg: "#3d1f1a", accent: "#b4503c", text: "#e8a090" },
-      cobalt: { bg: "#1a2240", accent: "#3c64b4", text: "#90a8e8" },
-      viridian: { bg: "#1a3020", accent: "#3c8c50", text: "#90e8a0" },
-    };
-    const colors = factionColors[this.playerFaction] || factionColors.rust;
+    // Grayscale placeholder (neutral, non-faction)
+    const colors = { bg: "#2a2a2a", accent: "#555555", text: "#cccccc" };
 
     // Base fill
     ctx.fillStyle = colors.bg;
