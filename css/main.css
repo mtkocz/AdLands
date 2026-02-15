@@ -2374,6 +2374,14 @@ body.tip-dragging .chat-mention.tip-highlight {
     font-size: var(--font-size-small);
 }
 
+.roster-member[data-player-id] {
+    cursor: context-menu;
+}
+
+.roster-member[data-player-id]:hover {
+    background: rgba(255, 255, 255, 0.06);
+}
+
 .roster-member.roster-self {
     background: rgba(255, 255, 255, 0.08);
 }
@@ -5085,56 +5093,57 @@ body.colorblind-tritanopia {
     gap: var(--space-sm);
 }
 
-/* Description - matches territory-description pattern */
+/* Description — small muted footnote */
 .shop-description {
-    font-family: var(--font-body);
-    font-size: var(--font-size-body);
-    color: var(--text-secondary);
+    font-family: var(--font-small);
+    font-size: var(--font-size-small);
+    color: var(--text-muted);
     text-align: center;
-    padding: var(--space-sm) 0;
+    padding: var(--space-xs) 0;
     border-bottom: var(--border-width) solid var(--border-dark);
 }
 
-/* Category tabs - matches msg-tab pattern */
+/* Category tabs — exact sponsor-tab pattern (underline, no fill) */
 .shop-tabs {
     display: flex;
-    gap: var(--space-xs);
-    flex-wrap: wrap;
+    gap: 0;
+    margin-bottom: var(--space-sm);
+    border-bottom: var(--border-width) solid var(--border-dark);
 }
 
 .shop-tab {
-    flex: 1 0 calc(33.33% - var(--space-xs));
+    flex: 1;
     padding: var(--space-xs) var(--space-sm);
-    background: transparent;
-    border: var(--border-width) solid var(--border-dark);
-    color: var(--text-secondary);
-    font-size: var(--font-size-small);
+    background: none;
+    border: none;
+    border-bottom: 2px solid transparent;
     font-family: var(--font-small);
+    font-size: var(--font-size-small);
+    color: var(--text-muted);
     cursor: pointer;
-    transition: all 0.15s ease;
+    white-space: nowrap;
     text-align: center;
 }
 
 .shop-tab:hover {
-    background: var(--bg-highlight);
+    color: var(--text-secondary);
 }
 
 .shop-tab.active {
-    background: var(--accent-cyan);
-    color: #1a1a1a;
-    border-color: var(--accent-cyan);
+    color: var(--accent-cyan);
+    border-bottom-color: var(--accent-cyan);
 }
 
-/* Scrollable item list */
+/* Scrollable item list — spacing via card margin-bottom */
 .shop-items {
     display: flex;
     flex-direction: column;
-    gap: var(--space-sm);
+    gap: 0;
     max-height: 300px;
     overflow-y: auto;
 }
 
-/* Item card - matches sponsor-card pattern */
+/* Item card — exact sponsor-card pattern */
 .shop-item-card {
     display: flex;
     flex-direction: row;
@@ -5144,9 +5153,10 @@ body.colorblind-tritanopia {
     background: var(--bg-panel-light);
     border-radius: 0;
     clip-path: var(--clip-rounded-8);
+    margin-bottom: var(--space-sm);
     cursor: pointer;
     transition: background 0.15s ease;
-    /* Pixelated outline via drop-shadow */
+    /* Pixelated outline — matches sponsor-card filter */
     filter: drop-shadow(2px 0 0 var(--border-dark))
         drop-shadow(-2px 0 0 var(--border-dark))
         drop-shadow(0 2px 0 var(--border-dark))
@@ -5157,21 +5167,22 @@ body.colorblind-tritanopia {
     background: var(--bg-highlight);
 }
 
-/* Equipped state - cyan pixelated outline */
+/* Equipped state — matches sponsor-card.editing (outline color swap only) */
 .shop-item-card.equipped {
     filter: drop-shadow(2px 0 0 var(--accent-cyan))
         drop-shadow(-2px 0 0 var(--accent-cyan))
         drop-shadow(0 2px 0 var(--accent-cyan))
         drop-shadow(0 -2px 0 var(--accent-cyan));
-    background: rgba(0, 255, 255, 0.05);
 }
 
-/* Preview box - matches sponsor-card-logo pattern */
+/* Preview box — matches sponsor-card-logo (scaled to 40px) */
 .shop-item-preview {
     width: calc(var(--grid) * 10); /* 40px */
     height: calc(var(--grid) * 10); /* 40px */
     background: var(--bg-panel);
-    border: var(--border-width) solid var(--border-dark); /* border-color set inline by rarity */
+    border-radius: 0;
+    clip-path: var(--clip-rounded-8);
+    overflow: hidden;
     flex-shrink: 0;
     display: flex;
     align-items: center;
@@ -5182,7 +5193,7 @@ body.colorblind-tritanopia {
     font-size: var(--font-size-body);
 }
 
-/* Info section - matches sponsor-card-info pattern */
+/* Info section — matches sponsor-card-info / name / stats hierarchy */
 .shop-item-info {
     flex: 1;
     min-width: 0;
@@ -5191,6 +5202,7 @@ body.colorblind-tritanopia {
 .shop-item-name {
     font-family: var(--font-body);
     font-size: var(--font-size-body);
+    font-weight: normal;
     color: var(--text-primary);
     margin-bottom: var(--space-xxs);
 }
@@ -5208,50 +5220,78 @@ body.colorblind-tritanopia {
     color: var(--text-muted);
 }
 
-/* Action buttons - matches territory-btn pattern */
+/* Action buttons — matches .btn + .btn-small system */
 .shop-item-action {
     flex-shrink: 0;
 }
 
 .shop-item-btn {
-    padding: var(--space-xs) var(--space-sm);
+    padding: 6px var(--space-md);
+    border: var(--border-width) solid var(--border-dark);
+    border-radius: 0;
+    clip-path: var(--clip-rounded-8);
     font-family: var(--font-small);
     font-size: var(--font-size-small);
-    border: var(--border-width) solid var(--border-dark);
-    background: transparent;
+    font-weight: normal;
     cursor: pointer;
-    transition: background 0.15s ease;
-    text-transform: uppercase;
-    letter-spacing: 0.05em;
+    transition: all 0.15s ease;
+    letter-spacing: 1px;
     white-space: nowrap;
+    /* Pixelated outline — matches .btn filter */
+    filter: drop-shadow(2px 0 0 var(--border-dark))
+        drop-shadow(-2px 0 0 var(--border-dark))
+        drop-shadow(0 2px 0 var(--border-dark))
+        drop-shadow(0 -2px 0 var(--border-dark));
 }
 
+/* Buy — matches .btn-primary with gold accent */
 .shop-item-buy {
-    background: rgba(230, 168, 23, 0.15);
+    background: var(--accent-gold);
     border-color: var(--accent-gold);
-    color: var(--accent-gold);
+    color: var(--bg-panel);
+    filter: drop-shadow(2px 0 0 var(--accent-gold))
+        drop-shadow(-2px 0 0 var(--accent-gold))
+        drop-shadow(0 2px 0 var(--accent-gold))
+        drop-shadow(0 -2px 0 var(--accent-gold));
 }
 
 .shop-item-buy:hover {
-    background: rgba(230, 168, 23, 0.25);
+    background: var(--accent-gold-light);
+    filter: drop-shadow(2px 0 0 var(--accent-gold-light))
+        drop-shadow(-2px 0 0 var(--accent-gold-light))
+        drop-shadow(0 2px 0 var(--accent-gold-light))
+        drop-shadow(0 -2px 0 var(--accent-gold-light))
+        drop-shadow(0 0 8px rgba(255, 215, 0, 0.3));
 }
 
+/* Equip — matches .btn-primary with cyan accent */
 .shop-item-equip {
-    background: rgba(0, 255, 255, 0.15);
+    background: var(--accent-cyan);
     border-color: var(--accent-cyan);
-    color: var(--accent-cyan);
+    color: var(--bg-panel);
+    filter: drop-shadow(2px 0 0 var(--accent-cyan))
+        drop-shadow(-2px 0 0 var(--accent-cyan))
+        drop-shadow(0 2px 0 var(--accent-cyan))
+        drop-shadow(0 -2px 0 var(--accent-cyan));
 }
 
 .shop-item-equip:hover {
-    background: rgba(0, 255, 255, 0.25);
+    background: #66ffff;
+    filter: drop-shadow(2px 0 0 #66ffff)
+        drop-shadow(-2px 0 0 #66ffff)
+        drop-shadow(0 2px 0 #66ffff)
+        drop-shadow(0 -2px 0 #66ffff)
+        drop-shadow(0 0 8px rgba(0, 255, 255, 0.3));
 }
 
+/* Unequip — matches .btn-secondary */
 .shop-item-unequip {
-    background: var(--bg-panel-light);
+    background: var(--bg-highlight);
     border-color: var(--border-dark);
     color: var(--text-secondary);
 }
 
 .shop-item-unequip:hover {
-    background: var(--bg-highlight);
+    background: var(--border-dark);
+    color: var(--text-primary);
 }

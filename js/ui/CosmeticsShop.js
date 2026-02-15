@@ -268,7 +268,7 @@ class CosmeticsShop {
 
     return `
       <div class="shop-item-card ${owned ? "owned" : ""} ${equipped ? "equipped" : ""}" data-id="${item.id}">
-        <div class="shop-item-preview" style="border-color: ${rarity.color}">
+        <div class="shop-item-preview">
           <span class="shop-item-icon">${this.categories.find((c) => c.id === item.category)?.icon || "?"}</span>
         </div>
         <div class="shop-item-info">

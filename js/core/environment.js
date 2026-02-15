@@ -969,6 +969,7 @@ gl_FragColor = vec4( outgoingLight, diffuseColor.a );`
           wobbleZ,
         };
 
+        group.visible = false; // hidden until a sponsor rents this slot
         this.scene.add(group);
         this.billboards.push(group);
         globalIndex++;
@@ -1472,7 +1473,8 @@ gl_FragColor = vec4( outgoingLight, diffuseColor.a );`
     if (!adPanel) return;
 
     if (!sponsorData || !sponsorData.patternImage) {
-      // Clear sponsor — revert to default gray, remove from bloom
+      // Clear sponsor — hide billboard, revert to default gray, remove from bloom
+      bb.visible = false;
       adPanel.material.color.setHex(0x888888);
       adPanel.material.emissive.setHex(0x111111);
       adPanel.material.emissiveMap = null;
@@ -1483,6 +1485,9 @@ gl_FragColor = vec4( outgoingLight, diffuseColor.a );`
       bb.userData.sponsor = null;
       return;
     }
+
+    // Show billboard when sponsor is assigned
+    bb.visible = true;
 
     // Store sponsor metadata for right-click popup
     bb.userData.sponsor = {

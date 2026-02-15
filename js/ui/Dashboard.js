@@ -442,7 +442,14 @@ class Dashboard {
 
       const cmdrRowClass = member.rank === 1 ? "roster-commander" : "";
 
-      html += `<div class="roster-member ${cmdrRowClass} ${onlineClass} ${selfClass}">
+      // Use socket ID for online players, "player_self" for self
+      const playerIdAttr = member.isSelf
+        ? 'data-player-id="player_self"'
+        : member.id
+          ? `data-player-id="${member.id}"`
+          : "";
+
+      html += `<div class="roster-member ${cmdrRowClass} ${onlineClass} ${selfClass}" ${playerIdAttr}>
                 <span class="roster-rank">#${member.rank}</span>
                 ${statusDot}
                 <span class="roster-name">${member.name}</span>

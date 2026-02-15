@@ -430,12 +430,13 @@
   // Server-authoritative faction rank (updated from state ticks)
   window.playerRank = 0;
   // Generate random avatar color (same style as player tags)
-  const playerAvatarColor = (() => {
+  let playerAvatarColor = (() => {
     const hue = Math.floor(Math.random() * 360);
     const sat = 50 + Math.floor(Math.random() * 30); // 50-80%
     const lit = 40 + Math.floor(Math.random() * 20); // 40-60%
     return `hsl(${hue}, ${sat}%, ${lit}%)`;
   })();
+  window.avatarColor = playerAvatarColor;
 
   const planet = new Planet(scene, CONFIG.sphereRadius);
   const environment = new Environment(scene, CONFIG.sphereRadius);
@@ -1473,16 +1474,35 @@
     window._mp.setPlayerFaction(faction);
     window._mp.setPlayerName(name);
 
-    // Update dashboard avatar with profile picture from Firestore
-    if (profileData?.profilePicture && window.dashboard) {
-      window.dashboard.avatarColor = profileData.profilePicture;
-      const avatarInnerEl = document.getElementById("dashboard-avatar-inner");
-      if (avatarInnerEl) {
-        avatarInnerEl.style.background = "";
-        avatarInnerEl.style.backgroundImage = `url(${profileData.profilePicture})`;
-        avatarInnerEl.style.backgroundSize = "cover";
-        avatarInnerEl.style.backgroundPosition = "center";
+    // Update avatar across all systems with profile picture from Firestore
+    if (profileData?.profilePicture) {
+      playerAvatarColor = profileData.profilePicture;
+      window.avatarColor = profileData.profilePicture;
+
+      // Update dashboard avatar
+      if (window.dashboard) {
+        window.dashboard.avatarColor = profileData.profilePicture;
+        const avatarInnerEl = document.getElementById("dashboard-avatar-inner");
+        if (avatarInnerEl) {
+          avatarInnerEl.style.background = "";
+          avatarInnerEl.style.backgroundImage = `url(${profileData.profilePicture})`;
+          avatarInnerEl.style.backgroundSize = "cover";
+          avatarInnerEl.style.backgroundPosition = "center";
+        }
       }
+
+      // Recreate player tag with profile picture
+      playerTags.createTag("player", tank, {
+        name: name,
+        level: playerLevel,
+        rank: window.playerRank || 0,
+        avatar: null,
+        avatarColor: profileData.profilePicture,
+        squad: null,
+        faction: faction,
+        isPlayer: true,
+        title: window.titleSystem?.getTitle() || "Contractor",
+      });
     }
 
     // Send chosen identity to server (token already sent via Socket.IO handshake)

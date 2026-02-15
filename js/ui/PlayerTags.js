@@ -51,13 +51,14 @@ class PlayerTags {
       el.dataset.isPlayer = "true";
     }
 
-    // Build avatar HTML - image for player, colored div for bots
+    // Build avatar HTML - image for uploaded pic, colored div for bots
     let avatarHtml;
+    const avatarColor = config.avatarColor || this._generateRandomColor();
     if (config.avatar) {
       avatarHtml = `<img class="tag-avatar" src="${config.avatar}" alt="" />`;
+    } else if (avatarColor.startsWith("data:")) {
+      avatarHtml = `<div class="tag-avatar" style="background-image: url(${avatarColor}); background-size: cover; background-position: center;"></div>`;
     } else {
-      // Use provided avatarColor or generate random one
-      const avatarColor = config.avatarColor || this._generateRandomColor();
       avatarHtml = `<div class="tag-avatar" style="background: ${avatarColor};"></div>`;
     }
 

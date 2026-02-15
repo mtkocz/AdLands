@@ -569,6 +569,14 @@ class GameRoom {
       const cacheKey = `${player.uid}:${player.profileIndex}`;
       let entry = this.profileCacheIndex.get(cacheKey);
       if (entry) {
+        // If faction changed since cache was built, move entry to correct array
+        if (entry.faction !== player.faction) {
+          const oldArr = this.factionProfileCache[entry.faction];
+          const idx = oldArr.indexOf(entry);
+          if (idx !== -1) oldArr.splice(idx, 1);
+          this.factionProfileCache[player.faction].push(entry);
+          entry.faction = player.faction;
+        }
         entry.isOnline = true;
         entry.socketId = socket.id;
         entry.name = player.name;
@@ -2450,6 +2458,7 @@ class GameRoom {
       for (let i = 0; i < Math.min(roster.length, 50); i++) {
         const m = roster[i];
         condensed.push({
+          id: m.socketId || null,
           rank: m.rank,
           name: m.name,
           level: m.level || 1,
@@ -2464,6 +2473,7 @@ class GameRoom {
         const selfEntry = roster.find(m => m.socketId === socketId);
         if (selfEntry) {
           condensed.push({
+            id: selfEntry.socketId,
             rank: selfEntry.rank,
             name: selfEntry.name,
             level: selfEntry.level || 1,
