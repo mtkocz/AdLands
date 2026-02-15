@@ -630,8 +630,16 @@
     proximityChat.setPlayerDead(false);
 
     // Notify commander system of respawn (bodyguards respawn too)
-    if (window.commanderSystem && window.commanderSystem.isHumanCommander()) {
-      window.commanderSystem.onCommanderRespawn(playerFaction);
+    if (window.commanderSystem) {
+      if (window.commanderSystem.isHumanCommander()) {
+        window.commanderSystem.onCommanderRespawn(playerFaction);
+      } else if (!window.commanderSystem.multiplayerMode) {
+        // Dead players are excluded from rankings, so a bot likely stole
+        // commander while we were dead. Force an immediate re-evaluation
+        // now that we're alive to reclaim commander without waiting for
+        // the next 5-second ranking check.
+        window.commanderSystem.recheckCommander();
+      }
     }
   };
 

@@ -792,6 +792,9 @@ class CommanderSystem {
           current.isHuman = player.isHuman;
           this._applyCommanderPerks(current, faction);
         }
+      } else if (this.commanderSkin && !this.commanderSkin.hasTrim(current.tankRef)) {
+        // tankRef exists but trim is missing (removed during death) — re-apply
+        this.commanderSkin.applyTrim(current.tankRef);
       }
       // Update player tag text if acting status changed (same person, different title)
       if (wasActing !== isActing && window.playerTags) {
@@ -913,6 +916,28 @@ class CommanderSystem {
     if (this.tipSystem) {
       this.tipSystem.update(timestamp);
     }
+  }
+
+  /**
+   * Force an immediate commander re-evaluation for the human player's faction.
+   * Called on respawn so the player reclaims commander instantly instead of
+   * waiting up to 5 seconds for the periodic ranking check.
+   */
+  recheckCommander() {
+    if (this.multiplayerMode) return;
+    if (!this.humanPlayerFaction) return;
+
+    // Sync stats before re-evaluating so rankings are accurate
+    if (this.cryptoSystem && this.humanPlayerId) {
+      this.updateSessionCrypto(this.humanPlayerId, this.cryptoSystem.stats.sessionCrypto);
+      this.updatePlayerStats(
+        this.humanPlayerId,
+        this.cryptoSystem.stats.level,
+        this.cryptoSystem.stats.totalCrypto,
+      );
+    }
+    this.syncBots();
+    this._updateFactionCommander(this.humanPlayerFaction);
   }
 
   // ========================
