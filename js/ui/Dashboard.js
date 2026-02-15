@@ -2759,7 +2759,6 @@ class Dashboard {
           purchasedAt: firebase.firestore.FieldValue.serverTimestamp(),
           active: true,
         });
-        console.log(`[Dashboard] Territory saved to Firestore: ${territory.id}`);
       } catch (e) {
         console.warn("[Dashboard] Firestore territory save failed:", e);
       }
@@ -2848,7 +2847,6 @@ class Dashboard {
         .get();
 
       if (snap.empty) {
-        console.log("[Dashboard] No territories found in Firestore");
         // Still try local as fallback
         this._loadTerritoriesFromLocal();
         return;
@@ -2859,7 +2857,6 @@ class Dashboard {
         territories.push({ id: doc.id, ...doc.data() });
       });
 
-      console.log(`[Dashboard] Loaded ${territories.length} territories from Firestore`);
       this._applyLoadedTerritories(territories);
     } catch (e) {
       console.warn("[Dashboard] Firestore territory load failed:", e);

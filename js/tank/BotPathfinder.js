@@ -86,9 +86,6 @@ class BotPathfinder {
       }
     }
 
-    console.log(
-      `[BotPathfinder] ${this._traversable.size} traversable tiles, ${edgeCount} edges`,
-    );
   }
 
   _findClusterCenterTile(cluster) {

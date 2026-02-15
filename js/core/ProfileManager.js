@@ -94,10 +94,6 @@ class ProfileManager {
       );
     }
 
-    console.log(
-      `[ProfileManager] Loaded profile ${profileIndex}: ` +
-      `${profileData?.name} (${profileData?.faction}) Lv${profileData?.level || 1}`
-    );
   }
 
   /**

@@ -1670,23 +1670,11 @@
   }
 
   // Register all bot dots and sync names from playerTags
-  // DEBUG: Check for duplicate playerIds
-  const seenPlayerIds = new Set();
-  const duplicateIds = [];
-
   botTanks.bots.forEach((bot) => {
     if (bot.lodDot) {
-      const playerId = bot.lodDot.userData.playerId;
-
-      // Check for duplicates
-      if (seenPlayerIds.has(playerId)) {
-        duplicateIds.push(playerId);
-      }
-      seenPlayerIds.add(playerId);
-
       tankLODInteraction.registerDot(bot.lodDot);
       // Sync bot name from playerTags to lodDot userData
-      // Use the playerId stored on the dot, not the loop index
+      const playerId = bot.lodDot.userData.playerId;
       const tagData = playerTags.getTagConfig(playerId);
       if (tagData) {
         bot.lodDot.userData.username = tagData.name;
@@ -1694,10 +1682,6 @@
       }
     }
   });
-
-  if (duplicateIds.length > 0) {
-    console.error("[LOD BUG] DUPLICATE PLAYER IDS FOUND:", duplicateIds);
-  }
 
   window.tankLODInteraction = tankLODInteraction;
 
@@ -3582,6 +3566,12 @@
   function animate() {
     requestAnimationFrame(animate);
 
+    // Skip all updates when tab is hidden (saves GPU/CPU)
+    if (document.hidden) {
+      lastFrameTime = performance.now();
+      return;
+    }
+
     const now = performance.now();
     const deltaTime = (now - lastFrameTime) / 1000;
     lastFrameTime = now;
@@ -3891,13 +3881,19 @@
     }
   }
 
-  // Save stats on page unload
+  // Save stats and release GPU resources on page unload
   window.addEventListener("beforeunload", () => {
     titleSystem.dispose();
     // Flush profile data to Firestore before page closes
     if (profileManager.loaded) {
       profileManager.saveNow();
     }
+    // Release THREE.js GPU resources
+    renderer.dispose();
+    bloomComposer.renderTarget1?.dispose();
+    bloomComposer.renderTarget2?.dispose();
+    finalComposer.renderTarget1?.dispose();
+    finalComposer.renderTarget2?.dispose();
   });
 
   // Pre-compile all shaders while loading screen is still visible.

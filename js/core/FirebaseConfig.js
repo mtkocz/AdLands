@@ -30,5 +30,3 @@ firebaseDb.enablePersistence({ synchronizeTabs: true }).catch((err) => {
     console.warn("[Firebase] Persistence not available in this browser");
   }
 });
-
-console.log("[Firebase] Initialized");

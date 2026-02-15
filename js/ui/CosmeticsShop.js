@@ -141,7 +141,6 @@ class CosmeticsShop {
       }
 
       this._catalogLoaded = true;
-      console.log(`[CosmeticsShop] Loaded ${this.purchased.size} purchases, equipped:`, this.equipped);
     } catch (e) {
       console.warn("[CosmeticsShop] Firestore load failed:", e);
     }

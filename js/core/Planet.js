@@ -377,7 +377,6 @@ class Planet {
     // Plan cluster sizes
     const clusterSizes = [];
     let remaining = numTiles - polarCount - portalCount - sponsorCount;
-    console.log(`[Planet] Total tiles: ${numTiles} | Polar: ${polarCount} | Portal+neutral: ${portalCount} | Sponsor: ${sponsorCount} | RENTABLE: ${remaining - sponsorCount}`);
     const maxSize = 100;
 
     while (remaining > 0) {
@@ -612,11 +611,6 @@ class Planet {
     this.clusterOwnership.clear();
     this._initializeCaptureState();
 
-    console.log(
-      `[Planet] Applied server world: ${this.clusterData.length} clusters, ` +
-      `${this.portalTileIndices.size} portal tiles, ` +
-      `${this.terrainElevation ? this.terrainElevation.elevatedTileSet.size : 0} elevated tiles`
-    );
   }
 
   /**
@@ -3040,9 +3034,6 @@ class Planet {
     // Rebuild cliff walls with updated elevation data
     this.terrainElevation.rebuildCliffWalls(this._tiles, this._adjacencyMap);
 
-    if (rebuilt > 0) {
-      console.log(`[Planet] De-elevated ${rebuilt} sponsor tiles from terrain`);
-    }
   }
 
   /**
@@ -3065,7 +3056,6 @@ class Planet {
     }
     const total = toLoad.length;
     let loaded = 0;
-    console.log(`[Planet] Preloading ${total} sponsor texture(s)...`);
     const loads = toLoad.map(({ sponsor, src }) => new Promise((resolve) => {
       const img = new Image();
       img.onload = () => {
@@ -3087,9 +3077,7 @@ class Planet {
       };
       img.src = src;
     }));
-    return Promise.all(loads).then(() => {
-      console.log(`[Planet] Sponsor textures preloaded (${this._sponsorTextureCache.size} cached)`);
-    });
+    return Promise.all(loads);
   }
 
   /**

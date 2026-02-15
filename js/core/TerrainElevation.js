@@ -246,12 +246,6 @@ class TerrainElevation {
     // Build spatial hash for runtime position lookups
     this._buildSpatialHash();
 
-    const l1 = this.elevationRegions.filter((r) => r.level === 1).length;
-    const l2 = this.elevationRegions.filter((r) => r.level === 2).length;
-    const l3 = this.elevationRegions.filter((r) => r.level === 3).length;
-    console.log(
-      `[TerrainElevation] ${this.elevatedTileSet.size} elevated tiles (${((this.elevatedTileSet.size / tiles.length) * 100).toFixed(1)}%) | L1: ${l1} regions, L2: ${l2}, L3: ${l3}`,
-    );
   }
 
   // ========================
@@ -414,9 +408,6 @@ class TerrainElevation {
         if (region) {
           // Remove this region and any nested children
           this._removeRegionAndChildren(smallestId);
-          console.log(
-            `[TerrainElevation] Removed region ${smallestId} (${region.tiles.size} tiles) to fix ground connectivity`,
-          );
           // Re-validate
           this._validateGroundConnectivity(tiles, adjacencyMap);
         }
@@ -854,9 +845,5 @@ class TerrainElevation {
     this.cliffWallMesh.receiveShadow = true;
     this.cliffWallMesh.userData = { isCliffWall: true };
     this.planet.hexGroup.add(this.cliffWallMesh);
-
-    console.log(
-      `[TerrainElevation] Created ${indices.length / 3} cliff wall triangles`,
-    );
   }
 }

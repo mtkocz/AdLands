@@ -33,6 +33,7 @@
   padding: var(--space-3xl) var(--space-2xl);
   background: var(--bg-panel);
   border: var(--border-width) solid var(--border-dark);
+  -webkit-clip-path: var(--clip-rounded-8);
   clip-path: var(--clip-rounded-8);
 }
 
@@ -145,6 +146,7 @@
   font-size: var(--font-size-body);
   cursor: var(--cursor-pointer);
   transition: background 0.1s, border-color 0.1s, color 0.1s;
+  -webkit-clip-path: var(--clip-rounded-4);
   clip-path: var(--clip-rounded-4);
 }
 
@@ -279,6 +281,7 @@
   outline: none;
   transition: border-color 0.1s;
   box-sizing: border-box;
+  -webkit-clip-path: var(--clip-rounded-4);
   clip-path: var(--clip-rounded-4);
 }
 
@@ -325,6 +328,7 @@
   border: var(--border-width) solid var(--border-dark);
   cursor: var(--cursor-pointer);
   transition: background 0.1s, border-color 0.1s;
+  -webkit-clip-path: var(--clip-rounded-4);
   clip-path: var(--clip-rounded-4);
 }
 
@@ -360,6 +364,7 @@
   width: 32px;
   height: 32px;
   flex-shrink: 0;
+  -webkit-clip-path: var(--clip-rounded-8);
   clip-path: var(--clip-rounded-8);
   background-size: cover;
   background-position: center;
@@ -480,6 +485,7 @@
   height: 64px;
   flex-shrink: 0;
   border: var(--border-width) solid var(--border-dark);
+  -webkit-clip-path: var(--clip-rounded-16);
   clip-path: var(--clip-rounded-16);
   background-size: cover;
   background-position: center;

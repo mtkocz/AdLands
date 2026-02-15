@@ -155,8 +155,6 @@
     // ========================
 
     net.onConnected = (data) => {
-      console.log("[Multiplayer] Connected! Identity:", data.you.name);
-
       // Mark environment as multiplayer (server syncs celestial positions)
       if (mp.environment) mp.environment.isMultiplayer = true;
 
@@ -175,7 +173,6 @@
       // Apply server-authoritative world data (clusters, terrain, portals)
       if (data.world && planet) {
         planet.applyServerWorld(data.world);
-        console.log("[Multiplayer] Applied server world data");
 
         // Sponsor images are now URLs (not base64) — browser loads them efficiently
         if (data.world.sponsors && data.world.sponsors.length > 0) {
@@ -186,7 +183,6 @@
             planet.applySponsorVisuals(data.world.sponsors);
             planet.deElevateSponsorTiles();
             mp.setSponsorTexturesReady();
-            console.log(`[Multiplayer] Applied ${data.world.sponsors.length} server sponsors`);
           });
         } else {
           mp.setSponsorTexturesReady();
@@ -215,7 +211,6 @@
           planet.applyTerritoryState(Number(clusterId), state.owner, state.tics);
         }
         planet.updateDirtyFactionOutlines?.();
-        console.log("[Multiplayer] Applied territory capture state");
       }
 
       // DO NOT teleport or exit fast travel — player must choose a portal.
@@ -423,7 +418,6 @@
           // Sync faction change: if server changed this bodyguard's faction
           // (e.g. commander switched factions), despawn old and spawn new
           if (!bg.isDead && bgState.f && bgState.f !== bg.faction) {
-            console.log("[Multiplayer] Bodyguard faction changed:", bgId, bg.faction, "->", bgState.f);
             despawnRemoteBodyguard(bgId);
             bg = spawnRemoteBodyguard({
               id: bgId,
@@ -628,8 +622,9 @@
       }
     };
 
-    // Preallocated vector for hit effects
+    // Preallocated vectors for hit effects and ping positions
     const _hitWorldPos = new THREE.Vector3();
+    const _pingWorldPos = new THREE.Vector3();
 
     net.onPlayerHit = (data) => {
       // Handle bodyguard hits
@@ -814,15 +809,15 @@
           tankDamageEffects.setDamageState(data.victimId, remoteTank.group, "dead");
           playerTags.fadeOutTag?.(data.victimId);
 
-          // Spawn explosion + shockwave at death position
-          const worldPos = new THREE.Vector3();
-          remoteTank.group.getWorldPosition(worldPos);
-          cannonSystem._spawnExplosion?.(worldPos, remoteTank.faction, 1.5);
-          dustShockwave?.emit(worldPos, 1.5);
-          cannonSystem.spawnOilPuddle?.(worldPos);
+          // Spawn explosion + shockwave at death position (reuses preallocated _hitWorldPos)
+          remoteTank.group.getWorldPosition(_hitWorldPos);
+          cannonSystem._spawnExplosion?.(_hitWorldPos, remoteTank.faction, 1.5);
+          dustShockwave?.emit(_hitWorldPos, 1.5);
+          cannonSystem.spawnOilPuddle?.(_hitWorldPos);
 
           // Award kill crypto immediately when we're the killer
           const weAreKiller = data.killerId === net.playerId;
+          const isSelfKill = data.killerId === data.victimId;
           if (weAreKiller && !isSelfKill && cannonSystem.cryptoSystem) {
             let isCommander = false;
             if (window.commanderSystem) {
@@ -860,8 +855,6 @@
 
     // Portal confirmed: server accepted our portal choice — teleport and exit fast travel
     net.onPortalConfirmed = (data) => {
-      console.log("[Multiplayer] Portal confirmed, deploying...");
-
       // Clear stale prediction inputs accumulated during fast travel
       net.pendingInputs = [];
 
@@ -880,7 +873,6 @@
 
     // Respawn: server tells us to pick a portal after death
     net.onRespawnChoosePortal = () => {
-      console.log("[Multiplayer] Respawn — choose a portal");
 
       // Abort the signal lost terminal sequence (started by tank.onDeath in main.js).
       // onRespawn() clears all signal-loss timeouts, hides the overlay, and resets
@@ -907,7 +899,6 @@
 
     // A waiting player picked their portal and is now active
     net.onPlayerActivated = (data) => {
-      console.log(`[Multiplayer] ${data.name} activated at portal`);
       if (window.profileCard && data.crypto !== undefined) {
         window.profileCard.latestCryptoState[data.id] = data.crypto;
       }
@@ -958,23 +949,15 @@
       }
     };
 
-    // Bodyguard killed event (death visual is handled via state sync d:1)
-    net.onBodyguardKilled = (data) => {
-      // Could trigger kill feed entry here if needed
-    };
-
     // Commander ping relayed by server — place on local ping system
     net.onCommanderPing = (data) => {
       if (!window.pingMarkerSystem || !planet) return;
-      // Reconstruct world position from local-space normal
-      const localNormal = new THREE.Vector3(data.x, data.y, data.z);
-      const worldPos = localNormal
-        .normalize()
-        .multiplyScalar(sphereRadius);
-      planet.hexGroup.localToWorld(worldPos);
+      // Reconstruct world position from local-space normal (reuses preallocated vector)
+      _pingWorldPos.set(data.x, data.y, data.z).normalize().multiplyScalar(sphereRadius);
+      planet.hexGroup.localToWorld(_pingWorldPos);
       window.pingMarkerSystem.placePing(
         data.id,
-        worldPos,
+        _pingWorldPos,
         true, // isCommander
         data.faction,
         null, // no squad for commander pings
@@ -1206,7 +1189,6 @@
     // Admin changed sponsors — server reloaded clusters, re-apply everything
     net.onSponsorsReloaded = (data) => {
       if (!planet || !data.world) return;
-      console.log("[Multiplayer] Sponsors reloaded by admin, re-applying...");
 
       // Clear existing sponsor state and stale texture cache so updated
       // images (cache-busted URLs) are re-fetched from the server.
@@ -1221,17 +1203,13 @@
         planet.preloadSponsorTextures(data.world.sponsors).then(() => {
           planet.applySponsorVisuals(data.world.sponsors);
           planet.deElevateSponsorTiles();
-          console.log(`[Multiplayer] Sponsors reloaded: ${data.world.sponsors.length} active`);
         });
-      } else {
-        console.log("[Multiplayer] Sponsors reloaded: 0 active");
       }
     };
 
     // Admin changed moon sponsors — update moon textures
     net.onMoonSponsorsReloaded = (data) => {
       if (!mp.environment || !data.moonSponsors) return;
-      console.log("[Multiplayer] Moon sponsors reloaded by admin");
       mp.environment.clearMoonSponsors();
       data.moonSponsors.forEach((sponsor, i) => {
         mp.environment.applyMoonSponsor(i, sponsor);
@@ -1241,7 +1219,6 @@
     // Admin changed billboard sponsors — update billboard textures
     net.onBillboardSponsorsReloaded = (data) => {
       if (!mp.environment || !data.billboardSponsors) return;
-      console.log("[Multiplayer] Billboard sponsors reloaded by admin");
       mp.environment.clearBillboardSponsors();
       data.billboardSponsors.forEach((sponsor, i) => {
         mp.environment.applyBillboardSponsor(i, sponsor);
@@ -1251,7 +1228,6 @@
     // Another player claimed a territory — apply it visually on the planet
     net.onPlayerTerritoryClaimed = (data) => {
       if (!planet || !data || !data.tileIndices) return;
-      console.log(`[Multiplayer] Player territory claimed: ${data.id} (${data.tileIndices.length} hexes)`);
 
       const virtualSponsor = {
         id: data.id,
@@ -1321,7 +1297,6 @@
         if (window.commanderSystem?.isCommander(playerData.id)) {
           playerTags.setCommander?.(playerData.id, true);
         }
-        console.log(`[Multiplayer] Revived remote tank: ${playerData.name}`);
         return;
       }
 
@@ -1505,6 +1480,5 @@
       getPlayerCount: () => remoteTanks.size + 1,
     };
 
-    console.log("[Multiplayer] Initialized. Connecting to server...");
   }
 })();
