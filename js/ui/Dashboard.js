@@ -2463,12 +2463,30 @@ class Dashboard {
       });
     }
 
-    // Elon Tusk global chat on territory rent
-    const chatWindow = window.proximityChat?.chatWindow;
-    const rentLines = window.tuskCommentary?.lines?.on_rent_territory;
-    if (chatWindow?.addTuskMessage && rentLines?.length) {
-      const line = rentLines[Math.floor(Math.random() * rentLines.length)];
-      chatWindow.addTuskMessage(line.replace(/\{player\}/g, playerName));
+    // Elon Tusk global chat announcement on territory rent
+    const _tuskRentLines = [
+      "@NAME is a land baron now. As for the rest of the lobby: your poverty disgusts me.",
+      "BREAKING: @NAME signed a lease. Welcome to the property ladder. The rest of you? Still homeless.",
+      "@NAME is officially a real estate mogul. Meanwhile, the rest of you are basically squatters.",
+      "@NAME rented territory and honestly? The rest of you look poor by comparison. Just saying.",
+      "@NAME is renting from ME. I want the rest of you to think about what that says about your life choices.",
+      "REAL ESTATE UPDATE: @NAME just upgraded from 'homeless' to 'slumlord.' The rest of you remain unhoused.",
+      "@NAME just rented territory. To everyone else camping on free land: gentrification is coming.",
+      "@NAME just rented land. One of you finally understands economics. The rest of you are a rounding error.",
+      "@NAME just made a power move. The rest of you should be taking notes.",
+      "@NAME — a player of taste and strategy. Everyone else? Noted.",
+      "Big landlord energy from @NAME right there. The lobby just got a little more unequal.",
+      "@NAME's territory just increased in value by 300%. Source: me. I make the numbers up.",
+    ];
+    try {
+      const _cw = window.proximityChat && window.proximityChat.chatWindow;
+      if (_cw && _cw.addTuskMessage) {
+        const msg = _tuskRentLines[Math.floor(Math.random() * _tuskRentLines.length)]
+          .replace(/@NAME/g, "@" + playerName);
+        _cw.addTuskMessage(msg);
+      }
+    } catch (e) {
+      console.warn("[Territory] Tusk chat failed:", e);
     }
 
     // Reset preview state and camera
