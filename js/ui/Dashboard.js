@@ -436,6 +436,9 @@ class Dashboard {
   }
 
   updateFactionRoster(data) {
+    // Ignore roster data for a different faction (stale broadcast after switching)
+    if (data.faction && data.faction !== this.playerFaction) return;
+
     this._lastRosterData = data;
 
     const countEl = document.getElementById("faction-roster-count");
@@ -483,6 +486,10 @@ class Dashboard {
     }
 
     listEl.innerHTML = html;
+
+    // Auto-scroll to the current player's row so they can find themselves
+    const selfRow = listEl.querySelector(".roster-self");
+    if (selfRow) selfRow.scrollIntoView({ block: "nearest" });
   }
 
   _buildLoadoutContent() {
@@ -618,17 +625,6 @@ class Dashboard {
                     </div>
                 </div>
 
-                <div class="territory-guest-gate hidden" id="territory-guest-gate">
-                    <div class="guest-gate-box">
-                        <div class="guest-gate-title">Account Required</div>
-                        <div class="guest-gate-message">
-                            Sign in to rent territory and plant your flag.
-                        </div>
-                        <button class="territory-btn territory-btn-claim" id="btn-guest-gate-login">
-                            Login
-                        </button>
-                    </div>
-                </div>
             </div>
         `;
   }
@@ -968,13 +964,6 @@ class Dashboard {
         input.accept = "image/*";
         input.onchange = () => this._handleTerritoryUpload(input, territoryId);
         input.click();
-      }
-
-      // Guest gate login button
-      if (e.target.id === "btn-guest-gate-login") {
-        if (window._authScreenInstance) {
-          window._authScreenInstance.show(true);
-        }
       }
 
       // Cancel subscription button
@@ -1638,8 +1627,8 @@ class Dashboard {
     if (show && !dot) {
       dot = document.createElement("span");
       dot.className = "panel-notification-dot";
-      const icon = header.querySelector(".panel-icon");
-      if (icon) icon.after(dot);
+      const chevron = header.querySelector(".panel-chevron");
+      if (chevron) chevron.appendChild(dot);
     } else if (!show && dot) {
       dot.remove();
     }
@@ -2183,13 +2172,6 @@ class Dashboard {
   }
 
   _selectTerritoryTier(tierName) {
-    // Block guests from renting territory
-    if (window.authManager?.isGuest) {
-      const gate = document.getElementById("territory-guest-gate");
-      if (gate) gate.classList.remove("hidden");
-      return;
-    }
-
     if (!this._territoryPlanet || !this._territoryTank) return;
 
     const ringMap = { outpost: 0, compound: 1, stronghold: 2 };
@@ -2389,9 +2371,11 @@ class Dashboard {
   }
 
   _claimTerritory() {
-    // Block guest users from claiming territory
+    // Prompt guest users to create an account before claiming
     if (window.authManager?.isGuest) {
-      this.showGuestNudge("territory", "Sign in to claim territory");
+      if (window._authScreenInstance) {
+        window._authScreenInstance.show(true);
+      }
       return;
     }
 
@@ -2753,6 +2737,10 @@ class Dashboard {
           tierName: territory.tierName,
           createdAt: new Date().toISOString(),
         };
+        // Use player's profile picture as the logo in the admin portal
+        if (this.avatarColor?.startsWith("data:")) {
+          sponsor.logoImage = this.avatarColor;
+        }
         const created = await SponsorStorage.create(sponsor);
         // Store the SponsorStorage-generated ID for future updates
         territory._sponsorStorageId = created.id;

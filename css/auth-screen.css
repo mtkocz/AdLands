@@ -98,6 +98,25 @@
   margin-bottom: var(--space-lg);
 }
 
+/* Deploy sub-sections (auth providers / create button) */
+#auth-deploy-providers.hidden,
+#auth-deploy-create.hidden {
+  display: none;
+}
+
+#auth-deploy-providers {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-sm);
+}
+
+#auth-deploy-create {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-sm);
+  margin-top: var(--space-sm);
+}
+
 /* ========================
    AUTH BUTTONS
    ======================== */

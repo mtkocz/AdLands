@@ -1,13 +1,12 @@
 /**
  * AdLands - AuthScreen
- * Multi-stage authentication and profile selection screen.
- * Replaces the previous OnboardingScreen.
+ * Single-screen authentication and profile selection.
  *
  * Stages:
- *   1. Auth       — Sign-in buttons (Google, Apple, GitHub, Twitter, Email, Phone, Guest)
- *   2. Profiles   — Select from up to 3 profile slots or create new
- *   3. Create     — Name + faction picker for new profile
- *   4. Deploy     — Fade out, hand off to portal selection
+ *   1. Deploy    — Name + faction + avatar + auth buttons (new users),
+ *                  or "Create Profile" button (already signed in)
+ *   2. Email     — Email/password sub-form
+ *   3. Profiles  — Select from profile slots (returning users)
  */
 
 class AuthScreen {
@@ -15,8 +14,8 @@ class AuthScreen {
     /** @type {AuthManager} */
     this.auth = authManager;
 
-    /** @type {string} Current stage: 'auth' | 'profiles' | 'create' | 'email-form' */
-    this.stage = "auth";
+    /** @type {string} Current stage: 'deploy' | 'profiles' | 'email' */
+    this.stage = "deploy";
 
     /** @type {Function|null} Callback: ({ name, faction, profileIndex, profileData }) => {} */
     this.onConfirm = null;
@@ -33,10 +32,10 @@ class AuthScreen {
     /** @type {string|null} Uploaded profile picture as base64 data URL */
     this._uploadedImage = null;
 
-    /** @type {boolean} Whether the create screen was opened from guest flow */
-    this._isGuestCreate = false;
+    /** @type {boolean} Whether the user is currently authenticated */
+    this._isAuthenticated = false;
 
-    /** @type {boolean} Whether the create form is in edit mode */
+    /** @type {boolean} Whether the deploy form is in edit mode */
     this._isEditMode = false;
 
     this._createUI();
@@ -55,32 +54,72 @@ class AuthScreen {
     this.overlay.innerHTML = `
       <div class="auth-panel">
         <button class="auth-close-btn hidden" id="auth-close-btn" title="Return to game">\u2715</button>
-        <!-- Stage 1: Auth -->
-        <div class="auth-stage" id="auth-stage-auth">
-          <div class="auth-title">AdLands</div>
-          <div class="auth-subtitle">A Limited Liability Company</div>
 
-          <div class="auth-providers">
-            <button class="auth-btn auth-btn-google" data-provider="google">
-              <span class="auth-btn-icon">G</span>
-              Continue with Google
+        <!-- Stage: Deploy (combined auth + profile creation) -->
+        <div class="auth-stage" id="auth-stage-deploy">
+          <div class="auth-title" id="auth-deploy-title">AdLands</div>
+          <div class="auth-subtitle" id="auth-deploy-subtitle">A Limited Liability Company</div>
+
+          <!-- Avatar upload -->
+          <div class="auth-avatar-section">
+            <div class="auth-avatar-preview empty" id="auth-avatar-preview"></div>
+            <button class="auth-btn auth-btn-secondary auth-avatar-upload-btn" id="auth-avatar-upload-btn">
+              Upload Picture
             </button>
-            <button class="auth-btn auth-btn-email" data-provider="email">
-              <span class="auth-btn-icon">\u2709</span>
-              Continue with Email
+            <input type="file" id="auth-avatar-file" accept="image/*" style="display:none">
+          </div>
+
+          <!-- Name input -->
+          <input type="text" id="auth-profile-name"
+                 class="auth-input"
+                 placeholder="Enter name..."
+                 maxlength="20"
+                 autocomplete="off"
+                 spellcheck="false">
+
+          <!-- Faction picker -->
+          <div id="auth-faction-section">
+            <div class="auth-faction-prompt">Choose Faction (permanent)</div>
+            <div class="auth-factions">
+              <button class="faction-btn" data-faction="rust">Rust</button>
+              <button class="faction-btn" data-faction="cobalt">Cobalt</button>
+              <button class="faction-btn" data-faction="viridian">Viridian</button>
+            </div>
+          </div>
+
+          <!-- Auth buttons (shown when NOT signed in) -->
+          <div id="auth-deploy-providers">
+            <div class="auth-divider"><span>Deploy with</span></div>
+            <div class="auth-providers">
+              <button class="auth-btn auth-btn-google" data-provider="google">
+                <span class="auth-btn-icon">G</span>
+                Continue with Google
+              </button>
+              <button class="auth-btn auth-btn-email" data-provider="email">
+                <span class="auth-btn-icon">\u2709</span>
+                Continue with Email
+              </button>
+            </div>
+            <div class="auth-divider"><span>or</span></div>
+            <button class="auth-btn auth-btn-guest" data-provider="guest">
+              Play as Guest
             </button>
           </div>
 
-          <div class="auth-divider"><span>or</span></div>
-
-          <button class="auth-btn auth-btn-guest" data-provider="guest">
-            Play as Guest
-          </button>
+          <!-- Create button (shown when ALREADY signed in) -->
+          <div id="auth-deploy-create" class="hidden">
+            <button class="auth-btn auth-btn-primary" id="auth-create-confirm" disabled>
+              Create Profile
+            </button>
+            <button class="auth-btn auth-btn-back" id="auth-create-back">
+              Cancel
+            </button>
+          </div>
 
           <div class="auth-error hidden" id="auth-error"></div>
         </div>
 
-        <!-- Stage 1b: Email Form -->
+        <!-- Stage: Email Form -->
         <div class="auth-stage hidden" id="auth-stage-email">
           <div class="auth-title">Email Sign In</div>
 
@@ -110,7 +149,7 @@ class AuthScreen {
           <div class="auth-error hidden" id="auth-email-error"></div>
         </div>
 
-        <!-- Stage 2: Profile Selection -->
+        <!-- Stage: Profile Selection -->
         <div class="auth-stage hidden" id="auth-stage-profiles">
           <div class="auth-title">Select Profile</div>
           <div class="auth-profile-slots" id="auth-profile-slots"></div>
@@ -119,42 +158,6 @@ class AuthScreen {
           </button>
           <button class="auth-btn auth-btn-link" id="auth-link-account" style="display:none">
             Link Account (save your progress)
-          </button>
-        </div>
-
-        <!-- Stage 3: Profile Creation -->
-        <div class="auth-stage hidden" id="auth-stage-create">
-          <div class="auth-title" id="auth-create-title">Create Profile</div>
-
-          <div class="auth-avatar-section">
-            <div class="auth-avatar-preview" id="auth-avatar-preview"></div>
-            <button class="auth-btn auth-btn-secondary auth-avatar-upload-btn" id="auth-avatar-upload-btn">
-              Upload Picture
-            </button>
-            <input type="file" id="auth-avatar-file" accept="image/*" style="display:none">
-          </div>
-
-          <input type="text" id="auth-profile-name"
-                 class="auth-input"
-                 placeholder="Enter name..."
-                 maxlength="20"
-                 autocomplete="off"
-                 spellcheck="false">
-
-          <div id="auth-faction-section">
-            <div class="auth-faction-prompt">Choose Faction (permanent)</div>
-            <div class="auth-factions">
-              <button class="faction-btn" data-faction="rust">Rust</button>
-              <button class="faction-btn" data-faction="cobalt">Cobalt</button>
-              <button class="faction-btn" data-faction="viridian">Viridian</button>
-            </div>
-          </div>
-
-          <button class="auth-btn auth-btn-primary" id="auth-create-confirm" disabled>
-            Create Profile
-          </button>
-          <button class="auth-btn auth-btn-back" id="auth-create-back">
-            Cancel
           </button>
         </div>
       </div>
@@ -178,7 +181,7 @@ class AuthScreen {
       this.hide();
     });
 
-    // Auth provider buttons
+    // Auth provider buttons (in deploy stage)
     this.overlay.querySelectorAll("[data-provider]").forEach((btn) => {
       btn.addEventListener("click", (e) => {
         e.stopPropagation();
@@ -206,7 +209,7 @@ class AuthScreen {
     });
     emailBack.addEventListener("click", (e) => {
       e.stopPropagation();
-      this._showStage("auth");
+      this._showStage("deploy");
     });
 
     // Enter key in password field
@@ -220,7 +223,10 @@ class AuthScreen {
     // Sign out
     this.overlay.querySelector("#auth-signout").addEventListener("click", (e) => {
       e.stopPropagation();
-      this.auth.signOut().then(() => this._showStage("auth"));
+      this.auth.signOut().then(() => {
+        this._isAuthenticated = false;
+        this._showDeployScreen();
+      });
     });
 
     // Link account (for guests)
@@ -229,7 +235,7 @@ class AuthScreen {
       this._handleLinkAccount();
     });
 
-    // Profile creation
+    // Profile creation / edit (in deploy stage)
     const createConfirm = this.overlay.querySelector("#auth-create-confirm");
     const createBack = this.overlay.querySelector("#auth-create-back");
     const nameInput = this.overlay.querySelector("#auth-profile-name");
@@ -272,11 +278,17 @@ class AuthScreen {
       e.stopPropagation();
       if (this._isEditMode) {
         this._showStage("profiles");
-      } else if (this._isGuestCreate) {
-        // Guest cancel: sign out and go back to auth screen
-        this.auth.signOut().then(() => this._showStage("auth"));
       } else {
-        this._showStage("profiles");
+        const hasProfiles = this._profiles.some((p) => p !== null);
+        if (hasProfiles) {
+          this._showStage("profiles");
+        } else {
+          // New user with no profiles — sign out and go back to unauthenticated deploy
+          this.auth.signOut().then(() => {
+            this._isAuthenticated = false;
+            this._showDeployScreen();
+          });
+        }
       }
     });
   }
@@ -309,18 +321,315 @@ class AuthScreen {
   }
 
   // ========================
+  // VISIBILITY
+  // ========================
+
+  async show(canDismiss = false) {
+    this.overlay.classList.remove("auth-hidden");
+
+    // Show/hide close button based on whether user can return to game
+    const closeBtn = this.overlay.querySelector("#auth-close-btn");
+    closeBtn.classList.toggle("hidden", !canDismiss);
+
+    // Wait for Firebase to resolve initial auth state before deciding stage
+    await this.auth.waitForReady();
+
+    if (this.auth.isSignedIn) {
+      this._isAuthenticated = true;
+
+      try {
+        const uid = this.auth.uid;
+        const accountDoc = await firebaseDb.collection("accounts").doc(uid).get();
+
+        if (accountDoc.exists) {
+          const data = accountDoc.data();
+          this._profiles = this._sanitizeProfiles(data.profiles);
+
+          // Update last login (fire and forget)
+          firebaseDb.collection("accounts").doc(uid).update({
+            lastLoginAt: firebase.firestore.FieldValue.serverTimestamp(),
+            linkedProviders: this.auth.linkedProviders,
+            isAnonymous: this.auth.isGuest,
+          });
+
+          const hasProfiles = this._profiles.some((p) => p !== null);
+          if (hasProfiles) {
+            this._renderProfileSlots();
+            this._showStage("profiles");
+            const linkBtn = this.overlay.querySelector("#auth-link-account");
+            linkBtn.style.display = this.auth.isGuest ? "block" : "none";
+            return;
+          }
+        }
+
+        // No profiles or no account doc — show deploy in authenticated mode
+        this._showDeployScreen(this._findNextEmptySlot());
+      } catch (err) {
+        console.error("[AuthScreen] Failed to check profiles:", err);
+        this._showDeployScreen(this._findNextEmptySlot());
+      }
+    } else {
+      this._isAuthenticated = false;
+      this._showDeployScreen();
+    }
+  }
+
+  hide(callback) {
+    this.overlay.classList.add("auth-fade-out");
+    setTimeout(() => {
+      this.overlay.classList.add("auth-hidden");
+      this.overlay.classList.remove("auth-fade-out");
+      if (callback) callback();
+    }, 400);
+  }
+
+  // ========================
+  // DEPLOY SCREEN
+  // ========================
+
+  /**
+   * Set up and show the deploy screen.
+   * Resets form, toggles auth buttons vs create button, disables used factions.
+   * @param {number} [slotIndex] - Profile slot to create into
+   */
+  _showDeployScreen(slotIndex) {
+    this._selectedIndex = slotIndex !== undefined ? slotIndex : this._findNextEmptySlot();
+    this._selectedFaction = null;
+    this._uploadedImage = null;
+    this._isEditMode = false;
+
+    // Toggle auth buttons vs create button
+    const providersDiv = this.overlay.querySelector("#auth-deploy-providers");
+    const createDiv = this.overlay.querySelector("#auth-deploy-create");
+
+    if (this._isAuthenticated) {
+      providersDiv.classList.add("hidden");
+      createDiv.classList.remove("hidden");
+      // Set button text
+      const confirmBtn = this.overlay.querySelector("#auth-create-confirm");
+      confirmBtn.textContent = "Create Profile";
+      confirmBtn.disabled = true;
+    } else {
+      providersDiv.classList.remove("hidden");
+      createDiv.classList.add("hidden");
+    }
+
+    // Set title
+    const title = this.overlay.querySelector("#auth-deploy-title");
+    const subtitle = this.overlay.querySelector("#auth-deploy-subtitle");
+    if (this._isAuthenticated) {
+      title.textContent = "Create Profile";
+      subtitle.textContent = "";
+    } else {
+      title.textContent = "AdLands";
+      subtitle.textContent = "A Limited Liability Company";
+    }
+
+    // Show faction section
+    this.overlay.querySelector("#auth-faction-section").style.display = "";
+
+    // Reset form
+    const nameInput = this.overlay.querySelector("#auth-profile-name");
+    nameInput.value = "";
+    this.overlay.querySelectorAll(".auth-factions .faction-btn").forEach((btn) => {
+      btn.classList.remove("selected");
+    });
+
+    // Reset avatar preview
+    this._resetAvatarPreview();
+    this.overlay.querySelector("#auth-avatar-file").value = "";
+
+    // Pre-fill name from auth if available
+    if (this.auth.displayName) {
+      nameInput.value = this.auth.displayName.substring(0, 20);
+    }
+
+    // Disable factions that are already used by other profiles
+    const usedFactions = this._profiles
+      .filter((p) => p !== null)
+      .map((p) => p.faction);
+    this.overlay.querySelectorAll(".auth-factions .faction-btn").forEach((btn) => {
+      const faction = btn.dataset.faction;
+      const used = usedFactions.includes(faction);
+      btn.disabled = used;
+      btn.classList.toggle("faction-used", used);
+    });
+
+    // Reset auth buttons to default text
+    const googleBtn = this.overlay.querySelector('[data-provider="google"]');
+    const guestBtn = this.overlay.querySelector('[data-provider="guest"]');
+    if (googleBtn) googleBtn.innerHTML = '<span class="auth-btn-icon">G</span> Continue with Google';
+    if (guestBtn) guestBtn.textContent = "Play as Guest";
+
+    this._showStage("deploy");
+    this._updateCreateState();
+    setTimeout(() => nameInput.focus(), 100);
+  }
+
+  // ========================
+  // POST-AUTH ROUTING
+  // ========================
+
+  /**
+   * Shared logic after any auth method succeeds.
+   * Checks Firestore for existing profiles and routes accordingly.
+   */
+  async _postAuthRouting() {
+    const uid = this.auth.uid;
+    if (!uid) return;
+
+    this._isAuthenticated = true;
+
+    try {
+      const accountRef = firebaseDb.collection("accounts").doc(uid);
+      const accountDoc = await accountRef.get();
+
+      if (!accountDoc.exists) {
+        // New user — create account document
+        const maxSlots = this.auth.isGuest ? 1 : 3;
+        const profilesArray = Array(maxSlots).fill(null);
+        await accountRef.set({
+          email: this.auth.email || null,
+          displayName: this.auth.displayName || null,
+          photoURL: this.auth.photoURL || null,
+          linkedProviders: this.auth.linkedProviders,
+          isAnonymous: this.auth.isGuest,
+          createdAt: firebase.firestore.FieldValue.serverTimestamp(),
+          lastLoginAt: firebase.firestore.FieldValue.serverTimestamp(),
+          activeProfileIndex: 0,
+          cosmeticsPurchased: [],
+          profiles: profilesArray,
+          settings: {},
+        });
+        this._profiles = profilesArray;
+
+        // New user — try to auto-create from deploy form data
+        await this._validateAndCreateFromDeploy();
+      } else {
+        // Existing user — update last login
+        accountRef.update({
+          lastLoginAt: firebase.firestore.FieldValue.serverTimestamp(),
+          linkedProviders: this.auth.linkedProviders,
+          isAnonymous: this.auth.isGuest,
+        });
+
+        const data = accountDoc.data();
+        this._profiles = this._sanitizeProfiles(data.profiles);
+
+        const hasProfiles = this._profiles.some((p) => p !== null);
+        if (hasProfiles) {
+          // Returning user — show profile selector
+          this._setButtonsDisabled(false);
+          this._renderProfileSlots();
+          this._showStage("profiles");
+          const linkBtn = this.overlay.querySelector("#auth-link-account");
+          linkBtn.style.display = this.auth.isGuest ? "block" : "none";
+        } else {
+          // Existing account but no profiles — try to auto-create
+          await this._validateAndCreateFromDeploy();
+        }
+      }
+    } catch (err) {
+      console.error("[AuthScreen] Post-auth routing failed:", err);
+      this._setButtonsDisabled(false);
+      this._showDeployScreen(this._findNextEmptySlot());
+      this._showError("auth-error", "Failed to load account. Please try again.");
+    }
+  }
+
+  /**
+   * Validate deploy form and auto-create profile if valid.
+   * If form is incomplete, switch deploy to authenticated mode with error hint.
+   */
+  async _validateAndCreateFromDeploy() {
+    const name = this.overlay.querySelector("#auth-profile-name").value.trim();
+    const faction = this._selectedFaction;
+
+    if (!name || !faction) {
+      // Incomplete form — switch to authenticated deploy mode with error
+      this._setButtonsDisabled(false);
+      this._switchDeployToAuthMode();
+
+      // Pre-fill name from auth if form is empty
+      if (!name && this.auth.displayName) {
+        this.overlay.querySelector("#auth-profile-name").value = this.auth.displayName.substring(0, 20);
+      }
+
+      this._updateCreateState();
+      // Ensure deploy stage is visible (may have been on email stage)
+      this._showStage("deploy");
+      this._showError("auth-error", "Enter a name and choose a faction to deploy.");
+      return;
+    }
+
+    // Validate name
+    if (!/^[a-zA-Z0-9 _-]+$/.test(name)) {
+      this._setButtonsDisabled(false);
+      this._switchDeployToAuthMode();
+      this._updateCreateState();
+      this._showStage("deploy");
+      this._showError("auth-error", "Name can only contain letters, numbers, spaces, hyphens, underscores.");
+      return;
+    }
+
+    const index = this._selectedIndex >= 0 ? this._selectedIndex : this._findNextEmptySlot();
+    this._selectedIndex = index;
+    const uid = this.auth.uid;
+
+    try {
+      await this._saveNewProfile(name, faction, index, uid);
+    } catch (err) {
+      console.error("[AuthScreen] Auto-create failed:", err);
+      this._setButtonsDisabled(false);
+      this._switchDeployToAuthMode();
+      this._showStage("deploy");
+      this._showError("auth-error", "Failed to create profile. Please try again.");
+    }
+  }
+
+  /**
+   * Toggle deploy stage to show Create Profile button instead of auth buttons.
+   */
+  _switchDeployToAuthMode() {
+    const title = this.overlay.querySelector("#auth-deploy-title");
+    const subtitle = this.overlay.querySelector("#auth-deploy-subtitle");
+    title.textContent = "Create Profile";
+    subtitle.textContent = "";
+
+    this.overlay.querySelector("#auth-deploy-providers").classList.add("hidden");
+    const createDiv = this.overlay.querySelector("#auth-deploy-create");
+    createDiv.classList.remove("hidden");
+
+    const confirmBtn = this.overlay.querySelector("#auth-create-confirm");
+    confirmBtn.textContent = "Create Profile";
+  }
+
+  /**
+   * Find the first empty profile slot.
+   * @returns {number}
+   */
+  _findNextEmptySlot() {
+    const idx = this._profiles.findIndex((p) => p === null);
+    return idx >= 0 ? idx : 0;
+  }
+
+  // ========================
   // AUTH HANDLERS
   // ========================
 
   async _handleProviderClick(provider) {
-    // Show loading text on the clicked button
     const btn = this.overlay.querySelector(`[data-provider="${provider}"]`);
-    const originalText = btn ? btn.textContent : "";
-    if (btn && provider !== "email") {
-      btn.textContent = provider === "guest" ? "Loading..." : "Signing in...";
+    const originalHTML = btn ? btn.innerHTML : "";
+
+    if (provider === "email") {
+      // Navigate to email sub-form (deploy form data persists in DOM)
+      this._showStage("email");
+      return;
     }
 
-    // Disable all buttons while authenticating
+    if (btn) {
+      btn.textContent = provider === "guest" ? "Loading..." : "Signing in...";
+    }
     this._setButtonsDisabled(true);
 
     try {
@@ -328,26 +637,17 @@ class AuthScreen {
         case "google":
           await this.auth.signInWithGoogle();
           break;
-        case "email":
-          this._setButtonsDisabled(false);
-          if (btn) btn.textContent = originalText;
-          this._showStage("email");
-          return;
         case "guest":
           await this.auth.signInAsGuest();
           break;
       }
 
-      // Auth succeeded — guests skip to create screen, others go to profile selection
-      if (provider === "guest") {
-        await this._loadAndShowGuestCreate();
-      } else {
-        await this._loadAndShowProfiles();
-      }
+      // Auth succeeded — route based on Firestore state
+      await this._postAuthRouting();
     } catch (err) {
       this._setButtonsDisabled(false);
-      if (btn) btn.textContent = originalText;
-      if (err.code === "auth/popup-closed-by-user") return; // User cancelled
+      if (btn) btn.innerHTML = originalHTML;
+      if (err.code === "auth/popup-closed-by-user") return;
       if (err.code === "auth/cancelled-popup-request") return;
       console.error("[AuthScreen] Sign-in error:", err);
       this._showError("auth-error", this._friendlyError(err));
@@ -368,7 +668,8 @@ class AuthScreen {
     this._setButtonsDisabled(true);
     try {
       await this.auth.signInWithEmail(email, password);
-      await this._loadAndShowProfiles();
+      this._isAuthenticated = true;
+      await this._postAuthRouting();
     } catch (err) {
       signinBtn.textContent = "Sign In";
       this._setButtonsDisabled(false);
@@ -392,7 +693,8 @@ class AuthScreen {
     this._setButtonsDisabled(true);
     try {
       await this.auth.createAccountWithEmail(email, password);
-      await this._loadAndShowProfiles();
+      this._isAuthenticated = true;
+      await this._postAuthRouting();
     } catch (err) {
       this._setButtonsDisabled(false);
       this._showError("auth-email-error", this._friendlyError(err));
@@ -416,8 +718,21 @@ class AuthScreen {
   async _handleLinkAccount() {
     try {
       await this.auth.linkWithGoogle();
-      // Refresh profile view (link button should hide)
-      await this._loadAndShowProfiles();
+
+      // Reload profiles (guest → regular user changes slot count)
+      const uid = this.auth.uid;
+      if (uid) {
+        const accountDoc = await firebaseDb.collection("accounts").doc(uid).get();
+        if (accountDoc.exists) {
+          const data = accountDoc.data();
+          this._profiles = this._sanitizeProfiles(data.profiles);
+          this._renderProfileSlots();
+        }
+      }
+
+      // Hide link button since no longer a guest
+      const linkBtn = this.overlay.querySelector("#auth-link-account");
+      linkBtn.style.display = "none";
     } catch (err) {
       if (err.code === "auth/popup-closed-by-user") return;
       console.error("[AuthScreen] Link error:", err);
@@ -427,61 +742,6 @@ class AuthScreen {
   // ========================
   // PROFILE MANAGEMENT
   // ========================
-
-  async _loadAndShowProfiles() {
-    this._setButtonsDisabled(false);
-    const uid = this.auth.uid;
-    if (!uid) return;
-
-    // Show profiles stage immediately with loading placeholder
-    // Guests get 1 slot, authenticated users get 3
-    this._profiles = this.auth.isGuest ? [null] : [null, null, null];
-    this._renderProfileSlots();
-    this._showStage("profiles");
-
-    // Show "Link Account" button for guest users
-    const linkBtn = this.overlay.querySelector("#auth-link-account");
-    linkBtn.style.display = this.auth.isGuest ? "block" : "none";
-
-    try {
-      // Load or create account document
-      const accountRef = firebaseDb.collection("accounts").doc(uid);
-      const accountDoc = await accountRef.get();
-
-      if (!accountDoc.exists) {
-        // First-time user — create account document (fire and forget)
-        accountRef.set({
-          email: this.auth.email || null,
-          displayName: this.auth.displayName || null,
-          photoURL: this.auth.photoURL || null,
-          linkedProviders: this.auth.linkedProviders,
-          isAnonymous: this.auth.isGuest,
-          createdAt: firebase.firestore.FieldValue.serverTimestamp(),
-          lastLoginAt: firebase.firestore.FieldValue.serverTimestamp(),
-          activeProfileIndex: 0,
-          cosmeticsPurchased: [],
-          profiles: [null, null, null],
-          settings: {},
-        });
-      } else {
-        // Update last login (fire and forget)
-        accountRef.update({
-          lastLoginAt: firebase.firestore.FieldValue.serverTimestamp(),
-          linkedProviders: this.auth.linkedProviders,
-          isAnonymous: this.auth.isGuest,
-        });
-        const data = accountDoc.data();
-        this._profiles = this._sanitizeProfiles(data.profiles);
-
-        // Re-render with real data
-        this._renderProfileSlots();
-      }
-    } catch (err) {
-      console.error("[AuthScreen] Failed to load profiles:", err);
-      this._showError("auth-error", "Failed to load profiles. Please try again.");
-      this._showStage("auth");
-    }
-  }
 
   _renderProfileSlots() {
     const container = this.overlay.querySelector("#auth-profile-slots");
@@ -544,7 +804,7 @@ class AuthScreen {
       } else {
         slot.addEventListener("click", (e) => {
           e.stopPropagation();
-          this._startCreateProfile(i);
+          this._showDeployScreen(i);
         });
       }
     }
@@ -596,106 +856,6 @@ class AuthScreen {
     }
   }
 
-  /**
-   * Guest flow: skip profile selector, go straight to create screen.
-   * Creates account doc if needed, then shows "Deploy As" form.
-   */
-  async _loadAndShowGuestCreate() {
-    this._setButtonsDisabled(false);
-    const uid = this.auth.uid;
-    if (!uid) return;
-
-    // Show create form immediately — don't wait for Firestore
-    // Guests only get 1 profile slot
-    this._profiles = [null];
-    this._startCreateProfile(0, true);
-
-    // Ensure account doc exists in the background
-    try {
-      const accountRef = firebaseDb.collection("accounts").doc(uid);
-      const accountDoc = await accountRef.get();
-
-      if (!accountDoc.exists) {
-        accountRef.set({
-          email: null,
-          displayName: null,
-          photoURL: null,
-          linkedProviders: [],
-          isAnonymous: true,
-          createdAt: firebase.firestore.FieldValue.serverTimestamp(),
-          lastLoginAt: firebase.firestore.FieldValue.serverTimestamp(),
-          activeProfileIndex: 0,
-          cosmeticsPurchased: [],
-          profiles: [null],
-          settings: {},
-        });
-      } else {
-        accountRef.update({
-          lastLoginAt: firebase.firestore.FieldValue.serverTimestamp(),
-          isAnonymous: true,
-        });
-      }
-    } catch (err) {
-      console.warn("[AuthScreen] Guest account setup error (non-blocking):", err);
-    }
-  }
-
-  _startCreateProfile(index, isGuest = false) {
-    this._selectedIndex = index;
-    this._selectedFaction = null;
-    this._uploadedImage = null;
-    this._isGuestCreate = isGuest;
-    this._isEditMode = false;
-
-    // Show faction section (hidden during edit mode)
-    this.overlay.querySelector("#auth-faction-section").style.display = "";
-
-    // Set title and button text based on guest vs. regular
-    const title = this.overlay.querySelector("#auth-create-title");
-    const confirmBtn = this.overlay.querySelector("#auth-create-confirm");
-
-    if (isGuest) {
-      title.textContent = "Deploy As";
-      confirmBtn.textContent = "Deploy";
-    } else {
-      title.textContent = "Create Profile";
-      confirmBtn.textContent = "Create Profile";
-    }
-
-    // Reset create form
-    this.overlay.querySelector("#auth-profile-name").value = "";
-    this.overlay.querySelectorAll(".auth-factions .faction-btn").forEach((btn) => {
-      btn.classList.remove("selected");
-    });
-    confirmBtn.disabled = true;
-
-    // Reset avatar preview
-    this._resetAvatarPreview();
-    this.overlay.querySelector("#auth-avatar-file").value = "";
-
-    // Pre-fill name from auth if available
-    if (this.auth.displayName) {
-      const nameInput = this.overlay.querySelector("#auth-profile-name");
-      nameInput.value = this.auth.displayName.substring(0, 20);
-    }
-
-    // Disable factions that are already used by other profiles
-    const usedFactions = this._profiles
-      .filter((p) => p !== null)
-      .map((p) => p.faction);
-    this.overlay.querySelectorAll(".auth-factions .faction-btn").forEach((btn) => {
-      const faction = btn.dataset.faction;
-      const used = usedFactions.includes(faction);
-      btn.disabled = used;
-      btn.classList.toggle("faction-used", used);
-    });
-
-    this._showStage("create");
-    setTimeout(() => {
-      this.overlay.querySelector("#auth-profile-name").focus();
-    }, 100);
-  }
-
   _startEditProfile(index) {
     const profile = this._profiles[index];
     if (!profile) return;
@@ -703,13 +863,21 @@ class AuthScreen {
     this._selectedIndex = index;
     this._selectedFaction = profile.faction;
     this._uploadedImage = profile.profilePicture || null;
-    this._isGuestCreate = false;
     this._isEditMode = true;
+    this._isAuthenticated = true;
 
-    // Set title and button text
-    const title = this.overlay.querySelector("#auth-create-title");
-    const confirmBtn = this.overlay.querySelector("#auth-create-confirm");
+    // Set title
+    const title = this.overlay.querySelector("#auth-deploy-title");
+    const subtitle = this.overlay.querySelector("#auth-deploy-subtitle");
     title.textContent = "Edit Profile";
+    subtitle.textContent = "";
+
+    // Show create section, hide auth providers
+    this.overlay.querySelector("#auth-deploy-providers").classList.add("hidden");
+    this.overlay.querySelector("#auth-deploy-create").classList.remove("hidden");
+
+    // Update button text
+    const confirmBtn = this.overlay.querySelector("#auth-create-confirm");
     confirmBtn.textContent = "Save";
     confirmBtn.disabled = false;
 
@@ -731,77 +899,51 @@ class AuthScreen {
     // Hide faction section (faction is permanent)
     this.overlay.querySelector("#auth-faction-section").style.display = "none";
 
-    this._showStage("create");
+    this._showStage("deploy");
     setTimeout(() => {
       this.overlay.querySelector("#auth-profile-name").focus();
     }, 100);
   }
 
-  _resetAvatarPreview() {
-    const preview = this.overlay.querySelector("#auth-avatar-preview");
-    preview.style.backgroundImage = "";
-    preview.classList.add("empty");
-    const uploadBtn = this.overlay.querySelector("#auth-avatar-upload-btn");
-    if (uploadBtn) uploadBtn.textContent = "Upload Picture";
+  async _deleteProfile(index) {
+    const profile = this._profiles[index];
+    if (!profile) return;
+
+    // Confirmation
+    const name = profile.name || "Unnamed";
+    const faction = profile.faction || "unknown";
+    const confirmed = window.confirm(
+      `Delete profile "${name}" (${faction})? This cannot be undone.`,
+    );
+    if (!confirmed) return;
+
+    const uid = this.auth.uid;
+    if (!uid) return;
+
+    try {
+      // Delete profile document
+      await firebaseDb
+        .collection("accounts").doc(uid)
+        .collection("profiles").doc(String(index))
+        .delete();
+
+      // Update account
+      const profilesUpdate = [...this._profiles];
+      profilesUpdate[index] = null;
+      await firebaseDb.collection("accounts").doc(uid).update({
+        profiles: profilesUpdate,
+      });
+
+      this._profiles = profilesUpdate;
+      this._renderProfileSlots();
+    } catch (err) {
+      console.error("[AuthScreen] Failed to delete profile:", err);
+    }
   }
 
-  /**
-   * Handle image file upload. Resizes to 64x64 on a canvas and stores as base64.
-   * @param {File} file
-   */
-  _handleAvatarUpload(file) {
-    if (!file || !file.type.startsWith("image/")) return;
-
-    const reader = new FileReader();
-    reader.onload = (e) => {
-      const img = new Image();
-      img.onload = () => {
-        // Resize to 64x64 on canvas
-        const canvas = document.createElement("canvas");
-        canvas.width = 64;
-        canvas.height = 64;
-        const ctx = canvas.getContext("2d");
-
-        // Cover-fit: crop to square center, then draw at 64x64
-        const size = Math.min(img.width, img.height);
-        const sx = (img.width - size) / 2;
-        const sy = (img.height - size) / 2;
-        ctx.drawImage(img, sx, sy, size, size, 0, 0, 64, 64);
-
-        const dataUrl = canvas.toDataURL("image/png");
-        this._uploadedImage = dataUrl;
-
-        // Show preview
-        const preview = this.overlay.querySelector("#auth-avatar-preview");
-        preview.style.backgroundImage = `url(${dataUrl})`;
-        preview.classList.remove("empty");
-
-        // Update upload button text
-        const uploadBtn = this.overlay.querySelector("#auth-avatar-upload-btn");
-        if (uploadBtn) uploadBtn.textContent = "Change Picture";
-
-        this._updateCreateState();
-      };
-      img.src = e.target.result;
-    };
-    reader.readAsDataURL(file);
-  }
-
-  _selectFaction(faction) {
-    this._selectedFaction = faction;
-    this.overlay.querySelectorAll(".auth-factions .faction-btn").forEach((btn) => {
-      btn.classList.toggle("selected", btn.dataset.faction === faction);
-    });
-    this._updateCreateState();
-  }
-
-  _updateCreateState() {
-    const name = this.overlay.querySelector("#auth-profile-name").value.trim();
-    const valid = this._isEditMode
-      ? name.length > 0
-      : name.length > 0 && this._selectedFaction !== null;
-    this.overlay.querySelector("#auth-create-confirm").disabled = !valid;
-  }
+  // ========================
+  // PROFILE SAVE
+  // ========================
 
   async _handleCreateProfile() {
     const nameInput = this.overlay.querySelector("#auth-profile-name");
@@ -812,7 +954,7 @@ class AuthScreen {
 
     if (!name || !faction || !uid || index < 0 || index > 2) return;
 
-    // Validate name (same rules as OnboardingScreen)
+    // Validate name
     if (!/^[a-zA-Z0-9 _-]+$/.test(name)) {
       this._showError("auth-error", "Name can only contain letters, numbers, spaces, hyphens, underscores.");
       return;
@@ -940,40 +1082,74 @@ class AuthScreen {
     this._showStage("profiles");
   }
 
-  async _deleteProfile(index) {
-    const profile = this._profiles[index];
-    if (!profile) return;
+  // ========================
+  // HELPERS
+  // ========================
 
-    // Confirmation
-    const name = profile.name || "Unnamed";
-    const faction = profile.faction || "unknown";
-    const confirmed = window.confirm(
-      `Delete profile "${name}" (${faction})? This cannot be undone.`,
-    );
-    if (!confirmed) return;
+  _resetAvatarPreview() {
+    const preview = this.overlay.querySelector("#auth-avatar-preview");
+    preview.style.backgroundImage = "";
+    preview.classList.add("empty");
+    const uploadBtn = this.overlay.querySelector("#auth-avatar-upload-btn");
+    if (uploadBtn) uploadBtn.textContent = "Upload Picture";
+  }
 
-    const uid = this.auth.uid;
-    if (!uid) return;
+  /**
+   * Handle image file upload. Resizes to 64x64 on a canvas and stores as base64.
+   * @param {File} file
+   */
+  _handleAvatarUpload(file) {
+    if (!file || !file.type.startsWith("image/")) return;
 
-    try {
-      // Delete profile document
-      await firebaseDb
-        .collection("accounts").doc(uid)
-        .collection("profiles").doc(String(index))
-        .delete();
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      const img = new Image();
+      img.onload = () => {
+        // Resize to 64x64 on canvas
+        const canvas = document.createElement("canvas");
+        canvas.width = 64;
+        canvas.height = 64;
+        const ctx = canvas.getContext("2d");
 
-      // Update account
-      const profilesUpdate = [...this._profiles];
-      profilesUpdate[index] = null;
-      await firebaseDb.collection("accounts").doc(uid).update({
-        profiles: profilesUpdate,
-      });
+        // Cover-fit: crop to square center, then draw at 64x64
+        const size = Math.min(img.width, img.height);
+        const sx = (img.width - size) / 2;
+        const sy = (img.height - size) / 2;
+        ctx.drawImage(img, sx, sy, size, size, 0, 0, 64, 64);
 
-      this._profiles = profilesUpdate;
-      this._renderProfileSlots();
-    } catch (err) {
-      console.error("[AuthScreen] Failed to delete profile:", err);
-    }
+        const dataUrl = canvas.toDataURL("image/png");
+        this._uploadedImage = dataUrl;
+
+        // Show preview
+        const preview = this.overlay.querySelector("#auth-avatar-preview");
+        preview.style.backgroundImage = `url(${dataUrl})`;
+        preview.classList.remove("empty");
+
+        // Update upload button text
+        const uploadBtn = this.overlay.querySelector("#auth-avatar-upload-btn");
+        if (uploadBtn) uploadBtn.textContent = "Change Picture";
+
+        this._updateCreateState();
+      };
+      img.src = e.target.result;
+    };
+    reader.readAsDataURL(file);
+  }
+
+  _selectFaction(faction) {
+    this._selectedFaction = faction;
+    this.overlay.querySelectorAll(".auth-factions .faction-btn").forEach((btn) => {
+      btn.classList.toggle("selected", btn.dataset.faction === faction);
+    });
+    this._updateCreateState();
+  }
+
+  _updateCreateState() {
+    const name = this.overlay.querySelector("#auth-profile-name").value.trim();
+    const valid = this._isEditMode
+      ? name.length > 0
+      : name.length > 0 && this._selectedFaction !== null;
+    this.overlay.querySelector("#auth-create-confirm").disabled = !valid;
   }
 
   /**
@@ -993,38 +1169,6 @@ class AuthScreen {
       return null;
     });
   }
-
-  // ========================
-  // VISIBILITY
-  // ========================
-
-  show(canDismiss = false) {
-    this.overlay.classList.remove("auth-hidden");
-
-    // Show/hide close button based on whether user can return to game
-    const closeBtn = this.overlay.querySelector("#auth-close-btn");
-    closeBtn.classList.toggle("hidden", !canDismiss);
-
-    // If already signed in, go straight to profiles
-    if (this.auth.isSignedIn) {
-      this._loadAndShowProfiles();
-    } else {
-      this._showStage("auth");
-    }
-  }
-
-  hide(callback) {
-    this.overlay.classList.add("auth-fade-out");
-    setTimeout(() => {
-      this.overlay.classList.add("auth-hidden");
-      this.overlay.classList.remove("auth-fade-out");
-      if (callback) callback();
-    }, 400);
-  }
-
-  // ========================
-  // HELPERS
-  // ========================
 
   _setButtonsDisabled(disabled) {
     this.overlay.querySelectorAll("button").forEach((btn) => {

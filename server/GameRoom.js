@@ -416,6 +416,8 @@ class GameRoom {
   reloadMoonSponsors() {
     if (!this.moonSponsorStore) return;
     const moonSponsors = this._buildMoonSponsorPayload();
+    // Update cached world payload so new clients get fresh data on connect
+    if (this._worldPayload) this._worldPayload.moonSponsors = moonSponsors;
     this.io.to(this.roomId).emit("moon-sponsors-reloaded", { moonSponsors });
     const active = moonSponsors.filter(Boolean).length;
     console.log(`[Room ${this.roomId}] Moon sponsors reloaded: ${active} active, broadcast to clients`);
@@ -477,6 +479,8 @@ class GameRoom {
   reloadBillboardSponsors() {
     if (!this.billboardSponsorStore) return;
     const billboardSponsors = this._buildBillboardSponsorPayload();
+    // Update cached world payload so new clients get fresh data on connect
+    if (this._worldPayload) this._worldPayload.billboardSponsors = billboardSponsors;
     this.io.to(this.roomId).emit("billboard-sponsors-reloaded", { billboardSponsors });
     const active = billboardSponsors.filter(Boolean).length;
     console.log(`[Room ${this.roomId}] Billboard sponsors reloaded: ${active} active, broadcast to clients`);
@@ -1251,19 +1255,21 @@ class GameRoom {
     // 4. Broadcast world state to all clients
     this._broadcastState();
 
-    // 5. Broadcast crypto balances + commander state (every 5 seconds)
-    if (this.tick % (this.tickRate * 5) === 0) {
-      this._broadcastCrypto();
-      // Full commander state sync (reliable — catches any missed commander-update events)
-      this.io.to(this.roomId).emit("commander-sync", this._getCommanderSnapshot());
-    }
-
-    // 6. Recompute faction ranks (every 1 second, or immediately when dirty)
+    // 5. Recompute faction ranks (every 1 second, or immediately when dirty)
+    // Runs BEFORE commander-sync so the snapshot is always up-to-date
+    // (e.g. after resign, the resigned player is excluded before broadcast)
     this.rankRecomputeCounter++;
     if (this.rankRecomputeCounter >= this.tickRate || this._ranksDirty) {
       this.rankRecomputeCounter = 0;
       this._ranksDirty = false;
       this._recomputeRanks();
+    }
+
+    // 6. Broadcast crypto balances + commander state (every 5 seconds)
+    if (this.tick % (this.tickRate * 5) === 0) {
+      this._broadcastCrypto();
+      // Full commander state sync (reliable — catches any missed commander-update events)
+      this.io.to(this.roomId).emit("commander-sync", this._getCommanderSnapshot());
     }
 
     // 6b. Broadcast faction rosters (every 10 seconds)
@@ -1689,7 +1695,7 @@ class GameRoom {
 
   handleResign(socketId, duration) {
     const player = this.players.get(socketId);
-    if (!player || player.isDead || player.waitingForPortal) return;
+    if (!player) return;
 
     // Only the current commander can resign
     const commander = this.commanders[player.faction];

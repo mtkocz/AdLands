@@ -420,6 +420,22 @@
 
           if (!bg) continue;
 
+          // Sync faction change: if server changed this bodyguard's faction
+          // (e.g. commander switched factions), despawn old and spawn new
+          if (!bg.isDead && bgState.f && bgState.f !== bg.faction) {
+            despawnRemoteBodyguard(bgId);
+            bg = spawnRemoteBodyguard({
+              id: bgId,
+              f: bgState.f,
+              t: bgState.t,
+              p: bgState.p,
+              h: bgState.h,
+              s: bgState.s,
+              hp: bgState.hp,
+            });
+            if (!bg) continue;
+          }
+
           // Handle resurrection: server respawned with same ID — remove dead one and recreate
           if (bg.isDead && bgState.d === 0) {
             despawnRemoteBodyguard(bgId);
@@ -1006,7 +1022,8 @@
         );
       }
       // Force-verify dashboard commander state (catches any desync)
-      if (window.dashboard && window.commanderSystem.humanPlayerFaction) {
+      // Skip if human player is resigned — don't override the resign UI
+      if (window.dashboard && window.commanderSystem.humanPlayerFaction && !window.commanderSystem.isResigned()) {
         const isCommander = window.commanderSystem.isHumanCommander();
         const isActing = window.commanderSystem.isHumanActingCommander();
         window.dashboard.updateCommanderStatus(isCommander, isActing);

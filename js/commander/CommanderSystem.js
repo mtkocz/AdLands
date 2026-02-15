@@ -611,6 +611,10 @@ class CommanderSystem {
       const net = window._mpState?.net;
       if (net) net.sendResign(duration);
 
+      // Track resignation locally so stale commander-sync events
+      // (broadcast before the server recomputes ranks) don't override the resign
+      this.resignedUntil = Date.now() + duration;
+
       // Immediate dashboard UI feedback (resign dropdown hides)
       if (window.dashboard && window.dashboard.updateCommanderStatus) {
         window.dashboard.updateCommanderStatus(false);
@@ -771,13 +775,19 @@ class CommanderSystem {
       }
       // Always confirm dashboard state (handles override confirmations where
       // the commander was already set — dashboard may be out of sync)
+      // But skip if the human player just resigned — stale commander-sync
+      // events shouldn't override the resign UI
       if (
         faction === this.humanPlayerFaction &&
         window.dashboard &&
         window.dashboard.updateCommanderStatus
       ) {
         const isHuman = commanderData.id === this.humanPlayerId || commanderData.id === this.humanMultiplayerId;
-        window.dashboard.updateCommanderStatus(isHuman, isHuman ? isActing : false);
+        if (isHuman && this.isResigned()) {
+          // Don't re-confirm resigned player as commander
+        } else {
+          window.dashboard.updateCommanderStatus(isHuman, isHuman ? isActing : false);
+        }
       }
       return;
     }
