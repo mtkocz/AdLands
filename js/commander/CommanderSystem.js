@@ -105,6 +105,10 @@ class CommanderSystem {
       username,
       isHuman: true,
     });
+
+    // If this player was already assigned commander before their tank existed,
+    // backfill the tankRef and apply gold trim now
+    this._retryCommanderPerksIfNeeded(playerId, faction, tankRef);
   }
 
   /**
@@ -139,6 +143,10 @@ class CommanderSystem {
       username,
       isHuman: false,
     });
+
+    // If this player was already assigned commander before their tank existed,
+    // backfill the tankRef and apply gold trim now
+    this._retryCommanderPerksIfNeeded(playerId, faction, tankRef);
   }
 
   /**
@@ -436,6 +444,23 @@ class CommanderSystem {
 
       // Find new commander
       this._updateFactionCommander(faction);
+    }
+  }
+
+  /**
+   * If a player was assigned commander before their tank existed,
+   * backfill the tankRef and apply gold trim now that the tank is ready.
+   */
+  _retryCommanderPerksIfNeeded(playerId, faction, tankRef) {
+    if (!tankRef) return;
+    const commander = this.commanders[faction];
+    if (!commander) return;
+    // Also match by humanMultiplayerId (socket ID) for the local player
+    const isMatch = commander.playerId === playerId ||
+      (playerId === this.humanPlayerId && commander.playerId === this.humanMultiplayerId);
+    if (isMatch && !commander.tankRef) {
+      commander.tankRef = tankRef;
+      this._applyCommanderPerks(commander, faction);
     }
   }
 

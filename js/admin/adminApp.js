@@ -1230,8 +1230,8 @@
       clusterStates: new Map(),
     };
 
-    // Load shared fields from first member
-    const first = members[0];
+    // Load shared fields from first member (re-fetch from cache since fetchFull replaces entries)
+    const first = SponsorStorage.getById(editingGroup.ids[0]);
     sponsorForm.loadSponsor(first);
 
     // Load active cluster's data into hex selector
@@ -1279,7 +1279,7 @@
         name: currentFormData.name,
         tagline: currentFormData.tagline,
         websiteUrl: currentFormData.websiteUrl,
-        logoImage: currentFormData.logoImage,
+        logoImage: currentFormData.logoImage || sponsor.logoImage || null,
         patternImage: sponsor.patternImage || null,
         patternAdjustment: sponsor.patternAdjustment || null,
       };

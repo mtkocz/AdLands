@@ -1521,15 +1521,16 @@ gl_FragColor = vec4( outgoingLight, diffuseColor.a );`
         texture.offset.set((1 - panelAspect / texAspect) / 2, 0);
       }
 
-      // Apply patternAdjustment (scale, offset)
+      // Apply patternAdjustment (scale, offset) — matches shader in hexSelector
+      // Shader: vUv = (coverUv - 0.5) / uScale + 0.5 + vec2(uOffsetX, uOffsetY) * 0.5
       const adj = sponsorData.patternAdjustment || {};
       const scale = adj.scale || 1;
-      const scaledRepeatX = texture.repeat.x / scale;
-      const scaledRepeatY = texture.repeat.y / scale;
-      texture.repeat.set(scaledRepeatX, scaledRepeatY);
+      const coverOffX = texture.offset.x;
+      const coverOffY = texture.offset.y;
+      texture.repeat.set(texture.repeat.x / scale, texture.repeat.y / scale);
       texture.offset.set(
-        (1 - scaledRepeatX) / 2 + (adj.offsetX || 0),
-        (1 - scaledRepeatY) / 2 + (adj.offsetY || 0)
+        (coverOffX - 0.5) / scale + 0.5 + (adj.offsetX || 0) * 0.5,
+        (coverOffY - 0.5) / scale + 0.5 + (adj.offsetY || 0) * 0.5
       );
 
       texture.needsUpdate = true;

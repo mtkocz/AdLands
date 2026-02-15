@@ -510,7 +510,7 @@ class GameRoom {
       isAuthenticated: !!socket.uid,
       isGuest: isGuest,
 
-      name: isGuest ? baseName + " (Guest)" : baseName,
+      name: baseName,
       faction: faction,
 
       // Physics state (authoritative)
@@ -2218,9 +2218,6 @@ class GameRoom {
     // Sanitize name: trim, limit 20 chars, strip non-alphanumeric (keep spaces, hyphens, underscores)
     let sanitized = name.trim().replace(/[^\w\s\-]/g, "").substring(0, 20);
     if (!sanitized) sanitized = this._pickName();
-
-    // Append (Guest) suffix for guest players
-    if (player.isGuest) sanitized = sanitized + " (Guest)";
 
     // Check for duplicate names — append suffix if taken
     for (const [id, p] of this.players) {

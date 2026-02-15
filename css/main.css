@@ -4273,8 +4273,8 @@ input:checked + .toggle-slider:before {
    ======================== */
 
 .panel-notification-dot {
-    width: 12px;
-    height: 12px;
+    width: 16px;
+    height: 16px;
     border-radius: 50%;
     background: var(--accent-cyan);
     flex-shrink: 0;
