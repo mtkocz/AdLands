@@ -28,6 +28,7 @@ class TuskGlobalChat {
         killStreak: 0.4,
         deathStreak: 0.3,
         clusterCapture: 0.3,
+        territoryRent: 0.8,
         factionLeadChange: 0.2,
         factionStruggle: 0.1,
         playerMilestone: 0.6,
@@ -70,6 +71,20 @@ class TuskGlobalChat {
         "Nice work @{player}! The {cluster} cluster is now generating revenue. For me.",
         "@{player} claims {cluster}! That's the kind of initiative I pretend to reward.",
         "The {cluster} cluster falls to @{player}. Previous owners: skill issue.",
+      ],
+      territoryRent: [
+        "@{player} is a land baron now. As for the rest of the lobby: your poverty disgusts me.",
+        "BREAKING: @{player} signed a lease. Welcome to the property ladder. The rest of you? Still homeless.",
+        "@{player} is officially a real estate mogul. Meanwhile, the rest of you are basically squatters.",
+        "@{player} rented territory and honestly? The rest of you look poor by comparison. Just saying.",
+        "@{player} is renting from ME. I want the rest of you to think about what that says about your life choices.",
+        "REAL ESTATE UPDATE: @{player} just upgraded from 'homeless' to 'slumlord.' The rest of you remain unhoused.",
+        "@{player} just rented territory. To everyone else camping on free land: gentrification is coming.",
+        "@{player} just rented land. One of you finally understands economics. The rest of you are a rounding error.",
+        "@{player} just made a power move. The rest of you should be taking notes.",
+        "@{player} — a player of taste and strategy. Everyone else? Noted.",
+        "Big landlord energy from @{player} right there. The lobby just got a little more unequal.",
+        "@{player}'s territory just increased in value by 300%. Source: me. I make the numbers up.",
       ],
       factionLead: [
         "{faction} now controls {percent}% of the planet. {loser1}, {loser2} — are you even trying?",
@@ -318,6 +333,12 @@ class TuskGlobalChat {
     this.onEvent("revengeKill", {
       killer: killerName || "Unknown",
       victim: victimName || "Unknown",
+    });
+  }
+
+  onTerritoryRent(playerName) {
+    this.onEvent("territoryRent", {
+      player: playerName || "Unknown",
     });
   }
 

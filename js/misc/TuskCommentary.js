@@ -29,6 +29,20 @@ const TUSK_LINES = {
     "Step 1: Capture territory, Step 2: Hold territory, Step 3: Profit!",
     "Amazing team work on that territory capture - MY teamwork.",
   ],
+  on_rent_territory: [
+    "Another lease signed! Welcome to the property ladder. The rest of you? Still homeless.",
+    "REAL ESTATE UPDATE: New landlord acquired. The rest of you remain tragically unhoused.",
+    "Fun fact: I make money while they sleep. Capitalism is beautiful.",
+    "I want the rest of you to think about what that says about your life choices.",
+    "To everyone else camping on free land: gentrification is coming.",
+    "They just went from 'squatter' to 'slumlord.' Small steps.",
+    "Location, location, location. And also: payment, payment, payment.",
+    "One of you finally understands economics. The rest of you are a rounding error.",
+    "That's called a power move. The rest of you should be taking notes.",
+    "A player of taste and strategy. Everyone else? Noted.",
+    "Big landlord energy right there. The lobby just got a little more unequal.",
+    "That territory just increased in value by 300%. Source: me. I make the numbers up.",
+  ],
   on_lose_territory: [
     "Territorial loss detected. Someone's shareholders are unhappy.",
     "Remember, failure is just success that hasn't happened yet or whatever it is they say. Just get it done!",
@@ -313,6 +327,7 @@ class TuskCommentary {
       on_kill: "full",
       on_death: "important",
       on_capture: "full",
+      on_rent_territory: "important",
       on_lose_territory: "important",
       on_killstreak: "full",
       on_shield: "full",
@@ -343,6 +358,7 @@ class TuskCommentary {
     // Cooldown durations (ms) - 4x original for less frequent commentary
     this.COOLDOWNS = {
       on_capture: 20000,
+      on_rent_territory: 0,
       on_lose_territory: 40000,
       on_kill: 12000,
       on_death: 20000,
@@ -504,6 +520,16 @@ class TuskCommentary {
     if (!this._canTrigger("on_capture")) return;
     const line = this._getRandomLine("on_capture");
     if (line) this._queueMessage(line);
+  }
+
+  onRentTerritory(playerName) {
+    if (!this._shouldTrigger("on_rent_territory")) return;
+    if (!this._canTrigger("on_rent_territory")) return;
+    let line = this._getRandomLine("on_rent_territory");
+    if (line) {
+      line = line.replace("{player}", playerName || "Someone");
+      this._queueMessage(line);
+    }
   }
 
   onLoseTerritory(faction, clusterId) {
