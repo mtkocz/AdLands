@@ -396,7 +396,7 @@ class AuthScreen {
   // VISIBILITY
   // ========================
 
-  async show(canDismiss = false) {
+  async show(canDismiss = false, linkMode = false) {
     this.overlay.classList.remove("auth-hidden");
     this.overlay.classList.remove("auth-fade-out");
 
@@ -411,6 +411,21 @@ class AuthScreen {
     this._showLoading("Checking account...");
 
     await this.auth.waitForReady();
+
+    // Link mode: guest is being funneled to create an account.
+    // Show welcome stage so they can pick a provider, but use account
+    // linking behind the scenes to preserve their progression.
+    if (linkMode && this.auth.isSignedIn && this.auth.isGuest) {
+      this._linkMode = true;
+      this._hideLoading();
+      this._showStage("welcome");
+      // Hide "Play as Guest" — they're already a guest
+      const guestBtn = this.overlay.querySelector('[data-provider="guest"]');
+      if (guestBtn) guestBtn.style.display = "none";
+      const divider = this.overlay.querySelector(".auth-divider");
+      if (divider) divider.style.display = "none";
+      return;
+    }
 
     if (this.auth.isSignedIn) {
       this._isAuthenticated = true;
@@ -534,6 +549,32 @@ class AuthScreen {
     const uid = this.auth.uid;
     if (!uid) return;
 
+    // Clean up link mode state and restore hidden UI elements
+    const wasLinkMode = this._linkMode;
+    this._linkMode = false;
+    const guestBtn = this.overlay.querySelector('[data-provider="guest"]');
+    if (guestBtn) guestBtn.style.display = "";
+    const divider = this.overlay.querySelector(".auth-divider");
+    if (divider) divider.style.display = "";
+
+    // After linking, expand the profiles array from 1 to 3 slots
+    if (wasLinkMode) {
+      const accountRef = firebaseDb.collection("accounts").doc(uid);
+      const accountDoc = await accountRef.get();
+      if (accountDoc.exists) {
+        const data = accountDoc.data();
+        const profiles = data.profiles || [null];
+        if (profiles.length < 3) {
+          while (profiles.length < 3) profiles.push(null);
+          await accountRef.update({
+            profiles,
+            isAnonymous: false,
+            linkedProviders: this.auth.linkedProviders,
+          });
+        }
+      }
+    }
+
     this._isAuthenticated = true;
     this._showLoading("Loading account...");
 
@@ -623,19 +664,31 @@ class AuthScreen {
       return;
     }
 
+    // In link mode, ignore guest button (should be hidden, but safeguard)
+    if (this._linkMode && provider === "guest") return;
+
     if (btn) {
       btn.textContent = provider === "guest" ? "Loading..." : "Signing in...";
     }
     this._setButtonsDisabled(true);
 
     try {
-      switch (provider) {
-        case "google":
-          await this.auth.signInWithGoogle();
-          break;
-        case "guest":
-          await this.auth.signInAsGuest();
-          break;
+      if (this._linkMode) {
+        // Link the anonymous account with the chosen provider
+        switch (provider) {
+          case "google":
+            await this.auth.linkWithGoogle();
+            break;
+        }
+      } else {
+        switch (provider) {
+          case "google":
+            await this.auth.signInWithGoogle();
+            break;
+          case "guest":
+            await this.auth.signInAsGuest();
+            break;
+        }
       }
 
       // Auth succeeded — route based on Firestore state
@@ -663,7 +716,12 @@ class AuthScreen {
     signinBtn.textContent = "Signing in...";
     this._setButtonsDisabled(true);
     try {
-      await this.auth.signInWithEmail(email, password);
+      if (this._linkMode) {
+        const credential = firebase.auth.EmailAuthProvider.credential(email, password);
+        await this.auth.linkWithCredential(credential);
+      } else {
+        await this.auth.signInWithEmail(email, password);
+      }
       this._isAuthenticated = true;
       await this._postAuthRouting();
     } catch (err) {
@@ -688,7 +746,12 @@ class AuthScreen {
 
     this._setButtonsDisabled(true);
     try {
-      await this.auth.createAccountWithEmail(email, password);
+      if (this._linkMode) {
+        const credential = firebase.auth.EmailAuthProvider.credential(email, password);
+        await this.auth.linkWithCredential(credential);
+      } else {
+        await this.auth.createAccountWithEmail(email, password);
+      }
       this._isAuthenticated = true;
       await this._postAuthRouting();
     } catch (err) {

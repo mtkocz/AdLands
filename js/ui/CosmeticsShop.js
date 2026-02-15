@@ -336,10 +336,10 @@ class CosmeticsShop {
    * @param {string} cosmeticId
    */
   async _handleBuy(cosmeticId) {
-    // Block guest users from purchasing
+    // Block guest users — show auth screen in link mode
     if (window.authManager?.isGuest) {
-      if (window.dashboard) {
-        window.dashboard.showGuestNudge("shop", "Sign in to purchase cosmetics");
+      if (window._authScreenInstance) {
+        window._authScreenInstance.show(true, true);
       }
       return;
     }

@@ -2390,7 +2390,7 @@ class Dashboard {
     // Prompt guest users to create an account before claiming
     if (window.authManager?.isGuest) {
       if (window._authScreenInstance) {
-        window._authScreenInstance.show(true);
+        window._authScreenInstance.show(true, true);
       }
       return;
     }

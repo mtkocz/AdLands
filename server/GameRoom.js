@@ -898,7 +898,7 @@ class GameRoom {
     if (oldFaction !== player.faction) {
       // If they were commander, remove them
       if (this.commanders[oldFaction]?.id === socketId) {
-        this.bodyguardManager.despawnForFaction(oldFaction);
+        this.bodyguardManager.killAllForFaction(oldFaction);
         this.commanders[oldFaction] = null;
         this.io.to(this.roomId).emit("commander-update", {
           faction: oldFaction,
@@ -2175,9 +2175,9 @@ class GameRoom {
     const oldFaction = player.faction;
     if (oldFaction === newFaction) return;
 
-    // If this player was commander of the old faction, clear the slot + despawn bodyguards
+    // If this player was commander of the old faction, clear the slot + kill bodyguards
     if (this.commanders[oldFaction]?.id === socketId) {
-      this.bodyguardManager.despawnForFaction(oldFaction);
+      this.bodyguardManager.killAllForFaction(oldFaction);
       this.commanders[oldFaction] = null;
     }
 
@@ -2241,7 +2241,7 @@ class GameRoom {
     // Recompute ranks if faction changed
     if (oldFaction !== faction) {
       if (this.commanders[oldFaction]?.id === socketId) {
-        this.bodyguardManager.despawnForFaction(oldFaction);
+        this.bodyguardManager.killAllForFaction(oldFaction);
         this.commanders[oldFaction] = null;
       }
 
