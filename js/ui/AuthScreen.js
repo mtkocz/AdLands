@@ -718,6 +718,12 @@ class AuthScreen {
       // Reload profiles (guest → regular user changes slot count)
       const uid = this.auth.uid;
       if (uid) {
+        // Mark account as no longer anonymous
+        await firebaseDb.collection("accounts").doc(uid).update({
+          isAnonymous: false,
+          linkedProviders: this.auth.linkedProviders,
+        });
+
         const accountDoc = await firebaseDb.collection("accounts").doc(uid).get();
         if (accountDoc.exists) {
           const data = accountDoc.data();
