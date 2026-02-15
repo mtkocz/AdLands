@@ -30,6 +30,19 @@ class AuthScreen {
     /** @type {string|null} Selected faction for new profile */
     this._selectedFaction = null;
 
+    /** @type {string|null} Selected avatar color for new profile */
+    this._selectedColor = null;
+
+    /** @type {boolean} Whether the create screen was opened from guest flow */
+    this._isGuestCreate = false;
+
+    /** Preset avatar colors */
+    this.avatarColors = [
+      "#e74c3c", "#e67e22", "#f1c40f", "#2ecc71",
+      "#1abc9c", "#3498db", "#9b59b6", "#e84393",
+      "#fd79a8", "#00cec9", "#6c5ce7", "#fdcb6e",
+    ];
+
     this._createUI();
     this._setupEvents();
   }
@@ -116,6 +129,11 @@ class AuthScreen {
         <div class="auth-stage hidden" id="auth-stage-create">
           <div class="auth-title" id="auth-create-title">Create Profile</div>
 
+          <div class="auth-avatar-section">
+            <div class="auth-avatar-preview" id="auth-avatar-preview"></div>
+            <div class="auth-avatar-grid" id="auth-avatar-grid"></div>
+          </div>
+
           <input type="text" id="auth-profile-name"
                  class="auth-input"
                  placeholder="Enter name..."
@@ -134,7 +152,7 @@ class AuthScreen {
             Create Profile
           </button>
           <button class="auth-btn auth-btn-back" id="auth-create-back">
-            Back
+            Cancel
           </button>
         </div>
       </div>
@@ -230,7 +248,12 @@ class AuthScreen {
 
     createBack.addEventListener("click", (e) => {
       e.stopPropagation();
-      this._showStage("profiles");
+      if (this._isGuestCreate) {
+        // Guest cancel: sign out and go back to auth screen
+        this.auth.signOut().then(() => this._showStage("auth"));
+      } else {
+        this._showStage("profiles");
+      }
     });
   }
 
@@ -403,7 +426,7 @@ class AuthScreen {
           isAnonymous: this.auth.isGuest,
         });
         const data = accountDoc.data();
-        this._profiles = data.profiles || [null, null, null];
+        this._profiles = this._sanitizeProfiles(data.profiles);
       }
 
       this._renderProfileSlots();
@@ -430,7 +453,11 @@ class AuthScreen {
       slot.dataset.index = i;
 
       if (profile) {
+        const avatarStyle = profile.profilePicture
+          ? `background: ${profile.profilePicture}`
+          : `background: var(--bg-highlight)`;
         slot.innerHTML = `
+          <div class="profile-slot-avatar" style="${avatarStyle}"></div>
           <div class="profile-slot-info">
             <div class="profile-slot-name">${this._escapeHtml(profile.name)}</div>
             <div class="profile-slot-details">
@@ -547,7 +574,7 @@ class AuthScreen {
           lastLoginAt: firebase.firestore.FieldValue.serverTimestamp(),
           isAnonymous: true,
         });
-        this._profiles = accountDoc.data().profiles || [null, null, null];
+        this._profiles = this._sanitizeProfiles(accountDoc.data().profiles);
       }
 
       // Go straight to create form for slot 0
@@ -562,20 +589,19 @@ class AuthScreen {
   _startCreateProfile(index, isGuest = false) {
     this._selectedIndex = index;
     this._selectedFaction = null;
+    this._selectedColor = null;
+    this._isGuestCreate = isGuest;
 
     // Set title and button text based on guest vs. regular
     const title = this.overlay.querySelector("#auth-create-title");
     const confirmBtn = this.overlay.querySelector("#auth-create-confirm");
-    const backBtn = this.overlay.querySelector("#auth-create-back");
 
     if (isGuest) {
       title.textContent = "Deploy As";
       confirmBtn.textContent = "Deploy";
-      backBtn.style.display = "none";
     } else {
       title.textContent = "Create Profile";
       confirmBtn.textContent = "Create Profile";
-      backBtn.style.display = "";
     }
 
     // Reset create form
@@ -584,6 +610,9 @@ class AuthScreen {
       btn.classList.remove("selected");
     });
     confirmBtn.disabled = true;
+
+    // Build avatar color grid
+    this._buildAvatarGrid();
 
     // Pre-fill name from auth if available
     if (this.auth.displayName) {
@@ -608,6 +637,40 @@ class AuthScreen {
     }, 100);
   }
 
+  _buildAvatarGrid() {
+    const grid = this.overlay.querySelector("#auth-avatar-grid");
+    const preview = this.overlay.querySelector("#auth-avatar-preview");
+    grid.innerHTML = "";
+    preview.style.background = "";
+    preview.classList.add("empty");
+
+    this.avatarColors.forEach((color) => {
+      const swatch = document.createElement("button");
+      swatch.className = "auth-avatar-swatch";
+      swatch.style.background = color;
+      swatch.dataset.color = color;
+      swatch.addEventListener("click", (e) => {
+        e.stopPropagation();
+        this._selectAvatarColor(color);
+      });
+      grid.appendChild(swatch);
+    });
+  }
+
+  _selectAvatarColor(color) {
+    this._selectedColor = color;
+    const preview = this.overlay.querySelector("#auth-avatar-preview");
+    preview.style.background = color;
+    preview.classList.remove("empty");
+
+    // Update swatch selection
+    this.overlay.querySelectorAll(".auth-avatar-swatch").forEach((s) => {
+      s.classList.toggle("selected", s.dataset.color === color);
+    });
+
+    this._updateCreateState();
+  }
+
   _selectFaction(faction) {
     this._selectedFaction = faction;
     this.overlay.querySelectorAll(".auth-factions .faction-btn").forEach((btn) => {
@@ -618,7 +681,7 @@ class AuthScreen {
 
   _updateCreateState() {
     const name = this.overlay.querySelector("#auth-profile-name").value.trim();
-    const valid = name.length > 0 && this._selectedFaction !== null;
+    const valid = name.length > 0 && this._selectedFaction !== null && this._selectedColor !== null;
     this.overlay.querySelector("#auth-create-confirm").disabled = !valid;
   }
 
@@ -648,7 +711,7 @@ class AuthScreen {
       const profileData = {
         name: name,
         faction: faction,
-        profilePicture: null,
+        profilePicture: this._selectedColor || null,
         createdAt: now,
         lastPlayedAt: now,
 
@@ -697,7 +760,7 @@ class AuthScreen {
         .set(profileData);
 
       // Update denormalized profile summary on account
-      const profileSummary = { name, faction, level: 1, profilePicture: null };
+      const profileSummary = { name, faction, level: 1, profilePicture: this._selectedColor || null };
       const profilesUpdate = [...this._profiles];
       profilesUpdate[index] = profileSummary;
 
@@ -729,8 +792,10 @@ class AuthScreen {
     if (!profile) return;
 
     // Confirmation
+    const name = profile.name || "Unnamed";
+    const faction = profile.faction || "unknown";
     const confirmed = window.confirm(
-      `Delete profile "${profile.name}" (${profile.faction})? This cannot be undone.`,
+      `Delete profile "${name}" (${faction})? This cannot be undone.`,
     );
     if (!confirmed) return;
 
@@ -756,6 +821,21 @@ class AuthScreen {
     } catch (err) {
       console.error("[AuthScreen] Failed to delete profile:", err);
     }
+  }
+
+  /**
+   * Sanitize profiles array from Firestore.
+   * Entries without valid name+faction are treated as empty slots.
+   */
+  _sanitizeProfiles(profiles) {
+    if (!Array.isArray(profiles)) return [null, null, null];
+    return [0, 1, 2].map((i) => {
+      const p = profiles[i];
+      if (p && typeof p.name === "string" && p.name.length > 0 && p.faction) {
+        return p;
+      }
+      return null;
+    });
   }
 
   // ========================

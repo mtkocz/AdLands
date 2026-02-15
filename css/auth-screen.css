@@ -11,7 +11,7 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  background: rgba(10, 10, 10, 0.95);
+  background: rgba(10, 10, 10, 0.6);
   transition: opacity 0.4s ease;
 }
 
@@ -301,6 +301,14 @@
   border-color: var(--text-muted);
 }
 
+/* Profile slot avatar */
+.profile-slot-avatar {
+  width: 32px;
+  height: 32px;
+  flex-shrink: 0;
+  clip-path: var(--clip-circle-32);
+}
+
 /* Profile slot content */
 .profile-slot-info {
   display: flex;
@@ -376,6 +384,55 @@
 .profile-slot-plus {
   font-size: var(--font-size-header);
   line-height: 1;
+}
+
+/* ========================
+   AVATAR PICKER
+   ======================== */
+
+.auth-avatar-section {
+  display: flex;
+  align-items: center;
+  gap: var(--space-lg);
+  padding: var(--space-sm) 0;
+}
+
+.auth-avatar-preview {
+  width: 48px;
+  height: 48px;
+  flex-shrink: 0;
+  border: var(--border-width) solid var(--border-dark);
+  clip-path: var(--clip-circle-48);
+}
+
+.auth-avatar-preview.empty {
+  background: var(--bg-panel-light);
+}
+
+.auth-avatar-grid {
+  display: grid;
+  grid-template-columns: repeat(6, 1fr);
+  gap: var(--space-xs);
+  flex: 1;
+}
+
+.auth-avatar-swatch {
+  width: 100%;
+  aspect-ratio: 1;
+  border: var(--border-width) solid transparent;
+  clip-path: var(--clip-circle-24);
+  cursor: var(--cursor-pointer);
+  transition: border-color 0.1s;
+  padding: 0;
+}
+
+.auth-avatar-swatch:hover {
+  border-color: var(--text-secondary);
+}
+
+.auth-avatar-swatch.selected {
+  border-color: var(--text-primary);
+  box-shadow: 0 0 0 1px var(--text-primary);
 }
 
 /* ========================

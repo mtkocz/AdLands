@@ -511,6 +511,13 @@ class Dashboard {
                     </div>
                 </div>
                 <div class="social-section">
+                    <div class="section-title">Squad</div>
+                    <div class="squad-info" id="dashboard-squad">
+                        <div class="empty-state">Not in a squad</div>
+                    </div>
+                    <button class="squad-btn" id="btn-open-squad">Open a Squad</button>
+                </div>
+                <div class="social-section">
                     <div class="section-title">Friends (0)</div>
                     <div class="social-search">
                         <input type="text" class="social-search-input" id="friend-search" placeholder="Search players...">
@@ -518,13 +525,6 @@ class Dashboard {
                     <div class="friends-list" id="dashboard-friends">
                         <div class="empty-state">No friends yet</div>
                     </div>
-                </div>
-                <div class="social-section">
-                    <div class="section-title">Squad</div>
-                    <div class="squad-info" id="dashboard-squad">
-                        <div class="empty-state">Not in a squad</div>
-                    </div>
-                    <button class="squad-btn" id="btn-open-squad">Open a Squad</button>
                 </div>
             </div>
         `;

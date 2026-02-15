@@ -15,11 +15,11 @@ class CosmeticsShop {
 
     /** Cosmetic categories */
     this.categories = [
-      { id: "tankSkin", label: "Tank Skins", icon: "\u{1F6E1}" },
-      { id: "turretSkin", label: "Turret Skins", icon: "\u{1F52B}" },
-      { id: "trackTrail", label: "Track Trails", icon: "\u{1F4A8}" },
-      { id: "deathEffect", label: "Death Effects", icon: "\u{1F4A5}" },
-      { id: "nameplate", label: "Nameplates", icon: "\u{1F3F7}" },
+      { id: "tankSkin", label: "Tank", icon: "\u{1F6E1}" },
+      { id: "turretSkin", label: "Turret", icon: "\u{1F52B}" },
+      { id: "trackTrail", label: "Trail", icon: "\u{1F4A8}" },
+      { id: "deathEffect", label: "Effect", icon: "\u{1F4A5}" },
+      { id: "nameplate", label: "Name", icon: "\u{1F3F7}" },
     ];
 
     /** Rarity tiers with colors */
@@ -240,9 +240,7 @@ class CosmeticsShop {
 
     return `
       <div class="panel-inner shop-panel">
-        <div class="shop-description">
-          Customize your tank with cosmetic upgrades. Purchases are shared across all profiles.
-        </div>
+        <div class="shop-description">Purchases are shared across all profiles.</div>
         <div class="shop-tabs">${categoryTabs}</div>
         <div class="shop-items" id="shop-items">${itemCards}</div>
       </div>
@@ -269,13 +267,12 @@ class CosmeticsShop {
     }
 
     return `
-      <div class="shop-item-card ${owned ? "owned" : ""} ${equipped ? "equipped" : ""}" data-id="${item.id}">
-        <div class="shop-item-preview" style="border-color: ${rarity.color}">
-          <div class="shop-item-icon">${this.categories.find((c) => c.id === item.category)?.icon || "?"}</div>
-        </div>
+      <div class="shop-item-card rarity-${item.rarity} ${owned ? "owned" : ""} ${equipped ? "equipped" : ""}" data-id="${item.id}">
         <div class="shop-item-info">
-          <div class="shop-item-name">${item.name}</div>
-          <div class="shop-item-rarity" style="color: ${rarity.color}">${rarity.label}</div>
+          <div class="shop-item-header">
+            <span class="shop-item-name">${item.name}</span>
+            <span class="shop-item-rarity" style="color: ${rarity.color}">${rarity.label}</span>
+          </div>
           <div class="shop-item-desc">${item.description}</div>
         </div>
         <div class="shop-item-action">${actionBtn}</div>

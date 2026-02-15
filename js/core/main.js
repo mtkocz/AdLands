@@ -210,6 +210,7 @@
     colorWrite: false, // Don't write color, only depth
     depthWrite: true, // Explicitly write to depth buffer
     depthTest: true, // Test against depth buffer
+    side: THREE.DoubleSide, // Block bloom from both sides (billboard planes)
   });
 
   // Bloom composer (renders only bloom objects using bloomCamera)

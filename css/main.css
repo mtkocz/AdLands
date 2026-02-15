@@ -2408,6 +2408,7 @@ body.tip-dragging .chat-mention.tip-highlight {
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
+    color: var(--text-secondary);
 }
 
 .roster-level {
@@ -2547,8 +2548,6 @@ body.tip-dragging .chat-mention.tip-highlight {
     font-family: var(--font-body);
     font-size: var(--font-size-body);
     color: var(--accent-cyan);
-    flex: 1;
-    text-align: right;
 }
 
 .header-crypto-amount.crypto-flash {
@@ -5093,156 +5092,165 @@ body.colorblind-tritanopia {
 .shop-panel {
     display: flex;
     flex-direction: column;
-    gap: calc(var(--grid) * 2);
+    gap: var(--space-sm);
 }
 
+/* Description - matches territory-description pattern */
 .shop-description {
-    color: var(--fg-dim);
-    font-size: 11px;
-    line-height: 1.4;
+    font-family: var(--font-body);
+    font-size: var(--font-size-body);
+    color: var(--text-secondary);
+    text-align: center;
+    padding: var(--space-sm) 0;
+    border-bottom: var(--border-width) solid var(--border-dark);
 }
 
+/* Category tabs - matches msg-tab pattern */
 .shop-tabs {
     display: flex;
-    gap: calc(var(--grid));
+    gap: var(--space-xs);
     flex-wrap: wrap;
 }
 
 .shop-tab {
-    padding: calc(var(--grid)) calc(var(--grid) * 2);
-    background: rgba(255, 255, 255, 0.05);
-    border: 1px solid rgba(255, 255, 255, 0.1);
-    border-radius: calc(var(--grid));
-    color: var(--fg-dim);
-    font-size: 10px;
+    flex: 1 0 calc(33.33% - var(--space-xs));
+    padding: var(--space-xs) var(--space-sm);
+    background: transparent;
+    border: var(--border-width) solid var(--border-dark);
+    color: var(--text-secondary);
+    font-size: var(--font-size-small);
+    font-family: var(--font-small);
     cursor: pointer;
-    transition: all 0.15s;
-    font-family: inherit;
+    transition: all 0.15s ease;
+    text-align: center;
 }
 
 .shop-tab:hover {
-    background: rgba(255, 255, 255, 0.1);
-    color: var(--fg);
+    background: var(--bg-highlight);
 }
 
 .shop-tab.active {
-    background: rgba(255, 255, 255, 0.15);
-    border-color: var(--fg-dim);
-    color: var(--fg);
+    background: var(--accent-cyan);
+    color: #1a1a1a;
+    border-color: var(--accent-cyan);
 }
 
+/* Scrollable item list */
 .shop-items {
     display: flex;
     flex-direction: column;
-    gap: calc(var(--grid) * 2);
+    gap: var(--space-xs);
     max-height: 300px;
     overflow-y: auto;
 }
 
+/* Item card - matches territory-tier-card pattern */
 .shop-item-card {
+    background: var(--bg-panel-light);
+    border: var(--border-width) solid var(--border-dark);
+    border-left-width: var(--border-width-thick);
+    padding: var(--space-sm) var(--space-md);
     display: flex;
     align-items: center;
-    gap: calc(var(--grid) * 2);
-    padding: calc(var(--grid) * 2);
-    background: rgba(255, 255, 255, 0.03);
-    border: 1px solid rgba(255, 255, 255, 0.08);
-    border-radius: calc(var(--grid));
-    transition: all 0.15s;
+    justify-content: space-between;
+    gap: var(--space-sm);
+    transition: border-color 0.15s ease, background 0.15s ease;
 }
 
 .shop-item-card:hover {
-    background: rgba(255, 255, 255, 0.06);
-    border-color: rgba(255, 255, 255, 0.15);
+    background: var(--bg-highlight);
+    border-color: var(--text-muted);
 }
 
+/* Rarity left-border colors */
+.shop-item-card.rarity-common { border-left-color: #888888; }
+.shop-item-card.rarity-uncommon { border-left-color: #4a9e4a; }
+.shop-item-card.rarity-rare { border-left-color: #4a7abe; }
+.shop-item-card.rarity-epic { border-left-color: #9b59b6; }
+.shop-item-card.rarity-legendary { border-left-color: var(--accent-gold); }
+
+/* Equipped state - matches territory-tier-card.selected */
 .shop-item-card.equipped {
-    border-color: rgba(100, 200, 100, 0.4);
-    background: rgba(100, 200, 100, 0.05);
+    border-color: var(--accent-cyan);
+    background: rgba(0, 255, 255, 0.05);
 }
 
-.shop-item-preview {
-    width: calc(var(--grid) * 10);
-    height: calc(var(--grid) * 10);
-    border: 2px solid rgba(255, 255, 255, 0.2);
-    border-radius: calc(var(--grid));
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    flex-shrink: 0;
-    background: rgba(0, 0, 0, 0.3);
-}
-
-.shop-item-icon {
-    font-size: 20px;
-}
-
+/* Info section */
 .shop-item-info {
     flex: 1;
     min-width: 0;
 }
 
+.shop-item-header {
+    display: flex;
+    align-items: baseline;
+    gap: var(--space-sm);
+}
+
 .shop-item-name {
-    font-size: 12px;
-    font-weight: bold;
-    color: var(--fg);
+    font-family: var(--font-body);
+    font-size: var(--font-size-body);
+    color: var(--text-primary);
 }
 
 .shop-item-rarity {
-    font-size: 10px;
+    font-family: var(--font-small);
+    font-size: var(--font-size-small);
     text-transform: uppercase;
-    letter-spacing: 0.5px;
+    letter-spacing: 0.05em;
 }
 
 .shop-item-desc {
-    font-size: 10px;
-    color: var(--fg-dim);
-    margin-top: 2px;
+    font-family: var(--font-small);
+    font-size: var(--font-size-small);
+    color: var(--text-muted);
+    margin-top: var(--space-xxs);
 }
 
+/* Action buttons - matches territory-btn pattern */
 .shop-item-action {
     flex-shrink: 0;
 }
 
 .shop-item-btn {
-    padding: calc(var(--grid)) calc(var(--grid) * 2);
-    border: 1px solid rgba(255, 255, 255, 0.2);
-    border-radius: calc(var(--grid));
-    background: rgba(255, 255, 255, 0.05);
-    color: var(--fg);
-    font-size: 10px;
+    padding: var(--space-xs) var(--space-sm);
+    font-family: var(--font-small);
+    font-size: var(--font-size-small);
+    border: var(--border-width) solid var(--border-dark);
+    background: transparent;
     cursor: pointer;
-    font-family: inherit;
-    transition: all 0.15s;
+    transition: background 0.15s ease;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
     white-space: nowrap;
 }
 
-.shop-item-btn:hover {
-    background: rgba(255, 255, 255, 0.1);
-}
-
 .shop-item-buy {
-    border-color: rgba(230, 168, 23, 0.4);
-    color: #e6a817;
+    background: rgba(230, 168, 23, 0.15);
+    border-color: var(--accent-gold);
+    color: var(--accent-gold);
 }
 
 .shop-item-buy:hover {
-    background: rgba(230, 168, 23, 0.15);
+    background: rgba(230, 168, 23, 0.25);
 }
 
 .shop-item-equip {
-    border-color: rgba(74, 158, 74, 0.4);
-    color: #4a9e4a;
+    background: rgba(0, 255, 255, 0.15);
+    border-color: var(--accent-cyan);
+    color: var(--accent-cyan);
 }
 
 .shop-item-equip:hover {
-    background: rgba(74, 158, 74, 0.15);
+    background: rgba(0, 255, 255, 0.25);
 }
 
 .shop-item-unequip {
-    border-color: rgba(200, 100, 100, 0.4);
-    color: #c86464;
+    background: var(--bg-panel-light);
+    border-color: var(--border-dark);
+    color: var(--text-secondary);
 }
 
 .shop-item-unequip:hover {
-    background: rgba(200, 100, 100, 0.15);
+    background: var(--bg-highlight);
 }
