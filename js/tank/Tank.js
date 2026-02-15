@@ -1277,11 +1277,25 @@ class Tank {
     }
   }
 
+  /**
+   * Check if a mesh belongs to commander trim (should be skipped by death/fade).
+   * Commander trim uses a shared material managed by CommanderSkin — mutating it
+   * during death fade would corrupt the material for future trim applications.
+   */
+  _isCommanderTrim(child) {
+    let node = child;
+    while (node) {
+      if (node.name === 'commanderTrim' || node.name === 'barrelTrim') return true;
+      node = node.parent;
+    }
+    return false;
+  }
+
   _setDeadMaterial() {
     // Turn all tank meshes very dark - charred look
     const charredColor = 0x3a3a3a; // Dark gray - charred look
     this.group.traverse((child) => {
-      if (child.isMesh && child.material && child !== this.hitbox) {
+      if (child.isMesh && child.material && child !== this.hitbox && !this._isCommanderTrim(child)) {
         // Clone material to avoid affecting shared materials
         if (!child.userData.originalMaterial) {
           child.userData.originalMaterial = child.material;
@@ -1355,8 +1369,9 @@ class Tank {
     if (!this.tankFadeStarted) {
       this.tankFadeStarted = true;
       // Make materials transparent for fading (including shadow)
+      // Skip commander trim — its shared material is managed by CommanderSkin
       this.group.traverse((child) => {
-        if (child.isMesh && child.material && child !== this.hitbox) {
+        if (child.isMesh && child.material && child !== this.hitbox && !this._isCommanderTrim(child)) {
           child.material.transparent = true;
           child.castShadow = true; // Keep shadow, it will fade with opacity
         }
@@ -1367,9 +1382,9 @@ class Tank {
     const easedProgress = fadeProgress * fadeProgress;
     const opacity = 1 - easedProgress;
 
-    // Apply opacity to all tank meshes
+    // Apply opacity to all tank meshes (skip commander trim)
     this.group.traverse((child) => {
-      if (child.isMesh && child.material && child !== this.hitbox) {
+      if (child.isMesh && child.material && child !== this.hitbox && !this._isCommanderTrim(child)) {
         child.material.opacity = opacity;
       }
     });
@@ -1399,9 +1414,9 @@ class Tank {
     this.state.turretTargetAngle = 0;
     this.state.turretAngularVelocity = 0;
 
-    // Restore original materials
+    // Restore original materials (skip commander trim — managed by CommanderSkin)
     this.group.traverse((child) => {
-      if (child.isMesh && child.material && child !== this.hitbox) {
+      if (child.isMesh && child.material && child !== this.hitbox && !this._isCommanderTrim(child)) {
         if (child.userData.originalMaterial) {
           child.material.dispose();
           child.material = child.userData.originalMaterial;

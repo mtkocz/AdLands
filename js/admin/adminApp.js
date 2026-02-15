@@ -221,15 +221,8 @@
         } else if (e.target.closest(".add-cluster-btn")) {
           addClusterToGroup(group.dataset.name);
         } else if (!e.target.closest(".sponsor-card-actions")) {
-          // Clicking group header loads sponsor info view
-          // If already editing this group, collapse and stop editing
-          if (editingGroup && editingGroup.name.toLowerCase() === group.dataset.name.toLowerCase()) {
-            handleClearForm();
-            refreshSponsorsList();
-            return;
-          } else {
-            editGroup(group.dataset.name);
-          }
+          // Toggle collapse/expand of territory tabs
+          group.classList.toggle("expanded");
         }
         return;
       }
@@ -1124,7 +1117,20 @@
     // Always render the total row so updateLiveRevenue can patch it in-place
     const totalHtml = `<div class="sponsors-revenue-total"><span>Monthly revenue</span><span class="sponsors-revenue-total-amount">$${fmtUSD(totalMonthly)}/mo</span></div>`;
 
+    // Capture currently expanded groups before rebuild
+    const expandedNames = new Set();
+    sponsorsListEl.querySelectorAll(".sponsor-group.expanded").forEach((g) => {
+      expandedNames.add(g.dataset.name);
+    });
+
     sponsorsListEl.innerHTML = htmlParts.join("") + totalHtml;
+
+    // Restore expanded state
+    sponsorsListEl.querySelectorAll(".sponsor-group").forEach((g) => {
+      if (expandedNames.has(g.dataset.name)) {
+        g.classList.add("expanded");
+      }
+    });
   }
 
   async function editSponsor(id) {
