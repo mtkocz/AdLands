@@ -387,6 +387,9 @@ io.on("connection", (socket) => {
         playerName: playerName || "Player",
       });
 
+      // Elon Tusk commentary on territory rent
+      mainRoom.tuskChat?.onTerritoryRent?.(playerName || "Someone");
+
       console.log(`[Territory] Player ${socket.uid} claimed ${tierName}: ${tileIndices.length} hexes`);
     } catch (err) {
       console.warn(`[Territory] Claim failed:`, err.message);
