@@ -337,9 +337,12 @@ class TuskGlobalChat {
   }
 
   onTerritoryRent(playerName) {
-    this.onEvent("territoryRent", {
-      player: playerName || "Unknown",
-    });
+    // Always fire — this is a paid action, bypass rate limiting and probability gate
+    const templates = this.templates.territoryRent;
+    if (!templates || templates.length === 0) return;
+    const template = templates[Math.floor(Math.random() * templates.length)];
+    const msg = this._fillTemplate(template, { player: playerName || "Unknown" });
+    this._sendMessage(msg);
   }
 
   onCommanderTip(fromName, toName, amount) {
