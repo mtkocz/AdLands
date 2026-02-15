@@ -2528,7 +2528,7 @@ body.tip-dragging .chat-mention.tip-highlight {
 .header-crypto {
     display: flex;
     align-items: center;
-    gap: var(--space-xs); /* 4px - compact */
+    gap: var(--space-md); /* 12px - breathing room from level badge */
     padding: 0;
     margin-top: var(--space-xs); /* 4px - push down slightly */
     background: transparent;
@@ -4279,9 +4279,9 @@ input:checked + .toggle-slider:before {
     background: var(--accent-cyan);
     flex-shrink: 0;
     position: absolute;
-    right: 0;
-    top: 0;
-    transform: translate(40%, -40%);
+    top: 50%;
+    left: 50%;
+    transform: translate(calc(-50% - 10px), -50%);
     pointer-events: none;
 }
 

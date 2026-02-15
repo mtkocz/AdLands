@@ -185,7 +185,7 @@ class Dashboard {
             </div>
             <div class="header-crypto">
                 <div class="header-level" id="dashboard-level">1</div>
-                <div class="header-crypto-amount">¢ <span id="dashboard-crypto-current">0</span></div>
+                <div class="header-crypto-amount">¢<span id="dashboard-crypto-current">0</span></div>
             </div>
             <button class="header-switch-profile hidden" id="dashboard-switch-profile" title="Switch Profile">Switch Profile</button>
         `;
