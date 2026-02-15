@@ -36,6 +36,9 @@ class AuthScreen {
     /** @type {boolean} Whether the create screen was opened from guest flow */
     this._isGuestCreate = false;
 
+    /** @type {boolean} Whether the create form is in edit mode */
+    this._isEditMode = false;
+
     this._createUI();
     this._setupEvents();
   }
@@ -51,6 +54,7 @@ class AuthScreen {
 
     this.overlay.innerHTML = `
       <div class="auth-panel">
+        <button class="auth-close-btn hidden" id="auth-close-btn" title="Return to game">\u2715</button>
         <!-- Stage 1: Auth -->
         <div class="auth-stage" id="auth-stage-auth">
           <div class="auth-title">AdLands</div>
@@ -137,11 +141,13 @@ class AuthScreen {
                  autocomplete="off"
                  spellcheck="false">
 
-          <div class="auth-faction-prompt">Choose Faction (permanent)</div>
-          <div class="auth-factions">
-            <button class="faction-btn" data-faction="rust">Rust</button>
-            <button class="faction-btn" data-faction="cobalt">Cobalt</button>
-            <button class="faction-btn" data-faction="viridian">Viridian</button>
+          <div id="auth-faction-section">
+            <div class="auth-faction-prompt">Choose Faction (permanent)</div>
+            <div class="auth-factions">
+              <button class="faction-btn" data-faction="rust">Rust</button>
+              <button class="faction-btn" data-faction="cobalt">Cobalt</button>
+              <button class="faction-btn" data-faction="viridian">Viridian</button>
+            </div>
           </div>
 
           <button class="auth-btn auth-btn-primary" id="auth-create-confirm" disabled>
@@ -165,6 +171,12 @@ class AuthScreen {
     // Prevent game input while auth screen is active
     this.overlay.addEventListener("keydown", (e) => e.stopPropagation());
     this.overlay.addEventListener("keyup", (e) => e.stopPropagation());
+
+    // Close button (return to game)
+    this.overlay.querySelector("#auth-close-btn").addEventListener("click", (e) => {
+      e.stopPropagation();
+      this.hide();
+    });
 
     // Auth provider buttons
     this.overlay.querySelectorAll("[data-provider]").forEach((btn) => {
@@ -258,7 +270,9 @@ class AuthScreen {
 
     createBack.addEventListener("click", (e) => {
       e.stopPropagation();
-      if (this._isGuestCreate) {
+      if (this._isEditMode) {
+        this._showStage("profiles");
+      } else if (this._isGuestCreate) {
         // Guest cancel: sign out and go back to auth screen
         this.auth.signOut().then(() => this._showStage("auth"));
       } else {
@@ -420,7 +434,8 @@ class AuthScreen {
     if (!uid) return;
 
     // Show profiles stage immediately with loading placeholder
-    this._profiles = [null, null, null];
+    // Guests get 1 slot, authenticated users get 3
+    this._profiles = this.auth.isGuest ? [null] : [null, null, null];
     this._renderProfileSlots();
     this._showStage("profiles");
 
@@ -472,7 +487,10 @@ class AuthScreen {
     const container = this.overlay.querySelector("#auth-profile-slots");
     container.innerHTML = "";
 
-    for (let i = 0; i < 3; i++) {
+    // Guests get 1 profile slot, authenticated users get 3
+    const maxSlots = this.auth.isGuest ? 1 : 3;
+
+    for (let i = 0; i < maxSlots; i++) {
       const profile = this._profiles[i];
       const slot = document.createElement("div");
       slot.className = "auth-profile-slot" + (profile ? ` has-profile faction-${profile.faction}` : " empty");
@@ -494,6 +512,7 @@ class AuthScreen {
           </div>
           <div class="profile-slot-actions">
             <button class="profile-slot-play" data-index="${i}">Play</button>
+            <button class="profile-slot-edit" data-index="${i}" title="Edit profile">\u270E</button>
             <button class="profile-slot-delete" data-index="${i}" title="Delete profile">\u2715</button>
           </div>
         `;
@@ -513,6 +532,10 @@ class AuthScreen {
         slot.querySelector(".profile-slot-play").addEventListener("click", (e) => {
           e.stopPropagation();
           this._selectProfile(i);
+        });
+        slot.querySelector(".profile-slot-edit").addEventListener("click", (e) => {
+          e.stopPropagation();
+          this._startEditProfile(i);
         });
         slot.querySelector(".profile-slot-delete").addEventListener("click", (e) => {
           e.stopPropagation();
@@ -583,7 +606,8 @@ class AuthScreen {
     if (!uid) return;
 
     // Show create form immediately — don't wait for Firestore
-    this._profiles = [null, null, null];
+    // Guests only get 1 profile slot
+    this._profiles = [null];
     this._startCreateProfile(0, true);
 
     // Ensure account doc exists in the background
@@ -602,7 +626,7 @@ class AuthScreen {
           lastLoginAt: firebase.firestore.FieldValue.serverTimestamp(),
           activeProfileIndex: 0,
           cosmeticsPurchased: [],
-          profiles: [null, null, null],
+          profiles: [null],
           settings: {},
         });
       } else {
@@ -621,6 +645,10 @@ class AuthScreen {
     this._selectedFaction = null;
     this._uploadedImage = null;
     this._isGuestCreate = isGuest;
+    this._isEditMode = false;
+
+    // Show faction section (hidden during edit mode)
+    this.overlay.querySelector("#auth-faction-section").style.display = "";
 
     // Set title and button text based on guest vs. regular
     const title = this.overlay.querySelector("#auth-create-title");
@@ -661,6 +689,47 @@ class AuthScreen {
       btn.disabled = used;
       btn.classList.toggle("faction-used", used);
     });
+
+    this._showStage("create");
+    setTimeout(() => {
+      this.overlay.querySelector("#auth-profile-name").focus();
+    }, 100);
+  }
+
+  _startEditProfile(index) {
+    const profile = this._profiles[index];
+    if (!profile) return;
+
+    this._selectedIndex = index;
+    this._selectedFaction = profile.faction;
+    this._uploadedImage = profile.profilePicture || null;
+    this._isGuestCreate = false;
+    this._isEditMode = true;
+
+    // Set title and button text
+    const title = this.overlay.querySelector("#auth-create-title");
+    const confirmBtn = this.overlay.querySelector("#auth-create-confirm");
+    title.textContent = "Edit Profile";
+    confirmBtn.textContent = "Save";
+    confirmBtn.disabled = false;
+
+    // Pre-fill name
+    this.overlay.querySelector("#auth-profile-name").value = profile.name || "";
+
+    // Pre-fill avatar preview
+    this.overlay.querySelector("#auth-avatar-file").value = "";
+    const preview = this.overlay.querySelector("#auth-avatar-preview");
+    if (profile.profilePicture) {
+      preview.style.backgroundImage = `url(${profile.profilePicture})`;
+      preview.classList.remove("empty");
+      const uploadBtn = this.overlay.querySelector("#auth-avatar-upload-btn");
+      if (uploadBtn) uploadBtn.textContent = "Change Picture";
+    } else {
+      this._resetAvatarPreview();
+    }
+
+    // Hide faction section (faction is permanent)
+    this.overlay.querySelector("#auth-faction-section").style.display = "none";
 
     this._showStage("create");
     setTimeout(() => {
@@ -728,7 +797,9 @@ class AuthScreen {
 
   _updateCreateState() {
     const name = this.overlay.querySelector("#auth-profile-name").value.trim();
-    const valid = name.length > 0 && this._selectedFaction !== null;
+    const valid = this._isEditMode
+      ? name.length > 0
+      : name.length > 0 && this._selectedFaction !== null;
     this.overlay.querySelector("#auth-create-confirm").disabled = !valid;
   }
 
@@ -749,89 +820,124 @@ class AuthScreen {
 
     this._setButtonsDisabled(true);
     const confirmBtn = this.overlay.querySelector("#auth-create-confirm");
-    confirmBtn.textContent = "Creating...";
+    confirmBtn.textContent = this._isEditMode ? "Saving..." : "Creating...";
 
     try {
-      const now = firebase.firestore.FieldValue.serverTimestamp();
-
-      // Create profile document
-      const profileData = {
-        name: name,
-        faction: faction,
-        profilePicture: this._uploadedImage || null,
-        createdAt: now,
-        lastPlayedAt: now,
-
-        // Progression
-        level: 1,
-        totalCrypto: 0,
-        sessionCrypto: 0,
-
-        // Stats
-        kills: 0,
-        deaths: 0,
-        damageDealt: 0,
-        maxKillstreak: 0,
-        hexesCaptured: 0,
-        clustersCaptured: 0,
-        ticsContributed: 0,
-        timeDefending: 0,
-
-        // Loadout
-        loadout: {},
-
-        // Tank upgrades
-        tankUpgrades: { armor: 0, speed: 0, fireRate: 0, damage: 0 },
-
-        // Badges
-        unlockedBadges: [],
-        badgeProgress: {},
-
-        // Titles
-        titleStats: { currentTitle: "Contractor" },
-
-        // Cosmetics
-        equippedCosmetics: {
-          tankSkin: null,
-          turretSkin: null,
-          trackTrail: null,
-          deathEffect: null,
-          nameplate: null,
-        },
-      };
-
-      // Write profile + update account summary in parallel
-      const profileSummary = { name, faction, level: 1, profilePicture: this._uploadedImage || null };
-      const profilesUpdate = [...this._profiles];
-      profilesUpdate[index] = profileSummary;
-
-      await Promise.all([
-        firebaseDb
-          .collection("accounts").doc(uid)
-          .collection("profiles").doc(String(index))
-          .set(profileData),
-        firebaseDb.collection("accounts").doc(uid).update({
-          profiles: profilesUpdate,
-          activeProfileIndex: index,
-        }),
-      ]);
-
-      this._profiles = profilesUpdate;
-
-      // Hand off to game
-      if (this.onConfirm) {
-        this.onConfirm({
-          name: profileData.name,
-          faction: profileData.faction,
-          profileIndex: index,
-          profileData: profileData,
-        });
+      if (this._isEditMode) {
+        await this._saveEditedProfile(name, index, uid);
+      } else {
+        await this._saveNewProfile(name, faction, index, uid);
       }
     } catch (err) {
-      console.error("[AuthScreen] Failed to create profile:", err);
-      confirmBtn.textContent = "Create Profile";
+      console.error(`[AuthScreen] Failed to ${this._isEditMode ? "edit" : "create"} profile:`, err);
+      confirmBtn.textContent = this._isEditMode ? "Save" : "Create Profile";
       this._setButtonsDisabled(false);
     }
+  }
+
+  async _saveNewProfile(name, faction, index, uid) {
+    const now = firebase.firestore.FieldValue.serverTimestamp();
+
+    const profileData = {
+      name: name,
+      faction: faction,
+      profilePicture: this._uploadedImage || null,
+      createdAt: now,
+      lastPlayedAt: now,
+
+      // Progression
+      level: 1,
+      totalCrypto: 0,
+      sessionCrypto: 0,
+
+      // Stats
+      kills: 0,
+      deaths: 0,
+      damageDealt: 0,
+      maxKillstreak: 0,
+      hexesCaptured: 0,
+      clustersCaptured: 0,
+      ticsContributed: 0,
+      timeDefending: 0,
+
+      // Loadout
+      loadout: {},
+
+      // Tank upgrades
+      tankUpgrades: { armor: 0, speed: 0, fireRate: 0, damage: 0 },
+
+      // Badges
+      unlockedBadges: [],
+      badgeProgress: {},
+
+      // Titles
+      titleStats: { currentTitle: "Contractor" },
+
+      // Cosmetics
+      equippedCosmetics: {
+        tankSkin: null,
+        turretSkin: null,
+        trackTrail: null,
+        deathEffect: null,
+        nameplate: null,
+      },
+    };
+
+    // Write profile + update account summary in parallel
+    const profileSummary = { name, faction, level: 1, profilePicture: this._uploadedImage || null };
+    const profilesUpdate = [...this._profiles];
+    profilesUpdate[index] = profileSummary;
+
+    await Promise.all([
+      firebaseDb
+        .collection("accounts").doc(uid)
+        .collection("profiles").doc(String(index))
+        .set(profileData),
+      firebaseDb.collection("accounts").doc(uid).update({
+        profiles: profilesUpdate,
+        activeProfileIndex: index,
+      }),
+    ]);
+
+    this._profiles = profilesUpdate;
+
+    // Hand off to game
+    if (this.onConfirm) {
+      this.onConfirm({
+        name: profileData.name,
+        faction: profileData.faction,
+        profileIndex: index,
+        profileData: profileData,
+      });
+    }
+  }
+
+  async _saveEditedProfile(name, index, uid) {
+    const profilePicture = this._uploadedImage || null;
+
+    // Update only name and profilePicture in the profile doc
+    const profileRef = firebaseDb
+      .collection("accounts").doc(uid)
+      .collection("profiles").doc(String(index));
+
+    // Update account summary
+    const profilesUpdate = [...this._profiles];
+    profilesUpdate[index] = {
+      ...profilesUpdate[index],
+      name,
+      profilePicture,
+    };
+
+    await Promise.all([
+      profileRef.update({ name, profilePicture }),
+      firebaseDb.collection("accounts").doc(uid).update({
+        profiles: profilesUpdate,
+      }),
+    ]);
+
+    this._profiles = profilesUpdate;
+    this._renderProfileSlots();
+    this._showStage("profiles");
   }
 
   async _deleteProfile(index) {
@@ -875,8 +981,11 @@ class AuthScreen {
    * Entries without valid name+faction are treated as empty slots.
    */
   _sanitizeProfiles(profiles) {
-    if (!Array.isArray(profiles)) return [null, null, null];
-    return [0, 1, 2].map((i) => {
+    if (!Array.isArray(profiles)) {
+      return this.auth.isGuest ? [null] : [null, null, null];
+    }
+    const maxSlots = this.auth.isGuest ? 1 : 3;
+    return Array.from({ length: maxSlots }, (_, i) => {
       const p = profiles[i];
       if (p && typeof p.name === "string" && p.name.length > 0 && p.faction) {
         return p;
@@ -889,8 +998,13 @@ class AuthScreen {
   // VISIBILITY
   // ========================
 
-  show() {
+  show(canDismiss = false) {
     this.overlay.classList.remove("auth-hidden");
+
+    // Show/hide close button based on whether user can return to game
+    const closeBtn = this.overlay.querySelector("#auth-close-btn");
+    closeBtn.classList.toggle("hidden", !canDismiss);
+
     // If already signed in, go straight to profiles
     if (this.auth.isSignedIn) {
       this._loadAndShowProfiles();

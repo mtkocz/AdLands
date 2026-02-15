@@ -705,6 +705,10 @@
     tuskCommentary.onLevelUp(newLevel, oldLevel);
     // Call original handler (cryptoVisuals)
     if (originalOnLevelUp) originalOnLevelUp(newLevel, oldLevel);
+    // Nudge guest users to sign in
+    if (window.authManager?.isGuest && window.dashboard) {
+      window.dashboard.showGuestNudge("levelup", `Level ${newLevel}! Sign in to keep your progress`);
+    }
   };
 
   // Create bot tags with random names and levels, and register for dust
@@ -1474,36 +1478,40 @@
     window._mp.setPlayerFaction(faction);
     window._mp.setPlayerName(name);
 
-    // Update avatar across all systems with profile picture from Firestore
-    if (profileData?.profilePicture) {
-      playerAvatarColor = profileData.profilePicture;
-      window.avatarColor = profileData.profilePicture;
+    // Update avatar across all systems (profile picture or fallback color)
+    const avatarValue = profileData?.profilePicture || playerAvatarColor;
+    playerAvatarColor = avatarValue;
+    window.avatarColor = avatarValue;
 
-      // Update dashboard avatar
-      if (window.dashboard) {
-        window.dashboard.avatarColor = profileData.profilePicture;
-        const avatarInnerEl = document.getElementById("dashboard-avatar-inner");
-        if (avatarInnerEl) {
+    // Update dashboard avatar
+    if (window.dashboard) {
+      window.dashboard.avatarColor = avatarValue;
+      const avatarInnerEl = document.getElementById("dashboard-avatar-inner");
+      if (avatarInnerEl) {
+        if (avatarValue.startsWith("data:")) {
           avatarInnerEl.style.background = "";
-          avatarInnerEl.style.backgroundImage = `url(${profileData.profilePicture})`;
+          avatarInnerEl.style.backgroundImage = `url(${avatarValue})`;
           avatarInnerEl.style.backgroundSize = "cover";
           avatarInnerEl.style.backgroundPosition = "center";
+        } else {
+          avatarInnerEl.style.backgroundImage = "";
+          avatarInnerEl.style.background = avatarValue;
         }
       }
-
-      // Recreate player tag with profile picture
-      playerTags.createTag("player", tank, {
-        name: name,
-        level: playerLevel,
-        rank: window.playerRank || 0,
-        avatar: null,
-        avatarColor: profileData.profilePicture,
-        squad: null,
-        faction: faction,
-        isPlayer: true,
-        title: window.titleSystem?.getTitle() || "Contractor",
-      });
     }
+
+    // Recreate player tag with current avatar
+    playerTags.createTag("player", tank, {
+      name: name,
+      level: playerLevel,
+      rank: window.playerRank || 0,
+      avatar: null,
+      avatarColor: avatarValue,
+      squad: null,
+      faction: faction,
+      isPlayer: true,
+      title: window.titleSystem?.getTitle() || "Contractor",
+    });
 
     // Send chosen identity to server (token already sent via Socket.IO handshake)
     if (window.networkManager) {
@@ -3884,6 +3892,13 @@
   // (ShaderPass programs compile on first .render(), not via renderer.compile())
   bloomComposer.render();
   finalComposer.render();
+
+  // Guest nudge: remind after 10 minutes of play
+  setTimeout(() => {
+    if (window.authManager?.isGuest && window.dashboard) {
+      window.dashboard.showGuestNudge("session", "Enjoying AdLands? Sign in to save your progress");
+    }
+  }, 10 * 60 * 1000);
 
   animate();
 })();

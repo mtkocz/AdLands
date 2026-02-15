@@ -40,6 +40,13 @@ class PlayerTags {
    * @param {Object} config - { name, level, avatar, squad, faction, isPlayer }
    */
   createTag(tankId, tank, config) {
+    // Remove existing tag for this ID to avoid orphaned DOM elements
+    const existing = this.tags.get(tankId);
+    if (existing) {
+      existing.element.remove();
+      this.tags.delete(tankId);
+    }
+
     const el = document.createElement("div");
     el.className = "player-tag";
 

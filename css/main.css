@@ -3524,6 +3524,10 @@ body.tip-dragging .chat-mention.tip-highlight {
    TERRITORY PANEL
    ======================== */
 
+.territory-panel {
+    position: relative;
+}
+
 .territory-description {
     font-family: var(--font-body);
     font-size: var(--font-size-body);
@@ -3694,6 +3698,52 @@ body.tip-dragging .chat-mention.tip-highlight {
 
 .territory-btn-cancel:hover {
     background: var(--bg-highlight);
+}
+
+/* Guest Gate Popup */
+.territory-guest-gate {
+    position: absolute;
+    inset: 0;
+    z-index: 10;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: rgba(10, 10, 10, 0.85);
+}
+
+.territory-guest-gate.hidden {
+    display: none;
+}
+
+.guest-gate-box {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: var(--space-sm);
+    padding: var(--space-2xl) var(--space-xl);
+    text-align: center;
+}
+
+.guest-gate-title {
+    font-family: var(--font-body);
+    font-size: var(--font-size-body);
+    color: var(--text-primary);
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+}
+
+.guest-gate-message {
+    font-family: var(--font-small);
+    font-size: var(--font-size-small);
+    color: var(--text-muted);
+    line-height: 1.4;
+    max-width: 220px;
+}
+
+#btn-guest-gate-login {
+    margin-top: var(--space-sm);
+    width: auto;
+    padding: var(--space-xs) var(--space-2xl);
 }
 
 /* Owned Territories */
@@ -4691,6 +4741,101 @@ body.colorblind-tritanopia {
 }
 
 /* ========================
+   GUEST NUDGE TOAST
+   ======================== */
+
+.guest-nudge-toast {
+    position: fixed;
+    bottom: 80px;
+    left: 50%;
+    transform: translateX(-50%);
+    background: var(--bg-panel);
+    clip-path: var(--clip-rounded-8);
+    padding: var(--space-md) var(--space-lg);
+    display: flex;
+    align-items: center;
+    gap: var(--space-md);
+    z-index: 9999;
+    animation: nudge-slide-up 0.4s ease-out;
+    filter: drop-shadow(2px 0 0 var(--accent-gold))
+        drop-shadow(-2px 0 0 var(--accent-gold))
+        drop-shadow(0 2px 0 var(--accent-gold))
+        drop-shadow(0 -2px 0 var(--accent-gold));
+}
+
+.guest-nudge-toast.fade-out {
+    animation: nudge-slide-down 0.5s ease-in forwards;
+}
+
+.guest-nudge-text {
+    font-family: var(--font-small);
+    font-size: var(--font-size-small);
+    color: var(--text-secondary);
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    white-space: nowrap;
+}
+
+.guest-nudge-signin {
+    padding: var(--space-xs) var(--space-md);
+    background: rgba(34, 197, 94, 0.15);
+    border: var(--border-width) solid var(--success);
+    color: var(--success);
+    font-family: var(--font-small);
+    font-size: var(--font-size-small);
+    cursor: var(--cursor-pointer);
+    transition: background 0.1s;
+    text-transform: uppercase;
+    white-space: nowrap;
+}
+
+.guest-nudge-signin:hover {
+    background: rgba(34, 197, 94, 0.25);
+}
+
+.guest-nudge-dismiss {
+    padding: 0;
+    width: 20px;
+    height: 20px;
+    background: transparent;
+    border: none;
+    color: var(--text-muted);
+    font-family: var(--font-small);
+    font-size: var(--font-size-small);
+    cursor: var(--cursor-pointer);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: color 0.1s;
+}
+
+.guest-nudge-dismiss:hover {
+    color: var(--text-secondary);
+}
+
+@keyframes nudge-slide-up {
+    from {
+        opacity: 0;
+        transform: translateX(-50%) translateY(20px);
+    }
+    to {
+        opacity: 1;
+        transform: translateX(-50%) translateY(0);
+    }
+}
+
+@keyframes nudge-slide-down {
+    from {
+        opacity: 1;
+        transform: translateX(-50%) translateY(0);
+    }
+    to {
+        opacity: 0;
+        transform: translateX(-50%) translateY(20px);
+    }
+}
+
+/* ========================
    SCREENSHOT PREVIEW
    ======================== */
 
@@ -5084,7 +5229,7 @@ body.colorblind-tritanopia {
 
 /* ========================
    COSMETICS SHOP
-   Follows sponsor-card pattern: clip-path + drop-shadow outlines
+   Flat stat-row layout matching sponsor info panel
    ======================== */
 
 .shop-panel {
@@ -5103,7 +5248,7 @@ body.colorblind-tritanopia {
     border-bottom: var(--border-width) solid var(--border-dark);
 }
 
-/* Category tabs — exact sponsor-tab pattern (underline, no fill) */
+/* Category tabs — sponsor-tab underline pattern */
 .shop-tabs {
     display: flex;
     gap: 0;
@@ -5134,164 +5279,116 @@ body.colorblind-tritanopia {
     border-bottom-color: var(--accent-cyan);
 }
 
-/* Scrollable item list — spacing via card margin-bottom */
+/* Scrollable item list */
 .shop-items {
     display: flex;
     flex-direction: column;
-    gap: 0;
     max-height: 300px;
     overflow-y: auto;
 }
 
-/* Item card — exact sponsor-card pattern */
-.shop-item-card {
-    display: flex;
-    flex-direction: row;
-    align-items: center;
-    gap: var(--space-md);
-    padding: var(--space-sm);
-    background: var(--bg-panel-light);
-    border-radius: 0;
-    clip-path: var(--clip-rounded-8);
-    margin-bottom: var(--space-sm);
-    cursor: pointer;
-    transition: background 0.15s ease;
-    /* Pixelated outline — matches sponsor-card filter */
-    filter: drop-shadow(2px 0 0 var(--border-dark))
-        drop-shadow(-2px 0 0 var(--border-dark))
-        drop-shadow(0 2px 0 var(--border-dark))
-        drop-shadow(0 -2px 0 var(--border-dark));
-}
-
-.shop-item-card:hover {
-    background: var(--bg-highlight);
-}
-
-/* Equipped state — matches sponsor-card.editing (outline color swap only) */
-.shop-item-card.equipped {
-    filter: drop-shadow(2px 0 0 var(--accent-cyan))
-        drop-shadow(-2px 0 0 var(--accent-cyan))
-        drop-shadow(0 2px 0 var(--accent-cyan))
-        drop-shadow(0 -2px 0 var(--accent-cyan));
-}
-
-/* Preview box — matches sponsor-card-logo (scaled to 40px) */
-.shop-item-preview {
-    width: calc(var(--grid) * 10); /* 40px */
-    height: calc(var(--grid) * 10); /* 40px */
-    background: var(--bg-panel);
-    border-radius: 0;
-    clip-path: var(--clip-rounded-8);
-    overflow: hidden;
-    flex-shrink: 0;
+/* Item row — flat stat-row layout (matches sponsor info panel rows) */
+.shop-item-row {
     display: flex;
     align-items: center;
-    justify-content: center;
+    justify-content: space-between;
+    padding: var(--space-sm) 0;
+    border-bottom: var(--border-width) solid rgba(255, 255, 255, 0.05);
 }
 
-.shop-item-icon {
-    font-size: var(--font-size-body);
+.shop-item-row:last-child {
+    border-bottom: none;
 }
 
-/* Info section — matches sponsor-card-info / name / stats hierarchy */
+/* Equipped row — subtle cyan accent */
+.shop-item-row.equipped {
+    background: rgba(0, 255, 255, 0.03);
+}
+
+/* Info section — name + meta line */
 .shop-item-info {
     flex: 1;
     min-width: 0;
 }
 
+/* Name — matches stat-row label (body font, primary) */
 .shop-item-name {
     font-family: var(--font-body);
     font-size: var(--font-size-body);
     font-weight: normal;
     color: var(--text-primary);
-    margin-bottom: var(--space-xxs);
 }
 
+/* Meta line — rarity + description inline */
+.shop-item-meta {
+    display: flex;
+    gap: var(--space-sm);
+    align-items: baseline;
+}
+
+/* Rarity label — colored inline */
 .shop-item-rarity {
     font-family: var(--font-small);
     font-size: var(--font-size-small);
     text-transform: uppercase;
     letter-spacing: 0.05em;
+    flex-shrink: 0;
 }
 
+/* Description — muted secondary */
 .shop-item-desc {
     font-family: var(--font-small);
     font-size: var(--font-size-small);
     color: var(--text-muted);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
 }
 
-/* Action buttons — matches .btn + .btn-small system */
+/* Action — right-aligned value (matches stat-row values) */
 .shop-item-action {
     flex-shrink: 0;
+    margin-left: var(--space-md);
 }
 
+/* Buttons styled as stat-row values — colored text, minimal chrome */
 .shop-item-btn {
-    padding: 6px var(--space-md);
-    border: var(--border-width) solid var(--border-dark);
-    border-radius: 0;
-    clip-path: var(--clip-rounded-8);
-    font-family: var(--font-small);
-    font-size: var(--font-size-small);
+    padding: var(--space-xs) var(--space-sm);
+    background: none;
+    border: var(--border-width) solid transparent;
+    font-family: var(--font-body);
+    font-size: var(--font-size-body);
     font-weight: normal;
     cursor: pointer;
     transition: all 0.15s ease;
-    letter-spacing: 1px;
     white-space: nowrap;
-    /* Pixelated outline — matches .btn filter */
-    filter: drop-shadow(2px 0 0 var(--border-dark))
-        drop-shadow(-2px 0 0 var(--border-dark))
-        drop-shadow(0 2px 0 var(--border-dark))
-        drop-shadow(0 -2px 0 var(--border-dark));
 }
 
-/* Buy — matches .btn-primary with gold accent */
+/* Buy — gold accent (matches stat-row cyan values but in gold for purchase) */
 .shop-item-buy {
-    background: var(--accent-gold);
-    border-color: var(--accent-gold);
-    color: var(--bg-panel);
-    filter: drop-shadow(2px 0 0 var(--accent-gold))
-        drop-shadow(-2px 0 0 var(--accent-gold))
-        drop-shadow(0 2px 0 var(--accent-gold))
-        drop-shadow(0 -2px 0 var(--accent-gold));
+    color: var(--accent-gold);
 }
 
 .shop-item-buy:hover {
-    background: var(--accent-gold-light);
-    filter: drop-shadow(2px 0 0 var(--accent-gold-light))
-        drop-shadow(-2px 0 0 var(--accent-gold-light))
-        drop-shadow(0 2px 0 var(--accent-gold-light))
-        drop-shadow(0 -2px 0 var(--accent-gold-light))
-        drop-shadow(0 0 8px rgba(255, 215, 0, 0.3));
+    border-color: var(--accent-gold);
+    background: rgba(255, 215, 0, 0.1);
 }
 
-/* Equip — matches .btn-primary with cyan accent */
+/* Equip — cyan accent (matches stat-row accent values) */
 .shop-item-equip {
-    background: var(--accent-cyan);
-    border-color: var(--accent-cyan);
-    color: var(--bg-panel);
-    filter: drop-shadow(2px 0 0 var(--accent-cyan))
-        drop-shadow(-2px 0 0 var(--accent-cyan))
-        drop-shadow(0 2px 0 var(--accent-cyan))
-        drop-shadow(0 -2px 0 var(--accent-cyan));
+    color: var(--accent-cyan);
 }
 
 .shop-item-equip:hover {
-    background: #66ffff;
-    filter: drop-shadow(2px 0 0 #66ffff)
-        drop-shadow(-2px 0 0 #66ffff)
-        drop-shadow(0 2px 0 #66ffff)
-        drop-shadow(0 -2px 0 #66ffff)
-        drop-shadow(0 0 8px rgba(0, 255, 255, 0.3));
+    border-color: var(--accent-cyan);
+    background: rgba(0, 255, 255, 0.1);
 }
 
-/* Unequip — matches .btn-secondary */
+/* Unequip — secondary muted */
 .shop-item-unequip {
-    background: var(--bg-highlight);
-    border-color: var(--border-dark);
     color: var(--text-secondary);
 }
 
 .shop-item-unequip:hover {
-    background: var(--border-dark);
     color: var(--text-primary);
 }

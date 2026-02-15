@@ -267,14 +267,13 @@ class CosmeticsShop {
     }
 
     return `
-      <div class="shop-item-card ${owned ? "owned" : ""} ${equipped ? "equipped" : ""}" data-id="${item.id}">
-        <div class="shop-item-preview">
-          <span class="shop-item-icon">${this.categories.find((c) => c.id === item.category)?.icon || "?"}</span>
-        </div>
+      <div class="shop-item-row ${owned ? "owned" : ""} ${equipped ? "equipped" : ""}" data-id="${item.id}">
         <div class="shop-item-info">
           <div class="shop-item-name">${item.name}</div>
-          <div class="shop-item-rarity" style="color: ${rarity.color}">${rarity.label}</div>
-          <div class="shop-item-desc">${item.description}</div>
+          <div class="shop-item-meta">
+            <span class="shop-item-rarity" style="color: ${rarity.color}">${rarity.label}</span>
+            <span class="shop-item-desc">${item.description}</span>
+          </div>
         </div>
         <div class="shop-item-action">${actionBtn}</div>
       </div>
@@ -337,6 +336,14 @@ class CosmeticsShop {
    * @param {string} cosmeticId
    */
   async _handleBuy(cosmeticId) {
+    // Block guest users from purchasing
+    if (window.authManager?.isGuest) {
+      if (window.dashboard) {
+        window.dashboard.showGuestNudge("shop", "Sign in to purchase cosmetics");
+      }
+      return;
+    }
+
     const item = this.catalog.find((c) => c.id === cosmeticId);
     if (!item) return;
 

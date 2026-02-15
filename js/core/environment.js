@@ -1365,6 +1365,9 @@ gl_FragColor = vec4( outgoingLight, diffuseColor.a );`
 
     // Update billboards with orbital animation and north-up orientation
     this.billboards.forEach((bb) => {
+      // Skip unrented billboards — they stay hidden
+      if (!bb.userData.sponsor) return;
+
       if (!this.isMultiplayer) bb.userData.orbitalAngle += bb.userData.speed * deltaTime;
 
       const angle = bb.userData.orbitalAngle;

@@ -26,6 +26,7 @@
 
 /* Panel */
 .auth-panel {
+  position: relative;
   width: 320px;
   max-height: 90vh;
   overflow-y: auto;
@@ -33,6 +34,36 @@
   background: var(--bg-panel);
   border: var(--border-width) solid var(--border-dark);
   clip-path: var(--clip-rounded-8);
+}
+
+/* Close button (return to game) */
+.auth-close-btn {
+  position: absolute;
+  top: var(--space-md);
+  right: var(--space-md);
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  background: transparent;
+  border: var(--border-width) solid var(--border-dark);
+  color: var(--text-muted);
+  font-family: var(--font-small);
+  font-size: var(--font-size-small);
+  cursor: var(--cursor-pointer);
+  transition: border-color 0.1s, color 0.1s;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1;
+}
+
+.auth-close-btn:hover {
+  border-color: var(--text-muted);
+  color: var(--text-primary);
+}
+
+.auth-close-btn.hidden {
+  display: none;
 }
 
 /* Stages */
@@ -360,6 +391,22 @@
 .profile-slot-play:hover {
   background: rgba(34, 197, 94, 0.2);
   border-color: var(--success);
+}
+
+.profile-slot-edit {
+  padding: var(--space-xs) var(--space-sm);
+  background: transparent;
+  border: var(--border-width) solid var(--border-dark);
+  color: var(--text-muted);
+  font-family: var(--font-small);
+  font-size: var(--font-size-small);
+  cursor: var(--cursor-pointer);
+  transition: all 0.1s;
+}
+
+.profile-slot-edit:hover {
+  border-color: var(--text-muted);
+  color: var(--text-secondary);
 }
 
 .profile-slot-delete {

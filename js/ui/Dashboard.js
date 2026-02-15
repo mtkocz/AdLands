@@ -99,6 +99,10 @@ class Dashboard {
     this._rollerPreviousString = "";
     this._rollerContainer = null;
 
+    // Guest nudge state
+    this._shownNudges = new Set();
+    this._nudgeCount = 0;
+
     // Load persisted state
     this._loadState();
 
@@ -414,6 +418,23 @@ class Dashboard {
         `;
   }
 
+  /**
+   * Reset faction panel title and roster when the player's faction changes.
+   */
+  _resetFactionPanel(faction) {
+    const factionName = faction.charAt(0).toUpperCase() + faction.slice(1);
+    this.updatePanelTitle("faction", `${factionName} | Ranking...`);
+
+    // Clear stale roster from old faction
+    this._lastRosterData = null;
+    const countEl = document.getElementById("faction-roster-count");
+    if (countEl) countEl.textContent = "Loading...";
+    const listEl = document.getElementById("faction-roster-list");
+    if (listEl) {
+      listEl.innerHTML = '<div class="empty-state" style="padding:12px;opacity:0.5;font-size:12px;">Waiting for roster data...</div>';
+    }
+  }
+
   updateFactionRoster(data) {
     this._lastRosterData = data;
 
@@ -594,6 +615,18 @@ class Dashboard {
                     <div class="territory-section-title">Your Territories</div>
                     <div class="territory-list" id="territory-list">
                         <div class="empty-state">No territories claimed</div>
+                    </div>
+                </div>
+
+                <div class="territory-guest-gate hidden" id="territory-guest-gate">
+                    <div class="guest-gate-box">
+                        <div class="guest-gate-title">Account Required</div>
+                        <div class="guest-gate-message">
+                            Sign in to rent territory and plant your flag.
+                        </div>
+                        <button class="territory-btn territory-btn-claim" id="btn-guest-gate-login">
+                            Login
+                        </button>
                     </div>
                 </div>
             </div>
@@ -937,6 +970,13 @@ class Dashboard {
         input.click();
       }
 
+      // Guest gate login button
+      if (e.target.id === "btn-guest-gate-login") {
+        if (window._authScreenInstance) {
+          window._authScreenInstance.show(true);
+        }
+      }
+
       // Cancel subscription button
       const cancelBtn = e.target.closest(".territory-item-cancel");
       if (cancelBtn) {
@@ -1063,8 +1103,7 @@ class Dashboard {
     // Show the auth screen in profile-selection mode
     // The AuthScreen instance is on the global scope via main.js
     if (window._authScreenInstance) {
-      window._authScreenInstance._loadAndShowProfiles();
-      authScreen.classList.remove("auth-hidden");
+      window._authScreenInstance.show(true);
     }
   }
 
@@ -1337,8 +1376,12 @@ class Dashboard {
       }
     }
     if (data.faction) {
+      const factionChanged = this.playerFaction !== data.faction;
       this.playerFaction = data.faction;
       this._updateFactionDropdown(data.faction);
+      if (factionChanged) {
+        this._resetFactionPanel(data.faction);
+      }
     }
     if (levelEl && data.level !== undefined && this._cachedProfile.level !== data.level) {
       this._cachedProfile.level = data.level;
@@ -1513,6 +1556,9 @@ class Dashboard {
       // Update tank preview with new faction colors
       this._updateTankPreview();
 
+      // Reset faction panel to reflect new faction
+      this._resetFactionPanel(newFaction);
+
       // Trigger callback (this updates the game state)
       if (this.onFactionChange) {
         this.onFactionChange(newFaction);
@@ -1597,6 +1643,58 @@ class Dashboard {
     } else if (!show && dot) {
       dot.remove();
     }
+  }
+
+  // ========================
+  // GUEST NUDGE
+  // ========================
+
+  /**
+   * Show a dismissible toast nudging guest users to sign in.
+   * Each reason fires at most once per session, capped at 3 total.
+   * @param {string} reason - Dedup key (e.g. "levelup", "badge", "shop")
+   * @param {string} message - Display text
+   */
+  showGuestNudge(reason, message) {
+    if (!window.authManager?.isGuest) return;
+    if (this._shownNudges.has(reason)) return;
+    if (this._nudgeCount >= 3) return;
+
+    // Remove any existing nudge toast
+    const existing = document.querySelector(".guest-nudge-toast");
+    if (existing) existing.remove();
+
+    this._shownNudges.add(reason);
+    this._nudgeCount++;
+
+    const toast = document.createElement("div");
+    toast.className = "guest-nudge-toast";
+    toast.innerHTML = `
+      <span class="guest-nudge-text">${message}</span>
+      <button class="guest-nudge-signin">Sign In</button>
+      <button class="guest-nudge-dismiss">\u2715</button>
+    `;
+
+    document.body.appendChild(toast);
+
+    const dismiss = () => {
+      toast.classList.add("fade-out");
+      setTimeout(() => toast.remove(), 500);
+    };
+
+    toast.querySelector(".guest-nudge-signin").addEventListener("click", () => {
+      toast.remove();
+      if (window._authScreenInstance) {
+        window._authScreenInstance.show(true);
+      }
+    });
+
+    toast.querySelector(".guest-nudge-dismiss").addEventListener("click", dismiss);
+
+    // Auto-dismiss after 8 seconds
+    setTimeout(() => {
+      if (toast.parentNode) dismiss();
+    }, 8000);
   }
 
   // ========================
@@ -1902,6 +2000,10 @@ class Dashboard {
         );
         // Update badge display when new badge unlocked
         this.updateBadgesDisplay();
+        // Nudge guest users to sign in
+        if (window.authManager?.isGuest) {
+          this.showGuestNudge("badge", "Badge unlocked! Sign in to save it");
+        }
       };
       // Initial badge display update
       this.updateBadgesDisplay();
@@ -2081,6 +2183,13 @@ class Dashboard {
   }
 
   _selectTerritoryTier(tierName) {
+    // Block guests from renting territory
+    if (window.authManager?.isGuest) {
+      const gate = document.getElementById("territory-guest-gate");
+      if (gate) gate.classList.remove("hidden");
+      return;
+    }
+
     if (!this._territoryPlanet || !this._territoryTank) return;
 
     const ringMap = { outpost: 0, compound: 1, stronghold: 2 };
@@ -2280,6 +2389,12 @@ class Dashboard {
   }
 
   _claimTerritory() {
+    // Block guest users from claiming territory
+    if (window.authManager?.isGuest) {
+      this.showGuestNudge("territory", "Sign in to claim territory");
+      return;
+    }
+
     const preview = this._territoryPreview;
     if (!preview || preview.tileIndices.length === 0) return;
     if (!this._territoryPlanet) return;
