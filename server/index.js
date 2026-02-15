@@ -165,7 +165,7 @@ io.use(async (socket, next) => {
   }
 
   socket.uid = decoded.uid;
-  socket.isGuest = false;
+  socket.isGuest = decoded.firebase?.sign_in_provider === "anonymous";
 
   // Load active profile from Firestore
   try {
@@ -173,6 +173,7 @@ io.use(async (socket, next) => {
     const accountDoc = await db.collection("accounts").doc(decoded.uid).get();
     if (accountDoc.exists) {
       const account = accountDoc.data();
+      if (account.isAnonymous) socket.isGuest = true;
       const profileIndex = account.activeProfileIndex || 0;
       const profileDoc = await db
         .collection("accounts").doc(decoded.uid)

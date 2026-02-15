@@ -440,33 +440,13 @@ class Dashboard {
         ? '<span class="roster-dot online"></span>'
         : '<span class="roster-dot offline"></span>';
 
-      // Determine role tag
-      let roleTag = "";
-      if (member.rank === 1 && !isActingCmdr) {
-        roleTag = '<span class="roster-role commander">CDR</span>';
-      } else if (member.rank === 1 && isActingCmdr && !member.online) {
-        roleTag = '<span class="roster-role commander">CDR</span>';
-      } else if (member.isSelf && cmdrPlayerId && isActingCmdr) {
-        // Check if this player is the acting commander
-        const myId = cmdrSystem?.humanMultiplayerId || cmdrSystem?.humanPlayerId;
-        if (cmdrPlayerId === myId) {
-          roleTag = '<span class="roster-role acting">ACT</span>';
-        }
-      }
-      // Also check if a non-self online member is the acting commander
-      if (!member.isSelf && member.online && member.rank !== 1 && isActingCmdr) {
-        // The acting commander is the highest-ranked online member after rank 1
-        // We can't easily determine this from client data alone, so skip for non-self
-      }
-
-      const cmdrRowClass = "";
+      const cmdrRowClass = member.rank === 1 ? "roster-commander" : "";
 
       html += `<div class="roster-member ${cmdrRowClass} ${onlineClass} ${selfClass}">
                 <span class="roster-rank">#${member.rank}</span>
                 ${statusDot}
                 <span class="roster-name">${member.name}</span>
                 <span class="roster-level">Lv${member.level}</span>
-                ${roleTag}
             </div>`;
     }
 
@@ -1340,7 +1320,15 @@ class Dashboard {
     const cryptoCurrentEl = document.getElementById("dashboard-crypto-current");
 
     if (nameEl && data.name) nameEl.textContent = data.name;
-    if (titleEl && data.title) titleEl.textContent = data.title;
+    if (titleEl && data.title) {
+      // Don't overwrite commander/acting commander title
+      const isCommander = window.commanderSystem?.isHumanCommander?.() || false;
+      if (isCommander) {
+        this._previousTitle = data.title;
+      } else {
+        titleEl.textContent = data.title;
+      }
+    }
     if (data.faction) {
       this.playerFaction = data.faction;
       this._updateFactionDropdown(data.faction);
@@ -1439,9 +1427,17 @@ class Dashboard {
     if (nameEl) nameEl.textContent = name;
     if (levelEl) levelEl.textContent = level;
 
-    // Update avatar with the same random color used in player tag
+    // Update avatar — supports both color strings and data URL images
     if (avatarInnerEl && avatarColor) {
-      avatarInnerEl.style.background = avatarColor;
+      if (avatarColor.startsWith("data:")) {
+        avatarInnerEl.style.background = "";
+        avatarInnerEl.style.backgroundImage = `url(${avatarColor})`;
+        avatarInnerEl.style.backgroundSize = "cover";
+        avatarInnerEl.style.backgroundPosition = "center";
+      } else {
+        avatarInnerEl.style.backgroundImage = "";
+        avatarInnerEl.style.background = avatarColor;
+      }
     }
 
     // Update avatar border color based on faction
@@ -1971,12 +1967,15 @@ class Dashboard {
       if (!titleEl) return;
 
       const isCommander = window.commanderSystem?.isHumanCommander?.() || false;
+      const isActing = window.commanderSystem?.isHumanActingCommander?.() || false;
+      const expectedTitle = isActing ? "Acting Commander" : "Commander";
       const showingCommander = titleEl.textContent === "Commander" || titleEl.textContent === "Acting Commander";
       if (isCommander) {
-        // Should be showing "Commander" — correct if not
-        if (!showingCommander) {
+        // Should be showing commander title — correct if not or wrong variant
+        if (!showingCommander || titleEl.textContent !== expectedTitle) {
           if (!this._previousTitle) this._previousTitle = titleEl.textContent;
-          titleEl.textContent = "Commander";
+          titleEl.textContent = expectedTitle;
+          titleEl.classList.add("commander-title");
           this._updateBecomeCommanderButton(true);
         }
       } else {
@@ -1987,6 +1986,7 @@ class Dashboard {
             || "Contractor";
           titleEl.textContent = restored;
           this._previousTitle = null;
+          titleEl.classList.remove("commander-title");
           this._updateBecomeCommanderButton(false);
         } else if (this.titleSystem) {
           // Normal title refresh
@@ -2806,9 +2806,16 @@ class Dashboard {
    */
   updateTitle(title) {
     const titleEl = document.getElementById("dashboard-player-title");
-    if (titleEl && title) {
-      titleEl.textContent = title;
+    if (!titleEl || !title) return;
+
+    // Don't overwrite commander/acting commander title with behavioral title
+    const isCommander = window.commanderSystem?.isHumanCommander?.() || false;
+    if (isCommander) {
+      // Store for restoration when commander status is lost
+      this._previousTitle = title;
+      return;
     }
+    titleEl.textContent = title;
   }
 
   // ========================

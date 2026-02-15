@@ -2379,13 +2379,18 @@ body.tip-dragging .chat-mention.tip-highlight {
 }
 
 .roster-member.roster-commander {
-    border-left: 2px solid gold;
+    color: #ffd700;
+}
+
+.roster-member.roster-commander .roster-name,
+.roster-member.roster-commander .roster-rank,
+.roster-member.roster-commander .roster-level {
+    color: #ffd700;
 }
 
 .roster-rank {
     min-width: 28px;
-    font-weight: 600;
-    opacity: 0.7;
+    color: var(--text-secondary);
 }
 
 .roster-dot {
@@ -2417,22 +2422,6 @@ body.tip-dragging .chat-mention.tip-highlight {
     color: var(--text-secondary);
 }
 
-.roster-role {
-    font-family: var(--font-small);
-    font-size: var(--font-size-small);
-    font-weight: normal;
-    padding: 1px 4px;
-    border-radius: 3px;
-    text-transform: uppercase;
-    background: rgba(0, 255, 255, 0.15);
-    color: var(--accent-cyan);
-}
-
-.roster-role.commander,
-.roster-role.acting {
-    background: rgba(255, 215, 0, 0.3);
-    color: gold;
-}
 
 .header-faction {
     position: absolute;
@@ -5087,6 +5076,7 @@ body.colorblind-tritanopia {
 
 /* ========================
    COSMETICS SHOP
+   Follows sponsor-card pattern: clip-path + drop-shadow outlines
    ======================== */
 
 .shop-panel {
@@ -5139,58 +5129,70 @@ body.colorblind-tritanopia {
 .shop-items {
     display: flex;
     flex-direction: column;
-    gap: var(--space-xs);
+    gap: var(--space-sm);
     max-height: 300px;
     overflow-y: auto;
 }
 
-/* Item card - matches territory-tier-card pattern */
+/* Item card - matches sponsor-card pattern */
 .shop-item-card {
-    background: var(--bg-panel-light);
-    border: var(--border-width) solid var(--border-dark);
-    border-left-width: var(--border-width-thick);
-    padding: var(--space-sm) var(--space-md);
     display: flex;
+    flex-direction: row;
     align-items: center;
-    justify-content: space-between;
-    gap: var(--space-sm);
-    transition: border-color 0.15s ease, background 0.15s ease;
+    gap: var(--space-md);
+    padding: var(--space-sm);
+    background: var(--bg-panel-light);
+    border-radius: 0;
+    clip-path: var(--clip-rounded-8);
+    cursor: pointer;
+    transition: background 0.15s ease;
+    /* Pixelated outline via drop-shadow */
+    filter: drop-shadow(2px 0 0 var(--border-dark))
+        drop-shadow(-2px 0 0 var(--border-dark))
+        drop-shadow(0 2px 0 var(--border-dark))
+        drop-shadow(0 -2px 0 var(--border-dark));
 }
 
 .shop-item-card:hover {
     background: var(--bg-highlight);
-    border-color: var(--text-muted);
 }
 
-/* Rarity left-border colors */
-.shop-item-card.rarity-common { border-left-color: #888888; }
-.shop-item-card.rarity-uncommon { border-left-color: #4a9e4a; }
-.shop-item-card.rarity-rare { border-left-color: #4a7abe; }
-.shop-item-card.rarity-epic { border-left-color: #9b59b6; }
-.shop-item-card.rarity-legendary { border-left-color: var(--accent-gold); }
-
-/* Equipped state - matches territory-tier-card.selected */
+/* Equipped state - cyan pixelated outline */
 .shop-item-card.equipped {
-    border-color: var(--accent-cyan);
+    filter: drop-shadow(2px 0 0 var(--accent-cyan))
+        drop-shadow(-2px 0 0 var(--accent-cyan))
+        drop-shadow(0 2px 0 var(--accent-cyan))
+        drop-shadow(0 -2px 0 var(--accent-cyan));
     background: rgba(0, 255, 255, 0.05);
 }
 
-/* Info section */
+/* Preview box - matches sponsor-card-logo pattern */
+.shop-item-preview {
+    width: calc(var(--grid) * 10); /* 40px */
+    height: calc(var(--grid) * 10); /* 40px */
+    background: var(--bg-panel);
+    border: var(--border-width) solid var(--border-dark); /* border-color set inline by rarity */
+    flex-shrink: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.shop-item-icon {
+    font-size: var(--font-size-body);
+}
+
+/* Info section - matches sponsor-card-info pattern */
 .shop-item-info {
     flex: 1;
     min-width: 0;
-}
-
-.shop-item-header {
-    display: flex;
-    align-items: baseline;
-    gap: var(--space-sm);
 }
 
 .shop-item-name {
     font-family: var(--font-body);
     font-size: var(--font-size-body);
     color: var(--text-primary);
+    margin-bottom: var(--space-xxs);
 }
 
 .shop-item-rarity {
@@ -5204,7 +5206,6 @@ body.colorblind-tritanopia {
     font-family: var(--font-small);
     font-size: var(--font-size-small);
     color: var(--text-muted);
-    margin-top: var(--space-xxs);
 }
 
 /* Action buttons - matches territory-btn pattern */

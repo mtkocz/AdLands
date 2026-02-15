@@ -306,7 +306,15 @@
   width: 32px;
   height: 32px;
   flex-shrink: 0;
-  clip-path: var(--clip-circle-32);
+  clip-path: var(--clip-rounded-8);
+  background-size: cover;
+  background-position: center;
+  image-rendering: pixelated;
+  image-rendering: crisp-edges;
+}
+
+.profile-slot-avatar.empty {
+  background: var(--bg-highlight);
 }
 
 /* Profile slot content */
@@ -387,7 +395,7 @@
 }
 
 /* ========================
-   AVATAR PICKER
+   AVATAR UPLOAD
    ======================== */
 
 .auth-avatar-section {
@@ -398,41 +406,23 @@
 }
 
 .auth-avatar-preview {
-  width: 48px;
-  height: 48px;
+  width: 64px;
+  height: 64px;
   flex-shrink: 0;
   border: var(--border-width) solid var(--border-dark);
-  clip-path: var(--clip-circle-48);
+  clip-path: var(--clip-rounded-16);
+  background-size: cover;
+  background-position: center;
+  image-rendering: pixelated;
+  image-rendering: crisp-edges;
 }
 
 .auth-avatar-preview.empty {
-  background: var(--bg-panel-light);
+  background-color: var(--bg-panel-light);
 }
 
-.auth-avatar-grid {
-  display: grid;
-  grid-template-columns: repeat(6, 1fr);
-  gap: var(--space-xs);
+.auth-avatar-upload-btn {
   flex: 1;
-}
-
-.auth-avatar-swatch {
-  width: 100%;
-  aspect-ratio: 1;
-  border: var(--border-width) solid transparent;
-  clip-path: var(--clip-circle-24);
-  cursor: var(--cursor-pointer);
-  transition: border-color 0.1s;
-  padding: 0;
-}
-
-.auth-avatar-swatch:hover {
-  border-color: var(--text-secondary);
-}
-
-.auth-avatar-swatch.selected {
-  border-color: var(--text-primary);
-  box-shadow: 0 0 0 1px var(--text-primary);
 }
 
 /* ========================

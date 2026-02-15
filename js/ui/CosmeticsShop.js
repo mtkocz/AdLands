@@ -267,12 +267,13 @@ class CosmeticsShop {
     }
 
     return `
-      <div class="shop-item-card rarity-${item.rarity} ${owned ? "owned" : ""} ${equipped ? "equipped" : ""}" data-id="${item.id}">
+      <div class="shop-item-card ${owned ? "owned" : ""} ${equipped ? "equipped" : ""}" data-id="${item.id}">
+        <div class="shop-item-preview" style="border-color: ${rarity.color}">
+          <span class="shop-item-icon">${this.categories.find((c) => c.id === item.category)?.icon || "?"}</span>
+        </div>
         <div class="shop-item-info">
-          <div class="shop-item-header">
-            <span class="shop-item-name">${item.name}</span>
-            <span class="shop-item-rarity" style="color: ${rarity.color}">${rarity.label}</span>
-          </div>
+          <div class="shop-item-name">${item.name}</div>
+          <div class="shop-item-rarity" style="color: ${rarity.color}">${rarity.label}</div>
           <div class="shop-item-desc">${item.description}</div>
         </div>
         <div class="shop-item-action">${actionBtn}</div>

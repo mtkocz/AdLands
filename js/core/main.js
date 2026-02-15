@@ -1473,6 +1473,18 @@
     window._mp.setPlayerFaction(faction);
     window._mp.setPlayerName(name);
 
+    // Update dashboard avatar with profile picture from Firestore
+    if (profileData?.profilePicture && window.dashboard) {
+      window.dashboard.avatarColor = profileData.profilePicture;
+      const avatarInnerEl = document.getElementById("dashboard-avatar-inner");
+      if (avatarInnerEl) {
+        avatarInnerEl.style.background = "";
+        avatarInnerEl.style.backgroundImage = `url(${profileData.profilePicture})`;
+        avatarInnerEl.style.backgroundSize = "cover";
+        avatarInnerEl.style.backgroundPosition = "center";
+      }
+    }
+
     // Send chosen identity to server (token already sent via Socket.IO handshake)
     if (window.networkManager) {
       window.networkManager.sendIdentity(name, faction);

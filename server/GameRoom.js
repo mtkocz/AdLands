@@ -496,13 +496,17 @@ class GameRoom {
     // Spawn near a random portal (or mid-latitudes if portals not yet received)
     const spawn = this._getSpawnPosition(socket.id);
 
+    const isGuest = socket.isGuest === true;
+    const baseName = profileData?.name || this._pickName();
+
     const player = {
       id: socket.id,
       uid: socket.uid || null,               // Firebase UID (null for guests)
       profileIndex: socket.profileIndex || 0, // Active profile slot (0-2)
       isAuthenticated: !!socket.uid,
+      isGuest: isGuest,
 
-      name: profileData?.name || this._pickName(),
+      name: isGuest ? baseName + " (Guest)" : baseName,
       faction: faction,
 
       // Physics state (authoritative)
@@ -2184,6 +2188,9 @@ class GameRoom {
     // Sanitize name: trim, limit 20 chars, strip non-alphanumeric (keep spaces, hyphens, underscores)
     let sanitized = name.trim().replace(/[^\w\s\-]/g, "").substring(0, 20);
     if (!sanitized) sanitized = this._pickName();
+
+    // Append (Guest) suffix for guest players
+    if (player.isGuest) sanitized = sanitized + " (Guest)";
 
     // Check for duplicate names — append suffix if taken
     for (const [id, p] of this.players) {

@@ -187,6 +187,13 @@ class PlayerTags {
     const tag = this.tags.get(tankId);
     if (!tag) return;
 
+    // Don't overwrite commander/acting commander title with behavioral title
+    if (tag.element.classList.contains("commander")) {
+      // Store the new behavioral title for when commander status is removed
+      tag.config._previousTitle = newTitle;
+      return;
+    }
+
     const titleEl = tag.element.querySelector(".tag-title");
     if (titleEl) {
       titleEl.textContent = newTitle;

@@ -30,18 +30,11 @@ class AuthScreen {
     /** @type {string|null} Selected faction for new profile */
     this._selectedFaction = null;
 
-    /** @type {string|null} Selected avatar color for new profile */
-    this._selectedColor = null;
+    /** @type {string|null} Uploaded profile picture as base64 data URL */
+    this._uploadedImage = null;
 
     /** @type {boolean} Whether the create screen was opened from guest flow */
     this._isGuestCreate = false;
-
-    /** Preset avatar colors */
-    this.avatarColors = [
-      "#e74c3c", "#e67e22", "#f1c40f", "#2ecc71",
-      "#1abc9c", "#3498db", "#9b59b6", "#e84393",
-      "#fd79a8", "#00cec9", "#6c5ce7", "#fdcb6e",
-    ];
 
     this._createUI();
     this._setupEvents();
@@ -131,7 +124,10 @@ class AuthScreen {
 
           <div class="auth-avatar-section">
             <div class="auth-avatar-preview" id="auth-avatar-preview"></div>
-            <div class="auth-avatar-grid" id="auth-avatar-grid"></div>
+            <button class="auth-btn auth-btn-secondary auth-avatar-upload-btn" id="auth-avatar-upload-btn">
+              Upload Picture
+            </button>
+            <input type="file" id="auth-avatar-file" accept="image/*" style="display:none">
           </div>
 
           <input type="text" id="auth-profile-name"
@@ -233,6 +229,20 @@ class AuthScreen {
       });
     });
 
+    // Avatar upload
+    const avatarUploadBtn = this.overlay.querySelector("#auth-avatar-upload-btn");
+    const avatarFileInput = this.overlay.querySelector("#auth-avatar-file");
+    avatarUploadBtn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      avatarFileInput.click();
+    });
+    avatarFileInput.addEventListener("change", (e) => {
+      e.stopPropagation();
+      if (avatarFileInput.files && avatarFileInput.files[0]) {
+        this._handleAvatarUpload(avatarFileInput.files[0]);
+      }
+    });
+
     nameInput.addEventListener("input", () => this._updateCreateState());
     nameInput.addEventListener("keydown", (e) => {
       if (e.key === "Enter" && !createConfirm.disabled) {
@@ -289,6 +299,13 @@ class AuthScreen {
   // ========================
 
   async _handleProviderClick(provider) {
+    // Show loading text on the clicked button
+    const btn = this.overlay.querySelector(`[data-provider="${provider}"]`);
+    const originalText = btn ? btn.textContent : "";
+    if (btn && provider !== "email") {
+      btn.textContent = provider === "guest" ? "Loading..." : "Signing in...";
+    }
+
     // Disable all buttons while authenticating
     this._setButtonsDisabled(true);
 
@@ -299,6 +316,7 @@ class AuthScreen {
           break;
         case "email":
           this._setButtonsDisabled(false);
+          if (btn) btn.textContent = originalText;
           this._showStage("email");
           return;
         case "guest":
@@ -314,6 +332,7 @@ class AuthScreen {
       }
     } catch (err) {
       this._setButtonsDisabled(false);
+      if (btn) btn.textContent = originalText;
       if (err.code === "auth/popup-closed-by-user") return; // User cancelled
       if (err.code === "auth/cancelled-popup-request") return;
       console.error("[AuthScreen] Sign-in error:", err);
@@ -330,11 +349,14 @@ class AuthScreen {
       return;
     }
 
+    const signinBtn = this.overlay.querySelector("#auth-email-signin");
+    signinBtn.textContent = "Signing in...";
     this._setButtonsDisabled(true);
     try {
       await this.auth.signInWithEmail(email, password);
       await this._loadAndShowProfiles();
     } catch (err) {
+      signinBtn.textContent = "Sign In";
       this._setButtonsDisabled(false);
       this._showError("auth-email-error", this._friendlyError(err));
     }
@@ -397,14 +419,23 @@ class AuthScreen {
     const uid = this.auth.uid;
     if (!uid) return;
 
+    // Show profiles stage immediately with loading placeholder
+    this._profiles = [null, null, null];
+    this._renderProfileSlots();
+    this._showStage("profiles");
+
+    // Show "Link Account" button for guest users
+    const linkBtn = this.overlay.querySelector("#auth-link-account");
+    linkBtn.style.display = this.auth.isGuest ? "block" : "none";
+
     try {
       // Load or create account document
       const accountRef = firebaseDb.collection("accounts").doc(uid);
       const accountDoc = await accountRef.get();
 
       if (!accountDoc.exists) {
-        // First-time user — create account document
-        await accountRef.set({
+        // First-time user — create account document (fire and forget)
+        accountRef.set({
           email: this.auth.email || null,
           displayName: this.auth.displayName || null,
           photoURL: this.auth.photoURL || null,
@@ -417,9 +448,8 @@ class AuthScreen {
           profiles: [null, null, null],
           settings: {},
         });
-        this._profiles = [null, null, null];
       } else {
-        // Update last login
+        // Update last login (fire and forget)
         accountRef.update({
           lastLoginAt: firebase.firestore.FieldValue.serverTimestamp(),
           linkedProviders: this.auth.linkedProviders,
@@ -427,14 +457,10 @@ class AuthScreen {
         });
         const data = accountDoc.data();
         this._profiles = this._sanitizeProfiles(data.profiles);
+
+        // Re-render with real data
+        this._renderProfileSlots();
       }
-
-      this._renderProfileSlots();
-      this._showStage("profiles");
-
-      // Show "Link Account" button for guest users
-      const linkBtn = this.overlay.querySelector("#auth-link-account");
-      linkBtn.style.display = this.auth.isGuest ? "block" : "none";
     } catch (err) {
       console.error("[AuthScreen] Failed to load profiles:", err);
       this._showError("auth-error", "Failed to load profiles. Please try again.");
@@ -454,10 +480,11 @@ class AuthScreen {
 
       if (profile) {
         const avatarStyle = profile.profilePicture
-          ? `background: ${profile.profilePicture}`
-          : `background: var(--bg-highlight)`;
+          ? `background-image: url(${profile.profilePicture})`
+          : "";
+        const avatarClass = profile.profilePicture ? "profile-slot-avatar" : "profile-slot-avatar empty";
         slot.innerHTML = `
-          <div class="profile-slot-avatar" style="${avatarStyle}"></div>
+          <div class="${avatarClass}" style="${avatarStyle}"></div>
           <div class="profile-slot-info">
             <div class="profile-slot-name">${this._escapeHtml(profile.name)}</div>
             <div class="profile-slot-details">
@@ -504,6 +531,9 @@ class AuthScreen {
     const uid = this.auth.uid;
     if (!uid) return;
 
+    // Show loading on the Play button immediately
+    const playBtn = this.overlay.querySelector(`.profile-slot-play[data-index="${index}"]`);
+    if (playBtn) playBtn.textContent = "Loading...";
     this._setButtonsDisabled(true);
 
     try {
@@ -514,12 +544,13 @@ class AuthScreen {
       const profileDoc = await profileRef.get();
 
       if (!profileDoc.exists) {
+        if (playBtn) playBtn.textContent = "Play";
         this._setButtonsDisabled(false);
         return;
       }
 
-      // Update active profile index on account
-      await firebaseDb.collection("accounts").doc(uid).update({
+      // Update active profile index (fire and forget — non-blocking)
+      firebaseDb.collection("accounts").doc(uid).update({
         activeProfileIndex: index,
       });
 
@@ -537,6 +568,7 @@ class AuthScreen {
       }
     } catch (err) {
       console.error("[AuthScreen] Failed to load profile:", err);
+      if (playBtn) playBtn.textContent = "Play";
       this._setButtonsDisabled(false);
     }
   }
@@ -550,12 +582,17 @@ class AuthScreen {
     const uid = this.auth.uid;
     if (!uid) return;
 
+    // Show create form immediately — don't wait for Firestore
+    this._profiles = [null, null, null];
+    this._startCreateProfile(0, true);
+
+    // Ensure account doc exists in the background
     try {
       const accountRef = firebaseDb.collection("accounts").doc(uid);
       const accountDoc = await accountRef.get();
 
       if (!accountDoc.exists) {
-        await accountRef.set({
+        accountRef.set({
           email: null,
           displayName: null,
           photoURL: null,
@@ -568,28 +605,21 @@ class AuthScreen {
           profiles: [null, null, null],
           settings: {},
         });
-        this._profiles = [null, null, null];
       } else {
         accountRef.update({
           lastLoginAt: firebase.firestore.FieldValue.serverTimestamp(),
           isAnonymous: true,
         });
-        this._profiles = this._sanitizeProfiles(accountDoc.data().profiles);
       }
-
-      // Go straight to create form for slot 0
-      this._startCreateProfile(0, true);
     } catch (err) {
-      console.error("[AuthScreen] Guest create error:", err);
-      this._showError("auth-error", "Failed to start. Please try again.");
-      this._showStage("auth");
+      console.warn("[AuthScreen] Guest account setup error (non-blocking):", err);
     }
   }
 
   _startCreateProfile(index, isGuest = false) {
     this._selectedIndex = index;
     this._selectedFaction = null;
-    this._selectedColor = null;
+    this._uploadedImage = null;
     this._isGuestCreate = isGuest;
 
     // Set title and button text based on guest vs. regular
@@ -611,8 +641,9 @@ class AuthScreen {
     });
     confirmBtn.disabled = true;
 
-    // Build avatar color grid
-    this._buildAvatarGrid();
+    // Reset avatar preview
+    this._resetAvatarPreview();
+    this.overlay.querySelector("#auth-avatar-file").value = "";
 
     // Pre-fill name from auth if available
     if (this.auth.displayName) {
@@ -637,38 +668,54 @@ class AuthScreen {
     }, 100);
   }
 
-  _buildAvatarGrid() {
-    const grid = this.overlay.querySelector("#auth-avatar-grid");
+  _resetAvatarPreview() {
     const preview = this.overlay.querySelector("#auth-avatar-preview");
-    grid.innerHTML = "";
-    preview.style.background = "";
+    preview.style.backgroundImage = "";
     preview.classList.add("empty");
-
-    this.avatarColors.forEach((color) => {
-      const swatch = document.createElement("button");
-      swatch.className = "auth-avatar-swatch";
-      swatch.style.background = color;
-      swatch.dataset.color = color;
-      swatch.addEventListener("click", (e) => {
-        e.stopPropagation();
-        this._selectAvatarColor(color);
-      });
-      grid.appendChild(swatch);
-    });
+    const uploadBtn = this.overlay.querySelector("#auth-avatar-upload-btn");
+    if (uploadBtn) uploadBtn.textContent = "Upload Picture";
   }
 
-  _selectAvatarColor(color) {
-    this._selectedColor = color;
-    const preview = this.overlay.querySelector("#auth-avatar-preview");
-    preview.style.background = color;
-    preview.classList.remove("empty");
+  /**
+   * Handle image file upload. Resizes to 64x64 on a canvas and stores as base64.
+   * @param {File} file
+   */
+  _handleAvatarUpload(file) {
+    if (!file || !file.type.startsWith("image/")) return;
 
-    // Update swatch selection
-    this.overlay.querySelectorAll(".auth-avatar-swatch").forEach((s) => {
-      s.classList.toggle("selected", s.dataset.color === color);
-    });
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      const img = new Image();
+      img.onload = () => {
+        // Resize to 64x64 on canvas
+        const canvas = document.createElement("canvas");
+        canvas.width = 64;
+        canvas.height = 64;
+        const ctx = canvas.getContext("2d");
 
-    this._updateCreateState();
+        // Cover-fit: crop to square center, then draw at 64x64
+        const size = Math.min(img.width, img.height);
+        const sx = (img.width - size) / 2;
+        const sy = (img.height - size) / 2;
+        ctx.drawImage(img, sx, sy, size, size, 0, 0, 64, 64);
+
+        const dataUrl = canvas.toDataURL("image/png");
+        this._uploadedImage = dataUrl;
+
+        // Show preview
+        const preview = this.overlay.querySelector("#auth-avatar-preview");
+        preview.style.backgroundImage = `url(${dataUrl})`;
+        preview.classList.remove("empty");
+
+        // Update upload button text
+        const uploadBtn = this.overlay.querySelector("#auth-avatar-upload-btn");
+        if (uploadBtn) uploadBtn.textContent = "Change Picture";
+
+        this._updateCreateState();
+      };
+      img.src = e.target.result;
+    };
+    reader.readAsDataURL(file);
   }
 
   _selectFaction(faction) {
@@ -681,7 +728,7 @@ class AuthScreen {
 
   _updateCreateState() {
     const name = this.overlay.querySelector("#auth-profile-name").value.trim();
-    const valid = name.length > 0 && this._selectedFaction !== null && this._selectedColor !== null;
+    const valid = name.length > 0 && this._selectedFaction !== null;
     this.overlay.querySelector("#auth-create-confirm").disabled = !valid;
   }
 
@@ -711,7 +758,7 @@ class AuthScreen {
       const profileData = {
         name: name,
         faction: faction,
-        profilePicture: this._selectedColor || null,
+        profilePicture: this._uploadedImage || null,
         createdAt: now,
         lastPlayedAt: now,
 
@@ -753,21 +800,21 @@ class AuthScreen {
         },
       };
 
-      // Write profile to subcollection
-      await firebaseDb
-        .collection("accounts").doc(uid)
-        .collection("profiles").doc(String(index))
-        .set(profileData);
-
-      // Update denormalized profile summary on account
-      const profileSummary = { name, faction, level: 1, profilePicture: this._selectedColor || null };
+      // Write profile + update account summary in parallel
+      const profileSummary = { name, faction, level: 1, profilePicture: this._uploadedImage || null };
       const profilesUpdate = [...this._profiles];
       profilesUpdate[index] = profileSummary;
 
-      await firebaseDb.collection("accounts").doc(uid).update({
-        profiles: profilesUpdate,
-        activeProfileIndex: index,
-      });
+      await Promise.all([
+        firebaseDb
+          .collection("accounts").doc(uid)
+          .collection("profiles").doc(String(index))
+          .set(profileData),
+        firebaseDb.collection("accounts").doc(uid).update({
+          profiles: profilesUpdate,
+          activeProfileIndex: index,
+        }),
+      ]);
 
       this._profiles = profilesUpdate;
 

@@ -133,7 +133,7 @@ class ProfileCard {
     return `
             <div class="profile-card-inner ${factionClass}">
                 <div class="profile-card-header card-header-row">
-                    <div class="profile-card-avatar card-header-image" style="background: ${player.avatarColor || "#8b4466"}">
+                    <div class="profile-card-avatar card-header-image" style="${(player.avatarColor && player.avatarColor.startsWith("data:")) ? `background-image: url(${player.avatarColor}); background-size: cover; background-position: center;` : `background: ${player.avatarColor || "#8b4466"}`}">
                     </div>
                     <div class="profile-card-info card-header-info">
                         <div class="profile-card-name card-header-name">${player.name}</div>
