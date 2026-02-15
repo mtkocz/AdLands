@@ -2463,6 +2463,14 @@ class Dashboard {
       });
     }
 
+    // Elon Tusk global chat on territory rent
+    const chatWindow = window.proximityChat?.chatWindow;
+    const rentLines = window.tuskCommentary?.lines?.on_rent_territory;
+    if (chatWindow?.addTuskMessage && rentLines?.length) {
+      const line = rentLines[Math.floor(Math.random() * rentLines.length)];
+      chatWindow.addTuskMessage(line.replace(/\{player\}/g, playerName));
+    }
+
     // Reset preview state and camera
     this._territoryPreview = null;
     this._selectedTerritoryTier = null;
