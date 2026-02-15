@@ -636,6 +636,7 @@ class ScreenshotSystem {
    */
   setupQuickCapture() {
     document.addEventListener("keydown", async (e) => {
+      if (window._authScreenInstance?.isVisible) return;
       if (e.key === "F12") {
         e.preventDefault();
         const screenshot = await this.capture();

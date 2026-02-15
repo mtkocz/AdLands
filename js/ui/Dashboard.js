@@ -457,6 +457,7 @@ class Dashboard {
     const isActingCmdr = myFaction ? (cmdrSystem?.actingCommanders[myFaction] || false) : false;
 
     let html = "";
+    const faction = data.faction || this.playerFaction;
     for (const member of data.members) {
       const onlineClass = member.online ? "roster-online" : "roster-offline";
       const selfClass = member.isSelf ? "roster-self" : "";
@@ -466,12 +467,9 @@ class Dashboard {
 
       const cmdrRowClass = member.rank === 1 ? "roster-commander" : "";
 
-      // Use socket ID for online players, "player_self" for self
-      const playerIdAttr = member.isSelf
-        ? 'data-player-id="player_self"'
-        : member.id
-          ? `data-player-id="${member.id}"`
-          : "";
+      // Use "player_self" for self, server-provided id for everyone else
+      const playerId = member.isSelf ? "player_self" : member.id;
+      const playerIdAttr = playerId ? `data-player-id="${playerId}"` : "";
 
       html += `<div class="roster-member ${cmdrRowClass} ${onlineClass} ${selfClass}" ${playerIdAttr}>
                 <span class="roster-rank">#${member.rank}</span>
@@ -479,6 +477,24 @@ class Dashboard {
                 <span class="roster-name">${member.name}</span>
                 <span class="roster-level">Lv${member.level}</span>
             </div>`;
+
+      // Register offline/unknown roster members with ProfileCard so right-click works
+      if (!member.isSelf && playerId && window.profileCard) {
+        if (!window.profileCard.playerCache.has(playerId)) {
+          window.profileCard.playerCache.set(playerId, {
+            id: playerId,
+            name: member.name,
+            faction: faction,
+            level: member.level || 1,
+            rank: member.rank,
+            isOnline: member.online,
+            badges: [],
+            avatarColor: null,
+            socialLinks: {},
+            title: member.rank === 1 ? "Commander" : "Contractor",
+          });
+        }
+      }
     }
 
     if (data.members.length === 0) {

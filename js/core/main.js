@@ -1024,6 +1024,8 @@
   // Only allow firing in surface mode when controls are enabled
   // Ignore clicks on UI elements
   const isUIClick = (e) => {
+    // Block all mouse interaction while auth screen is open
+    if (window._authScreenInstance?.isVisible) return true;
     // Check if click is on an interactive UI element
     const target = e.target;
     if (target.tagName === "CANVAS") return false; // Canvas is game
@@ -2799,6 +2801,7 @@
   // ========================
 
   window.addEventListener("keydown", (e) => {
+    if (window._authScreenInstance?.isVisible) return;
     if (e.key === "e" || e.key === "E") {
       const portalIndex = fastTravel.checkPortalEntry();
       const isOrbitalView = gameCamera.mode === "orbital";
@@ -3206,12 +3209,14 @@
 
   window.addEventListener("contextmenu", (e) => {
     e.preventDefault();
+    if (window._authScreenInstance?.isVisible) return;
     // On Mac, contextmenu fires on mousedown. Store position for mouseup check.
     rightClickStart = { x: e.clientX, y: e.clientY };
   });
 
   window.addEventListener("mouseup", (e) => {
     if (e.button !== 2) return; // Only right-click
+    if (window._authScreenInstance?.isVisible) { rightClickStart = null; return; }
     if (!rightClickStart) return;
 
     const dx = Math.abs(e.clientX - rightClickStart.x);
@@ -3369,6 +3374,7 @@
   if (!hudIsVisible) tuskCommentary.setSuppressed(true);
 
   document.addEventListener("keydown", (e) => {
+    if (window._authScreenInstance?.isVisible) return;
     // Ignore H key when typing in chat input
     if (e.target.tagName === "INPUT" || e.target.tagName === "TEXTAREA") {
       return;
@@ -3446,6 +3452,7 @@
   // ========================
 
   document.addEventListener("keydown", (e) => {
+    if (window._authScreenInstance?.isVisible) return;
     if (e.target.tagName === "INPUT" || e.target.tagName === "TEXTAREA") return;
     if (e.key === "k" || e.key === "K") {
       if (!tank.isDead) {
@@ -3475,6 +3482,7 @@
         e.stopPropagation();
         e.stopImmediatePropagation();
 
+        if (window._authScreenInstance?.isVisible) return;
         if (!tabHeld) {
           tabHeld = true;
           showGlobalControlOverlay();

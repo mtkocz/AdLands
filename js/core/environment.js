@@ -1521,6 +1521,17 @@ gl_FragColor = vec4( outgoingLight, diffuseColor.a );`
         texture.offset.set((1 - panelAspect / texAspect) / 2, 0);
       }
 
+      // Apply patternAdjustment (scale, offset)
+      const adj = sponsorData.patternAdjustment || {};
+      const scale = adj.scale || 1;
+      const scaledRepeatX = texture.repeat.x / scale;
+      const scaledRepeatY = texture.repeat.y / scale;
+      texture.repeat.set(scaledRepeatX, scaledRepeatY);
+      texture.offset.set(
+        (1 - scaledRepeatX) / 2 + (adj.offsetX || 0),
+        (1 - scaledRepeatY) / 2 + (adj.offsetY || 0)
+      );
+
       texture.needsUpdate = true;
 
       adPanel.material.map = texture;

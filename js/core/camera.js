@@ -733,6 +733,7 @@ class GameCamera {
     this._wasRightClickDrag = false;
 
     el.addEventListener("mousedown", (e) => {
+      if (window._authScreenInstance?.isVisible) return;
       if (e.button !== 2) return; // Only right-click
 
       const canDrag =
@@ -751,6 +752,7 @@ class GameCamera {
 
     // Use window for mousemove/mouseup so dragging works even when mouse goes over UI elements
     window.addEventListener("mousemove", (e) => {
+      if (window._authScreenInstance?.isVisible) return;
       const canDrag =
         (this.mode === "orbital" || this.mode === "fastTravel") &&
         !this.transitioning;
@@ -810,6 +812,7 @@ class GameCamera {
       "wheel",
       (e) => {
         e.preventDefault();
+        if (window._authScreenInstance?.isVisible) return;
 
         // Pinch gesture (ctrlKey) = zoom between surface/orbital
         if (e.ctrlKey) {
@@ -909,6 +912,7 @@ class GameCamera {
     // ====== KEYBOARD ZOOM ======
     // +/- keys zoom between surface/orbital (works regardless of scroll setting)
     window.addEventListener("keydown", (e) => {
+      if (window._authScreenInstance?.isVisible) return;
       if (e.key === "+" || e.key === "=") {
         if (this.mode === "orbital" && !this.fastTravelEnabled) {
           this._startTransition("surface");
@@ -927,6 +931,7 @@ class GameCamera {
     el.addEventListener(
       "touchstart",
       (e) => {
+        if (window._authScreenInstance?.isVisible) return;
         if (e.touches.length === 2) {
           const canDrag =
             (this.mode === "orbital" || this.mode === "fastTravel") &&
@@ -957,6 +962,7 @@ class GameCamera {
     el.addEventListener(
       "touchmove",
       (e) => {
+        if (window._authScreenInstance?.isVisible) return;
         if (e.touches.length === 2 && this.isDragging) {
           const canDrag =
             (this.mode === "orbital" || this.mode === "fastTravel") &&

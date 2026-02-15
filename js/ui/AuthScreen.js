@@ -42,6 +42,11 @@ class AuthScreen {
     this._setupEvents();
   }
 
+  /** Whether the auth overlay is currently visible */
+  get isVisible() {
+    return !this.overlay.classList.contains("auth-hidden");
+  }
+
   // ========================
   // UI CREATION
   // ========================
@@ -393,6 +398,10 @@ class AuthScreen {
 
   async show(canDismiss = false) {
     this.overlay.classList.remove("auth-hidden");
+    this.overlay.classList.remove("auth-fade-out");
+
+    // Reset button state (may be stale from a previous session)
+    this._setButtonsDisabled(false);
 
     // Show/hide close button based on whether user can return to game
     const closeBtn = this.overlay.querySelector("#auth-close-btn");

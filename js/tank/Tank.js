@@ -1432,6 +1432,7 @@ class Tank {
 
   _setupInput() {
     window.addEventListener("keydown", (e) => {
+      if (window._authScreenInstance?.isVisible) return;
       if (!this.controlsEnabled || this.isDead) return;
       if (e.key === "Shift") {
         this.state.keys.shift = true;
@@ -1458,6 +1459,7 @@ class Tank {
     // Throttle mousemove to ~60fps (16ms) - turret aiming doesn't need higher frequency
     let lastMouseMoveTime = 0;
     window.addEventListener("mousemove", (e) => {
+      if (window._authScreenInstance?.isVisible) return;
       const now = performance.now();
       if (now - lastMouseMoveTime < 16) return;
       lastMouseMoveTime = now;

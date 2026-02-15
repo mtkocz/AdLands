@@ -64,6 +64,7 @@ class TankLODInteraction {
     let rightClickDot = null;
 
     window.addEventListener("contextmenu", (e) => {
+      if (window._authScreenInstance?.isVisible) return;
       if (this.hoveredDot && this.active) {
         e.preventDefault();
         // Store start position and hovered dot for mouseup check

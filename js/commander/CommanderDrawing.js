@@ -115,6 +115,7 @@ class CommanderDrawing {
   }
 
   _onMouseDown(e) {
+    if (window._authScreenInstance?.isVisible) return;
     if (e.button !== 0) return; // Left click only
 
     if (!this._canDraw()) {
@@ -153,6 +154,7 @@ class CommanderDrawing {
   }
 
   _onMouseMove(e) {
+    if (window._authScreenInstance?.isVisible) return;
     this.mouse.x = (e.clientX / window.innerWidth) * 2 - 1;
     this.mouse.y = -(e.clientY / window.innerHeight) * 2 + 1;
 

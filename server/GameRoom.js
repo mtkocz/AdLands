@@ -671,7 +671,10 @@ class GameRoom {
     });
 
     // Recompute ranks and commander for all factions
-    this._markRanksDirty();
+    this._recomputeRanks();
+
+    // Send roster immediately so the player doesn't wait for the next 10s broadcast
+    this._sendRosterToPlayer(socket.id);
 
     console.log(
       `[Room ${this.roomId}] ${player.name} (${player.faction}) joined. ` +
@@ -1273,7 +1276,7 @@ class GameRoom {
     }
 
     // 6b. Broadcast faction rosters (every 10 seconds)
-    if (this.tick % (this.tickRate * 10) === 0 && this.profileCacheReady) {
+    if (this.tick % (this.tickRate * 10) === 0) {
       this._broadcastFactionRosters();
     }
 
@@ -2181,6 +2184,19 @@ class GameRoom {
     // Update faction
     player.faction = newFaction;
 
+    // Move entry in faction profile cache so _recomputeRanks sees the new faction
+    if (player.uid && this.profileCacheReady) {
+      const cacheKey = `${player.uid}:${player.profileIndex}`;
+      const entry = this.profileCacheIndex.get(cacheKey);
+      if (entry && entry.faction !== newFaction) {
+        const oldArr = this.factionProfileCache[entry.faction];
+        const idx = oldArr.indexOf(entry);
+        if (idx !== -1) oldArr.splice(idx, 1);
+        this.factionProfileCache[newFaction].push(entry);
+        entry.faction = newFaction;
+      }
+    }
+
     // Broadcast faction change to all clients
     this.io.to(this.roomId).emit("player-faction-changed", {
       id: socketId,
@@ -2231,6 +2247,20 @@ class GameRoom {
         this.bodyguardManager.despawnForFaction(oldFaction);
         this.commanders[oldFaction] = null;
       }
+
+      // Move entry in faction profile cache so _recomputeRanks sees the new faction
+      if (player.uid && this.profileCacheReady) {
+        const cacheKey = `${player.uid}:${player.profileIndex}`;
+        const entry = this.profileCacheIndex.get(cacheKey);
+        if (entry && entry.faction !== faction) {
+          const oldArr = this.factionProfileCache[entry.faction];
+          const idx = oldArr.indexOf(entry);
+          if (idx !== -1) oldArr.splice(idx, 1);
+          this.factionProfileCache[faction].push(entry);
+          entry.faction = faction;
+        }
+      }
+
       this._markRanksDirty();
     }
   }
@@ -2280,6 +2310,25 @@ class GameRoom {
             }
           }
           allMembers.push(entry);
+        }
+
+        // Include guest players (no uid) who aren't in the profile cache
+        for (const [id, p] of this.players) {
+          if (p.faction !== faction || p.uid) continue;
+          const resignedUntil = this.resignedPlayers.get(id);
+          if (resignedUntil) {
+            if (now < resignedUntil) continue;
+            this.resignedPlayers.delete(id);
+          }
+          allMembers.push({
+            uid: null,
+            socketId: id,
+            name: p.name,
+            level: p.level || 1,
+            totalCrypto: p.totalCrypto || 0,
+            territoryCaptured: p.territoryCaptured || 0,
+            isOnline: true,
+          });
         }
       } else {
         // ---- Fallback: connected players only (original behavior) ----
@@ -2464,7 +2513,7 @@ class GameRoom {
       for (let i = 0; i < Math.min(roster.length, 50); i++) {
         const m = roster[i];
         condensed.push({
-          id: m.socketId || null,
+          id: m.socketId || (m.uid ? `offline_${m.uid}_${m.profileIndex}` : null),
           rank: m.rank,
           name: m.name,
           level: m.level || 1,
@@ -2495,6 +2544,56 @@ class GameRoom {
         members: condensed,
       });
     }
+  }
+
+  /**
+   * Send the faction roster to a single player (e.g. on join).
+   */
+  _sendRosterToPlayer(socketId) {
+    const player = this.players.get(socketId);
+    if (!player) return;
+
+    const roster = this._factionRosters[player.faction];
+    if (!roster) return;
+
+    const socket = this.io.sockets.sockets.get(socketId);
+    if (!socket) return;
+
+    const condensed = [];
+    let playerFound = false;
+
+    for (let i = 0; i < Math.min(roster.length, 50); i++) {
+      const m = roster[i];
+      condensed.push({
+        id: m.socketId || (m.uid ? `offline_${m.uid}_${m.profileIndex}` : null),
+        rank: m.rank,
+        name: m.name,
+        level: m.level || 1,
+        online: m.isOnline,
+        isSelf: m.socketId === socketId,
+      });
+      if (m.socketId === socketId) playerFound = true;
+    }
+
+    if (!playerFound) {
+      const selfEntry = roster.find(m => m.socketId === socketId);
+      if (selfEntry) {
+        condensed.push({
+          id: selfEntry.socketId,
+          rank: selfEntry.rank,
+          name: selfEntry.name,
+          level: selfEntry.level || 1,
+          online: true,
+          isSelf: true,
+        });
+      }
+    }
+
+    socket.emit("faction-roster", {
+      faction: player.faction,
+      total: roster.length,
+      members: condensed,
+    });
   }
 
   // ========================
