@@ -11,6 +11,10 @@ class RemoteBodyguard {
     this.sphereRadius = sphereRadius;
     this.id = bgData.id;
     this.faction = bgData.faction || bgData.f;
+    if (!this.faction) {
+      console.error("[RemoteBodyguard] Missing faction for", this.id);
+      this.faction = "cobalt";
+    }
     this.index = bgData.index != null ? bgData.index : parseInt(bgData.id.split("-")[2]);
     this.side = bgData.side || (this.index === 0 ? "left" : "right");
     this.name = bgData.name || (this.index === 0 ? "Guard Alpha" : "Guard Beta");
@@ -94,7 +98,10 @@ class RemoteBodyguard {
     if (RemoteBodyguard._materials[faction]) return RemoteBodyguard._materials[faction];
 
     const factionData = FACTION_COLORS[faction];
-    if (!factionData) return null;
+    if (!factionData) {
+      console.error("[RemoteBodyguard] Unknown faction for materials:", faction);
+      return null;
+    }
 
     const accentColor = new THREE.Color(factionData.vehicle.primary);
 

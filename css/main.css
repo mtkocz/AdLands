@@ -4281,7 +4281,7 @@ input:checked + .toggle-slider:before {
     position: absolute;
     top: 50%;
     left: 50%;
-    transform: translate(calc(-50% - 10px), -50%);
+    transform: translate(calc(-50% - 5px), calc(-50% + 2px));
     pointer-events: none;
 }
 

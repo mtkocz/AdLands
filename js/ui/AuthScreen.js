@@ -3,10 +3,10 @@
  * Single-screen authentication and profile selection.
  *
  * Stages:
- *   1. Deploy    — Name + faction + avatar + auth buttons (new users),
- *                  or "Create Profile" button (already signed in)
+ *   1. Welcome   — Auth buttons only (Google, Email, Guest)
  *   2. Email     — Email/password sub-form
  *   3. Profiles  — Select from profile slots (returning users)
+ *   4. Create    — Profile creation/edit form (avatar, name, faction)
  */
 
 class AuthScreen {
@@ -14,8 +14,8 @@ class AuthScreen {
     /** @type {AuthManager} */
     this.auth = authManager;
 
-    /** @type {string} Current stage: 'deploy' | 'profiles' | 'email' */
-    this.stage = "deploy";
+    /** @type {string} Current stage: 'welcome' | 'email' | 'profiles' | 'create' */
+    this.stage = "welcome";
 
     /** @type {Function|null} Callback: ({ name, faction, profileIndex, profileData }) => {} */
     this.onConfirm = null;
@@ -35,7 +35,7 @@ class AuthScreen {
     /** @type {boolean} Whether the user is currently authenticated */
     this._isAuthenticated = false;
 
-    /** @type {boolean} Whether the deploy form is in edit mode */
+    /** @type {boolean} Whether the create form is in edit mode */
     this._isEditMode = false;
 
     this._createUI();
@@ -55,66 +55,40 @@ class AuthScreen {
       <div class="auth-panel">
         <button class="auth-close-btn hidden" id="auth-close-btn" title="Return to game">\u2715</button>
 
-        <!-- Stage: Deploy (combined auth + profile creation) -->
-        <div class="auth-stage" id="auth-stage-deploy">
-          <div class="auth-title" id="auth-deploy-title">AdLands</div>
-          <div class="auth-subtitle" id="auth-deploy-subtitle">A Limited Liability Company</div>
+        <!-- Loading overlay -->
+        <div class="auth-loading hidden" id="auth-loading">
+          <div class="auth-loading-spinner"></div>
+          <div class="auth-loading-text">Loading...</div>
+        </div>
 
-          <!-- Avatar upload -->
-          <div class="auth-avatar-section">
-            <div class="auth-avatar-preview empty" id="auth-avatar-preview"></div>
-            <button class="auth-btn auth-btn-secondary auth-avatar-upload-btn" id="auth-avatar-upload-btn">
-              Upload Picture
+        <!-- Confirmation dialog -->
+        <div class="auth-confirm-dialog hidden" id="auth-confirm-dialog">
+          <div class="auth-confirm-message" id="auth-confirm-message"></div>
+          <div class="auth-confirm-actions">
+            <button class="auth-btn auth-btn-danger" id="auth-confirm-yes">Delete</button>
+            <button class="auth-btn auth-btn-back" id="auth-confirm-no">Cancel</button>
+          </div>
+        </div>
+
+        <!-- Stage: Welcome / Auth Gate -->
+        <div class="auth-stage" id="auth-stage-welcome">
+          <div class="auth-title">AdLands</div>
+          <div class="auth-subtitle">A Limited Liability Company</div>
+
+          <div class="auth-providers">
+            <button class="auth-btn auth-btn-google" data-provider="google">
+              <span class="auth-btn-icon">G</span>
+              Continue with Google
             </button>
-            <input type="file" id="auth-avatar-file" accept="image/*" style="display:none">
-          </div>
-
-          <!-- Name input -->
-          <input type="text" id="auth-profile-name"
-                 class="auth-input"
-                 placeholder="Enter name..."
-                 maxlength="20"
-                 autocomplete="off"
-                 spellcheck="false">
-
-          <!-- Faction picker -->
-          <div id="auth-faction-section">
-            <div class="auth-faction-prompt">Choose Faction (permanent)</div>
-            <div class="auth-factions">
-              <button class="faction-btn" data-faction="rust">Rust</button>
-              <button class="faction-btn" data-faction="cobalt">Cobalt</button>
-              <button class="faction-btn" data-faction="viridian">Viridian</button>
-            </div>
-          </div>
-
-          <!-- Auth buttons (shown when NOT signed in) -->
-          <div id="auth-deploy-providers">
-            <div class="auth-divider"><span>Deploy with</span></div>
-            <div class="auth-providers">
-              <button class="auth-btn auth-btn-google" data-provider="google">
-                <span class="auth-btn-icon">G</span>
-                Continue with Google
-              </button>
-              <button class="auth-btn auth-btn-email" data-provider="email">
-                <span class="auth-btn-icon">\u2709</span>
-                Continue with Email
-              </button>
-            </div>
-            <div class="auth-divider"><span>or</span></div>
-            <button class="auth-btn auth-btn-guest" data-provider="guest">
-              Play as Guest
+            <button class="auth-btn auth-btn-email" data-provider="email">
+              <span class="auth-btn-icon">\u2709</span>
+              Continue with Email
             </button>
           </div>
-
-          <!-- Create button (shown when ALREADY signed in) -->
-          <div id="auth-deploy-create" class="hidden">
-            <button class="auth-btn auth-btn-primary" id="auth-create-confirm" disabled>
-              Create Profile
-            </button>
-            <button class="auth-btn auth-btn-back" id="auth-create-back">
-              Cancel
-            </button>
-          </div>
+          <div class="auth-divider"><span>or</span></div>
+          <button class="auth-btn auth-btn-guest" data-provider="guest">
+            Play as Guest
+          </button>
 
           <div class="auth-error hidden" id="auth-error"></div>
         </div>
@@ -160,6 +134,47 @@ class AuthScreen {
             Link Account (save your progress)
           </button>
         </div>
+
+        <!-- Stage: Profile Creator / Editor -->
+        <div class="auth-stage hidden" id="auth-stage-create">
+          <div class="auth-title" id="auth-create-title">Create Profile</div>
+
+          <!-- Avatar upload -->
+          <div class="auth-avatar-section">
+            <div class="auth-avatar-preview empty" id="auth-avatar-preview"></div>
+            <button class="auth-btn auth-btn-secondary auth-avatar-upload-btn" id="auth-avatar-upload-btn">
+              Upload Picture
+            </button>
+            <input type="file" id="auth-avatar-file" accept="image/*" style="display:none">
+          </div>
+
+          <!-- Name input -->
+          <input type="text" id="auth-profile-name"
+                 class="auth-input"
+                 placeholder="Enter name..."
+                 maxlength="20"
+                 autocomplete="off"
+                 spellcheck="false">
+
+          <!-- Faction picker (hidden in edit mode) -->
+          <div id="auth-faction-section">
+            <div class="auth-faction-prompt">Choose Faction (permanent)</div>
+            <div class="auth-factions">
+              <button class="faction-btn" data-faction="rust">Rust</button>
+              <button class="faction-btn" data-faction="cobalt">Cobalt</button>
+              <button class="faction-btn" data-faction="viridian">Viridian</button>
+            </div>
+          </div>
+
+          <button class="auth-btn auth-btn-primary" id="auth-create-confirm" disabled>
+            Create Profile
+          </button>
+          <button class="auth-btn auth-btn-back" id="auth-create-back">
+            Cancel
+          </button>
+
+          <div class="auth-error hidden" id="auth-create-error"></div>
+        </div>
       </div>
     `;
 
@@ -181,7 +196,7 @@ class AuthScreen {
       this.hide();
     });
 
-    // Auth provider buttons (in deploy stage)
+    // Auth provider buttons (in welcome stage)
     this.overlay.querySelectorAll("[data-provider]").forEach((btn) => {
       btn.addEventListener("click", (e) => {
         e.stopPropagation();
@@ -209,7 +224,7 @@ class AuthScreen {
     });
     emailBack.addEventListener("click", (e) => {
       e.stopPropagation();
-      this._showStage("deploy");
+      this._showStage("welcome");
     });
 
     // Enter key in password field
@@ -225,7 +240,7 @@ class AuthScreen {
       e.stopPropagation();
       this.auth.signOut().then(() => {
         this._isAuthenticated = false;
-        this._showDeployScreen();
+        this._showStage("welcome");
       });
     });
 
@@ -235,7 +250,7 @@ class AuthScreen {
       this._handleLinkAccount();
     });
 
-    // Profile creation / edit (in deploy stage)
+    // Profile creation / edit (in create stage)
     const createConfirm = this.overlay.querySelector("#auth-create-confirm");
     const createBack = this.overlay.querySelector("#auth-create-back");
     const nameInput = this.overlay.querySelector("#auth-profile-name");
@@ -283,10 +298,10 @@ class AuthScreen {
         if (hasProfiles) {
           this._showStage("profiles");
         } else {
-          // New user with no profiles — sign out and go back to unauthenticated deploy
+          // New user with no profiles — sign out and go back to welcome
           this.auth.signOut().then(() => {
             this._isAuthenticated = false;
-            this._showDeployScreen();
+            this._showStage("welcome");
           });
         }
       }
@@ -298,12 +313,29 @@ class AuthScreen {
   // ========================
 
   _showStage(stage) {
+    const prev = this.stage;
     this.stage = stage;
-    const stages = this.overlay.querySelectorAll(".auth-stage");
-    stages.forEach((el) => el.classList.add("hidden"));
 
+    const stages = this.overlay.querySelectorAll(".auth-stage");
     const target = this.overlay.querySelector(`#auth-stage-${stage}`);
-    if (target) target.classList.remove("hidden");
+    if (!target) return;
+
+    const prevEl = this.overlay.querySelector(`#auth-stage-${prev}`);
+    if (prevEl && prev !== stage && !prevEl.classList.contains("hidden")) {
+      prevEl.classList.add("auth-stage-exit");
+      setTimeout(() => {
+        prevEl.classList.add("hidden");
+        prevEl.classList.remove("auth-stage-exit");
+        target.classList.remove("hidden");
+        target.classList.add("auth-stage-enter");
+        setTimeout(() => target.classList.remove("auth-stage-enter"), 200);
+      }, 150);
+    } else {
+      stages.forEach((el) => el.classList.add("hidden"));
+      target.classList.remove("hidden");
+      target.classList.add("auth-stage-enter");
+      setTimeout(() => target.classList.remove("auth-stage-enter"), 200);
+    }
 
     // Clear errors
     this.overlay.querySelectorAll(".auth-error").forEach((el) => {
@@ -320,6 +352,41 @@ class AuthScreen {
     }
   }
 
+  _showLoading(message = "Loading...") {
+    const el = this.overlay.querySelector("#auth-loading");
+    el.querySelector(".auth-loading-text").textContent = message;
+    el.classList.remove("hidden");
+  }
+
+  _hideLoading() {
+    this.overlay.querySelector("#auth-loading").classList.add("hidden");
+  }
+
+  _showConfirmDialog(message, confirmLabel = "Delete") {
+    return new Promise((resolve) => {
+      const dialog = this.overlay.querySelector("#auth-confirm-dialog");
+      const msgEl = this.overlay.querySelector("#auth-confirm-message");
+      const yesBtn = this.overlay.querySelector("#auth-confirm-yes");
+      const noBtn = this.overlay.querySelector("#auth-confirm-no");
+
+      msgEl.textContent = message;
+      yesBtn.textContent = confirmLabel;
+      dialog.classList.remove("hidden");
+
+      const cleanup = () => {
+        dialog.classList.add("hidden");
+        yesBtn.removeEventListener("click", onYes);
+        noBtn.removeEventListener("click", onNo);
+      };
+
+      const onYes = (e) => { e.stopPropagation(); cleanup(); resolve(true); };
+      const onNo = (e) => { e.stopPropagation(); cleanup(); resolve(false); };
+
+      yesBtn.addEventListener("click", onYes);
+      noBtn.addEventListener("click", onNo);
+    });
+  }
+
   // ========================
   // VISIBILITY
   // ========================
@@ -331,7 +398,9 @@ class AuthScreen {
     const closeBtn = this.overlay.querySelector("#auth-close-btn");
     closeBtn.classList.toggle("hidden", !canDismiss);
 
-    // Wait for Firebase to resolve initial auth state before deciding stage
+    // Show loading while we resolve auth state
+    this._showLoading("Checking account...");
+
     await this.auth.waitForReady();
 
     if (this.auth.isSignedIn) {
@@ -354,6 +423,7 @@ class AuthScreen {
 
           const hasProfiles = this._profiles.some((p) => p !== null);
           if (hasProfiles) {
+            this._hideLoading();
             this._renderProfileSlots();
             this._showStage("profiles");
             const linkBtn = this.overlay.querySelector("#auth-link-account");
@@ -362,15 +432,18 @@ class AuthScreen {
           }
         }
 
-        // No profiles or no account doc — show deploy in authenticated mode
-        this._showDeployScreen(this._findNextEmptySlot());
+        // No profiles or no account doc — go to profile creator
+        this._hideLoading();
+        this._showCreateScreen(this._findNextEmptySlot());
       } catch (err) {
         console.error("[AuthScreen] Failed to check profiles:", err);
-        this._showDeployScreen(this._findNextEmptySlot());
+        this._hideLoading();
+        this._showCreateScreen(this._findNextEmptySlot());
       }
     } else {
       this._isAuthenticated = false;
-      this._showDeployScreen();
+      this._hideLoading();
+      this._showStage("welcome");
     }
   }
 
@@ -384,49 +457,30 @@ class AuthScreen {
   }
 
   // ========================
-  // DEPLOY SCREEN
+  // PROFILE CREATOR
   // ========================
 
   /**
-   * Set up and show the deploy screen.
-   * Resets form, toggles auth buttons vs create button, disables used factions.
+   * Set up and show the profile creation form.
    * @param {number} [slotIndex] - Profile slot to create into
    */
-  _showDeployScreen(slotIndex) {
+  _showCreateScreen(slotIndex) {
     this._selectedIndex = slotIndex !== undefined ? slotIndex : this._findNextEmptySlot();
     this._selectedFaction = null;
     this._uploadedImage = null;
     this._isEditMode = false;
 
-    // Toggle auth buttons vs create button
-    const providersDiv = this.overlay.querySelector("#auth-deploy-providers");
-    const createDiv = this.overlay.querySelector("#auth-deploy-create");
-
-    if (this._isAuthenticated) {
-      providersDiv.classList.add("hidden");
-      createDiv.classList.remove("hidden");
-      // Set button text
-      const confirmBtn = this.overlay.querySelector("#auth-create-confirm");
-      confirmBtn.textContent = "Create Profile";
-      confirmBtn.disabled = true;
-    } else {
-      providersDiv.classList.remove("hidden");
-      createDiv.classList.add("hidden");
-    }
-
     // Set title
-    const title = this.overlay.querySelector("#auth-deploy-title");
-    const subtitle = this.overlay.querySelector("#auth-deploy-subtitle");
-    if (this._isAuthenticated) {
-      title.textContent = "Create Profile";
-      subtitle.textContent = "";
-    } else {
-      title.textContent = "AdLands";
-      subtitle.textContent = "A Limited Liability Company";
-    }
+    const title = this.overlay.querySelector("#auth-create-title");
+    title.textContent = "Create Profile";
 
     // Show faction section
     this.overlay.querySelector("#auth-faction-section").style.display = "";
+
+    // Set button text
+    const confirmBtn = this.overlay.querySelector("#auth-create-confirm");
+    confirmBtn.textContent = "Create Profile";
+    confirmBtn.disabled = true;
 
     // Reset form
     const nameInput = this.overlay.querySelector("#auth-profile-name");
@@ -455,13 +509,7 @@ class AuthScreen {
       btn.classList.toggle("faction-used", used);
     });
 
-    // Reset auth buttons to default text
-    const googleBtn = this.overlay.querySelector('[data-provider="google"]');
-    const guestBtn = this.overlay.querySelector('[data-provider="guest"]');
-    if (googleBtn) googleBtn.innerHTML = '<span class="auth-btn-icon">G</span> Continue with Google';
-    if (guestBtn) guestBtn.textContent = "Play as Guest";
-
-    this._showStage("deploy");
+    this._showStage("create");
     this._updateCreateState();
     setTimeout(() => nameInput.focus(), 100);
   }
@@ -471,14 +519,14 @@ class AuthScreen {
   // ========================
 
   /**
-   * Shared logic after any auth method succeeds.
-   * Checks Firestore for existing profiles and routes accordingly.
+   * After any auth method succeeds, check Firestore and route to the right stage.
    */
   async _postAuthRouting() {
     const uid = this.auth.uid;
     if (!uid) return;
 
     this._isAuthenticated = true;
+    this._showLoading("Loading account...");
 
     try {
       const accountRef = firebaseDb.collection("accounts").doc(uid);
@@ -503,8 +551,10 @@ class AuthScreen {
         });
         this._profiles = profilesArray;
 
-        // New user — try to auto-create from deploy form data
-        await this._validateAndCreateFromDeploy();
+        // New user — go to profile creator
+        this._hideLoading();
+        this._setButtonsDisabled(false);
+        this._showCreateScreen(0);
       } else {
         // Existing user — update last login
         accountRef.update({
@@ -519,89 +569,26 @@ class AuthScreen {
         const hasProfiles = this._profiles.some((p) => p !== null);
         if (hasProfiles) {
           // Returning user — show profile selector
+          this._hideLoading();
           this._setButtonsDisabled(false);
           this._renderProfileSlots();
           this._showStage("profiles");
           const linkBtn = this.overlay.querySelector("#auth-link-account");
           linkBtn.style.display = this.auth.isGuest ? "block" : "none";
         } else {
-          // Existing account but no profiles — try to auto-create
-          await this._validateAndCreateFromDeploy();
+          // Existing account but no profiles — go to profile creator
+          this._hideLoading();
+          this._setButtonsDisabled(false);
+          this._showCreateScreen(0);
         }
       }
     } catch (err) {
       console.error("[AuthScreen] Post-auth routing failed:", err);
+      this._hideLoading();
       this._setButtonsDisabled(false);
-      this._showDeployScreen(this._findNextEmptySlot());
-      this._showError("auth-error", "Failed to load account. Please try again.");
+      this._showCreateScreen(this._findNextEmptySlot());
+      this._showError("auth-create-error", "Failed to load account. Please try again.");
     }
-  }
-
-  /**
-   * Validate deploy form and auto-create profile if valid.
-   * If form is incomplete, switch deploy to authenticated mode with error hint.
-   */
-  async _validateAndCreateFromDeploy() {
-    const name = this.overlay.querySelector("#auth-profile-name").value.trim();
-    const faction = this._selectedFaction;
-
-    if (!name || !faction) {
-      // Incomplete form — switch to authenticated deploy mode with error
-      this._setButtonsDisabled(false);
-      this._switchDeployToAuthMode();
-
-      // Pre-fill name from auth if form is empty
-      if (!name && this.auth.displayName) {
-        this.overlay.querySelector("#auth-profile-name").value = this.auth.displayName.substring(0, 20);
-      }
-
-      this._updateCreateState();
-      // Ensure deploy stage is visible (may have been on email stage)
-      this._showStage("deploy");
-      this._showError("auth-error", "Enter a name and choose a faction to deploy.");
-      return;
-    }
-
-    // Validate name
-    if (!/^[a-zA-Z0-9 _-]+$/.test(name)) {
-      this._setButtonsDisabled(false);
-      this._switchDeployToAuthMode();
-      this._updateCreateState();
-      this._showStage("deploy");
-      this._showError("auth-error", "Name can only contain letters, numbers, spaces, hyphens, underscores.");
-      return;
-    }
-
-    const index = this._selectedIndex >= 0 ? this._selectedIndex : this._findNextEmptySlot();
-    this._selectedIndex = index;
-    const uid = this.auth.uid;
-
-    try {
-      await this._saveNewProfile(name, faction, index, uid);
-    } catch (err) {
-      console.error("[AuthScreen] Auto-create failed:", err);
-      this._setButtonsDisabled(false);
-      this._switchDeployToAuthMode();
-      this._showStage("deploy");
-      this._showError("auth-error", "Failed to create profile. Please try again.");
-    }
-  }
-
-  /**
-   * Toggle deploy stage to show Create Profile button instead of auth buttons.
-   */
-  _switchDeployToAuthMode() {
-    const title = this.overlay.querySelector("#auth-deploy-title");
-    const subtitle = this.overlay.querySelector("#auth-deploy-subtitle");
-    title.textContent = "Create Profile";
-    subtitle.textContent = "";
-
-    this.overlay.querySelector("#auth-deploy-providers").classList.add("hidden");
-    const createDiv = this.overlay.querySelector("#auth-deploy-create");
-    createDiv.classList.remove("hidden");
-
-    const confirmBtn = this.overlay.querySelector("#auth-create-confirm");
-    confirmBtn.textContent = "Create Profile";
   }
 
   /**
@@ -622,7 +609,7 @@ class AuthScreen {
     const originalHTML = btn ? btn.innerHTML : "";
 
     if (provider === "email") {
-      // Navigate to email sub-form (deploy form data persists in DOM)
+      // Navigate to email sub-form
       this._showStage("email");
       return;
     }
@@ -804,7 +791,7 @@ class AuthScreen {
       } else {
         slot.addEventListener("click", (e) => {
           e.stopPropagation();
-          this._showDeployScreen(i);
+          this._showCreateScreen(i);
         });
       }
     }
@@ -864,17 +851,10 @@ class AuthScreen {
     this._selectedFaction = profile.faction;
     this._uploadedImage = profile.profilePicture || null;
     this._isEditMode = true;
-    this._isAuthenticated = true;
 
     // Set title
-    const title = this.overlay.querySelector("#auth-deploy-title");
-    const subtitle = this.overlay.querySelector("#auth-deploy-subtitle");
+    const title = this.overlay.querySelector("#auth-create-title");
     title.textContent = "Edit Profile";
-    subtitle.textContent = "";
-
-    // Show create section, hide auth providers
-    this.overlay.querySelector("#auth-deploy-providers").classList.add("hidden");
-    this.overlay.querySelector("#auth-deploy-create").classList.remove("hidden");
 
     // Update button text
     const confirmBtn = this.overlay.querySelector("#auth-create-confirm");
@@ -899,7 +879,7 @@ class AuthScreen {
     // Hide faction section (faction is permanent)
     this.overlay.querySelector("#auth-faction-section").style.display = "none";
 
-    this._showStage("deploy");
+    this._showStage("create");
     setTimeout(() => {
       this.overlay.querySelector("#auth-profile-name").focus();
     }, 100);
@@ -909,11 +889,12 @@ class AuthScreen {
     const profile = this._profiles[index];
     if (!profile) return;
 
-    // Confirmation
+    // In-panel confirmation
     const name = profile.name || "Unnamed";
     const faction = profile.faction || "unknown";
-    const confirmed = window.confirm(
+    const confirmed = await this._showConfirmDialog(
       `Delete profile "${name}" (${faction})? This cannot be undone.`,
+      "Delete",
     );
     if (!confirmed) return;
 
@@ -956,7 +937,7 @@ class AuthScreen {
 
     // Validate name
     if (!/^[a-zA-Z0-9 _-]+$/.test(name)) {
-      this._showError("auth-error", "Name can only contain letters, numbers, spaces, hyphens, underscores.");
+      this._showError("auth-create-error", "Name can only contain letters, numbers, spaces, hyphens, underscores.");
       return;
     }
 

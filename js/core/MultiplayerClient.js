@@ -423,6 +423,7 @@
           // Sync faction change: if server changed this bodyguard's faction
           // (e.g. commander switched factions), despawn old and spawn new
           if (!bg.isDead && bgState.f && bgState.f !== bg.faction) {
+            console.log("[Multiplayer] Bodyguard faction changed:", bgId, bg.faction, "->", bgState.f);
             despawnRemoteBodyguard(bgId);
             bg = spawnRemoteBodyguard({
               id: bgId,
@@ -1428,6 +1429,11 @@
     function spawnRemoteBodyguard(bgData) {
       const id = bgData.id;
       if (remoteBodyguards.has(id)) return remoteBodyguards.get(id);
+
+      const spawnFaction = bgData.faction || bgData.f;
+      if (!spawnFaction) {
+        console.warn("[Multiplayer] Bodyguard spawned with missing faction!", id, bgData);
+      }
 
       const bg = new RemoteBodyguard(scene, sphereRadius, bgData);
       remoteBodyguards.set(id, bg);

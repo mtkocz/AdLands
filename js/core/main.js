@@ -1397,6 +1397,7 @@
         window.dashboard._updateAvatarFaction(faction);
         window.dashboard._updateFactionDropdown(faction);
         window.dashboard._updateTankPreview();
+        window.dashboard._resetFactionPanel(faction);
       }
       if (typeof PresenceTracker !== "undefined") {
         PresenceTracker.setPlayerFaction(faction);
