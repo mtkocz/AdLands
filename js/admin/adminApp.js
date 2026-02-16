@@ -1108,25 +1108,29 @@
 
           const isActive = s.id === activeEditId;
 
-          // Image review status badge for player territories
+          // Territory texture thumbnail + review UI for player territories
+          let textureHtml = "";
           let reviewHtml = "";
-          if (s.isPlayerTerritory && s.imageStatus === "pending" && s.pendingImage) {
-            // Pending items on the "All" tab still show inline review
-            reviewHtml = `
-              <div class="territory-review-section">
-                <div class="territory-review-label">Pending Image Review</div>
-                <div class="territory-review-preview">
-                  <img src="${s.pendingImage}" alt="Pending" class="territory-pending-img">
-                </div>
-                <div class="territory-review-actions">
-                  <button class="btn-approve approve-image-btn" data-id="${s.id}">Approve</button>
-                  <button class="btn-reject reject-image-btn" data-id="${s.id}">Reject</button>
-                </div>
-              </div>`;
-          } else if (s.isPlayerTerritory && s.imageStatus === "rejected") {
-            reviewHtml = `<div class="territory-review-status rejected">Rejected</div>`;
-          } else if (s.isPlayerTerritory && s.imageStatus === "approved") {
-            reviewHtml = `<div class="territory-review-status approved">Approved</div>`;
+          if (s.isPlayerTerritory) {
+            // Pick the best image to display: pending upload > approved pattern > extracted URL
+            const textureSrc = s.pendingImage || s.patternImage || s.patternUrl;
+            if (textureSrc) {
+              textureHtml = `<div class="territory-row-texture"><img src="${textureSrc}" alt="Texture" class="territory-texture-thumb"></div>`;
+            }
+            if (s.imageStatus === "pending" && s.pendingImage) {
+              reviewHtml = `
+                <div class="territory-review-section">
+                  <div class="territory-review-label">Pending Image Review</div>
+                  <div class="territory-review-actions">
+                    <button class="btn-approve approve-image-btn" data-id="${s.id}">Approve</button>
+                    <button class="btn-reject reject-image-btn" data-id="${s.id}">Reject</button>
+                  </div>
+                </div>`;
+            } else if (s.imageStatus === "rejected") {
+              reviewHtml = `<div class="territory-review-status rejected">Rejected</div>`;
+            } else if (s.imageStatus === "approved") {
+              reviewHtml = `<div class="territory-review-status approved">Approved</div>`;
+            }
           }
 
           return `
@@ -1136,6 +1140,7 @@
                 <span class="sponsor-cluster-row-stats">${tileCount} tiles, ${s.rewards?.length || 0} rewards</span>
                 ${revSpan}
                 <button class="icon-btn delete-sponsor-btn" title="Delete territory">&times;</button>
+                ${textureHtml}
                 ${reviewHtml}
             </div>
           `;
@@ -1153,7 +1158,10 @@
           : "";
 
         const isGroupEditing = currentEditingGroupName && currentEditingGroupName.toLowerCase() === (first.name || "").toLowerCase();
-        const groupLogoSrc = first.logoUrl || first.logoImage;
+        // For player territories, prefer showing the territory pattern over the player avatar
+        const groupLogoSrc = hasPlayerTerritory
+          ? (first.pendingImage || first.patternImage || first.patternUrl || first.logoUrl || first.logoImage)
+          : (first.logoUrl || first.logoImage);
         const isGroupPaused = members.some((s) => !!s.paused);
         const isNewTerritory = hasPlayerTerritory && members.some((s) => s.imageStatus === "placeholder" || !s.imageStatus);
         const hasPendingImage = hasPlayerTerritory && members.some((s) => s.imageStatus === "pending");

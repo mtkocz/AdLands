@@ -1870,3 +1870,14 @@ body {
     background: rgba(77, 208, 225, 0.15);
 }
 
+/* Territory texture thumbnail in cluster rows */
+.territory-row-texture {
+    margin-top: 6px;
+}
+.territory-texture-thumb {
+    max-width: 100%;
+    max-height: 80px;
+    border: 1px solid #333;
+    image-rendering: pixelated;
+}
+
