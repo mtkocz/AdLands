@@ -2641,26 +2641,28 @@ class Dashboard {
         });
       }
 
-      // Update SponsorStorage so the admin portal sees the pending image
+      // Patch SponsorStorage local cache directly (avoid PUT /api/sponsors which
+      // triggers a full sponsors-reloaded broadcast that would wipe the texture)
       if (typeof SponsorStorage !== "undefined" && SponsorStorage._cache) {
-        const storageId = territory._sponsorStorageId;
-        if (storageId) {
-          SponsorStorage.update(storageId, {
-            pendingImage: dataUrl,
-            imageStatus: "pending",
-            patternAdjustment: territory.patternAdjustment,
-          }).catch((e) => console.warn("[Dashboard] SponsorStorage pending update failed:", e));
-        } else {
-          // Fallback: find by _territoryId
+        let storageId = territory._sponsorStorageId;
+        if (!storageId) {
           const allSponsors = SponsorStorage.getAll();
           const match = allSponsors.find((s) => s._territoryId === territoryId);
-          if (match) {
-            territory._sponsorStorageId = match.id;
-            SponsorStorage.update(match.id, {
-              pendingImage: dataUrl,
-              imageStatus: "pending",
-              patternAdjustment: territory.patternAdjustment,
-            }).catch((e) => console.warn("[Dashboard] SponsorStorage pending update failed:", e));
+          if (match) { storageId = match.id; territory._sponsorStorageId = match.id; }
+        }
+        if (storageId) {
+          const idx = SponsorStorage._cache.sponsors.findIndex((s) => s.id === storageId);
+          if (idx !== -1) {
+            SponsorStorage._cache.sponsors[idx].pendingImage = dataUrl;
+            SponsorStorage._cache.sponsors[idx].imageStatus = "pending";
+            SponsorStorage._cache.sponsors[idx].patternAdjustment = territory.patternAdjustment;
+            // Persist to IndexedDB if available (no API call)
+            if (SponsorStorage._db) {
+              try {
+                const tx = SponsorStorage._db.transaction("sponsors", "readwrite");
+                tx.objectStore("sponsors").put(SponsorStorage._cache.sponsors[idx]);
+              } catch (e) { /* IndexedDB write is best-effort */ }
+            }
           }
         }
       }
