@@ -177,14 +177,19 @@
     // Add new sponsor
     addSponsorBtn.addEventListener("click", handleNewSponsor);
 
-    // Sponsor list tab filter
+    // Sponsor list tab filter (reload from server when switching to User Territories
+    // to pick up any pending image submissions)
     document.querySelector(".sponsor-tabs")?.addEventListener("click", (e) => {
       const tab = e.target.closest(".sponsor-tab");
       if (!tab) return;
       document.querySelectorAll(".sponsor-tab").forEach((t) => t.classList.remove("active"));
       tab.classList.add("active");
       sponsorListFilter = tab.dataset.filter;
-      refreshSponsorsList();
+      if (tab.dataset.filter === "players") {
+        SponsorStorage.reload().then(() => refreshSponsorsList());
+      } else {
+        refreshSponsorsList();
+      }
     });
 
     // Cross-tab sync: refresh sponsor list when game tab creates/updates/deletes territories

@@ -2802,7 +2802,7 @@ class GameRoom {
     const sponsors = this.sponsors.map(s => {
       const urls = this.sponsorImageUrls[s.id] || {};
       const cacheBust = s.updatedAt ? `?v=${encodeURIComponent(s.updatedAt)}` : '';
-      return {
+      const entry = {
         id: s.id,
         name: s.name,
         tagline: s.tagline,
@@ -2816,6 +2816,15 @@ class GameRoom {
         createdAt: s.createdAt,
         clusterId: this.sponsorClusterMap.get(s.id),
       };
+      // Include player territory metadata so clients can reconcile local state
+      if (s.isPlayerTerritory) {
+        entry.isPlayerTerritory = true;
+        entry.ownerUid = s.ownerUid || null;
+        entry.imageStatus = s.imageStatus || null;
+        entry.tierName = s.tierName || null;
+        entry._territoryId = s._territoryId || null;
+      }
+      return entry;
     });
 
     return {

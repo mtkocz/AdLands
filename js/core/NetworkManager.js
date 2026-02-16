@@ -259,6 +259,11 @@ class NetworkManager {
       if (this.onTerritoryImageReviewResult) this.onTerritoryImageReviewResult(data);
     });
 
+    // Admin deleted the player's territory
+    this.socket.on("territory-deleted", (data) => {
+      if (this.onTerritoryDeleted) this.onTerritoryDeleted(data);
+    });
+
     // Server acknowledged image submission
     this.socket.on("territory-image-submitted", (data) => {
       if (this.onTerritoryImageSubmitted) this.onTerritoryImageSubmitted(data);

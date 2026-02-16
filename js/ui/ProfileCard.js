@@ -512,6 +512,15 @@ class ProfileCard {
    * Get player data by ID
    */
   _getPlayerData(playerId) {
+    // For self player, always build fresh from current systems
+    if (
+      playerId === "player_self" ||
+      playerId === "self" ||
+      playerId === "player"
+    ) {
+      return this._buildSelfProfile();
+    }
+
     // Check cache first
     if (this.playerCache.has(playerId)) {
       return this.playerCache.get(playerId);
@@ -520,15 +529,6 @@ class ProfileCard {
     // Check mock players
     if (this.mockPlayers[playerId]) {
       return this.mockPlayers[playerId];
-    }
-
-    // For self player, build from current systems
-    if (
-      playerId === "player_self" ||
-      playerId === "self" ||
-      playerId === "player"
-    ) {
-      return this._buildSelfProfile();
     }
 
     // Try to build profile from playerTags if it's a tankId

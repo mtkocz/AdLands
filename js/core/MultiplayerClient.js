@@ -1290,6 +1290,12 @@
           planet.deElevateSponsorTiles();
         });
       }
+
+      // Reconcile player territories with admin-authoritative server state
+      const dashboard = window.dashboard;
+      if (dashboard && data.world.sponsors) {
+        dashboard._reconcilePlayerTerritories(data.world.sponsors);
+      }
     };
 
     // Admin changed moon sponsors — update moon textures
@@ -1338,6 +1344,14 @@
       planet._applySponsorTexture(sponsor, data.tileIndices);
     };
 
+    // Admin deleted the player's territory
+    net.onTerritoryDeleted = (data) => {
+      if (!data) return;
+      const dashboard = window.dashboard;
+      if (!dashboard) return;
+      dashboard._onAdminDeleteTerritory(data.territoryId, data.sponsorStorageId);
+    };
+
     // Personal review result for the territory owner (approve or reject)
     net.onTerritoryImageReviewResult = (data) => {
       if (!data) return;
@@ -1369,10 +1383,15 @@
       dashboard._renderTerritoryList();
     };
 
-    // Server acknowledged image submission
+    // Server acknowledged image submission — notify admin portal to reload
     net.onTerritoryImageSubmitted = (data) => {
       if (data && data.status === "error") {
         console.warn("[Territory] Image submission failed:", data.message);
+      } else if (data && data.status === "pending") {
+        // Server confirmed save — tell admin portal (other tab) to reload
+        if (typeof SponsorStorage !== "undefined") {
+          SponsorStorage._broadcast("update", { id: data.territoryId });
+        }
       }
     };
 

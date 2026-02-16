@@ -2205,6 +2205,54 @@ class Dashboard {
     );
   }
 
+  /**
+   * Reconcile local player territories with server-authoritative sponsor data.
+   * Called on every sponsors-reloaded so admin changes always override player state.
+   */
+  _reconcilePlayerTerritories(serverSponsors) {
+    const uid = window.authManager?.uid;
+    if (!uid || !this._playerTerritories || this._playerTerritories.length === 0) return;
+
+    // Build lookup of this player's territories from server data
+    const serverMap = new Map();
+    for (const s of serverSponsors) {
+      if (s.isPlayerTerritory && s.ownerUid === uid) {
+        const territoryId = s._territoryId || s.id;
+        serverMap.set(territoryId, s);
+      }
+    }
+
+    let changed = false;
+
+    // Update local entries from server-authoritative data
+    for (const local of this._playerTerritories) {
+      const server = serverMap.get(local.id);
+      if (!server) continue;
+
+      // Override local state with admin-authoritative values
+      if (server.patternImage) local.patternImage = server.patternImage;
+      if (server.patternAdjustment) local.patternAdjustment = server.patternAdjustment;
+      if (server.imageStatus) local.imageStatus = server.imageStatus;
+      if (server.cluster?.tileIndices) local.tileIndices = server.cluster.tileIndices;
+      local._sponsorStorageId = server.id;
+      changed = true;
+    }
+
+    // Remove territories no longer present on server (admin deleted them)
+    const before = this._playerTerritories.length;
+    this._playerTerritories = this._playerTerritories.filter((t) => {
+      // Keep if server has it, or if server has no player territories at all
+      // (avoids wiping on payload without metadata)
+      return serverMap.has(t.id) || serverMap.size === 0;
+    });
+    if (this._playerTerritories.length < before) changed = true;
+
+    if (changed) {
+      this._savePlayerTerritories();
+      this._renderTerritoryList();
+    }
+  }
+
   _selectTerritoryTier(tierName) {
     if (!this._territoryPlanet || !this._territoryTank) return;
 
@@ -2674,11 +2722,6 @@ class Dashboard {
           imageStatus: "pending",
           patternAdjustment: territory.patternAdjustment,
         }).catch((e) => console.warn("[Dashboard] Firestore pending update failed:", e));
-      }
-
-      // Notify admin portal (other tab) to reload and show the pending image
-      if (typeof SponsorStorage !== "undefined" && SponsorStorage._channel) {
-        SponsorStorage._broadcast("update", { id: territory._sponsorStorageId });
       }
 
       // Save to localStorage with pending status

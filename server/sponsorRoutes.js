@@ -204,12 +204,27 @@ function createSponsorRoutes(sponsorStore, gameRoom, { imageUrls, gameDir } = {}
 
   // DELETE /api/sponsors/:id — delete sponsor
   router.delete("/:id", async (req, res) => {
-    // Capture sponsor files before deleting from store
     const deletedId = req.params.id;
+
+    // Capture sponsor data before deleting so we can notify the owner
+    const sponsor = sponsorStore.getById(deletedId);
+
     const deleted = await sponsorStore.delete(deletedId);
     if (!deleted) return res.status(404).json({ errors: ["Sponsor not found"] });
     // Remove orphaned image files for deleted sponsor
     await cleanupSponsorImages(deletedId);
+
+    // Notify the owning player that their territory was deleted
+    if (sponsor && sponsor.isPlayerTerritory && sponsor.ownerUid && gameRoom) {
+      const territoryId = sponsor._territoryId || sponsor.id;
+      const sockets = await gameRoom.io.in(gameRoom.roomId).fetchSockets();
+      for (const s of sockets) {
+        if (s.uid === sponsor.ownerUid) {
+          s.emit("territory-deleted", { territoryId, sponsorStorageId: deletedId });
+        }
+      }
+    }
+
     reloadIfLive();
     res.json({ success: true });
   });
