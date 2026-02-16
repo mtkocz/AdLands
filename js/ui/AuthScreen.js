@@ -296,20 +296,7 @@ class AuthScreen {
 
     createBack.addEventListener("click", (e) => {
       e.stopPropagation();
-      if (this._isEditMode) {
-        this._showStage("profiles");
-      } else {
-        const hasProfiles = this._profiles.some((p) => p !== null);
-        if (hasProfiles) {
-          this._showStage("profiles");
-        } else {
-          // New user with no profiles — sign out and go back to welcome
-          this.auth.signOut().then(() => {
-            this._isAuthenticated = false;
-            this._showStage("welcome");
-          });
-        }
-      }
+      this._showStage("profiles");
     });
   }
 
@@ -444,25 +431,19 @@ class AuthScreen {
             linkedProviders: this.auth.linkedProviders,
             isAnonymous: this.auth.isGuest,
           });
-
-          const hasProfiles = this._profiles.some((p) => p !== null);
-          if (hasProfiles) {
-            this._hideLoading();
-            this._renderProfileSlots();
-            this._showStage("profiles");
-            const linkBtn = this.overlay.querySelector("#auth-link-account");
-            linkBtn.style.display = this.auth.isGuest ? "block" : "none";
-            return;
-          }
         }
 
-        // No profiles or no account doc — go to profile creator
+        // Always show profile selector after auth
         this._hideLoading();
-        this._showCreateScreen(this._findNextEmptySlot());
+        this._renderProfileSlots();
+        this._showStage("profiles");
+        const linkBtn = this.overlay.querySelector("#auth-link-account");
+        linkBtn.style.display = this.auth.isGuest ? "block" : "none";
       } catch (err) {
         console.error("[AuthScreen] Failed to check profiles:", err);
         this._hideLoading();
-        this._showCreateScreen(this._findNextEmptySlot());
+        this._renderProfileSlots();
+        this._showStage("profiles");
       }
     } else {
       this._isAuthenticated = false;
@@ -620,11 +601,6 @@ class AuthScreen {
           settings: {},
         });
         this._profiles = profilesArray;
-
-        // New user — go to profile creator
-        this._hideLoading();
-        this._setButtonsDisabled(false);
-        this._showCreateScreen(0);
       } else {
         // Existing user — update last login
         accountRef.update({
@@ -635,29 +611,21 @@ class AuthScreen {
 
         const data = accountDoc.data();
         this._profiles = this._sanitizeProfiles(data.profiles);
-
-        const hasProfiles = this._profiles.some((p) => p !== null);
-        if (hasProfiles) {
-          // Returning user — show profile selector
-          this._hideLoading();
-          this._setButtonsDisabled(false);
-          this._renderProfileSlots();
-          this._showStage("profiles");
-          const linkBtn = this.overlay.querySelector("#auth-link-account");
-          linkBtn.style.display = this.auth.isGuest ? "block" : "none";
-        } else {
-          // Existing account but no profiles — go to profile creator
-          this._hideLoading();
-          this._setButtonsDisabled(false);
-          this._showCreateScreen(0);
-        }
       }
+
+      // Always show profile selector after auth
+      this._hideLoading();
+      this._setButtonsDisabled(false);
+      this._renderProfileSlots();
+      this._showStage("profiles");
+      const linkBtn = this.overlay.querySelector("#auth-link-account");
+      linkBtn.style.display = this.auth.isGuest ? "block" : "none";
     } catch (err) {
       console.error("[AuthScreen] Post-auth routing failed:", err);
       this._hideLoading();
       this._setButtonsDisabled(false);
-      this._showCreateScreen(this._findNextEmptySlot());
-      this._showError("auth-create-error", "Failed to load account. Please try again.");
+      this._renderProfileSlots();
+      this._showStage("profiles");
     }
   }
 
