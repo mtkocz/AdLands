@@ -84,7 +84,6 @@
   font-size: var(--font-size-header);
   color: var(--text-primary);
   text-align: center;
-  text-transform: uppercase;
   text-shadow: var(--header-text-shadow);
   margin-bottom: var(--space-xs);
 }
@@ -94,7 +93,6 @@
   font-size: var(--font-size-small);
   color: var(--text-muted);
   text-align: center;
-  text-transform: uppercase;
   letter-spacing: 2px;
   margin-bottom: var(--space-lg);
 }
@@ -257,7 +255,6 @@
   color: var(--text-muted);
   font-family: var(--font-small);
   font-size: var(--font-size-small);
-  text-transform: uppercase;
   letter-spacing: 2px;
 }
 
@@ -395,7 +392,6 @@
   font-family: var(--font-small);
   font-size: var(--font-size-small);
   color: var(--text-muted);
-  text-transform: uppercase;
 }
 
 .profile-slot-actions {
@@ -413,7 +409,6 @@
   font-size: var(--font-size-small);
   cursor: var(--cursor-pointer);
   transition: background 0.1s, border-color 0.1s;
-  text-transform: uppercase;
 }
 
 .profile-slot-play:hover {
@@ -547,7 +542,6 @@
   font-family: var(--font-small);
   font-size: var(--font-size-small);
   color: var(--text-muted);
-  text-transform: uppercase;
   letter-spacing: 2px;
   text-align: center;
   margin-top: var(--space-xs);
@@ -568,7 +562,6 @@
   font-size: var(--font-size-body);
   cursor: var(--cursor-pointer);
   transition: background 0.1s, border-color 0.1s, color 0.1s;
-  text-transform: uppercase;
 }
 
 .auth-factions .faction-btn:hover:not(:disabled) {
@@ -639,7 +632,6 @@
   font-family: var(--font-small);
   font-size: var(--font-size-small);
   color: var(--text-muted);
-  text-transform: uppercase;
   letter-spacing: 2px;
 }
 

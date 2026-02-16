@@ -2238,6 +2238,13 @@ class GameRoom {
       faction: faction,
     });
 
+    // Update name in profile cache regardless of faction change
+    if (player.uid && this.profileCacheReady) {
+      const cacheKey = `${player.uid}:${player.profileIndex}`;
+      const entry = this.profileCacheIndex.get(cacheKey);
+      if (entry) entry.name = sanitized;
+    }
+
     // Recompute ranks if faction changed
     if (oldFaction !== faction) {
       if (this.commanders[oldFaction]?.id === socketId) {
@@ -2291,6 +2298,7 @@ class GameRoom {
           const cacheKey = `${p.uid}:${p.profileIndex}`;
           const entry = this.profileCacheIndex.get(cacheKey);
           if (entry) {
+            entry.name = p.name;
             entry.level = p.level || 1;
             entry.totalCrypto = p.totalCrypto || 0;
             entry.territoryCaptured = p.territoryCaptured || entry.territoryCaptured;

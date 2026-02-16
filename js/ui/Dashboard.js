@@ -408,7 +408,7 @@ class Dashboard {
     return `
             <div class="panel-inner">
                 <div class="faction-roster-header">
-                    <div class="faction-roster-title">Faction Roster</div>
+                    <div class="faction-roster-title">Faction Leaderboard</div>
                     <div class="faction-roster-count" id="faction-roster-count">Loading...</div>
                 </div>
                 <div class="faction-roster-list" id="faction-roster-list">

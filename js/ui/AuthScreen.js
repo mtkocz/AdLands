@@ -460,6 +460,9 @@ class AuthScreen {
     this.overlay.classList.remove("auth-hidden");
     this.overlay.classList.remove("auth-fade-out");
 
+    // Reset button state (may be stale from a previous profile selection)
+    this._setButtonsDisabled(false);
+
     // Allow dismissal — user can return to the game
     const closeBtn = this.overlay.querySelector("#auth-close-btn");
     closeBtn.classList.toggle("hidden", false);
