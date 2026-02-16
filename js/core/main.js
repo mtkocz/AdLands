@@ -1489,6 +1489,20 @@
     window._mp.setPlayerFaction(faction);
     window._mp.setPlayerName(name);
 
+    // Reset rank (server will send the correct rank for this profile)
+    window.playerRank = 0;
+    window.playerRankTotal = 0;
+
+    // Update dashboard with new profile's name, faction, and level
+    if (window.dashboard) {
+      window.dashboard.playerName = name;
+      window.dashboard.playerFaction = faction;
+      window.dashboard.playerLevel = playerLevel;
+      const nameEl = document.getElementById("dashboard-player-name");
+      if (nameEl) nameEl.textContent = name;
+      window.dashboard.updateProfile({ rank: 0, rankTotal: 0 });
+    }
+
     // Update avatar across all systems (profile picture or fallback color)
     const avatarValue = profileData?.profilePicture || playerAvatarColor;
     playerAvatarColor = avatarValue;

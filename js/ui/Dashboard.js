@@ -1105,10 +1105,9 @@ class Dashboard {
       window.profileManager.saveNow();
     }
 
-    // Show the auth screen in profile-selection mode
-    // The AuthScreen instance is on the global scope via main.js
+    // Show the profile-selector directly (profiles are already loaded)
     if (window._authScreenInstance) {
-      window._authScreenInstance.show(true);
+      window._authScreenInstance.showProfileSelector();
     }
   }
 

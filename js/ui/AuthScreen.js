@@ -471,6 +471,26 @@ class AuthScreen {
     }
   }
 
+  /**
+   * Show the profile-selector stage directly (skips auth/Firestore re-fetch).
+   * Used by the dashboard "Switch Profile" button when profiles are already loaded.
+   */
+  showProfileSelector() {
+    this.overlay.classList.remove("auth-hidden");
+    this.overlay.classList.remove("auth-fade-out");
+
+    // Allow dismissal — user can return to the game
+    const closeBtn = this.overlay.querySelector("#auth-close-btn");
+    closeBtn.classList.toggle("hidden", false);
+
+    this._renderProfileSlots();
+    this._showStage("profiles");
+
+    // Show link-account button for guests
+    const linkBtn = this.overlay.querySelector("#auth-link-account");
+    linkBtn.style.display = this.auth.isGuest ? "block" : "none";
+  }
+
   hide(callback) {
     this.overlay.classList.add("auth-fade-out");
     setTimeout(() => {
