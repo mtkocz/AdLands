@@ -425,9 +425,13 @@ class ProfileCard {
       return;
     }
 
-    // Pull latest crypto from server broadcast (most reliable source)
-    if (this.latestCryptoState[playerId] !== undefined) {
-      player.crypto = this.latestCryptoState[playerId];
+    // Pull latest crypto from server broadcast (most reliable source).
+    // latestCryptoState is keyed by socket ID, so resolve "player_self" to the real socket ID.
+    const cryptoLookupId = (playerId === "player_self" || playerId === "self" || playerId === "player")
+      ? window.networkManager?.playerId
+      : playerId;
+    if (cryptoLookupId && this.latestCryptoState[cryptoLookupId] !== undefined) {
+      player.crypto = this.latestCryptoState[cryptoLookupId];
     }
 
     // Override title at render time if this player is the current commander
@@ -614,12 +618,16 @@ class ProfileCard {
    * Build profile data for current player
    */
   _buildSelfProfile() {
+    // Prefer server-authoritative crypto (includes damage/kill crypto tracked only server-side).
+    // Fall back to local CryptoSystem if no server data yet.
+    const socketId = window.networkManager?.playerId;
+    const serverCrypto = socketId ? this.latestCryptoState[socketId] : undefined;
     return {
       id: "player_self",
       name: window.playerName || "Player",
       faction: window.playerFaction || "rust",
       level: window.cryptoSystem?.stats?.level || 1,
-      crypto: window.cryptoSystem?.stats?.totalCrypto || 0,
+      crypto: serverCrypto ?? window.cryptoSystem?.stats?.totalCrypto ?? 0,
       cryptoToNext:
         window.cryptoSystem?.getCryptoRequiredForLevel?.(
           (window.cryptoSystem?.stats?.level || 1) + 1,

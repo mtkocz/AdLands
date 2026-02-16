@@ -1772,11 +1772,6 @@ class Dashboard {
         const level = stats.level || 1;
         const totalCrypto = stats.totalCrypto || 0;
 
-        // Get crypto within current level and crypto needed for next level
-        const currentLevelTotalCrypto = this.cryptoSystem.getTotalCryptoForLevel
-          ? this.cryptoSystem.getTotalCryptoForLevel(level)
-          : 0;
-        const cryptoIntoLevel = totalCrypto - currentLevelTotalCrypto;
         const cryptoForNextLevel = this.cryptoSystem.getCryptoRequiredForLevel
           ? this.cryptoSystem.getCryptoRequiredForLevel(level + 1)
           : 10000;
