@@ -765,34 +765,14 @@ class AuthScreen {
     }
   }
 
-  async _handleLinkAccount() {
-    try {
-      await this.auth.linkWithGoogle();
-
-      // Reload profiles (guest → regular user changes slot count)
-      const uid = this.auth.uid;
-      if (uid) {
-        // Mark account as no longer anonymous
-        await firebaseDb.collection("accounts").doc(uid).update({
-          isAnonymous: false,
-          linkedProviders: this.auth.linkedProviders,
-        });
-
-        const accountDoc = await firebaseDb.collection("accounts").doc(uid).get();
-        if (accountDoc.exists) {
-          const data = accountDoc.data();
-          this._profiles = this._sanitizeProfiles(data.profiles);
-          this._renderProfileSlots();
-        }
-      }
-
-      // Hide link button since no longer a guest
-      const linkBtn = this.overlay.querySelector("#auth-link-account");
-      linkBtn.style.display = "none";
-    } catch (err) {
-      if (err.code === "auth/popup-closed-by-user") return;
-      console.error("[AuthScreen] Link error:", err);
-    }
+  _handleLinkAccount() {
+    // Show welcome stage in link mode so user can choose Google or Email
+    this._linkMode = true;
+    const guestBtn = this.overlay.querySelector('[data-provider="guest"]');
+    if (guestBtn) guestBtn.style.display = "none";
+    const divider = this.overlay.querySelector(".auth-divider");
+    if (divider) divider.style.display = "none";
+    this._showStage("welcome");
   }
 
   // ========================
