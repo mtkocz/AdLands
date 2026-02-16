@@ -49,6 +49,46 @@ sponsorStore.load();
 // Extract base64 sponsor images to static PNG files (avoids sending MB of base64 over WebSocket)
 const gameDir = path.join(__dirname, "..");
 
+/**
+ * Reconcile player territories from Firestore → SponsorStore on startup.
+ * Ensures sponsors.json always has player territory entries, even if the file
+ * was overwritten by Dropbox sync or entries were lost during a restart.
+ */
+async function reconcilePlayerTerritories() {
+  try {
+    const db = getFirestore();
+    const snap = await db.collection("territories").where("active", "==", true).get();
+    if (snap.empty) return;
+
+    let created = 0;
+    for (const doc of snap.docs) {
+      const data = doc.data();
+      const existing = sponsorStore.getAll().find(s => s._territoryId === doc.id);
+      if (!existing) {
+        const result = await sponsorStore.create({
+          _territoryId: doc.id,
+          name: data.playerName || "Player",
+          cluster: { tileIndices: data.tileIndices || [] },
+          patternImage: data.patternImage || null,
+          pendingImage: data.pendingImage || null,
+          patternAdjustment: data.patternAdjustment || {},
+          isPlayerTerritory: true,
+          tierName: data.tierName || "outpost",
+          imageStatus: data.imageStatus || "placeholder",
+          ownerUid: data.ownerUid,
+        });
+        if (result.sponsor) created++;
+        else if (result.errors) console.warn(`[Reconcile] Failed for ${doc.id}:`, result.errors);
+      }
+    }
+    if (created > 0) {
+      console.log(`[Startup] Reconciled ${created} player territories from Firestore → SponsorStore`);
+    }
+  } catch (err) {
+    console.warn("[Startup] Territory reconciliation failed:", err.message);
+  }
+}
+
 // Moon sponsor store
 const moonSponsorStore = new MoonSponsorStore(path.join(__dirname, "..", "data", "moonSponsors.json"));
 moonSponsorStore.load();
@@ -94,6 +134,9 @@ app.get("/", (req, res) => {
 let mainRoom;
 
 (async () => {
+  // Reconcile Firestore territories → SponsorStore (self-healing sync)
+  await reconcilePlayerTerritories();
+
   // Await image extraction so URL maps are ready for routes and GameRoom
   const sponsorImageUrls = await extractSponsorImages(sponsorStore, gameDir);
   const moonSponsorImageUrls = await extractMoonSponsorImages(moonSponsorStore, gameDir);
@@ -382,7 +425,7 @@ io.on("connection", (socket) => {
 
       // Create SponsorStore entry so admin portal can see/manage this territory
       // Dedup guard in SponsorStore.create() prevents duplicates if client POST also arrives
-      await sponsorStore.create({
+      const createResult = await sponsorStore.create({
         _territoryId: territoryId,
         name: playerName || "Player",
         cluster: { tileIndices },
@@ -393,6 +436,11 @@ io.on("connection", (socket) => {
         imageStatus: "placeholder",
         ownerUid: socket.uid,
       });
+      if (createResult.errors) {
+        console.warn(`[Territory] SponsorStore create failed for ${territoryId}:`, createResult.errors);
+      } else {
+        console.log(`[Territory] SponsorStore entry created: ${createResult.sponsor.id}`);
+      }
 
       // Broadcast to all players so they see the new territory
       io.to(mainRoom.roomId).emit("player-territory-claimed", {
