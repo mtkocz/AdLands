@@ -39,6 +39,40 @@ class SponsorStore {
       console.error("[SponsorStore] Failed to read sponsors file:", e.message);
       this._cache = { version: 1, sponsors: [], lastModified: "" };
     }
+
+    // Clean up duplicate player territory entries (same _territoryId)
+    this._deduplicatePlayerTerritories();
+  }
+
+  /**
+   * Remove duplicate player territory entries that share the same _territoryId.
+   * Keeps the entry with pendingImage (if any) or the most recent updatedAt.
+   */
+  _deduplicatePlayerTerritories() {
+    const byTerritory = new Map();
+    for (const s of this._cache.sponsors) {
+      if (!s.isPlayerTerritory || !s._territoryId) continue;
+      const existing = byTerritory.get(s._territoryId);
+      if (!existing) {
+        byTerritory.set(s._territoryId, s);
+      } else {
+        // Prefer the entry with pendingImage, otherwise the most recently updated
+        const keepNew = (s.pendingImage && !existing.pendingImage) ||
+          (!existing.pendingImage && s.updatedAt > existing.updatedAt);
+        if (keepNew) byTerritory.set(s._territoryId, s);
+      }
+    }
+    const keepIds = new Set([...byTerritory.values()].map(s => s.id));
+    const before = this._cache.sponsors.length;
+    this._cache.sponsors = this._cache.sponsors.filter(s => {
+      if (!s.isPlayerTerritory || !s._territoryId) return true;
+      return keepIds.has(s.id);
+    });
+    const removed = before - this._cache.sponsors.length;
+    if (removed > 0) {
+      console.log(`[SponsorStore] Cleaned up ${removed} duplicate player territory entries`);
+      this._saveToDisk();
+    }
   }
 
   /**
@@ -72,6 +106,14 @@ class SponsorStore {
    * @returns {Promise<{ sponsor?: Object, errors?: string[] }>}
    */
   async create(sponsor) {
+    // Dedup: prevent duplicate player territory entries for the same _territoryId
+    if (sponsor.isPlayerTerritory && sponsor._territoryId) {
+      const existing = this.getAll().find(s => s._territoryId === sponsor._territoryId);
+      if (existing) {
+        return { sponsor: existing };
+      }
+    }
+
     // Validate name only — tiles may be empty for duplicated/draft sponsors
     if (!sponsor.name || sponsor.name.trim().length === 0) {
       return { errors: ["Name is required"] };

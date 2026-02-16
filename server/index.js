@@ -380,23 +380,6 @@ io.on("connection", (socket) => {
         pendingImage: null,
       });
 
-      // Ensure SponsorStore entry exists (backup — client POST may also create one)
-      const existing = sponsorStore.getAll().find(s => s._territoryId === territoryId);
-      if (!existing) {
-        const result = await sponsorStore.create({
-          _territoryId: territoryId,
-          name: playerName || "Player",
-          cluster: { tileIndices },
-          patternImage: patternImage || null,
-          patternAdjustment: patternAdjustment || {},
-          isPlayerTerritory: true,
-          tierName: tierName || "outpost",
-          imageStatus: "placeholder",
-          ownerUid: socket.uid,
-        });
-        if (result.errors) console.warn("[Territory] SponsorStore backup create failed:", result.errors);
-      }
-
       // Broadcast to all players so they see the new territory
       io.to(mainRoom.roomId).emit("player-territory-claimed", {
         id: territoryId,
