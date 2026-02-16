@@ -470,10 +470,13 @@ class Dashboard {
       const playerId = member.isSelf ? "player_self" : member.id;
       const playerIdAttr = playerId ? `data-player-id="${playerId}"` : "";
 
+      const cryptoDisplay = member.crypto !== undefined ? `<span class="roster-crypto">¢${Number(member.crypto).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>` : '';
+
       html += `<div class="roster-member ${cmdrRowClass} ${onlineClass} ${selfClass}" ${playerIdAttr}>
                 <span class="roster-rank">#${member.rank}</span>
                 ${statusDot}
                 <span class="roster-name">${member.name}</span>
+                ${cryptoDisplay}
                 <span class="roster-level">Lv${member.level}</span>
             </div>`;
 
@@ -485,6 +488,7 @@ class Dashboard {
             name: member.name,
             faction: faction,
             level: member.level || 1,
+            crypto: member.crypto || 0,
             rank: member.rank,
             isOnline: member.online,
             badges: [],
@@ -492,6 +496,10 @@ class Dashboard {
             socialLinks: {},
             title: member.rank === 1 ? "Commander" : "Contractor",
           });
+        } else {
+          // Update crypto in existing cache entry
+          const cached = window.profileCard.playerCache.get(playerId);
+          if (member.crypto !== undefined) cached.crypto = member.crypto;
         }
       }
     }
@@ -1444,17 +1452,15 @@ class Dashboard {
       const newAmount = (this._cachedProfile.crypto || 0) + amount;
       this.updateCrypto(newAmount);
     } else if (this.cryptoSystem) {
-      // Client-mode: recompute level progress from CryptoSystem (already updated)
+      // Client-mode: show totalCrypto (consistent with server mode & ProfileCard)
       const stats = this.cryptoSystem.stats;
       const level = stats.level || 1;
       const totalCrypto = stats.totalCrypto || 0;
-      const currentLevelTotalCrypto = this.cryptoSystem.getTotalCryptoForLevel(level);
-      const cryptoIntoLevel = totalCrypto - currentLevelTotalCrypto;
       const cryptoForNextLevel = this.cryptoSystem.getCryptoRequiredForLevel(level + 1);
       const levelProgress = this.cryptoSystem.getLevelProgress();
       this.updateProfile({
         level,
-        crypto: Math.max(0, cryptoIntoLevel),
+        crypto: totalCrypto,
         cryptoToNext: cryptoForNextLevel,
         cryptoPercent: levelProgress * 100,
       });
@@ -1781,10 +1787,10 @@ class Dashboard {
         // Use server-authoritative faction rank
         const factionRank = window.playerRank || null;
 
-        // Update profile crypto (show crypto into current level / crypto needed for level up)
+        // Update profile crypto (show totalCrypto — consistent with ProfileCard & server mode)
         this.updateProfile({
           level: level,
-          crypto: Math.max(0, cryptoIntoLevel),
+          crypto: totalCrypto,
           cryptoToNext: cryptoForNextLevel,
           cryptoPercent: levelProgress * 100,
           rank: factionRank,

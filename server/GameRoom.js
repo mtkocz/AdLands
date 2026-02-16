@@ -2519,11 +2519,15 @@ class GameRoom {
 
       for (let i = 0; i < Math.min(roster.length, 50); i++) {
         const m = roster[i];
+        // For online players, use live player.crypto (totalCrypto + session earnings);
+        // for offline players, use cached totalCrypto from Firestore.
+        const liveCrypto = m.socketId ? (this.players.get(m.socketId)?.crypto ?? m.totalCrypto) : m.totalCrypto;
         condensed.push({
           id: m.socketId || (m.uid ? `offline_${m.uid}_${m.profileIndex}` : null),
           rank: m.rank,
           name: m.name,
           level: m.level || 1,
+          crypto: liveCrypto || 0,
           online: m.isOnline,
           isSelf: m.socketId === socketId,
         });
@@ -2534,11 +2538,13 @@ class GameRoom {
       if (!playerFound) {
         const selfEntry = roster.find(m => m.socketId === socketId);
         if (selfEntry) {
+          const liveCrypto = this.players.get(selfEntry.socketId)?.crypto ?? selfEntry.totalCrypto;
           condensed.push({
             id: selfEntry.socketId,
             rank: selfEntry.rank,
             name: selfEntry.name,
             level: selfEntry.level || 1,
+            crypto: liveCrypto || 0,
             online: true,
             isSelf: true,
           });
@@ -2571,11 +2577,13 @@ class GameRoom {
 
     for (let i = 0; i < Math.min(roster.length, 50); i++) {
       const m = roster[i];
+      const liveCrypto = m.socketId ? (this.players.get(m.socketId)?.crypto ?? m.totalCrypto) : m.totalCrypto;
       condensed.push({
         id: m.socketId || (m.uid ? `offline_${m.uid}_${m.profileIndex}` : null),
         rank: m.rank,
         name: m.name,
         level: m.level || 1,
+        crypto: liveCrypto || 0,
         online: m.isOnline,
         isSelf: m.socketId === socketId,
       });
@@ -2585,11 +2593,13 @@ class GameRoom {
     if (!playerFound) {
       const selfEntry = roster.find(m => m.socketId === socketId);
       if (selfEntry) {
+        const liveCrypto = this.players.get(selfEntry.socketId)?.crypto ?? selfEntry.totalCrypto;
         condensed.push({
           id: selfEntry.socketId,
           rank: selfEntry.rank,
           name: selfEntry.name,
           level: selfEntry.level || 1,
+          crypto: liveCrypto || 0,
           online: true,
           isSelf: true,
         });

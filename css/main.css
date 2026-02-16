@@ -2419,6 +2419,20 @@ body.tip-dragging .chat-mention.tip-highlight {
     color: var(--text-secondary);
 }
 
+.roster-crypto {
+    font-family: var(--font-small);
+    font-size: var(--font-size-small);
+    color: var(--text-secondary);
+    white-space: nowrap;
+}
+
+.roster-member.roster-self .roster-crypto {
+    color: var(--text-primary);
+}
+
+.roster-member.roster-commander .roster-crypto {
+    color: #ffd700;
+}
 
 .header-faction {
     position: absolute;
