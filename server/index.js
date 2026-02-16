@@ -380,8 +380,24 @@ io.on("connection", (socket) => {
         pendingImage: null,
       });
 
+      // Ensure SponsorStore entry exists (backup — client POST may also create one)
+      const existing = sponsorStore.getAll().find(s => s._territoryId === territoryId);
+      if (!existing) {
+        const result = await sponsorStore.create({
+          _territoryId: territoryId,
+          name: playerName || "Player",
+          cluster: { tileIndices },
+          patternImage: patternImage || null,
+          patternAdjustment: patternAdjustment || {},
+          isPlayerTerritory: true,
+          tierName: tierName || "outpost",
+          imageStatus: "placeholder",
+          ownerUid: socket.uid,
+        });
+        if (result.errors) console.warn("[Territory] SponsorStore backup create failed:", result.errors);
+      }
+
       // Broadcast to all players so they see the new territory
-      // (SponsorStore entry is created by the client's POST /api/sponsors call)
       io.to(mainRoom.roomId).emit("player-territory-claimed", {
         id: territoryId,
         tileIndices,
@@ -422,17 +438,20 @@ io.on("connection", (socket) => {
       const allSponsors = sponsorStore.getAll();
       const match = allSponsors.find(s => s._territoryId === territoryId || s.id === territoryId);
       if (match) {
-        await sponsorStore.update(match.id, {
+        const updateResult = await sponsorStore.update(match.id, {
           pendingImage,
           pendingImageAt: new Date().toISOString(),
           imageStatus: "pending",
           ownerUid: socket.uid,
           patternAdjustment: patternAdjustment || match.patternAdjustment || {},
         });
+        if (updateResult.errors) {
+          console.warn(`[Territory] SponsorStore update failed for ${match.id}:`, updateResult.errors);
+        }
       } else {
         // Territory not yet in SponsorStore — create it from Firestore data
         const firestoreData = doc.data();
-        await sponsorStore.create({
+        const createResult = await sponsorStore.create({
           _territoryId: territoryId,
           name: firestoreData.playerName || "Player",
           cluster: { tileIndices: firestoreData.tileIndices || [] },
@@ -446,6 +465,9 @@ io.on("connection", (socket) => {
           ownerUid: socket.uid,
           createdAt: firestoreData.purchasedAt?.toDate?.()?.toISOString() || new Date().toISOString(),
         });
+        if (createResult.errors) {
+          console.warn(`[Territory] SponsorStore create failed for ${territoryId}:`, createResult.errors);
+        }
       }
 
       socket.emit("territory-image-submitted", { territoryId, status: "pending" });

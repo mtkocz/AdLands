@@ -77,8 +77,9 @@ class SponsorStore {
       return { errors: ["Name is required"] };
     }
 
+    // Skip tile conflict check for player territories — they coexist with admin sponsors
     const tiles = sponsor.cluster?.tileIndices || [];
-    if (tiles.length > 0) {
+    if (tiles.length > 0 && !sponsor.isPlayerTerritory) {
       const tileCheck = this.areTilesUsed(tiles, null);
       if (tileCheck.isUsed) {
         return { errors: [`Tiles conflict with sponsor "${tileCheck.sponsorName}"`] };
@@ -109,7 +110,8 @@ class SponsorStore {
     const { valid, errors } = this.validate(merged);
     if (!valid) return { errors };
 
-    if (merged.cluster && merged.cluster.tileIndices) {
+    // Skip tile conflict check for player territories
+    if (merged.cluster && merged.cluster.tileIndices && !merged.isPlayerTerritory) {
       const tileCheck = this.areTilesUsed(merged.cluster.tileIndices, id);
       if (tileCheck.isUsed) {
         return { errors: [`Tiles conflict with sponsor "${tileCheck.sponsorName}"`] };

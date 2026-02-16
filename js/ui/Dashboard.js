@@ -2197,6 +2197,13 @@ class Dashboard {
     this._savePlayerTerritories();
     this._renderTerritoryList();
 
+    // Remove from Firestore so it doesn't reappear on reload
+    if (window.firestoreSync?.isActive && window.authManager?.uid) {
+      firebase.firestore().collection("territories").doc(territory.id).delete().catch((e) =>
+        console.warn("[Dashboard] Firestore territory cleanup failed:", e),
+      );
+    }
+
     const tierLabels = { outpost: "Outpost", compound: "Compound", stronghold: "Stronghold" };
     this.addNotification(
       `Territory removed by admin: ${tierLabels[territory.tierName] || "Territory"}`,

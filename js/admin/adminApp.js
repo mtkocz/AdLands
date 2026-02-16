@@ -252,6 +252,10 @@
         return;
       }
 
+      // Handle pending review adjustment sliders
+      const adjSlider = e.target.closest(".pending-review-adjustments input[type=range]");
+      if (adjSlider) return; // handled by input event below
+
       // Handle territory row clicks within groups → show territory view
       const clusterRow = e.target.closest(".sponsor-cluster-row");
       if (clusterRow) {
@@ -295,6 +299,32 @@
           editSponsor(id);
         }
       }
+    });
+
+    // Pending review adjustment sliders — update value display on input
+    sponsorsListEl.addEventListener("input", (e) => {
+      const slider = e.target;
+      if (!slider.matches(".pending-review-adjustments input[type=range]")) return;
+      const valSpan = slider.nextElementSibling;
+      if (valSpan) valSpan.textContent = slider.value;
+    });
+
+    // Pending review adjustment sliders — save on change (mouse release)
+    sponsorsListEl.addEventListener("change", (e) => {
+      const slider = e.target;
+      if (!slider.matches(".pending-review-adjustments input[type=range]")) return;
+      const card = slider.closest(".pending-review-adjustments");
+      if (!card) return;
+      const sponsorId = card.dataset.id;
+      const adj = {
+        scale: parseFloat(card.querySelector(".adj-scale")?.value ?? 1),
+        offsetX: parseFloat(card.querySelector(".adj-offsetX")?.value ?? 0),
+        offsetY: parseFloat(card.querySelector(".adj-offsetY")?.value ?? 0),
+        saturation: parseFloat(card.querySelector(".adj-saturation")?.value ?? 0.7),
+      };
+      SponsorStorage.update(sponsorId, { patternAdjustment: adj }).catch(err =>
+        console.warn("[Admin] Adjustment save failed:", err),
+      );
     });
   }
 
@@ -972,6 +1002,7 @@
         const pendingCards = pendingSponsors.map(s => {
           const logoSrc = s.logoUrl || s.logoImage;
           const tileCount = s.cluster?.tileIndices?.length || 0;
+          const adj = s.patternAdjustment || {};
           return `
             <div class="pending-review-card" data-id="${s.id}">
               <div class="pending-review-card-header">
@@ -985,6 +1016,12 @@
               </div>
               <div class="pending-review-card-texture">
                 <img src="${s.pendingImage}" alt="Uploaded texture" class="territory-pending-img">
+              </div>
+              <div class="pending-review-adjustments" data-id="${s.id}">
+                <div class="adj-row"><label>Scale</label><input type="range" class="adj-scale" min="0.1" max="3" step="0.05" value="${adj.scale ?? 1}"><span class="adj-val">${adj.scale ?? 1}</span></div>
+                <div class="adj-row"><label>Offset X</label><input type="range" class="adj-offsetX" min="-1" max="1" step="0.05" value="${adj.offsetX ?? 0}"><span class="adj-val">${adj.offsetX ?? 0}</span></div>
+                <div class="adj-row"><label>Offset Y</label><input type="range" class="adj-offsetY" min="-1" max="1" step="0.05" value="${adj.offsetY ?? 0}"><span class="adj-val">${adj.offsetY ?? 0}</span></div>
+                <div class="adj-row"><label>Saturation</label><input type="range" class="adj-saturation" min="0" max="1.5" step="0.05" value="${adj.saturation ?? 0.7}"><span class="adj-val">${adj.saturation ?? 0.7}</span></div>
               </div>
               <div class="territory-review-actions">
                 <button class="btn-approve approve-image-btn" data-id="${s.id}">Approve</button>

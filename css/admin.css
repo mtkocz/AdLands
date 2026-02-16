@@ -1828,6 +1828,36 @@ body {
     max-width: 100%;
     max-height: 160px;
 }
+.pending-review-adjustments {
+    margin-bottom: 8px;
+    padding: 6px 8px;
+    background: rgba(255,255,255,0.04);
+    border: 1px solid rgba(255,255,255,0.08);
+}
+.pending-review-adjustments .adj-row {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin-bottom: 3px;
+    font-size: 11px;
+}
+.pending-review-adjustments .adj-row label {
+    width: 65px;
+    flex-shrink: 0;
+    color: #999;
+}
+.pending-review-adjustments .adj-row input[type=range] {
+    flex: 1;
+    height: 4px;
+    cursor: pointer;
+}
+.pending-review-adjustments .adj-val {
+    width: 35px;
+    text-align: right;
+    font-family: monospace;
+    color: #aaa;
+    font-size: 10px;
+}
 
 .pending-badge {
     display: inline-block;

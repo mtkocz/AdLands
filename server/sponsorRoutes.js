@@ -214,13 +214,25 @@ function createSponsorRoutes(sponsorStore, gameRoom, { imageUrls, gameDir } = {}
     // Remove orphaned image files for deleted sponsor
     await cleanupSponsorImages(deletedId);
 
-    // Notify the owning player that their territory was deleted
-    if (sponsor && sponsor.isPlayerTerritory && sponsor.ownerUid && gameRoom) {
+    // Clean up player territory: notify owner and remove Firestore document
+    if (sponsor && sponsor.isPlayerTerritory) {
       const territoryId = sponsor._territoryId || sponsor.id;
-      const sockets = await gameRoom.io.in(gameRoom.roomId).fetchSockets();
-      for (const s of sockets) {
-        if (s.uid === sponsor.ownerUid) {
-          s.emit("territory-deleted", { territoryId, sponsorStorageId: deletedId });
+
+      // Remove the territory document from Firestore
+      try {
+        const db = getFirestore();
+        await db.collection("territories").doc(territoryId).delete();
+      } catch (e) {
+        console.warn(`[sponsorRoutes] Firestore territory cleanup failed for ${territoryId}:`, e.message);
+      }
+
+      // Notify the owning player via socket
+      if (sponsor.ownerUid && gameRoom) {
+        const sockets = await gameRoom.io.in(gameRoom.roomId).fetchSockets();
+        for (const s of sockets) {
+          if (s.uid === sponsor.ownerUid) {
+            s.emit("territory-deleted", { territoryId, sponsorStorageId: deletedId });
+          }
         }
       }
     }
