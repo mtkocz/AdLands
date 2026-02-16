@@ -1842,3 +1842,31 @@ body {
     margin-left: 4px;
 }
 
+/* Highlighted territory groups in the list */
+.sponsor-group.highlight-pending {
+    border: 1px solid #c8a82a;
+    background: rgba(200, 168, 42, 0.06);
+}
+.sponsor-group.highlight-new {
+    border: 1px solid var(--accent-cyan, #4dd0e1);
+    background: rgba(77, 208, 225, 0.06);
+}
+
+.pending-status-badge,
+.new-status-badge {
+    font-family: var(--font-small);
+    font-size: 9px;
+    padding: 1px 6px;
+    margin-left: 4px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+.pending-status-badge {
+    color: #c8a82a;
+    background: rgba(200, 168, 42, 0.15);
+}
+.new-status-badge {
+    color: var(--accent-cyan, #4dd0e1);
+    background: rgba(77, 208, 225, 0.15);
+}
+

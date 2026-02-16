@@ -1155,8 +1155,11 @@
         const isGroupEditing = currentEditingGroupName && currentEditingGroupName.toLowerCase() === (first.name || "").toLowerCase();
         const groupLogoSrc = first.logoUrl || first.logoImage;
         const isGroupPaused = members.some((s) => !!s.paused);
+        const isNewTerritory = hasPlayerTerritory && members.some((s) => s.imageStatus === "placeholder" || !s.imageStatus);
+        const hasPendingImage = hasPlayerTerritory && members.some((s) => s.imageStatus === "pending");
+        const groupHighlight = hasPendingImage ? " highlight-pending" : isNewTerritory ? " highlight-new" : "";
         htmlParts.push(`
-            <div class="sponsor-group${isGroupEditing ? " editing expanded" : ""}${isGroupPaused ? " paused" : ""}" data-name="${escapeHtml(first.name)}">
+            <div class="sponsor-group${isGroupEditing ? " editing expanded" : ""}${isGroupPaused ? " paused" : ""}${groupHighlight}" data-name="${escapeHtml(first.name)}">
                 <div class="sponsor-group-header">
                     <span class="sponsor-group-chevron">&#x25B6;</span>
                     <div class="sponsor-card-logo">
@@ -1167,7 +1170,7 @@
                         }
                     </div>
                     <div class="sponsor-card-info">
-                        <div class="sponsor-card-name">${escapeHtml(first.name)}${isGroupPaused ? ' <span class="paused-badge">PAUSED</span>' : ""}</div>
+                        <div class="sponsor-card-name">${escapeHtml(first.name)}${isGroupPaused ? ' <span class="paused-badge">PAUSED</span>' : ""}${hasPendingImage ? ' <span class="pending-status-badge">PENDING</span>' : ""}${isNewTerritory && !hasPendingImage ? ' <span class="new-status-badge">NEW</span>' : ""}</div>
                         <span class="sponsor-group-badge">${members.length} territories</span>
                         <div class="sponsor-card-stats">
                             ${totalTiles} tiles${groupMoonCount > 0 ? ", " + groupMoonCount + " moons" : ""}${groupBbCount > 0 ? ", " + groupBbCount + " billboards" : ""}, ${totalRewards} rewards
