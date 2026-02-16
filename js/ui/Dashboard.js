@@ -2246,11 +2246,12 @@ class Dashboard {
     }
 
     // Remove territories no longer present on server (admin deleted them)
+    // Only prune if the server payload actually includes player territory data
+    // (avoids wiping on legacy payloads without territory metadata)
+    const hasAnyPlayerTerritoryData = serverSponsors.some(s => s.isPlayerTerritory);
     const before = this._playerTerritories.length;
     this._playerTerritories = this._playerTerritories.filter((t) => {
-      // Keep if server has it, or if server has no player territories at all
-      // (avoids wiping on payload without metadata)
-      return serverMap.has(t.id) || serverMap.size === 0;
+      return serverMap.has(t.id) || !hasAnyPlayerTerritoryData;
     });
     if (this._playerTerritories.length < before) changed = true;
 
@@ -2459,7 +2460,7 @@ class Dashboard {
     }
   }
 
-  _claimTerritory() {
+  async _claimTerritory() {
     // Prompt guest users to create an account before claiming
     if (window.authManager?.isGuest) {
       if (window._authScreenInstance) {
@@ -2522,7 +2523,8 @@ class Dashboard {
     this._playerTerritories.push(territoryRecord);
 
     // Save to SponsorStorage (and localStorage fallback) + Firestore
-    this._savePlayerTerritory(territoryRecord);
+    // Await ensures SponsorStore entry exists before user can upload images
+    await this._savePlayerTerritory(territoryRecord);
 
     // Emit server event for multiplayer territory broadcast
     if (window._mp?.net?.socket) {

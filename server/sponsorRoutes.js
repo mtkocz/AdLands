@@ -309,6 +309,9 @@ function createSponsorRoutes(sponsorStore, gameRoom, { imageUrls, gameDir } = {}
           }
         }
 
+        // Update world payload so future joiners see the approved image
+        reloadIfLive();
+
         console.log(`[Territory] Image approved for ${territoryId}`);
         res.json({ success: true, action: "approved" });
       } else {
