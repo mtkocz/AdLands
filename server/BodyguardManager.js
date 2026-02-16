@@ -61,6 +61,9 @@ class BodyguardManager {
    * @param {Object} commanderState - { theta, phi, heading }
    */
   spawnForCommander(faction, commanderId, commanderState) {
+    // DISABLED: commander guards are turned off for now
+    return;
+
     // Remove any existing bodyguards for this faction first
     this.despawnForFaction(faction);
 

@@ -1429,23 +1429,23 @@ class GameRoom {
               const isVictimCommander = this.commanders[player.faction]?.id === id;
               killer.crypto += 500 * (isVictimCommander ? 10 : 1); // Kill bounty (10x for commanders)
 
-              // Tusk kill announcement
-              this.tuskChat.onKill(killerName, victimName, p.ownerFaction, player.faction);
+              // Tusk kill announcement (pass socket IDs for deferred name resolution)
+              this.tuskChat.onKill(killerName, victimName, p.ownerFaction, player.faction, p.ownerId, id);
 
               // Tusk kill streak announcement (at 3, 5, 7, 10+)
               if (killer.killStreak >= 3) {
-                this.tuskChat.onKillStreak(killerName, killer.killStreak);
+                this.tuskChat.onKillStreak(killerName, killer.killStreak, p.ownerId);
               }
 
               // Tusk player milestone (at 10, 25, 50, 100...)
               const milestones = [10, 25, 50, 100, 150, 200];
               if (milestones.includes(killer.totalKills)) {
-                this.tuskChat.onPlayerMilestone(killerName, killer.totalKills);
+                this.tuskChat.onPlayerMilestone(killerName, killer.totalKills, p.ownerId);
               }
 
               // Tusk revenge kill (victim killed the killer recently)
               if (player.lastKilledBy === p.ownerId) {
-                this.tuskChat.onRevengeKill(killerName, victimName);
+                this.tuskChat.onRevengeKill(killerName, victimName, p.ownerId, id);
               }
             }
 
@@ -1461,7 +1461,7 @@ class GameRoom {
             }
             if (player.deathCount >= 3 && Date.now() - player.deathStreakStart < deathWindow) {
               const minutes = Math.floor((Date.now() - player.deathStreakStart) / 60000) || 1;
-              this.tuskChat.onDeathStreak(victimName, player.deathCount, minutes);
+              this.tuskChat.onDeathStreak(victimName, player.deathCount, minutes, id);
             }
             // Reset streak if window expired
             if (player.deathStreakStart && Date.now() - player.deathStreakStart >= deathWindow) {
@@ -1683,8 +1683,8 @@ class GameRoom {
       newBudget: tipper._tipBudget,
     });
 
-    // Tusk announcement to everyone
-    this.tuskChat.onCommanderTip(tipper.name, target.name, tipAmount);
+    // Tusk announcement to everyone (pass socket IDs for deferred name resolution)
+    this.tuskChat.onCommanderTip(tipper.name, target.name, tipAmount, socketId, targetId);
   }
 
   _emitToSocket(socketId, event, data) {
@@ -1945,14 +1945,16 @@ class GameRoom {
           // Find a player of the capturing faction in the cluster area
           // (simplified: use first player of that faction as "capturer")
           let capturerName = change.owner.charAt(0).toUpperCase() + change.owner.slice(1);
-          for (const [, player] of this.players) {
+          let capturerSocketId = null;
+          for (const [sid, player] of this.players) {
             if (player.faction === change.owner && !player.isDead && !player.waitingForPortal) {
               capturerName = player.name;
+              capturerSocketId = sid;
               break;
             }
           }
           const clusterLabel = `Sector ${change.clusterId}`;
-          this.tuskChat.onClusterCapture(capturerName, clusterLabel, change.owner);
+          this.tuskChat.onClusterCapture(capturerName, clusterLabel, change.owner, capturerSocketId);
         }
       }
     }
@@ -2429,7 +2431,7 @@ class GameRoom {
         // Commander changed
         // True commander returned, replacing acting commander
         if (current && current.isActing && !isActing) {
-          this.tuskChat?.onCommanderReturns?.(newName, current.name);
+          this.tuskChat?.onCommanderReturns?.(newName, current.name, newId, current.id);
         }
         this.bodyguardManager.killAllForFaction(faction);
         this.commanders[faction] = {
@@ -2454,7 +2456,7 @@ class GameRoom {
         // and IS this person, or true commander went offline)
         // True commander returned (acting status removed)
         if (current.isActing && !isActing) {
-          this.tuskChat?.onCommanderReturns?.(current.name, current.name);
+          this.tuskChat?.onCommanderReturns?.(current.name, current.name, current.id, current.id);
         }
         current.isActing = isActing;
         this.io.to(this.roomId).emit("commander-update", {

@@ -387,8 +387,8 @@ io.on("connection", (socket) => {
         playerName: playerName || "Player",
       });
 
-      // Elon Tusk commentary on territory rent
-      mainRoom.tuskChat?.onTerritoryRent?.(playerName || "Someone");
+      // Elon Tusk commentary on territory rent (pass socket ID for current name resolution)
+      mainRoom.tuskChat?.onTerritoryRent?.(playerName || "Someone", socket.id);
 
       console.log(`[Territory] Player ${socket.uid} claimed ${tierName}: ${tileIndices.length} hexes`);
     } catch (err) {

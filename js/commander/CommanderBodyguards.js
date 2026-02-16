@@ -156,6 +156,9 @@ class CommanderBodyguards {
      * Spawn bodyguards for a commander
      */
     spawn(commander, faction) {
+        // DISABLED: commander guards are turned off for now
+        return;
+
         // Defer spawn until commander is on the planet surface
         if (!this.commanderOnSurface) {
             this._pendingSpawn = { commander, faction };

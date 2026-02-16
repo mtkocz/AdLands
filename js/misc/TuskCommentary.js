@@ -963,9 +963,9 @@ class TuskGlobalChat {
     this.messageCount = 0;
     this.hourStart = Date.now();
 
-    // Callback to get current player/bot names (set by main.js)
-    // Returns a Set of active player names, used to validate @mentions
-    this.getActivePlayerNames = null;
+    // Callback to resolve a playerId to its current display name (set by main.js)
+    // Used for deferred name resolution so Tusk always uses current gamer tag
+    this.getPlayerNameById = null;
 
     // Configuration
     this.config = {
@@ -1126,24 +1126,29 @@ class TuskGlobalChat {
   }
 
   /**
-   * Check that all @-mentioned player names in a message still exist in the game.
-   * Prevents Tusk from referencing bots that respawned with new names.
+   * Re-resolve the human player's name at send time.
+   * Only resolves the "player" ID — bot names stay as captured at event time
+   * (bots respawn as different characters, so their event-time name is correct).
    */
-  _mentionedPlayersExist(message) {
-    if (!this.getActivePlayerNames) return true;
-    const mentions = message.match(/@(\w+)/g);
-    if (!mentions) return true;
-
-    const activeNames = this.getActivePlayerNames();
-    if (!activeNames) return true;
-
-    return mentions.every((mention) => activeNames.has(mention.slice(1)));
+  _resolvePlayerNames(data, playerRefs) {
+    if (!playerRefs || !this.getPlayerNameById) return data;
+    const resolved = { ...data };
+    for (const [key, playerId] of Object.entries(playerRefs)) {
+      if (playerId !== "player") continue;
+      const currentName = this.getPlayerNameById(playerId);
+      if (currentName) {
+        resolved[key] = currentName;
+      }
+    }
+    return resolved;
   }
 
   /**
-   * Handle a game event and potentially post to global chat
+   * @param {string} eventType
+   * @param {Object} data - Template data (player names as fallback values)
+   * @param {Object} [playerRefs] - Map of data key → playerId for deferred name resolution
    */
-  onEvent(eventType, data) {
+  onEvent(eventType, data, playerRefs) {
     // Respect Tusk commentary mode setting
     if (this.tusk.commentaryMode === "off") return;
     if (!this.canSendMessage()) return;
@@ -1152,8 +1157,11 @@ class TuskGlobalChat {
     if (Math.random() > chance) return;
 
     setTimeout(() => {
-      const message = this._generateMessage(eventType, data);
-      if (message && this._mentionedPlayersExist(message)) {
+      // Re-resolve human player's name at send time (picks up profile/gamer tag changes).
+      // Bot names stay as captured at event time — they're correct for the event.
+      const resolved = this._resolvePlayerNames(data, playerRefs);
+      const message = this._generateMessage(eventType, resolved);
+      if (message) {
         this._sendMessage(message);
       }
     }, this.config.eventCooldown);
@@ -1237,26 +1245,26 @@ class TuskGlobalChat {
   /**
    * Call this when a player gets a killstreak
    */
-  onKillStreak(playerName, count) {
-    this.onEvent("killStreak", { player: playerName, count });
+  onKillStreak(playerName, count, playerId) {
+    this.onEvent("killStreak", { player: playerName, count }, playerId ? { player: playerId } : null);
   }
 
   /**
    * Call this when a player has many deaths
    */
-  onDeathStreak(playerName, count, minutes) {
-    this.onEvent("deathStreak", { player: playerName, count, minutes });
+  onDeathStreak(playerName, count, minutes, playerId) {
+    this.onEvent("deathStreak", { player: playerName, count, minutes }, playerId ? { player: playerId } : null);
   }
 
   /**
    * Call this when a cluster is captured
    */
-  onClusterCapture(playerName, clusterName, faction) {
+  onClusterCapture(playerName, clusterName, faction, playerId) {
     this.onEvent("clusterCapture", {
       player: playerName,
       cluster: clusterName,
       faction: faction.charAt(0).toUpperCase() + faction.slice(1),
-    });
+    }, playerId ? { player: playerId } : null);
   }
 
   /**
@@ -1274,13 +1282,16 @@ class TuskGlobalChat {
   /**
    * Call this when any player kills another
    */
-  onKill(killerName, victimName, killerFaction, victimFaction) {
+  onKill(killerName, victimName, killerFaction, victimFaction, killerPlayerId, victimPlayerId) {
     const cap = (s) => s.charAt(0).toUpperCase() + s.slice(1);
     this.onEvent("kill", {
       killer: killerName,
       victim: victimName,
       killerFaction: cap(killerFaction),
       victimFaction: cap(victimFaction),
+    }, {
+      killer: killerPlayerId,
+      victim: victimPlayerId,
     });
   }
 
@@ -1297,8 +1308,8 @@ class TuskGlobalChat {
   /**
    * Call this when a player hits a kill milestone
    */
-  onPlayerMilestone(playerName, count) {
-    this.onEvent("playerMilestone", { player: playerName, count });
+  onPlayerMilestone(playerName, count, playerId) {
+    this.onEvent("playerMilestone", { player: playerName, count }, playerId ? { player: playerId } : null);
   }
 
   /**

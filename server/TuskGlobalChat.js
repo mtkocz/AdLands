@@ -198,14 +198,21 @@ class TuskGlobalChat {
   // EVENT HANDLING
   // ========================
 
-  onEvent(eventType, data) {
+  /**
+   * @param {string} eventType
+   * @param {Object} data - Template data (player names as fallback values)
+   * @param {Object} [playerRefs] - Map of data key → socketId for deferred name resolution
+   */
+  onEvent(eventType, data, playerRefs) {
     if (!this.canSendMessage()) return;
 
     const chance = this.config.eventChance[eventType] || 0.5;
     if (Math.random() > chance) return;
 
     setTimeout(() => {
-      const message = this._generateMessage(eventType, data);
+      // Re-resolve player names from socket IDs so Tusk always uses the current name
+      const resolved = this._resolvePlayerNames(data, playerRefs);
+      const message = this._generateMessage(eventType, resolved);
       if (message && this._mentionedPlayersExist(message)) {
         this._sendMessage(message);
       }
@@ -233,8 +240,24 @@ class TuskGlobalChat {
   }
 
   // ========================
-  // PLAYER VALIDATION
+  // PLAYER NAME RESOLUTION
   // ========================
+
+  /**
+   * Re-resolve player names from socket IDs at send time.
+   * Ensures Tusk uses the player's current profile name, not the name at event time.
+   */
+  _resolvePlayerNames(data, playerRefs) {
+    if (!playerRefs || !this.room || !this.room.players) return data;
+    const resolved = { ...data };
+    for (const [key, socketId] of Object.entries(playerRefs)) {
+      const player = this.room.players.get(socketId);
+      if (player) {
+        resolved[key] = player.name;
+      }
+    }
+    return resolved;
+  }
 
   /**
    * Check that all @-mentioned player names in a message still exist in the room.
@@ -242,15 +265,22 @@ class TuskGlobalChat {
    */
   _mentionedPlayersExist(message) {
     if (!this.room || !this.room.players) return true;
-    const mentions = message.match(/@(\w+)/g);
-    if (!mentions) return true;
 
     const playerNames = new Set();
     for (const [, p] of this.room.players) {
       playerNames.add(p.name);
     }
 
-    return mentions.every((mention) => playerNames.has(mention.slice(1)));
+    // Extract @mentions — match @Name allowing word chars, hyphens, spaces
+    const mentions = [];
+    const regex = /@([\w][\w\s-]*[\w]|[\w])/g;
+    let match;
+    while ((match = regex.exec(message)) !== null) {
+      mentions.push(match[1]);
+    }
+    if (mentions.length === 0) return true;
+
+    return mentions.every((name) => playerNames.has(name));
   }
 
   // ========================
@@ -306,30 +336,33 @@ class TuskGlobalChat {
   // PUBLIC EVENT METHODS
   // ========================
 
-  onKill(killerName, victimName, killerFaction, victimFaction) {
+  onKill(killerName, victimName, killerFaction, victimFaction, killerSocketId, victimSocketId) {
     const cap = (s) => s ? s.charAt(0).toUpperCase() + s.slice(1) : "Unknown";
     this.onEvent("kill", {
       killer: killerName || "Unknown",
       victim: victimName || "Unknown",
       killerFaction: cap(killerFaction),
       victimFaction: cap(victimFaction),
+    }, {
+      killer: killerSocketId,
+      victim: victimSocketId,
     });
   }
 
-  onKillStreak(playerName, count) {
-    this.onEvent("killStreak", { player: playerName, count });
+  onKillStreak(playerName, count, socketId) {
+    this.onEvent("killStreak", { player: playerName, count }, { player: socketId });
   }
 
-  onDeathStreak(playerName, count, minutes) {
-    this.onEvent("deathStreak", { player: playerName, count, minutes });
+  onDeathStreak(playerName, count, minutes, socketId) {
+    this.onEvent("deathStreak", { player: playerName, count, minutes }, { player: socketId });
   }
 
-  onClusterCapture(playerName, clusterName, faction) {
+  onClusterCapture(playerName, clusterName, faction, socketId) {
     this.onEvent("clusterCapture", {
       player: playerName,
       cluster: clusterName,
       faction: faction ? faction.charAt(0).toUpperCase() + faction.slice(1) : "Unknown",
-    });
+    }, socketId ? { player: socketId } : null);
   }
 
   onFactionLeadChange(leadingFaction, percent, loser1, loser2) {
@@ -349,19 +382,27 @@ class TuskGlobalChat {
     });
   }
 
-  onPlayerMilestone(playerName, count) {
-    this.onEvent("playerMilestone", { player: playerName, count });
+  onPlayerMilestone(playerName, count, socketId) {
+    this.onEvent("playerMilestone", { player: playerName, count }, { player: socketId });
   }
 
-  onRevengeKill(killerName, victimName) {
+  onRevengeKill(killerName, victimName, killerSocketId, victimSocketId) {
     this.onEvent("revengeKill", {
       killer: killerName || "Unknown",
       victim: victimName || "Unknown",
+    }, {
+      killer: killerSocketId,
+      victim: victimSocketId,
     });
   }
 
-  onTerritoryRent(playerName) {
+  onTerritoryRent(playerName, socketId) {
     // Always fire — this is a paid action, bypass rate limiting and probability gate
+    // Resolve current name from socket ID (player may have changed profile)
+    if (socketId && this.room) {
+      const player = this.room.players.get(socketId);
+      if (player) playerName = player.name;
+    }
     const templates = this.templates.territoryRent;
     if (!templates || templates.length === 0) return;
     const template = templates[Math.floor(Math.random() * templates.length)];
@@ -369,17 +410,31 @@ class TuskGlobalChat {
     this._sendMessage(msg);
   }
 
-  onCommanderTip(fromName, toName, amount) {
+  onCommanderTip(fromName, toName, amount, fromSocketId, toSocketId) {
     this.onEvent("commanderTip", {
       from: fromName || "The Commander",
       to: toName || "Unknown",
       amount: amount || 100,
+    }, {
+      from: fromSocketId,
+      to: toSocketId,
     });
   }
 
-  onCommanderReturns(commanderName, actingName) {
+  onCommanderReturns(commanderName, actingName, commanderSocketId, actingSocketId) {
     // Always fire (important event, no probability gate)
     if (!this.canSendMessage()) return;
+    // Resolve current names from socket IDs
+    if (this.room) {
+      if (commanderSocketId) {
+        const p = this.room.players.get(commanderSocketId);
+        if (p) commanderName = p.name;
+      }
+      if (actingSocketId) {
+        const p = this.room.players.get(actingSocketId);
+        if (p) actingName = p.name;
+      }
+    }
     const templates = this.templates.commanderReturns;
     if (!templates || templates.length === 0) return;
     const template = templates[Math.floor(Math.random() * templates.length)];

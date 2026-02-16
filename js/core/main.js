@@ -874,6 +874,7 @@
         playerName,
         playerDeathCount,
         minutes,
+        "player",
       );
     }
 
@@ -959,6 +960,7 @@
       badgeSystem.trackKill(bot.id);
 
       // Elon global chat: kill announcement, streaks, milestones
+      // Pass player IDs for deferred name resolution (names may change between event and send)
       const victimName = bot.lodDot?.userData?.username || "someone";
       if (tuskCommentary.tuskChat) {
         tuskCommentary.tuskChat.onKill(
@@ -966,16 +968,18 @@
           victimName,
           playerFaction,
           bot.faction,
+          "player",
+          bot.playerId,
         );
 
         playerKillStreak++;
         if (playerKillStreak >= 3) {
-          tuskCommentary.tuskChat.onKillStreak(playerName, playerKillStreak);
+          tuskCommentary.tuskChat.onKillStreak(playerName, playerKillStreak, "player");
         }
 
         const totalKills = cryptoSystem.stats.kills;
         if (KILL_MILESTONES.includes(totalKills)) {
-          tuskCommentary.tuskChat.onPlayerMilestone(playerName, totalKills);
+          tuskCommentary.tuskChat.onPlayerMilestone(playerName, totalKills, "player");
         }
       }
     }
@@ -1120,15 +1124,13 @@
   // Only init client-side TuskGlobalChat in single-player mode
   if (!isMultiplayer) {
     tuskCommentary.initGlobalChat();
-    // Provide active player name resolver so Tusk won't mention players/bots that no longer exist
+    // Provide name resolver so Tusk always uses the human player's current gamer tag.
+    // Only the human player's name is resolved at send time — bot names stay as
+    // captured at event time (bots respawn as different characters).
     if (tuskCommentary.tuskChat) {
-      tuskCommentary.tuskChat.getActivePlayerNames = () => {
-        const names = new Set();
-        names.add(playerName);
-        playerTags.tags.forEach((tag) => {
-          if (tag.config && tag.config.name) names.add(tag.config.name);
-        });
-        return names;
+      tuskCommentary.tuskChat.getPlayerNameById = (playerId) => {
+        if (playerId === "player") return playerName;
+        return null; // Bot names handled at event time, not deferred
       };
     }
   }
@@ -2122,6 +2124,7 @@
         if (state.owner && tuskCommentary.tuskChat) {
           const clusterLabel = `Sector ${clusterId}`;
           let capturerName = playerName;
+          let capturerPlayerId = "player";
           if (state.owner !== playerFaction) {
             // Pick a random bot name from the capturing faction
             const factionBots = (botTanks.bots || []).filter(
@@ -2132,11 +2135,13 @@
                 ? factionBots[Math.floor(Math.random() * factionBots.length)]
                 : null;
             capturerName = randomBot?.lodDot?.userData?.username || state.owner;
+            capturerPlayerId = randomBot?.playerId || null;
           }
           tuskCommentary.tuskChat.onClusterCapture(
             capturerName,
             clusterLabel,
             state.owner,
+            capturerPlayerId,
           );
         }
       } else {

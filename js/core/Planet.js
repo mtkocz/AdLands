@@ -935,32 +935,49 @@ class Planet {
           vertexShader: `
             uniform vec3 uCenter;
             uniform float uMaxDist;
-            varying float vDist;
+            varying vec3 vPos;
             void main() {
-              vDist = distance(position, uCenter) / uMaxDist;
+              vPos = position;
               gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
             }
           `,
           fragmentShader: `
             uniform float uTime;
-            varying float vDist;
+            uniform vec3 uCenter;
+            uniform float uMaxDist;
+            varying vec3 vPos;
             void main() {
-              vec3 cyan = vec3(0.0, 0.9, 0.9);
+              // Per-fragment distance for smooth circular rings
+              float dist = distance(vPos, uCenter) / uMaxDist;
 
-              // Repeating pulse every 2.5 seconds
-              float cycle = mod(uTime, 2.5) / 2.5;
+              // Color palette
+              vec3 cyanBright = vec3(0.1, 0.9, 1.0);
+              vec3 cyanDim    = vec3(0.0, 0.55, 0.65);
 
-              // Ring expanding from center to edge
-              float ringWidth = 0.18;
-              float ring = smoothstep(ringWidth, 0.0, abs(vDist - cycle));
+              // --- Three staggered ripple rings ---
+              float speed = 0.4;
+              float phase = uTime * speed;
+              float w = 0.10;
 
-              // Fade out as ring reaches the edge
-              ring *= 1.0 - cycle * 0.8;
+              float r1 = fract(phase);
+              float r2 = fract(phase + 0.333);
+              float r3 = fract(phase + 0.666);
 
-              // Subtle ambient glow at center
-              float glow = (1.0 - vDist) * 0.08;
+              float ring1 = smoothstep(w, 0.0, abs(dist - r1)) * (1.0 - r1) * (1.0 - r1);
+              float ring2 = smoothstep(w, 0.0, abs(dist - r2)) * (1.0 - r2) * (1.0 - r2);
+              float ring3 = smoothstep(w, 0.0, abs(dist - r3)) * (1.0 - r3) * (1.0 - r3);
 
-              vec3 color = cyan * (ring * 0.6 + glow);
+              float rings = ring1 + ring2 + ring3;
+
+              // --- Breathing center glow ---
+              float breath = 0.5 + 0.5 * sin(uTime * 1.5);
+              float centerGlow = exp(-dist * 5.0) * (0.2 + 0.12 * breath);
+
+              // --- Faint persistent edge ---
+              float edge = smoothstep(0.55, 1.0, dist) * 0.06;
+
+              // Combine layers
+              vec3 color = cyanBright * (rings * 0.55 + centerGlow) + cyanDim * edge;
               gl_FragColor = vec4(color, 1.0);
             }
           `,
