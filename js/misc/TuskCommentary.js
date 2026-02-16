@@ -963,6 +963,10 @@ class TuskGlobalChat {
     this.messageCount = 0;
     this.hourStart = Date.now();
 
+    // Callback to get current player/bot names (set by main.js)
+    // Returns a Set of active player names, used to validate @mentions
+    this.getActivePlayerNames = null;
+
     // Configuration
     this.config = {
       minInterval: 180000, // 3 minutes minimum between messages
@@ -1122,6 +1126,21 @@ class TuskGlobalChat {
   }
 
   /**
+   * Check that all @-mentioned player names in a message still exist in the game.
+   * Prevents Tusk from referencing bots that respawned with new names.
+   */
+  _mentionedPlayersExist(message) {
+    if (!this.getActivePlayerNames) return true;
+    const mentions = message.match(/@(\w+)/g);
+    if (!mentions) return true;
+
+    const activeNames = this.getActivePlayerNames();
+    if (!activeNames) return true;
+
+    return mentions.every((mention) => activeNames.has(mention.slice(1)));
+  }
+
+  /**
    * Handle a game event and potentially post to global chat
    */
   onEvent(eventType, data) {
@@ -1134,7 +1153,9 @@ class TuskGlobalChat {
 
     setTimeout(() => {
       const message = this._generateMessage(eventType, data);
-      this._sendMessage(message);
+      if (message && this._mentionedPlayersExist(message)) {
+        this._sendMessage(message);
+      }
     }, this.config.eventCooldown);
   }
 

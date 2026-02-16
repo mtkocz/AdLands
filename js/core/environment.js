@@ -827,7 +827,8 @@ float calcPlanetShadow(vec3 pos, vec3 lightDir, float radius) {
 
       shader.fragmentShader = shader.fragmentShader.replace(
         'gl_FragColor = vec4( outgoingLight, diffuseColor.a );',
-        `outgoingLight *= mix(0.3, 1.0, calcPlanetShadow(vWorldPos, uSunDirection, uPlanetRadius));
+        `vec3 shadowFactor = vec3(mix(0.3, 1.0, calcPlanetShadow(vWorldPos, uSunDirection, uPlanetRadius)));
+outgoingLight = (outgoingLight - totalEmissiveRadiance) * shadowFactor + totalEmissiveRadiance;
 gl_FragColor = vec4( outgoingLight, diffuseColor.a );`
       );
     };
@@ -1543,6 +1544,10 @@ gl_FragColor = vec4( outgoingLight, diffuseColor.a );`
       adPanel.material.needsUpdate = true;
       // Add to bloom layer so sponsor textures cause subtle glow
       adPanel.layers.enable(1);
+    };
+    img.onerror = () => {
+      console.warn(`Billboard ${billboardIndex}: failed to load image`, sponsorData.patternImage);
+      bb.visible = false;
     };
     img.src = sponsorData.patternImage;
   }

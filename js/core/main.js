@@ -1120,6 +1120,17 @@
   // Only init client-side TuskGlobalChat in single-player mode
   if (!isMultiplayer) {
     tuskCommentary.initGlobalChat();
+    // Provide active player name resolver so Tusk won't mention players/bots that no longer exist
+    if (tuskCommentary.tuskChat) {
+      tuskCommentary.tuskChat.getActivePlayerNames = () => {
+        const names = new Set();
+        names.add(playerName);
+        playerTags.tags.forEach((tag) => {
+          if (tag.config && tag.config.name) names.add(tag.config.name);
+        });
+        return names;
+      };
+    }
   }
 
   // Settings Manager (handles settings persistence and application)

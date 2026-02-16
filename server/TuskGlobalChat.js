@@ -9,9 +9,10 @@
 "use strict";
 
 class TuskGlobalChat {
-  constructor(io, roomId) {
+  constructor(io, roomId, room) {
     this.io = io;
     this.roomId = roomId;
+    this.room = room; // Reference to GameRoom for player validation
     this.lastMessageTime = Date.now();
     this.messageCount = 0;
     this.hourStart = Date.now();
@@ -205,7 +206,9 @@ class TuskGlobalChat {
 
     setTimeout(() => {
       const message = this._generateMessage(eventType, data);
-      this._sendMessage(message);
+      if (message && this._mentionedPlayersExist(message)) {
+        this._sendMessage(message);
+      }
     }, this.config.eventCooldown);
   }
 
@@ -227,6 +230,27 @@ class TuskGlobalChat {
       message = message.replace(new RegExp(`\\{${key}\\}`, "g"), value);
     }
     return message;
+  }
+
+  // ========================
+  // PLAYER VALIDATION
+  // ========================
+
+  /**
+   * Check that all @-mentioned player names in a message still exist in the room.
+   * Prevents Tusk from referencing players who disconnected during the event cooldown.
+   */
+  _mentionedPlayersExist(message) {
+    if (!this.room || !this.room.players) return true;
+    const mentions = message.match(/@(\w+)/g);
+    if (!mentions) return true;
+
+    const playerNames = new Set();
+    for (const [, p] of this.room.players) {
+      playerNames.add(p.name);
+    }
+
+    return mentions.every((mention) => playerNames.has(mention.slice(1)));
   }
 
   // ========================

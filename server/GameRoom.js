@@ -183,7 +183,7 @@ class GameRoom {
     }
 
     // Server-side Tusk global chat (broadcasts satirical commentary)
-    this.tuskChat = new TuskGlobalChat(io, roomId);
+    this.tuskChat = new TuskGlobalChat(io, roomId, this);
 
     // Server-authoritative commander state: one commander per faction
     this.commanders = { rust: null, cobalt: null, viridian: null };
