@@ -1488,6 +1488,9 @@
 
   // Wire auth screen confirm callback (used when Firebase is available)
   authScreen.onConfirm = ({ name, faction, profileIndex, profileData }) => {
+    // Detect mid-game profile switch (profile was already loaded)
+    const isProfileSwitch = profileManager.loaded;
+
     // Store profile context for other systems
     window.activeProfileIndex = profileIndex;
     window.activeProfileData = profileData;
@@ -1508,12 +1511,26 @@
 
     // Update dashboard with new profile's name, faction, and level
     if (window.dashboard) {
+      // On profile switch, reset crypto display state so the new value can be set
+      if (isProfileSwitch) {
+        window.dashboard.resetForProfileSwitch();
+      }
       window.dashboard.playerName = name;
       window.dashboard.playerFaction = faction;
       window.dashboard.playerLevel = playerLevel;
       const nameEl = document.getElementById("dashboard-player-name");
       if (nameEl) nameEl.textContent = name;
-      window.dashboard.updateProfile({ rank: 0, rankTotal: 0 });
+      window.dashboard.updateProfile({
+        level: profileData.level || 1,
+        crypto: profileData.totalCrypto || 0,
+        rank: 0,
+        rankTotal: 0,
+      });
+    }
+
+    // Update ProfileCard crypto state for self on profile switch
+    if (isProfileSwitch && window.profileCard && window.networkManager?.playerId) {
+      window.profileCard.latestCryptoState[window.networkManager.playerId] = profileData.totalCrypto || 0;
     }
 
     // Update avatar across all systems (profile picture or fallback color)
@@ -1554,6 +1571,12 @@
     // Send chosen identity to server (token already sent via Socket.IO handshake)
     if (window.networkManager) {
       window.networkManager.sendIdentity(name, faction);
+
+      // On mid-game profile switch, notify server of full profile change
+      // so it resets player.crypto and broadcasts to all clients
+      if (isProfileSwitch && window.networkManager.connected) {
+        window.networkManager.sendSetProfile(profileIndex, profileData);
+      }
     }
 
     // Show "Switch Profile" button in dashboard

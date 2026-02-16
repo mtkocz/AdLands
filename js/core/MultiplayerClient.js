@@ -949,6 +949,48 @@
       }
     };
 
+    // A player switched their active profile mid-game
+    net.onPlayerProfileSwitched = (data) => {
+      if (data.id === net.playerId) {
+        // Server confirmed our profile switch — set authoritative crypto
+        if (window.dashboard) {
+          window.dashboard.updateCrypto(data.totalCrypto || 0);
+        }
+        if (window.profileCard) {
+          window.profileCard.latestCryptoState[data.id] = data.totalCrypto || 0;
+        }
+        return;
+      }
+
+      // Remote player switched profiles — update their display
+      const remoteTank = remoteTanks.get(data.id);
+      if (remoteTank) {
+        if (data.faction) remoteTank.setFaction(data.faction);
+        playerTags.updateName?.(data.id, data.name);
+        playerTags.updateFaction?.(data.id, data.faction);
+        playerTags.updateLevel?.(data.id, data.level);
+        tankHeadlights.updateFaction?.(data.id, data.faction);
+      }
+
+      // Update ProfileCard cache with new profile data
+      if (window.profileCard) {
+        window.profileCard.updatePlayer(data.id, {
+          name: data.name,
+          faction: data.faction,
+          level: data.level,
+          badges: data.badges || [],
+          title: data.title || "Contractor",
+          crypto: data.totalCrypto || 0,
+        });
+        window.profileCard.latestCryptoState[data.id] = data.totalCrypto || 0;
+      }
+
+      // Keep CommanderSystem in sync
+      if (window.commanderSystem) {
+        window.commanderSystem.updatePlayerFaction?.(data.id, data.faction);
+      }
+    };
+
     // Commander ping relayed by server — place on local ping system
     net.onCommanderPing = (data) => {
       if (!window.pingMarkerSystem || !planet) return;

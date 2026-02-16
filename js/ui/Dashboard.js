@@ -1119,6 +1119,19 @@ class Dashboard {
   }
 
   /**
+   * Reset crypto display state for a profile switch.
+   * Clears server-crypto mode so the new profile's crypto can be
+   * set via updateProfile() before the first server broadcast arrives.
+   */
+  resetForProfileSwitch() {
+    this._serverCryptoMode = false;
+    this._cachedProfile.crypto = null;
+    this._cachedProfile.level = null;
+    this._cachedProfile.rank = null;
+    this._cachedProfile.rankTotal = null;
+  }
+
+  /**
    * Show or hide the "Switch Profile" button based on auth state.
    * @param {boolean} show
    */

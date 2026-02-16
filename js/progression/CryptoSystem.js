@@ -367,7 +367,10 @@ class CryptoSystem {
 
     _saveStats() {
         try {
-            localStorage.setItem('adlands_player_stats', JSON.stringify(this.stats));
+            const profileKey = window.activeProfileIndex !== undefined
+                ? `adlands_player_stats_${window.activeProfileIndex}`
+                : 'adlands_player_stats';
+            localStorage.setItem(profileKey, JSON.stringify(this.stats));
         } catch (e) {
             console.warn('[CryptoSystem] Failed to save stats:', e);
         }
