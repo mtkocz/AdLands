@@ -431,6 +431,24 @@ class AuthScreen {
             linkedProviders: this.auth.linkedProviders,
             isAnonymous: this.auth.isGuest,
           });
+        } else {
+          // Account doc missing — create it
+          const maxSlots = this.auth.isGuest ? 1 : 3;
+          const profilesArray = Array(maxSlots).fill(null);
+          await firebaseDb.collection("accounts").doc(uid).set({
+            email: this.auth.email || null,
+            displayName: this.auth.displayName || null,
+            photoURL: this.auth.photoURL || null,
+            linkedProviders: this.auth.linkedProviders,
+            isAnonymous: this.auth.isGuest,
+            createdAt: firebase.firestore.FieldValue.serverTimestamp(),
+            lastLoginAt: firebase.firestore.FieldValue.serverTimestamp(),
+            activeProfileIndex: 0,
+            cosmeticsPurchased: [],
+            profiles: profilesArray,
+            settings: {},
+          });
+          this._profiles = profilesArray;
         }
 
         // Always show profile selector after auth
@@ -1035,6 +1053,7 @@ class AuthScreen {
       console.error(`[AuthScreen] Failed to ${this._isEditMode ? "edit" : "create"} profile:`, err);
       confirmBtn.textContent = this._isEditMode ? "Save" : "Create Profile";
       this._setButtonsDisabled(false);
+      this._showError("auth-create-error", "Failed to save profile. Please try again.");
     }
   }
 
