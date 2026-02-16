@@ -2446,9 +2446,13 @@
       viridian: (tics.viridian / capacity) * Math.PI * 2 || 0,
     };
 
-    // Clamp: never exceed 100%, and close floating-point gap at ~100%
+    // Clamp: never exceed 100%, and close gap when territory is at capacity.
+    // Math.floor() on stepped values can lose up to 2 tics total (one per faction),
+    // creating a visible unclaimed sliver even though server says territory is full.
     const claimedTotal = angles.rust + angles.cobalt + angles.viridian;
-    if (claimedTotal > 0 && (claimedTotal > Math.PI * 2 || claimedTotal >= Math.PI * 2 - 0.001)) {
+    const targetTotal = ringAnimState.target.rust + ringAnimState.target.cobalt + ringAnimState.target.viridian;
+    const isAtCapacity = targetTotal >= ringAnimState.target.capacity - 0.01;
+    if (claimedTotal > 0 && (claimedTotal > Math.PI * 2 || isAtCapacity)) {
       const scale = (Math.PI * 2) / claimedTotal;
       angles.rust *= scale;
       angles.cobalt *= scale;
