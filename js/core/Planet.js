@@ -103,6 +103,10 @@ class Planet {
     this._volLightMeshes = [];
     this._volLightTime = 0;
 
+    // Portal pulse animation
+    this._portalMeshes = [];
+    this._portalPulseTime = 0;
+
     // Preallocated temp objects for visibility culling (avoid GC pressure)
     this._cullTemp = {
       cameraWorldPos: new THREE.Vector3(),
@@ -904,14 +908,62 @@ class Planet {
       let material;
 
       if (this.portalCenterIndices.has(index)) {
-        if (!this._portalTexture) {
-          this._portalTexture = this._createPatternTexture("solid", 0);
+        // Compute centroid of the pentagon
+        const center = new THREE.Vector3(0, 0, 0);
+        for (let i = 0; i < n; i++) {
+          center.x += vertices[i * 3];
+          center.y += vertices[i * 3 + 1];
+          center.z += vertices[i * 3 + 2];
         }
-        material = new THREE.MeshStandardMaterial({
-          map: this._portalTexture,
-          flatShading: true,
-          roughness: 0.9,
-          metalness: 0.2,
+        center.divideScalar(n);
+
+        // Compute max distance from center to any vertex
+        let maxDist = 0;
+        for (let i = 0; i < n; i++) {
+          const dx = vertices[i * 3] - center.x;
+          const dy = vertices[i * 3 + 1] - center.y;
+          const dz = vertices[i * 3 + 2] - center.z;
+          maxDist = Math.max(maxDist, Math.sqrt(dx * dx + dy * dy + dz * dz));
+        }
+
+        material = new THREE.ShaderMaterial({
+          uniforms: {
+            uTime: { value: 0 },
+            uCenter: { value: center },
+            uMaxDist: { value: maxDist },
+          },
+          vertexShader: `
+            uniform vec3 uCenter;
+            uniform float uMaxDist;
+            varying float vDist;
+            void main() {
+              vDist = distance(position, uCenter) / uMaxDist;
+              gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+            }
+          `,
+          fragmentShader: `
+            uniform float uTime;
+            varying float vDist;
+            void main() {
+              vec3 cyan = vec3(0.0, 0.9, 0.9);
+
+              // Repeating pulse every 2.5 seconds
+              float cycle = mod(uTime, 2.5) / 2.5;
+
+              // Ring expanding from center to edge
+              float ringWidth = 0.18;
+              float ring = smoothstep(ringWidth, 0.0, abs(vDist - cycle));
+
+              // Fade out as ring reaches the edge
+              ring *= 1.0 - cycle * 0.8;
+
+              // Subtle ambient glow at center
+              float glow = (1.0 - vDist) * 0.08;
+
+              vec3 color = cyan * (ring * 0.6 + glow);
+              gl_FragColor = vec4(color, 1.0);
+            }
+          `,
           side: THREE.FrontSide,
         });
       } else if (clusterId === undefined) {
@@ -974,6 +1026,10 @@ class Planet {
       mesh.receiveShadow = true;
       mesh.castShadow = true;
       this.hexGroup.add(mesh);
+
+      if (this.portalCenterIndices.has(index)) {
+        this._portalMeshes.push(mesh);
+      }
     });
   }
 
@@ -1476,6 +1532,14 @@ class Planet {
     this._volLightTime += dt;
     for (const mesh of this._volLightMeshes) {
       mesh.material.uniforms.uTime.value = this._volLightTime;
+    }
+  }
+
+  updatePortalPulse(dt) {
+    if (this._portalMeshes.length === 0) return;
+    this._portalPulseTime += dt;
+    for (const mesh of this._portalMeshes) {
+      mesh.material.uniforms.uTime.value = this._portalPulseTime;
     }
   }
 

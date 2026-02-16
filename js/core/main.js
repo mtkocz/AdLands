@@ -3666,6 +3666,7 @@
     // Update terrain visibility culling (hide tiles on far side of planet + frustum cull overlays)
     planet.updateVisibility(camera, sharedFrustum);
     planet.updateVolumetricLights(deltaTime);
+    planet.updatePortalPulse(deltaTime);
 
     // Commander mode LOD options (colored dots instead of boxes)
     const isHumanCommander = commanderSystem.isHumanCommander();
