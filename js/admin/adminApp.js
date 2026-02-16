@@ -1158,10 +1158,7 @@
           : "";
 
         const isGroupEditing = currentEditingGroupName && currentEditingGroupName.toLowerCase() === (first.name || "").toLowerCase();
-        // For player territories, prefer showing the territory pattern over the player avatar
-        const groupLogoSrc = hasPlayerTerritory
-          ? (first.pendingImage || first.patternImage || first.patternUrl || first.logoUrl || first.logoImage)
-          : (first.logoUrl || first.logoImage);
+        const groupLogoSrc = first.logoUrl || first.logoImage;
         const isGroupPaused = members.some((s) => !!s.paused);
         const isNewTerritory = hasPlayerTerritory && members.some((s) => s.imageStatus === "placeholder" || !s.imageStatus);
         const hasPendingImage = hasPlayerTerritory && members.some((s) => s.imageStatus === "pending");
