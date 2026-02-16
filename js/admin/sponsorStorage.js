@@ -306,6 +306,7 @@ const SponsorStorage = {
       }
       const created = await res.json();
       this._cache.sponsors.push(created);
+      this._broadcast("create", { id: created.id, sponsor: created });
       return created;
     }
 

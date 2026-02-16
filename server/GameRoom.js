@@ -1146,6 +1146,7 @@ class GameRoom {
         totalCrypto: player.totalCrypto,
         title: player.title,
         crypto: player.crypto,
+        avatarColor: player.avatarColor || null,
       });
     }
 

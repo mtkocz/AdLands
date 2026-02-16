@@ -187,13 +187,21 @@
       refreshSponsorsList();
     });
 
-    // Cross-tab sync: refresh sponsor list when game tab creates/deletes territories
+    // Cross-tab sync: refresh sponsor list when game tab creates/updates/deletes territories
     if (SponsorStorage._channel) {
       SponsorStorage._channel.addEventListener("message", (e) => {
-        if (e.data?.action === "create" || e.data?.action === "delete") {
+        const action = e.data?.action;
+        if (action === "create" || action === "delete" || action === "update") {
           SponsorStorage.reload().then(() => {
             // Auto-switch to "User Territories" tab when a player territory arrives
-            if (e.data.action === "create" && e.data.sponsor?.isPlayerTerritory) {
+            if (action === "create" && e.data.sponsor?.isPlayerTerritory) {
+              sponsorListFilter = "players";
+              document.querySelectorAll(".sponsor-tab").forEach((t) => {
+                t.classList.toggle("active", t.dataset.filter === "players");
+              });
+            }
+            // Auto-switch to User Territories when an image is submitted for review
+            if (action === "update") {
               sponsorListFilter = "players";
               document.querySelectorAll(".sponsor-tab").forEach((t) => {
                 t.classList.toggle("active", t.dataset.filter === "players");

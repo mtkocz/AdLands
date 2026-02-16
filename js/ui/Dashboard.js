@@ -2676,6 +2676,11 @@ class Dashboard {
         }).catch((e) => console.warn("[Dashboard] Firestore pending update failed:", e));
       }
 
+      // Notify admin portal (other tab) to reload and show the pending image
+      if (typeof SponsorStorage !== "undefined" && SponsorStorage._channel) {
+        SponsorStorage._broadcast("update", { id: territory._sponsorStorageId });
+      }
+
       // Save to localStorage with pending status
       this._savePlayerTerritories();
       this._renderTerritoryList();
