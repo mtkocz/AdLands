@@ -423,7 +423,7 @@ class Dashboard {
    */
   _resetFactionPanel(faction) {
     const factionName = faction.charAt(0).toUpperCase() + faction.slice(1);
-    this.updatePanelTitle("faction", `${factionName} | Ranking...`);
+    this.updatePanelTitle("faction", "Faction Leaderboard");
 
     // Clear stale roster from old faction
     this._lastRosterData = null;
@@ -1411,8 +1411,7 @@ class Dashboard {
       if (rankChanged || totalChanged) {
         this._cachedProfile.rank = data.rank;
         if (data.rankTotal !== undefined) this._cachedProfile.rankTotal = data.rankTotal;
-        const factionName = (this.playerFaction || "faction").charAt(0).toUpperCase() + (this.playerFaction || "faction").slice(1);
-        this.updatePanelTitle("faction", `${factionName} | Rank #${data.rank}`);
+        this.updatePanelTitle("faction", "Faction Leaderboard");
       }
     }
   }
