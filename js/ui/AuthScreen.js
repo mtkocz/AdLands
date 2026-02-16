@@ -832,16 +832,25 @@ class AuthScreen {
     const container = this.overlay.querySelector("#auth-profile-slots");
     container.innerHTML = "";
 
-    // Guests get 1 profile slot, authenticated users get 3
-    const maxSlots = this.auth.isGuest ? 1 : 3;
+    const isGuest = this.auth.isGuest;
 
-    for (let i = 0; i < maxSlots; i++) {
+    for (let i = 0; i < 3; i++) {
       const profile = this._profiles[i];
+      const isLocked = isGuest && i > 0;
       const slot = document.createElement("div");
-      slot.className = "auth-profile-slot" + (profile ? ` has-profile faction-${profile.faction}` : " empty");
-      slot.dataset.index = i;
 
-      if (profile) {
+      if (isLocked) {
+        slot.className = "auth-profile-slot locked";
+        slot.dataset.index = i;
+        slot.innerHTML = `
+          <div class="profile-slot-locked">
+            <span class="profile-slot-lock">\u{1F512}</span>
+            <span>Create an account to unlock</span>
+          </div>
+        `;
+      } else if (profile) {
+        slot.className = `auth-profile-slot has-profile faction-${profile.faction}`;
+        slot.dataset.index = i;
         const avatarStyle = profile.profilePicture
           ? `background-image: url(${profile.profilePicture})`
           : "";
@@ -862,6 +871,8 @@ class AuthScreen {
           </div>
         `;
       } else {
+        slot.className = "auth-profile-slot empty";
+        slot.dataset.index = i;
         slot.innerHTML = `
           <div class="profile-slot-empty">
             <span class="profile-slot-plus">+</span>
@@ -873,7 +884,15 @@ class AuthScreen {
       container.appendChild(slot);
 
       // Events
-      if (profile) {
+      if (isLocked) {
+        slot.addEventListener("click", (e) => {
+          e.stopPropagation();
+          this.auth.signOut().then(() => {
+            this._isAuthenticated = false;
+            this._showStage("welcome");
+          });
+        });
+      } else if (profile) {
         slot.querySelector(".profile-slot-play").addEventListener("click", (e) => {
           e.stopPropagation();
           this._selectProfile(i);

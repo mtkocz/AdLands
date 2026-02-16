@@ -464,6 +464,33 @@
   font-size: var(--font-size-body);
 }
 
+/* Locked slot (guest users, slots 2-3) */
+.auth-profile-slot.locked {
+  border-style: dashed;
+  border-color: var(--border-dark);
+  justify-content: center;
+  opacity: 0.45;
+}
+
+.auth-profile-slot.locked:hover {
+  border-color: var(--text-muted);
+  opacity: 0.7;
+}
+
+.profile-slot-locked {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+  color: var(--text-muted);
+  font-family: var(--font-small);
+  font-size: var(--font-size-small);
+}
+
+.profile-slot-lock {
+  font-size: var(--font-size-body);
+  line-height: 1;
+}
+
 .profile-slot-plus {
   font-size: var(--font-size-header);
   line-height: 1;
