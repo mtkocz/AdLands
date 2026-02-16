@@ -2836,10 +2836,13 @@ class Dashboard {
       }
     }
 
-    // Save individual territory to SponsorStorage (appears in admin portal)
+    // Patch local SponsorStorage cache (server creates the SponsorStore entry
+    // via the claim-territory socket handler, so we only cache locally to avoid
+    // a duplicate POST /api/sponsors + unwanted sponsors-reloaded broadcast)
     if (typeof SponsorStorage !== "undefined" && SponsorStorage._cache) {
       try {
         const sponsor = {
+          id: `player_${Date.now()}_${Math.random().toString(36).substr(2, 6)}`,
           _territoryId: territory.id,
           name: this.playerName || "Player",
           cluster: { tileIndices: territory.tileIndices },
@@ -2851,16 +2854,21 @@ class Dashboard {
           createdAt: new Date().toISOString(),
           imageStatus: "placeholder",
           ownerUid: window.authManager?.uid || null,
+          active: true,
         };
-        // Use player's profile picture as the logo in the admin portal
         if (this.avatarColor?.startsWith("data:")) {
           sponsor.logoImage = this.avatarColor;
         }
-        const created = await SponsorStorage.create(sponsor);
-        // Store the SponsorStorage-generated ID for future updates
-        territory._sponsorStorageId = created.id;
+        SponsorStorage._cache.sponsors.push(sponsor);
+        territory._sponsorStorageId = sponsor.id;
+        if (SponsorStorage._db) {
+          try {
+            const tx = SponsorStorage._db.transaction("sponsors", "readwrite");
+            tx.objectStore("sponsors").put(sponsor);
+          } catch (e) { /* IndexedDB write is best-effort */ }
+        }
       } catch (e) {
-        console.warn("[Dashboard] SponsorStorage save failed:", e);
+        console.warn("[Dashboard] SponsorStorage cache patch failed:", e);
       }
     }
     // Always save to localStorage as fallback

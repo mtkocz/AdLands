@@ -552,6 +552,7 @@ class GameRoom {
       totalCrypto: profileData?.totalCrypto || 0,
       title: profileData?.titleStats?.currentTitle || "Contractor",
       profilePicture: profileData?.profilePicture || null,
+      avatarColor: profileData?.profilePicture || null,
       loadout: profileData?.loadout || {},
       tankUpgrades: profileData?.tankUpgrades || { armor: 0, speed: 0, fireRate: 0, damage: 0 },
 
@@ -668,6 +669,7 @@ class GameRoom {
       title: player.title,
       crypto: player.crypto,
       rank: player.rank || 0,
+      avatarColor: player.avatarColor || null,
     });
 
     // Recompute ranks and commander for all factions
@@ -1030,6 +1032,10 @@ class GameRoom {
     if (typeof profileData.title === "string") {
       player.title = profileData.title.substring(0, 50);
     }
+    if (typeof profileData.avatarColor === "string") {
+      // Allow HSL colors or data: URLs (profile pictures), cap at 200KB
+      player.avatarColor = profileData.avatarColor.substring(0, 200_000);
+    }
 
     // Re-evaluate ranks and commander if ranking metrics changed
     if (player.level !== oldLevel || player.totalCrypto !== oldTotalCrypto) {
@@ -1044,6 +1050,7 @@ class GameRoom {
         badges: player.badges,
         totalCrypto: player.totalCrypto,
         title: player.title,
+        avatarColor: player.avatarColor || null,
       });
     }
   }
@@ -2149,6 +2156,7 @@ class GameRoom {
         title: p.title,
         crypto: p.crypto,
         rank: p.rank || 0,
+        avatarColor: p.avatarColor || null,
       };
     }
     return states;

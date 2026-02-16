@@ -14,6 +14,7 @@ class RemoteTank {
     this.playerId = playerData.id;
     this.playerName = playerData.name;
     this.faction = playerData.faction;
+    this.avatarColor = playerData.avatarColor || null;
 
     // Current interpolated state (what we render)
     this.state = {

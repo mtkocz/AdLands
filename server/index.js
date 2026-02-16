@@ -380,6 +380,24 @@ io.on("connection", (socket) => {
         pendingImage: null,
       });
 
+      // Create SponsorStore entry so admin portal sees the territory
+      try {
+        await sponsorStore.create({
+          _territoryId: territoryId,
+          name: playerName || "Player",
+          cluster: { tileIndices },
+          patternImage: patternImage || null,
+          patternAdjustment: patternAdjustment || {},
+          isPlayerTerritory: true,
+          tierName: tierName || "outpost",
+          imageStatus: "placeholder",
+          ownerUid: socket.uid,
+          createdAt: new Date().toISOString(),
+        });
+      } catch (e) {
+        console.warn("[Territory] SponsorStore create failed (non-blocking):", e.message);
+      }
+
       // Broadcast to all players so they see the new territory
       io.to(mainRoom.roomId).emit("player-territory-claimed", {
         id: territoryId,
@@ -427,6 +445,23 @@ io.on("connection", (socket) => {
           imageStatus: "pending",
           ownerUid: socket.uid,
           patternAdjustment: patternAdjustment || match.patternAdjustment || {},
+        });
+      } else {
+        // Territory not yet in SponsorStore — create it from Firestore data
+        const firestoreData = doc.data();
+        await sponsorStore.create({
+          _territoryId: territoryId,
+          name: firestoreData.playerName || "Player",
+          cluster: { tileIndices: firestoreData.tileIndices || [] },
+          patternImage: firestoreData.patternImage || null,
+          pendingImage,
+          pendingImageAt: new Date().toISOString(),
+          patternAdjustment: patternAdjustment || firestoreData.patternAdjustment || {},
+          isPlayerTerritory: true,
+          tierName: firestoreData.tierName || "outpost",
+          imageStatus: "pending",
+          ownerUid: socket.uid,
+          createdAt: firestoreData.purchasedAt?.toDate?.()?.toISOString() || new Date().toISOString(),
         });
       }
 

@@ -221,11 +221,12 @@
         mp.applyCelestialConfig(data.celestial);
       }
 
-      // Send our profile data (badges, totalCrypto, title) to the server
+      // Send our profile data (badges, totalCrypto, title, avatar) to the server
       net.sendProfile({
         badges: window.badgeSystem?.getUnlockedBadges()?.map((b) => b.id) || [],
         totalCrypto: window.cryptoSystem?.stats?.totalCrypto || 0,
         title: window.titleSystem?.getTitle?.() || "Contractor",
+        avatarColor: window.avatarColor || null,
       });
 
       // Seed ProfileCard crypto state from welcome data (before first broadcast)
@@ -346,7 +347,7 @@
               playerTags.createTag?.(id, remoteTank, {
                 name: remoteTank.playerName || "Unknown",
                 level: 1, rank: remoteTank.rank || 0,
-                avatar: null, avatarColor: null, squad: null,
+                avatar: null, avatarColor: remoteTank.avatarColor || null, squad: null,
                 faction: remoteTank.faction,
                 title: "Contractor",
                 hp: state.hp || 100, maxHp: 100,
@@ -1113,7 +1114,27 @@
           badges: data.badges || [],
           totalCrypto: data.totalCrypto || 0,
           title: data.title || "Contractor",
+          avatarColor: data.avatarColor || null,
         });
+      }
+
+      // Update player tag avatar if avatarColor changed
+      if (data.avatarColor && playerTags.tags?.has(data.id)) {
+        const tagData = playerTags.tags.get(data.id);
+        if (tagData?.element) {
+          const avatarEl = tagData.element.querySelector(".tag-avatar");
+          if (avatarEl) {
+            if (data.avatarColor.startsWith("data:")) {
+              avatarEl.style.background = "";
+              avatarEl.style.backgroundImage = `url(${data.avatarColor})`;
+              avatarEl.style.backgroundSize = "cover";
+              avatarEl.style.backgroundPosition = "center";
+            } else {
+              avatarEl.style.backgroundImage = "";
+              avatarEl.style.background = data.avatarColor;
+            }
+          }
+        }
       }
     };
 
@@ -1375,7 +1396,7 @@
           name: playerData.name,
           level: playerData.level || 1,
           rank: playerData.rank || 0,
-          avatar: null, avatarColor: null, squad: null,
+          avatar: null, avatarColor: playerData.avatarColor || null, squad: null,
           faction: playerData.faction,
           title: playerData.title || "Contractor",
           hp: playerData.hp || 100,
@@ -1401,7 +1422,7 @@
         level: playerData.level || 1,
         rank: playerData.rank || 0,
         avatar: null,
-        avatarColor: null,
+        avatarColor: playerData.avatarColor || null,
         squad: null,
         faction: playerData.faction,
         title: playerData.title || "Contractor",
@@ -1442,7 +1463,7 @@
           badges: playerData.badges || [],
           hp: playerData.hp || 100,
           maxHp: playerData.maxHp || 100,
-          crypto: playerData.crypto || 0,
+          avatarColor: playerData.avatarColor || null,
           isOnline: true,
           isSelf: false,
         });
