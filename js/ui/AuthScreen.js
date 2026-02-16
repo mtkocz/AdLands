@@ -1271,6 +1271,8 @@ class AuthScreen {
       "auth/weak-password": "Password must be at least 6 characters.",
       "auth/too-many-requests": "Too many attempts. Please try again later.",
       "auth/network-request-failed": "Network error. Check your connection.",
+      "auth/credential-already-in-use":
+        "This account is already linked to a different user. Sign out and sign in directly instead.",
       "auth/account-exists-with-different-credential":
         "An account already exists with a different sign-in method.",
     };
