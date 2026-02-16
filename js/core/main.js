@@ -1211,8 +1211,9 @@
   window.cosmeticsShop = cosmeticsShop;
 
   // Initialize SponsorStorage for player territory persistence
+  // Store the promise so downstream code can await it before using SponsorStorage
   if (typeof SponsorStorage !== "undefined") {
-    SponsorStorage.init().catch((e) =>
+    window._sponsorStorageReady = SponsorStorage.init().catch((e) =>
       console.warn("[main] SponsorStorage init failed:", e),
     );
   }

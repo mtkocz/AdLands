@@ -2894,6 +2894,10 @@ class Dashboard {
     }
 
     // Save individual territory to SponsorStorage (appears in admin portal)
+    // Ensure SponsorStorage init has completed before checking _cache
+    if (window._sponsorStorageReady) {
+      await window._sponsorStorageReady;
+    }
     if (typeof SponsorStorage !== "undefined" && SponsorStorage._cache) {
       try {
         const sponsor = {
