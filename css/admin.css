@@ -1786,6 +1786,49 @@ body {
 .territory-review-status.approved { color: #2a5; }
 .territory-review-status.rejected { color: #e55; }
 
+/* Pending review section — separated from approved territories */
+.pending-review-section {
+    margin-bottom: 16px;
+    border-bottom: 1px solid #333;
+    padding-bottom: 12px;
+}
+.pending-review-section-header {
+    font-family: var(--font-small);
+    font-size: 11px;
+    color: #c8a82a;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    margin-bottom: 8px;
+    padding: 4px 0;
+}
+.pending-review-grid {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+.pending-review-card {
+    border: 1px solid #c8a82a;
+    background: rgba(200, 168, 42, 0.06);
+    padding: 10px;
+}
+.pending-review-card-header {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 8px;
+}
+.pending-review-card-info {
+    flex: 1;
+    min-width: 0;
+}
+.pending-review-card-texture {
+    margin-bottom: 8px;
+}
+.pending-review-card-texture .territory-pending-img {
+    max-width: 100%;
+    max-height: 160px;
+}
+
 .pending-badge {
     display: inline-block;
     background: #c8a82a;

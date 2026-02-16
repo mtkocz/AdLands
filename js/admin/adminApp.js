@@ -951,6 +951,44 @@
       return;
     }
 
+    // Build pending review section for player territories tab
+    let pendingHtml = "";
+    if (sponsorListFilter === "players") {
+      const pendingSponsors = sponsors.filter(s => s.imageStatus === "pending" && s.pendingImage);
+      if (pendingSponsors.length > 0) {
+        const pendingCards = pendingSponsors.map(s => {
+          const logoSrc = s.logoUrl || s.logoImage;
+          const tileCount = s.cluster?.tileIndices?.length || 0;
+          return `
+            <div class="pending-review-card" data-id="${s.id}">
+              <div class="pending-review-card-header">
+                <div class="sponsor-card-logo">
+                  ${logoSrc ? `<img src="${logoSrc}" alt="${escapeHtml(s.name)}">` : '<span style="color:#666;font-size:12px;">No logo</span>'}
+                </div>
+                <div class="pending-review-card-info">
+                  <div class="sponsor-card-name">${escapeHtml(s.name)}</div>
+                  <div class="sponsor-card-stats">${tileCount} tiles &middot; ${s.tierName || "territory"}</div>
+                </div>
+              </div>
+              <div class="pending-review-card-texture">
+                <img src="${s.pendingImage}" alt="Uploaded texture" class="territory-pending-img">
+              </div>
+              <div class="territory-review-actions">
+                <button class="btn-approve approve-image-btn" data-id="${s.id}">Approve</button>
+                <button class="btn-reject reject-image-btn" data-id="${s.id}">Reject</button>
+              </div>
+            </div>`;
+        }).join("");
+        pendingHtml = `
+          <div class="pending-review-section">
+            <div class="pending-review-section-header">Pending Review (${pendingSponsors.length})</div>
+            <div class="pending-review-grid">${pendingCards}</div>
+          </div>`;
+        // Remove pending sponsors from the main list so they don't duplicate
+        sponsors = sponsors.filter(s => !(s.imageStatus === "pending" && s.pendingImage));
+      }
+    }
+
     // Sort sponsors alphabetically by name
     const sortedSponsors = [...sponsors].sort((a, b) =>
       (a.name || "").localeCompare(b.name || "", undefined, {
@@ -1070,9 +1108,10 @@
 
           const isActive = s.id === activeEditId;
 
-          // Pending image review section for player territories
+          // Image review status badge for player territories
           let reviewHtml = "";
           if (s.isPlayerTerritory && s.imageStatus === "pending" && s.pendingImage) {
+            // Pending items on the "All" tab still show inline review
             reviewHtml = `
               <div class="territory-review-section">
                 <div class="territory-review-label">Pending Image Review</div>
@@ -1159,7 +1198,7 @@
       expandedNames.add(g.dataset.name);
     });
 
-    sponsorsListEl.innerHTML = htmlParts.join("") + totalHtml;
+    sponsorsListEl.innerHTML = pendingHtml + htmlParts.join("") + totalHtml;
 
     // Restore expanded state
     sponsorsListEl.querySelectorAll(".sponsor-group").forEach((g) => {
