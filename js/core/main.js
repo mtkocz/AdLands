@@ -1572,6 +1572,17 @@
     if (window.networkManager) {
       window.networkManager.sendIdentity(name, faction);
 
+      // Resend profile with correct avatarColor (initial sendProfile fires before
+      // auth confirms, so window.avatarColor was still a random HSL fallback)
+      if (window.networkManager.connected) {
+        window.networkManager.sendProfile({
+          badges: window.badgeSystem?.getUnlockedBadges()?.map((b) => b.id) || [],
+          totalCrypto: window.cryptoSystem?.stats?.totalCrypto || 0,
+          title: window.titleSystem?.getTitle?.() || "Contractor",
+          avatarColor: window.avatarColor || null,
+        });
+      }
+
       // On mid-game profile switch, notify server of full profile change
       // so it resets player.crypto and broadcasts to all clients
       if (isProfileSwitch && window.networkManager.connected) {

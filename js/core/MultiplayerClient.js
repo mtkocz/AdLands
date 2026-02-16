@@ -965,12 +965,33 @@
 
       // Remote player switched profiles — update their display
       const remoteTank = remoteTanks.get(data.id);
+      const newAvatarColor = data.avatarColor || data.profilePicture || null;
       if (remoteTank) {
         if (data.faction) remoteTank.setFaction(data.faction);
+        remoteTank.avatarColor = newAvatarColor;
         playerTags.updateName?.(data.id, data.name);
         playerTags.updateFaction?.(data.id, data.faction);
         playerTags.updateLevel?.(data.id, data.level);
         tankHeadlights.updateFaction?.(data.id, data.faction);
+
+        // Update tag avatar for the new profile
+        if (newAvatarColor && playerTags.tags?.has(data.id)) {
+          const tagData = playerTags.tags.get(data.id);
+          if (tagData?.element) {
+            const avatarEl = tagData.element.querySelector(".tag-avatar");
+            if (avatarEl) {
+              if (newAvatarColor.startsWith("data:")) {
+                avatarEl.style.background = "";
+                avatarEl.style.backgroundImage = `url(${newAvatarColor})`;
+                avatarEl.style.backgroundSize = "cover";
+                avatarEl.style.backgroundPosition = "center";
+              } else {
+                avatarEl.style.backgroundImage = "";
+                avatarEl.style.background = newAvatarColor;
+              }
+            }
+          }
+        }
       }
 
       // Update ProfileCard cache with new profile data
@@ -982,6 +1003,7 @@
           badges: data.badges || [],
           title: data.title || "Contractor",
           crypto: data.totalCrypto || 0,
+          avatarColor: newAvatarColor,
         });
         window.profileCard.latestCryptoState[data.id] = data.totalCrypto || 0;
       }

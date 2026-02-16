@@ -380,25 +380,8 @@ io.on("connection", (socket) => {
         pendingImage: null,
       });
 
-      // Create SponsorStore entry so admin portal sees the territory
-      try {
-        await sponsorStore.create({
-          _territoryId: territoryId,
-          name: playerName || "Player",
-          cluster: { tileIndices },
-          patternImage: patternImage || null,
-          patternAdjustment: patternAdjustment || {},
-          isPlayerTerritory: true,
-          tierName: tierName || "outpost",
-          imageStatus: "placeholder",
-          ownerUid: socket.uid,
-          createdAt: new Date().toISOString(),
-        });
-      } catch (e) {
-        console.warn("[Territory] SponsorStore create failed (non-blocking):", e.message);
-      }
-
       // Broadcast to all players so they see the new territory
+      // (SponsorStore entry is created by the client's POST /api/sponsors call)
       io.to(mainRoom.roomId).emit("player-territory-claimed", {
         id: territoryId,
         tileIndices,

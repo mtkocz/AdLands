@@ -817,6 +817,7 @@ class GameRoom {
     player.badges = profileData.unlockedBadges?.map(b => b.id) || [];
     player.title = profileData.titleStats?.currentTitle || "Contractor";
     player.profilePicture = profileData.profilePicture || null;
+    player.avatarColor = profileData.profilePicture || null;
     player.loadout = profileData.loadout || {};
     player.tankUpgrades = profileData.tankUpgrades || { armor: 0, speed: 0, fireRate: 0, damage: 0 };
 
@@ -846,6 +847,7 @@ class GameRoom {
       totalCrypto: player.totalCrypto,
       rank: player.rank || 0,
       profilePicture: player.profilePicture,
+      avatarColor: player.avatarColor || null,
     });
 
     // Update faction profile cache for profile switch
@@ -1033,8 +1035,12 @@ class GameRoom {
       player.title = profileData.title.substring(0, 50);
     }
     if (typeof profileData.avatarColor === "string") {
-      // Allow HSL colors or data: URLs (profile pictures), cap at 200KB
-      player.avatarColor = profileData.avatarColor.substring(0, 200_000);
+      // Accept client avatar only if server doesn't already have a Firestore profile picture,
+      // or if the client is sending an actual image (data: URL)
+      const clientAvatar = profileData.avatarColor.substring(0, 200_000);
+      if (!player.profilePicture || clientAvatar.startsWith("data:")) {
+        player.avatarColor = clientAvatar;
+      }
     }
 
     // Re-evaluate ranks and commander if ranking metrics changed

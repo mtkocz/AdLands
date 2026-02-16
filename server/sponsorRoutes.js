@@ -177,7 +177,12 @@ function createSponsorRoutes(sponsorStore, gameRoom, { imageUrls, gameDir } = {}
     const result = await sponsorStore.create(req.body);
     if (result.errors) return res.status(400).json({ errors: result.errors });
     await reExtractImages(result.sponsor.id);
-    reloadIfLive();
+    // Skip full game reload for player territories — they use the
+    // player-territory-claimed socket broadcast instead, and reloadIfLive()
+    // triggers sponsors-reloaded which wipes optimistically applied textures.
+    if (!result.sponsor.isPlayerTerritory) {
+      reloadIfLive();
+    }
     res.status(201).json(result.sponsor);
   });
 
