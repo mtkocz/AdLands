@@ -2641,6 +2641,39 @@ class Dashboard {
         });
       }
 
+      // Update SponsorStorage so the admin portal sees the pending image
+      if (typeof SponsorStorage !== "undefined" && SponsorStorage._cache) {
+        const storageId = territory._sponsorStorageId;
+        if (storageId) {
+          SponsorStorage.update(storageId, {
+            pendingImage: dataUrl,
+            imageStatus: "pending",
+            patternAdjustment: territory.patternAdjustment,
+          }).catch((e) => console.warn("[Dashboard] SponsorStorage pending update failed:", e));
+        } else {
+          // Fallback: find by _territoryId
+          const allSponsors = SponsorStorage.getAll();
+          const match = allSponsors.find((s) => s._territoryId === territoryId);
+          if (match) {
+            territory._sponsorStorageId = match.id;
+            SponsorStorage.update(match.id, {
+              pendingImage: dataUrl,
+              imageStatus: "pending",
+              patternAdjustment: territory.patternAdjustment,
+            }).catch((e) => console.warn("[Dashboard] SponsorStorage pending update failed:", e));
+          }
+        }
+      }
+
+      // Update Firestore with pending status
+      if (window.firestoreSync?.isActive && window.authManager?.uid) {
+        firebase.firestore().collection("territories").doc(territoryId).update({
+          pendingImage: dataUrl,
+          imageStatus: "pending",
+          patternAdjustment: territory.patternAdjustment,
+        }).catch((e) => console.warn("[Dashboard] Firestore pending update failed:", e));
+      }
+
       // Save to localStorage with pending status
       this._savePlayerTerritories();
       this._renderTerritoryList();
