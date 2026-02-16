@@ -8,6 +8,7 @@ const { Router } = require("express");
 const fs = require("fs");
 const fsp = require("fs").promises;
 const path = require("path");
+const { getFirestore } = require("./firebaseAdmin");
 
 /**
  * Extract a single sponsor's base64 images to static PNG files on disk.
@@ -211,6 +212,121 @@ function createSponsorRoutes(sponsorStore, gameRoom, { imageUrls, gameDir } = {}
     await cleanupSponsorImages(deletedId);
     reloadIfLive();
     res.json({ success: true });
+  });
+
+  // POST /api/sponsors/:id/review-image — admin approves or rejects a pending territory image
+  router.post("/:id/review-image", async (req, res) => {
+    const { action, rejectionReason } = req.body || {};
+    if (!["approve", "reject"].includes(action)) {
+      return res.status(400).json({ errors: ["Invalid action. Must be 'approve' or 'reject'."] });
+    }
+
+    const sponsor = sponsorStore.getById(req.params.id);
+    if (!sponsor || !sponsor.isPlayerTerritory) {
+      return res.status(404).json({ errors: ["Player territory not found"] });
+    }
+    if (sponsor.imageStatus !== "pending" || !sponsor.pendingImage) {
+      return res.status(400).json({ errors: ["No pending image to review"] });
+    }
+
+    const territoryId = sponsor._territoryId || sponsor.id;
+
+    try {
+      if (action === "approve") {
+        // Move pending image to approved pattern in SponsorStorage
+        const approvedImage = sponsor.pendingImage;
+        await sponsorStore.update(req.params.id, {
+          patternImage: approvedImage,
+          pendingImage: null,
+          imageStatus: "approved",
+          reviewedAt: new Date().toISOString(),
+          rejectionReason: null,
+        });
+
+        // Re-extract image to static file
+        await reExtractImages(req.params.id);
+
+        // Update Firestore
+        try {
+          const db = getFirestore();
+          await db.collection("territories").doc(territoryId).update({
+            patternImage: approvedImage,
+            pendingImage: null,
+            imageStatus: "approved",
+            reviewedAt: require("firebase-admin").firestore.FieldValue.serverTimestamp(),
+            rejectionReason: null,
+          });
+        } catch (e) {
+          console.warn("[Territory] Firestore approve update failed:", e.message);
+        }
+
+        // Broadcast approved image to all connected players
+        const urls = _imageUrls[req.params.id] || {};
+        if (gameRoom) {
+          gameRoom.io.to(gameRoom.roomId).emit("territory-image-approved", {
+            territoryId,
+            patternImage: urls.patternUrl || approvedImage,
+            patternAdjustment: sponsor.patternAdjustment || {},
+            tileIndices: sponsor.cluster?.tileIndices || [],
+            playerName: sponsor.name,
+          });
+
+          // Notify the owning player specifically
+          if (sponsor.ownerUid) {
+            const sockets = await gameRoom.io.in(gameRoom.roomId).fetchSockets();
+            for (const s of sockets) {
+              if (s.uid === sponsor.ownerUid) {
+                s.emit("territory-image-review-result", { territoryId, status: "approved" });
+              }
+            }
+          }
+        }
+
+        console.log(`[Territory] Image approved for ${territoryId}`);
+        res.json({ success: true, action: "approved" });
+      } else {
+        // Reject: clear pending image, set status
+        await sponsorStore.update(req.params.id, {
+          pendingImage: null,
+          imageStatus: "rejected",
+          reviewedAt: new Date().toISOString(),
+          rejectionReason: rejectionReason || "Image rejected by admin",
+        });
+
+        // Update Firestore
+        try {
+          const db = getFirestore();
+          await db.collection("territories").doc(territoryId).update({
+            pendingImage: null,
+            imageStatus: "rejected",
+            reviewedAt: require("firebase-admin").firestore.FieldValue.serverTimestamp(),
+            rejectionReason: rejectionReason || "Image rejected by admin",
+          });
+        } catch (e) {
+          console.warn("[Territory] Firestore reject update failed:", e.message);
+        }
+
+        // Notify the owning player
+        if (gameRoom && sponsor.ownerUid) {
+          const sockets = await gameRoom.io.in(gameRoom.roomId).fetchSockets();
+          for (const s of sockets) {
+            if (s.uid === sponsor.ownerUid) {
+              s.emit("territory-image-review-result", {
+                territoryId,
+                status: "rejected",
+                reason: rejectionReason || "Image rejected by admin",
+              });
+            }
+          }
+        }
+
+        console.log(`[Territory] Image rejected for ${territoryId}`);
+        res.json({ success: true, action: "rejected" });
+      }
+    } catch (err) {
+      console.error("[Territory] Review failed:", err);
+      res.status(500).json({ errors: ["Review failed: " + err.message] });
+    }
   });
 
   return router;

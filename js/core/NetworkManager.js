@@ -249,6 +249,21 @@ class NetworkManager {
       if (this.onPlayerTerritoryClaimed) this.onPlayerTerritoryClaimed(data);
     });
 
+    // Admin approved a territory image — apply new texture for all players
+    this.socket.on("territory-image-approved", (data) => {
+      if (this.onTerritoryImageApproved) this.onTerritoryImageApproved(data);
+    });
+
+    // Personal review result (approve/reject) for the territory owner
+    this.socket.on("territory-image-review-result", (data) => {
+      if (this.onTerritoryImageReviewResult) this.onTerritoryImageReviewResult(data);
+    });
+
+    // Server acknowledged image submission
+    this.socket.on("territory-image-submitted", (data) => {
+      if (this.onTerritoryImageSubmitted) this.onTerritoryImageSubmitted(data);
+    });
+
     // Server-authoritative commander change (immediate)
     this.socket.on("commander-update", (data) => {
       if (this.onCommanderUpdate) this.onCommanderUpdate(data);

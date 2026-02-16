@@ -3865,6 +3865,28 @@ body.tip-dragging .chat-mention.tip-highlight {
     color: #ef4444;
 }
 
+.territory-status-badge {
+    display: inline-block;
+    font-family: var(--font-small);
+    font-size: 9px;
+    padding: 1px 6px;
+    margin-left: 6px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+.territory-status-badge.pending {
+    background: rgba(200, 168, 42, 0.2);
+    color: #c8a82a;
+}
+.territory-status-badge.rejected {
+    background: rgba(239, 68, 68, 0.15);
+    color: #ef4444;
+}
+.territory-status-badge.approved {
+    background: rgba(34, 170, 85, 0.15);
+    color: #2a5;
+}
+
 /* Share Panel */
 .share-btn {
     width: 100%;

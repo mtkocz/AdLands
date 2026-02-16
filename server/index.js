@@ -376,6 +376,8 @@ io.on("connection", (socket) => {
         playerName: playerName || "Player",
         purchasedAt: require("firebase-admin").firestore.FieldValue.serverTimestamp(),
         active: true,
+        imageStatus: "placeholder",
+        pendingImage: null,
       });
 
       // Broadcast to all players so they see the new territory
@@ -393,6 +395,46 @@ io.on("connection", (socket) => {
       console.log(`[Territory] Player ${socket.uid} claimed ${tierName}: ${tileIndices.length} hexes`);
     } catch (err) {
       console.warn(`[Territory] Claim failed:`, err.message);
+    }
+  });
+
+  // ---- Territory Image Submission (queued for admin review) ----
+  socket.on("submit-territory-image", async (data) => {
+    if (!socket.uid) return;
+    const { territoryId, pendingImage, patternAdjustment } = data || {};
+    if (!territoryId || !pendingImage) return;
+
+    try {
+      const db = getFirestore();
+      const doc = await db.collection("territories").doc(territoryId).get();
+      if (!doc.exists || doc.data().ownerUid !== socket.uid) return;
+
+      // Save pending image to Firestore for review
+      await db.collection("territories").doc(territoryId).update({
+        pendingImage,
+        pendingImageAt: require("firebase-admin").firestore.FieldValue.serverTimestamp(),
+        imageStatus: "pending",
+        patternAdjustment: patternAdjustment || doc.data().patternAdjustment || {},
+      });
+
+      // Update SponsorStorage so admin portal sees the pending image
+      const allSponsors = sponsorStore.getAll();
+      const match = allSponsors.find(s => s._territoryId === territoryId || s.id === territoryId);
+      if (match) {
+        await sponsorStore.update(match.id, {
+          pendingImage,
+          pendingImageAt: new Date().toISOString(),
+          imageStatus: "pending",
+          ownerUid: socket.uid,
+          patternAdjustment: patternAdjustment || match.patternAdjustment || {},
+        });
+      }
+
+      socket.emit("territory-image-submitted", { territoryId, status: "pending" });
+      console.log(`[Territory] Player ${socket.uid} submitted image for review: ${territoryId}`);
+    } catch (err) {
+      console.warn(`[Territory] Image submission failed:`, err.message);
+      socket.emit("territory-image-submitted", { territoryId, status: "error", message: err.message });
     }
   });
 

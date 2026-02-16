@@ -1283,6 +1283,56 @@
       planet.deElevateSponsorTiles();
     };
 
+    // Admin approved a territory image — update texture on planet for all players
+    net.onTerritoryImageApproved = (data) => {
+      if (!planet || !data || !data.tileIndices) return;
+
+      const sponsor = {
+        id: data.territoryId,
+        patternImage: data.patternImage,
+        patternAdjustment: data.patternAdjustment || {},
+      };
+      planet._applySponsorTexture(sponsor, data.tileIndices);
+    };
+
+    // Personal review result for the territory owner (approve or reject)
+    net.onTerritoryImageReviewResult = (data) => {
+      if (!data) return;
+      const dashboard = window.dashboard;
+      if (!dashboard || !dashboard._playerTerritories) return;
+
+      const territory = dashboard._playerTerritories.find(t => t.id === data.territoryId);
+      if (!territory) return;
+
+      territory.imageStatus = data.status;
+
+      if (data.status === "rejected") {
+        // Revert to placeholder texture
+        const placeholderImage = dashboard._generateTerritoryTexture(dashboard.playerName || "Player");
+        territory.patternImage = placeholderImage;
+        if (dashboard._territoryPlanet) {
+          dashboard._territoryPlanet._applySponsorTexture(
+            { id: territory.id, patternImage: placeholderImage, patternAdjustment: territory.patternAdjustment },
+            territory.tileIndices,
+          );
+        }
+        const reason = data.reason ? `: ${data.reason}` : "";
+        dashboard.addNotification(`Territory image rejected${reason}. Upload a new one.`, "info", "territory");
+      } else if (data.status === "approved") {
+        dashboard.addNotification("Your territory image was approved!", "info", "territory");
+      }
+
+      dashboard._savePlayerTerritories();
+      dashboard._renderTerritoryList();
+    };
+
+    // Server acknowledged image submission
+    net.onTerritoryImageSubmitted = (data) => {
+      if (data && data.status === "error") {
+        console.warn("[Territory] Image submission failed:", data.message);
+      }
+    };
+
     // Server-authoritative crypto balances (broadcast every 5 seconds)
     net.onCryptoUpdate = (cryptoState) => {
       // Update CommanderSystem with server crypto for all players

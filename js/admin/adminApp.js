@@ -227,6 +227,18 @@
         return;
       }
 
+      // Handle image review buttons (approve/reject)
+      const approveBtn = e.target.closest(".approve-image-btn");
+      if (approveBtn) {
+        reviewTerritoryImage(approveBtn.dataset.id, "approve");
+        return;
+      }
+      const rejectBtn = e.target.closest(".reject-image-btn");
+      if (rejectBtn) {
+        reviewTerritoryImage(rejectBtn.dataset.id, "reject");
+        return;
+      }
+
       // Handle territory row clicks within groups → show territory view
       const clusterRow = e.target.closest(".sponsor-cluster-row");
       if (clusterRow) {
@@ -919,12 +931,15 @@
 
     // Update tab counts
     const playerCount = allSponsors.filter((s) => !!s.isPlayerTerritory).length;
+    const pendingCount = allSponsors.filter((s) => s.isPlayerTerritory && s.imageStatus === "pending").length;
     const sponsorCount = allSponsors.length - playerCount;
     const tabEls = document.querySelectorAll(".sponsor-tab");
     tabEls.forEach((tab) => {
       const filter = tab.dataset.filter;
       if (filter === "sponsors") tab.textContent = `Sponsors (${sponsorCount})`;
-      else if (filter === "players") tab.textContent = `User Territories (${playerCount})`;
+      else if (filter === "players") {
+        tab.innerHTML = `User Territories (${playerCount})${pendingCount > 0 ? ` <span class="pending-badge">${pendingCount}</span>` : ""}`;
+      }
       else if (filter === "all") tab.textContent = `All (${allSponsors.length})`;
     });
 
@@ -1055,6 +1070,26 @@
 
           const isActive = s.id === activeEditId;
 
+          // Pending image review section for player territories
+          let reviewHtml = "";
+          if (s.isPlayerTerritory && s.imageStatus === "pending" && s.pendingImage) {
+            reviewHtml = `
+              <div class="territory-review-section">
+                <div class="territory-review-label">Pending Image Review</div>
+                <div class="territory-review-preview">
+                  <img src="${s.pendingImage}" alt="Pending" class="territory-pending-img">
+                </div>
+                <div class="territory-review-actions">
+                  <button class="btn-approve approve-image-btn" data-id="${s.id}">Approve</button>
+                  <button class="btn-reject reject-image-btn" data-id="${s.id}">Reject</button>
+                </div>
+              </div>`;
+          } else if (s.isPlayerTerritory && s.imageStatus === "rejected") {
+            reviewHtml = `<div class="territory-review-status rejected">Rejected</div>`;
+          } else if (s.isPlayerTerritory && s.imageStatus === "approved") {
+            reviewHtml = `<div class="territory-review-status approved">Approved</div>`;
+          }
+
           return `
             <div class="sponsor-cluster-row${isActive ? " active-territory" : ""}" data-id="${s.id}">
                 <span class="sponsor-cluster-row-label">Territory ${i + 1}</span>
@@ -1062,6 +1097,7 @@
                 <span class="sponsor-cluster-row-stats">${tileCount} tiles, ${s.rewards?.length || 0} rewards</span>
                 ${revSpan}
                 <button class="icon-btn delete-sponsor-btn" title="Delete territory">&times;</button>
+                ${reviewHtml}
             </div>
           `;
         }).join("");
@@ -1558,6 +1594,39 @@
       refreshSponsorsList();
     } catch (err) {
       showToast(err.message || "Failed to duplicate sponsor", "error");
+    } finally {
+      busy = false;
+    }
+  }
+
+  async function reviewTerritoryImage(id, action) {
+    if (busy) {
+      showToast("Please wait for the current operation to finish", "info");
+      return;
+    }
+
+    let rejectionReason = "";
+    if (action === "reject") {
+      rejectionReason = prompt("Rejection reason (optional):") || "";
+    }
+
+    busy = true;
+    try {
+      const res = await fetch(`/api/sponsors/${encodeURIComponent(id)}/review-image`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action, rejectionReason }),
+      });
+      const result = await res.json();
+      if (result.success) {
+        showToast(action === "approve" ? "Image approved and broadcast to players" : "Image rejected. Player notified.", "success");
+        await SponsorStorage.reload();
+        refreshSponsorsList();
+      } else {
+        showToast((result.errors || []).join(". ") || "Review failed", "error");
+      }
+    } catch (err) {
+      showToast("Review failed: " + err.message, "error");
     } finally {
       busy = false;
     }

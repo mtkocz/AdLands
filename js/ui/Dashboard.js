@@ -2609,7 +2609,10 @@ class Dashboard {
       const territory = this._playerTerritories.find((t) => t.id === territoryId);
       if (!territory) return;
 
+      // Optimistic local update — player sees their image immediately
       territory.patternImage = dataUrl;
+      territory.imageStatus = "pending";
+
       // Preserve existing adjustment or use muted defaults
       if (!territory.patternAdjustment) {
         territory.patternAdjustment = {
@@ -2618,12 +2621,8 @@ class Dashboard {
           inputWhite: 225, outputBlack: 40, outputWhite: 215,
         };
       }
-      this._updatePlayerTerritory(territoryId, {
-        patternImage: dataUrl,
-        patternAdjustment: territory.patternAdjustment,
-      });
 
-      // Re-apply texture through Planet
+      // Re-apply texture locally (player sees their own image)
       if (this._territoryPlanet) {
         const sponsor = {
           id: territoryId,
@@ -2633,7 +2632,24 @@ class Dashboard {
         this._territoryPlanet._applySponsorTexture(sponsor, territory.tileIndices);
       }
 
+      // Submit to server for admin review instead of direct Firestore write
+      if (window._mp?.net?.socket) {
+        window._mp.net.socket.emit("submit-territory-image", {
+          territoryId,
+          pendingImage: dataUrl,
+          patternAdjustment: territory.patternAdjustment,
+        });
+      }
+
+      // Save to localStorage with pending status
+      this._savePlayerTerritories();
       this._renderTerritoryList();
+
+      this.addNotification(
+        "Image submitted for review",
+        "info",
+        "territory",
+      );
     };
     reader.readAsDataURL(file);
   }
@@ -2713,6 +2729,9 @@ class Dashboard {
               <div class="territory-item-header">
                   <span class="territory-item-name">${label}</span>
                   <span class="territory-item-detail">${t.tileIndices.length} hex${t.tileIndices.length !== 1 ? "es" : ""} · ${age}</span>
+                  ${t.imageStatus === "pending" ? '<span class="territory-status-badge pending">Pending Review</span>' : ""}
+                  ${t.imageStatus === "rejected" ? '<span class="territory-status-badge rejected">Rejected — Upload New</span>' : ""}
+                  ${t.imageStatus === "approved" ? '<span class="territory-status-badge approved">Approved</span>' : ""}
               </div>
               <div class="territory-controls" data-territory-id="${t.id}">
                   <div class="territory-control-row">
@@ -2795,6 +2814,8 @@ class Dashboard {
           playerFaction: this.playerFaction,
           tierName: territory.tierName,
           createdAt: new Date().toISOString(),
+          imageStatus: "placeholder",
+          ownerUid: window.authManager?.uid || null,
         };
         // Use player's profile picture as the logo in the admin portal
         if (this.avatarColor?.startsWith("data:")) {
@@ -2940,21 +2961,27 @@ class Dashboard {
         inputWhite: 225, outputBlack: 40, outputWhite: 215,
       };
 
+      // For pending images, show the pending image optimistically to the owning player
+      const displayImage = (territory.imageStatus === "pending" && territory.pendingImage)
+        ? territory.pendingImage
+        : territory.patternImage;
+
       const record = {
         id: territory._territoryId || territory.id,
         _sponsorStorageId: territory._territoryId ? territory.id : undefined,
         tierName: territory.tierName || "outpost",
         tileIndices: validTiles,
         timestamp: territory.timestamp || Date.parse(territory.createdAt) || Date.now(),
-        patternImage: territory.patternImage,
+        patternImage: displayImage,
         patternAdjustment: adj,
+        imageStatus: territory.imageStatus || "placeholder",
       };
 
       const virtualSponsor = {
         id: record.id,
         name: this.playerName || "Player",
         cluster: { tileIndices: validTiles },
-        patternImage: record.patternImage,
+        patternImage: displayImage,
         patternAdjustment: adj,
       };
 
