@@ -205,6 +205,10 @@ class Dashboard {
 
     if (!toggleBtn || !menu) return;
 
+    // Move menu to body so it escapes dashboard container's
+    // contain:paint / will-change:transform containment
+    document.body.appendChild(menu);
+
     // Toggle menu on button click
     toggleBtn.addEventListener("click", (e) => {
       e.stopPropagation();
@@ -229,9 +233,12 @@ class Dashboard {
       }
     });
 
-    // Close menu when clicking outside
+    // Close menu when clicking outside (menu is now in body, check both)
     document.addEventListener("click", (e) => {
-      if (!e.target.closest(".commander-resign-dropdown")) {
+      if (
+        !e.target.closest(".commander-resign-dropdown") &&
+        !e.target.closest(".resign-menu")
+      ) {
         menu.classList.add("hidden");
       }
     });
