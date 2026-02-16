@@ -650,7 +650,19 @@ class AuthScreen {
     const originalHTML = btn ? btn.innerHTML : "";
 
     if (provider === "email") {
-      // Navigate to email sub-form
+      // Adjust email form for link mode vs normal mode
+      const signinBtn = this.overlay.querySelector("#auth-email-signin");
+      const createBtn = this.overlay.querySelector("#auth-email-create");
+      const title = this.overlay.querySelector("#auth-stage-email .auth-title");
+      if (this._linkMode) {
+        title.textContent = "Link Email";
+        signinBtn.style.display = "none";
+        createBtn.textContent = "Link Email";
+      } else {
+        title.textContent = "Email Sign In";
+        signinBtn.style.display = "";
+        createBtn.textContent = "Create Account";
+      }
       this._showStage("email");
       return;
     }
@@ -1233,7 +1245,7 @@ class AuthScreen {
 
   _friendlyError(err) {
     const map = {
-      "auth/email-already-in-use": "An account with this email already exists.",
+      "auth/email-already-in-use": "This email is already in use. Use a different email, or sign out and sign in normally.",
       "auth/invalid-email": "Please enter a valid email address.",
       "auth/user-not-found": "No account found with this email.",
       "auth/wrong-password": "Incorrect password.",
