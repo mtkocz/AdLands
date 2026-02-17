@@ -1237,6 +1237,17 @@ class AuthScreen {
    * Entries without valid name+faction are treated as empty slots.
    */
   _sanitizeProfiles(profiles) {
+    // Repair corruption: dot-notation Firestore updates can convert arrays to maps
+    if (profiles && !Array.isArray(profiles) && typeof profiles === "object") {
+      const maxSlots = this.auth.isGuest ? 1 : 3;
+      const repaired = Array.from({ length: maxSlots }, (_, i) => profiles[i] || profiles[String(i)] || null);
+      console.warn("[AuthScreen] Repaired corrupted profiles map → array", repaired);
+      // Fire-and-forget: persist the repaired array back to Firestore
+      if (this.auth.uid) {
+        firebaseDb.collection("accounts").doc(this.auth.uid).update({ profiles: repaired }).catch(() => {});
+      }
+      profiles = repaired;
+    }
     if (!Array.isArray(profiles)) {
       return this.auth.isGuest ? [null] : [null, null, null];
     }

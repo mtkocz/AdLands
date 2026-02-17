@@ -1023,9 +1023,18 @@ class GameRoom {
 
       await profileRef.update(updates);
 
-      // Also update denormalized level on account profiles array
-      await db.collection("accounts").doc(player.uid).update({
-        [`profiles.${player.profileIndex}.level`]: player.level,
+      // Also update denormalized level on account profiles array.
+      // MUST read-modify-write the full array; dot-notation (profiles.0.level)
+      // converts the Firestore array into a map, corrupting profile data.
+      const accountRef = db.collection("accounts").doc(player.uid);
+      await db.runTransaction(async (t) => {
+        const accountDoc = await t.get(accountRef);
+        if (!accountDoc.exists) return;
+        const profiles = accountDoc.data().profiles;
+        if (Array.isArray(profiles) && profiles[player.profileIndex]) {
+          profiles[player.profileIndex].level = player.level;
+          t.update(accountRef, { profiles });
+        }
       });
 
       // Keep faction profile cache in sync

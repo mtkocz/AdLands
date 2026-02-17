@@ -212,7 +212,7 @@ class CryptoVisuals {
 
     // Size varies by magnitude
     let sizeClass = "crypto-small";
-    let text = `¢ ${absAmount.toLocaleString()}`;
+    let text = `+¢ ${absAmount.toLocaleString()}`;
 
     if (absAmount >= 5000) {
       sizeClass = "crypto-massive";
@@ -276,7 +276,7 @@ class CryptoVisuals {
     // CSS conflicts (position:absolute, opacity:0) and match counter font
     const counterStyle = window.getComputedStyle(counterEl);
     const element = document.createElement("div");
-    element.textContent = `-¢${absAmount.toLocaleString()}`;
+    element.textContent = `-¢${absAmount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
     element.style.cssText = `
       position: fixed;
       left: ${Math.round(startX)}px;

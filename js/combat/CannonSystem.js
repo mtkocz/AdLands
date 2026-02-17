@@ -218,6 +218,14 @@ class CannonSystem {
       return;
     }
 
+    // Skip decals near pole holes (within 10° of either pole)
+    const normal = position.clone().normalize();
+    const phi = Math.acos(normal.y);
+    const polarThreshold = (10 * Math.PI) / 180;
+    if (phi < polarThreshold || phi > Math.PI - polarThreshold) {
+      return;
+    }
+
     const cfg = this.impactDecalConfig;
 
     // Random opacity between 60% and 100% for visual variety
@@ -236,10 +244,7 @@ class CannonSystem {
     const mesh = new THREE.Mesh(this.impactDecalGeometry, material);
 
     // Project position onto sphere surface (not at explosion height)
-    const normal = position.clone().normalize();
-    const surfacePosition = normal
-      .clone()
-      .multiplyScalar(this.sphereRadius + 0.1);
+    const surfacePosition = normal.multiplyScalar(this.sphereRadius + 0.1);
 
     // Convert to planet's local space for parenting
     const localPosition = surfacePosition.clone();
