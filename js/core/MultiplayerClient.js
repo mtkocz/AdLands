@@ -885,12 +885,6 @@
       tank.teleportTo(data.theta, data.phi);
       tank.state.heading = data.heading;
 
-      // Show red spend floater for portal cost (fast travel / respawn)
-      if (data.cost > 0 && window.cryptoVisuals && tank.group) {
-        tank.group.getWorldPosition(_tipScreenPos);
-        window.cryptoVisuals._spawnFloatingNumber(-data.cost, _tipScreenPos);
-      }
-
       // Exit fast travel (shows tank, swoops camera down, enables controls)
       if (mp.fastTravel && mp.fastTravel.active) {
         mp.fastTravel._exitFastTravel();
@@ -898,6 +892,18 @@
         tank.setVisible(true);
         tank.setControlsEnabled(true);
         if (mp.setSpawnedIn) mp.setSpawnedIn();
+      }
+
+      // Show red spend floater for portal cost (fast travel / respawn)
+      // Delayed so the camera has time to swoop from orbital to surface view
+      if (data.cost > 0 && window.cryptoVisuals && tank.group) {
+        const portalCost = data.cost;
+        setTimeout(() => {
+          if (tank.group) {
+            tank.group.getWorldPosition(_tipScreenPos);
+            window.cryptoVisuals._spawnFloatingNumber(-portalCost, _tipScreenPos);
+          }
+        }, 1500);
       }
     };
 
@@ -1269,9 +1275,50 @@
 
     // Server awarded holding crypto (once per minute for territory holdings)
     const _holdingCryptoPos = new THREE.Vector3();
+    const _holdingHexPos = new THREE.Vector3();
     net.onHoldingCrypto = (data) => {
       if (!window.cryptoSystem) return;
       tank.group.getWorldPosition(_holdingCryptoPos);
+
+      // Build per-hex data from local state so floating numbers appear at each owned hex
+      const adjacencyMap = planet._adjacencyMap;
+      if (adjacencyMap && planet.clusterCaptureState.size > 0) {
+        const faction = tank.faction;
+        const ownedHexes = new Set();
+        for (const [clusterId, state] of planet.clusterCaptureState) {
+          if (state.owner !== faction) continue;
+          const cluster = planet.clusterData[clusterId];
+          if (!cluster) continue;
+          for (const tileIdx of cluster.tiles) {
+            ownedHexes.add(tileIdx);
+          }
+        }
+
+        if (ownedHexes.size > 0) {
+          const HOLDING_EXPONENT = 1.05;
+          planet.hexGroup.updateMatrixWorld();
+          const hexGroupMatrix = planet.hexGroup.matrixWorld;
+          const hexData = [];
+
+          for (const tileIdx of ownedHexes) {
+            const tileData = planet.tileCenters[tileIdx];
+            if (!tileData) continue;
+            const neighbors = adjacencyMap.get(tileIdx) || [];
+            let friendlyNeighbors = 0;
+            for (const n of neighbors) {
+              if (ownedHexes.has(n)) friendlyNeighbors++;
+            }
+            const crypto = Math.pow(HOLDING_EXPONENT, friendlyNeighbors);
+            _holdingHexPos.copy(tileData.position).applyMatrix4(hexGroupMatrix);
+            hexData.push({ pos: _holdingHexPos.clone(), crypto });
+          }
+
+          window.cryptoSystem.awardHoldingCrypto(data.amount, _holdingCryptoPos, hexData);
+          return;
+        }
+      }
+
+      // Fallback: no local hex data, show single number at tank position
       window.cryptoSystem.awardCrypto(data.amount, "holding", _holdingCryptoPos);
     };
 
@@ -1468,7 +1515,7 @@
       // Show floating message near tank
       if (window.cryptoVisuals && tank.group) {
         tank.group.getWorldPosition(_tipScreenPos);
-        window.cryptoVisuals._spawnFloatingNumber?.(-data.cost, 'denied', _tipScreenPos);
+        window.cryptoVisuals._spawnFloatingNumber(-data.cost, _tipScreenPos);
       }
 
       // Show toast notification

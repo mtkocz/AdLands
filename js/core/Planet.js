@@ -917,7 +917,7 @@ class Planet {
         }
         center.divideScalar(n);
 
-        // Compute max distance from center to any vertex
+        // Compute max distance from center to any vertex (circumradius)
         let maxDist = 0;
         for (let i = 0; i < n; i++) {
           const dx = vertices[i * 3] - center.x;
@@ -926,15 +926,21 @@ class Planet {
           maxDist = Math.max(maxDist, Math.sqrt(dx * dx + dy * dy + dz * dz));
         }
 
+        // Compute tangent direction (center → first vertex, projected onto tangent plane)
+        const normal = center.clone().normalize();
+        const firstVertex = new THREE.Vector3(vertices[0], vertices[1], vertices[2]);
+        const tangent = firstVertex.clone().sub(center);
+        tangent.sub(normal.clone().multiplyScalar(tangent.dot(normal)));
+        tangent.normalize();
+
         material = new THREE.ShaderMaterial({
           uniforms: {
             uTime: { value: 0 },
             uCenter: { value: center },
             uMaxDist: { value: maxDist },
+            uTangent: { value: tangent },
           },
           vertexShader: `
-            uniform vec3 uCenter;
-            uniform float uMaxDist;
             varying vec3 vPos;
             void main() {
               vPos = position;
@@ -945,16 +951,30 @@ class Planet {
             uniform float uTime;
             uniform vec3 uCenter;
             uniform float uMaxDist;
+            uniform vec3 uTangent;
             varying vec3 vPos;
             void main() {
-              // Per-fragment distance for smooth circular rings
-              float dist = distance(vPos, uCenter) / uMaxDist;
+              // Project fragment onto local 2D tangent plane for pentagon shape
+              vec3 n = normalize(uCenter);
+              vec3 toFrag = vPos - uCenter;
+              toFrag -= n * dot(toFrag, n);
+              vec3 bitangent = cross(n, uTangent);
+              float x2d = dot(toFrag, uTangent);
+              float y2d = dot(toFrag, bitangent);
+
+              // Pentagon-shaped distance (equidistant contours form pentagons)
+              float angle = atan(y2d, x2d);
+              float r = length(vec2(x2d, y2d));
+              float segAngle = 6.28318 / 5.0;
+              float piOver5 = 3.14159 / 5.0;
+              float d = cos(piOver5) / cos(mod(angle, segAngle) - piOver5);
+              float dist = r / (uMaxDist * d);
 
               // Color palette
               vec3 cyanBright = vec3(0.15, 1.0, 1.0);
               vec3 cyanDim    = vec3(0.0, 0.65, 0.75);
 
-              // --- Three staggered ripple rings ---
+              // --- Three staggered ripple rings (pentagon-shaped) ---
               float speed = 0.5;
               float phase = uTime * speed;
               float w = 0.14;

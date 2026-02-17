@@ -275,6 +275,7 @@ class GameRoom {
           totalCrypto: data.totalCrypto || 0,
           territoryCaptured: (data.hexesCaptured || 0) + (data.clustersCaptured || 0),
           lastPlayedAt: data.lastPlayedAt || null,
+          avatarColor: data.profilePicture || null,
           isOnline: false,
           socketId: null,
         };
@@ -625,6 +626,7 @@ class GameRoom {
         entry.level = player.level || 1;
         entry.totalCrypto = player.totalCrypto || 0;
         entry.territoryCaptured = player.territoryCaptured || 0;
+        entry.avatarColor = player.avatarColor || entry.avatarColor;
       } else {
         // New player not yet in cache — add them
         entry = {
@@ -636,6 +638,7 @@ class GameRoom {
           totalCrypto: player.totalCrypto || 0,
           territoryCaptured: player.territoryCaptured || 0,
           lastPlayedAt: null,
+          avatarColor: player.avatarColor || null,
           isOnline: true,
           socketId: socket.id,
         };
@@ -925,6 +928,7 @@ class GameRoom {
         entry.level = player.level || entry.level;
         entry.totalCrypto = player.totalCrypto || entry.totalCrypto;
         entry.territoryCaptured = player.territoryCaptured || entry.territoryCaptured;
+        entry.avatarColor = player.avatarColor || entry.avatarColor;
       }
     }
 
@@ -2741,6 +2745,7 @@ class GameRoom {
             level: p.level || 1,
             totalCrypto: p.totalCrypto || 0,
             territoryCaptured: p.territoryCaptured || 0,
+            avatarColor: p.avatarColor || null,
             isOnline: true,
           });
         }
@@ -2760,6 +2765,7 @@ class GameRoom {
             level: p.level || 1,
             totalCrypto: p.totalCrypto || 0,
             territoryCaptured: p.territoryCaptured || 0,
+            avatarColor: p.avatarColor || null,
             isOnline: true,
           });
         }
@@ -2937,6 +2943,7 @@ class GameRoom {
           crypto: liveCrypto || 0,
           online: m.isOnline,
           isSelf: m.socketId === socketId,
+          avatarColor: m.avatarColor || null,
         });
         if (m.socketId === socketId) playerFound = true;
       }
@@ -2954,6 +2961,7 @@ class GameRoom {
             crypto: liveCrypto || 0,
             online: true,
             isSelf: true,
+            avatarColor: selfEntry.avatarColor || null,
           });
         }
       }
@@ -2993,6 +3001,7 @@ class GameRoom {
         crypto: liveCrypto || 0,
         online: m.isOnline,
         isSelf: m.socketId === socketId,
+        avatarColor: m.avatarColor || null,
       });
       if (m.socketId === socketId) playerFound = true;
     }
@@ -3009,6 +3018,7 @@ class GameRoom {
           crypto: liveCrypto || 0,
           online: true,
           isSelf: true,
+          avatarColor: selfEntry.avatarColor || null,
         });
       }
     }

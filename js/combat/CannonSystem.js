@@ -838,7 +838,8 @@ class CannonSystem {
     // Show red spend floater for cannon fire cost
     if (isPlayerShot && window.cryptoVisuals && this.playerTank?.group) {
       const fireCost = 5 + Math.ceil(chargePower);
-      window.cryptoVisuals._spawnFloatingNumber(-fireCost, this.playerTank.group.position);
+      this.playerTank.group.getWorldPosition(_tankWorldPos);
+      window.cryptoVisuals._spawnFloatingNumber(-fireCost, _tankWorldPos);
     }
 
     // Calculate charge ratio (0-1)

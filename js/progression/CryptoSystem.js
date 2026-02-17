@@ -232,14 +232,21 @@ class CryptoSystem {
      */
     awardHoldingCrypto(totalCrypto, position, hexData = null) {
         if (totalCrypto <= 0) return 0;
+        if (!this.enabled) {
+            console.warn(`[CryptoSystem] Holding crypto BLOCKED - System is DISABLED! Would have awarded ¢${totalCrypto}. Player must spawn via Fast Travel first.`);
+            return 0;
+        }
 
         if (hexData && hexData.length > 0) {
             this.stats.totalCrypto += totalCrypto;
             this.stats.sessionCrypto += totalCrypto;
 
-            // Level-up is now purchased manually (no auto level-up)
+            // Notify commander system of session crypto change
+            if (this.onSessionCryptoChange) {
+                this.onSessionCryptoChange('player', this.stats.sessionCrypto);
+            }
 
-            // Each hex has its own crypto value based on adjacency
+            // Spawn floating number at each owned hex
             hexData.forEach(({ pos, crypto }) => {
                 if (this.onCryptoGain) {
                     this.onCryptoGain(Math.round(crypto * 10) / 10, 'holding', pos);

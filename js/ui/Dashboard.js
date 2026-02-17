@@ -482,9 +482,14 @@ class Dashboard {
 
       const cryptoDisplay = member.crypto !== undefined ? `<span class="roster-crypto">¢${Number(member.crypto).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>` : '';
 
+      const avatarStyle = member.avatarColor && member.avatarColor.startsWith("data:")
+        ? `background-image: url(${member.avatarColor}); background-size: cover; background-position: center;`
+        : `background: ${member.avatarColor || "#555"};`;
+
       html += `<div class="roster-member ${cmdrRowClass} ${onlineClass} ${selfClass}" ${playerIdAttr}>
                 <span class="roster-rank">#${member.rank}</span>
                 ${statusDot}
+                <span class="roster-avatar" style="${avatarStyle}"></span>
                 <span class="roster-name">${member.name}</span>
                 ${cryptoDisplay}
                 <span class="roster-level">Lv${member.level}</span>
@@ -502,7 +507,7 @@ class Dashboard {
             rank: member.rank,
             isOnline: member.online,
             badges: [],
-            avatarColor: null,
+            avatarColor: member.avatarColor || null,
             socialLinks: {},
             title: member.rank === 1 ? "Commander" : "Contractor",
           });
