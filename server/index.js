@@ -462,14 +462,30 @@ io.on("connection", (socket) => {
 
   // ---- Territory Image Submission (queued for admin review) ----
   socket.on("submit-territory-image", async (data) => {
-    if (!socket.uid) return;
+    if (!socket.uid) {
+      console.warn(`[Territory] Image submit rejected: no uid (guest user), socket=${socket.id}`);
+      socket.emit("territory-image-submitted", { territoryId: data?.territoryId, status: "error", message: "Not authenticated" });
+      return;
+    }
     const { territoryId, pendingImage, patternAdjustment } = data || {};
-    if (!territoryId || !pendingImage) return;
+    if (!territoryId || !pendingImage) {
+      console.warn(`[Territory] Image submit rejected: missing data (territoryId=${!!territoryId}, pendingImage=${!!pendingImage})`);
+      return;
+    }
 
     try {
       const db = getFirestore();
       const doc = await db.collection("territories").doc(territoryId).get();
-      if (!doc.exists || doc.data().ownerUid !== socket.uid) return;
+      if (!doc.exists) {
+        console.warn(`[Territory] Image submit rejected: territory ${territoryId} not found in Firestore`);
+        socket.emit("territory-image-submitted", { territoryId, status: "error", message: "Territory not found" });
+        return;
+      }
+      if (doc.data().ownerUid !== socket.uid) {
+        console.warn(`[Territory] Image submit rejected: ownership mismatch (doc.ownerUid=${doc.data().ownerUid}, socket.uid=${socket.uid})`);
+        socket.emit("territory-image-submitted", { territoryId, status: "error", message: "Not the owner" });
+        return;
+      }
 
       // Save pending image to Firestore for review
       await db.collection("territories").doc(territoryId).update({

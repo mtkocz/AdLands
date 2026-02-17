@@ -2689,13 +2689,65 @@ class Dashboard {
         this._territoryPlanet._applySponsorTexture(sponsor, territory.tileIndices);
       }
 
-      // Submit to server for admin review instead of direct Firestore write
+      // Submit to server for admin review via socket
+      let socketAckReceived = false;
       if (window._mp?.net?.socket) {
+        // Listen for server acknowledgment
+        const ackHandler = (ackData) => {
+          if (ackData?.territoryId === territoryId) {
+            socketAckReceived = true;
+            window._mp.net.socket.off("territory-image-submitted", ackHandler);
+            if (ackData.status === "error") {
+              console.warn("[Dashboard] Image submit error from server:", ackData.message);
+            }
+          }
+        };
+        window._mp.net.socket.on("territory-image-submitted", ackHandler);
+
         window._mp.net.socket.emit("submit-territory-image", {
           territoryId,
           pendingImage: dataUrl,
           patternAdjustment: territory.patternAdjustment,
         });
+
+        // HTTP fallback: if no ack within 3s, update via REST API
+        setTimeout(async () => {
+          window._mp.net.socket.off("territory-image-submitted", ackHandler);
+          if (!socketAckReceived) {
+            console.warn("[Dashboard] Socket image submit timed out, trying HTTP fallback");
+            // Resolve SponsorStore ID
+            let storageId = territory._sponsorStorageId;
+            if (!storageId && typeof SponsorStorage !== "undefined" && SponsorStorage._cache) {
+              const match = SponsorStorage.getAll().find((s) => s._territoryId === territoryId);
+              if (match) { storageId = match.id; territory._sponsorStorageId = match.id; }
+            }
+            if (storageId) {
+              try {
+                const res = await fetch(`/api/sponsors/${storageId}`, {
+                  method: "PUT",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify({
+                    pendingImage: dataUrl,
+                    imageStatus: "pending",
+                    patternAdjustment: territory.patternAdjustment,
+                  }),
+                });
+                if (res.ok) {
+                  console.log("[Dashboard] HTTP fallback image submit succeeded");
+                  if (typeof SponsorStorage !== "undefined") {
+                    SponsorStorage._broadcast("update", { id: storageId });
+                  }
+                } else {
+                  console.warn("[Dashboard] HTTP fallback failed:", res.status);
+                }
+              } catch (e) {
+                console.warn("[Dashboard] HTTP fallback error:", e);
+              }
+            } else {
+              console.warn("[Dashboard] No SponsorStore ID for HTTP fallback");
+            }
+          }
+        }, 3000);
       }
 
       // Patch SponsorStorage local cache directly (avoid PUT /api/sponsors which
