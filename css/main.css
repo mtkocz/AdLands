@@ -5426,19 +5426,7 @@ body.colorblind-tritanopia {
     text-shadow: 0 0 2px rgba(0, 0, 0, 0.8), 1px 1px 0 #000;
 }
 
-/* --- State: offscreen / onscreen — no position transitions (instant tracking) --- */
-.ping-indicator.state-offscreen,
-.ping-indicator.state-onscreen {
-    transition: none;
-}
-
-/* --- State: transitioning — smooth slide + rotate --- */
-.ping-indicator.state-transitioning-in,
-.ping-indicator.state-transitioning-out {
-    transition: left 350ms cubic-bezier(0.25, 0.1, 0.25, 1),
-                top 350ms cubic-bezier(0.25, 0.1, 0.25, 1),
-                transform 350ms cubic-bezier(0.25, 0.1, 0.25, 1);
-}
+/* Position/rotation is JS-driven (lerp), no CSS transitions on wrapper */
 
 /* --- Morph: arrow visible when offscreen / transitioning-out --- */
 .ping-indicator.state-offscreen .ping-indicator-arrow,

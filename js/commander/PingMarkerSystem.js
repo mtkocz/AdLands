@@ -198,6 +198,9 @@ class PingMarkerSystem {
       arrowElement,
       indicatorState: "offscreen", // 'offscreen' | 'transitioning-in' | 'onscreen' | 'transitioning-out'
       transitionStartTime: 0,
+      transitionStartX: 0,
+      transitionStartY: 0,
+      transitionStartRot: 0,
       followingPlayerId: options.followingPlayerId || null, // Player ID to follow
     };
 
@@ -477,6 +480,10 @@ class PingMarkerSystem {
     ping.indicatorState = newState;
   }
 
+  _easeInOutCubic(t) {
+    return t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
+  }
+
   _updateIndicator(ping, pingWorldPos, isOccluded) {
     const el = ping.arrowElement;
     const label = el._distanceLabel;
@@ -496,13 +503,13 @@ class PingMarkerSystem {
     const arrowY = cy + Math.sin(angle) * arrowRadius;
     const rotation = (angle * 180) / Math.PI + 90;
 
-    // Screen bounds check with hysteresis margins
-    const state = ping.indicatorState;
-    const useEnterMargin =
-      state === "offscreen" || state === "transitioning-out";
-    const margin = useEnterMargin
-      ? PING_CONFIG.enterMargin
-      : PING_CONFIG.exitMargin;
+    // Screen bounds check (use single margin in orbital, hysteresis in surface)
+    const margin = this.markersVisible
+      ? 50
+      : ping.indicatorState === "offscreen" ||
+          ping.indicatorState === "transitioning-out"
+        ? PING_CONFIG.enterMargin
+        : PING_CONFIG.exitMargin;
     const isOnScreen =
       screenPos.x >= margin &&
       screenPos.x <= window.innerWidth - margin &&
@@ -511,6 +518,39 @@ class PingMarkerSystem {
       screenPos.z < 1 &&
       !isOccluded;
 
+    // Orbital/fast-travel view: simple show/hide, no morph
+    if (this.markersVisible) {
+      if (ping.indicatorState !== "offscreen") {
+        this._setIndicatorState(ping, "offscreen");
+      }
+      if (isOnScreen) {
+        el.style.display = "none";
+        if (label) label.style.display = "none";
+      } else {
+        el.style.display = "block";
+        el.style.left = arrowX + "px";
+        el.style.top = arrowY + "px";
+        el.style.transform = `translate(-50%, -50%) rotate(${rotation}deg)`;
+        if (label) {
+          const labelOffset = 24;
+          label.style.display = "block";
+          label.style.left =
+            arrowX - Math.cos(angle) * labelOffset + "px";
+          label.style.top =
+            arrowY - Math.sin(angle) * labelOffset + "px";
+          if (this.playerTank) {
+            const playerPos = this.playerTank.getPosition();
+            if (playerPos) {
+              label.textContent =
+                Math.round(playerPos.distanceTo(pingWorldPos)) + "m";
+            }
+          }
+        }
+      }
+      return;
+    }
+
+    // Surface view: full morph state machine with JS-driven lerp
     const now = Date.now();
     const elapsed = now - ping.transitionStartTime;
     const pastGrace = elapsed > PING_CONFIG.morphGracePeriod;
@@ -518,15 +558,17 @@ class PingMarkerSystem {
     switch (ping.indicatorState) {
       case "offscreen":
         if (isOnScreen) {
-          // Start morphing: arrow → diamond, slide ring → ping screen pos
+          // Record start position for lerp, then transition
+          ping.transitionStartX = arrowX;
+          ping.transitionStartY = arrowY;
+          ping.transitionStartRot = rotation;
           ping.transitionStartTime = now;
           this._setIndicatorState(ping, "transitioning-in");
-          // Force reflow so browser registers current position as transition start
-          el.offsetHeight;
-          // Set target: ping's screen position, no rotation
-          el.style.left = screenPos.x + "px";
-          el.style.top = screenPos.y + "px";
-          el.style.transform = "translate(-50%, -50%) rotate(0deg)";
+          // Immediately render at start position (first lerp frame)
+          el.style.display = "block";
+          el.style.left = arrowX + "px";
+          el.style.top = arrowY + "px";
+          el.style.transform = `translate(-50%, -50%) rotate(${rotation}deg)`;
           if (label) label.style.display = "none";
         } else {
           // Normal off-screen: position arrow on ring
@@ -534,7 +576,6 @@ class PingMarkerSystem {
           el.style.left = arrowX + "px";
           el.style.top = arrowY + "px";
           el.style.transform = `translate(-50%, -50%) rotate(${rotation}deg)`;
-          // Distance label
           if (label) {
             const labelOffset = 24;
             label.style.display = "block";
@@ -553,43 +594,48 @@ class PingMarkerSystem {
         }
         break;
 
-      case "transitioning-in":
-        if (elapsed >= PING_CONFIG.morphDuration) {
-          // Transition complete → onscreen
+      case "transitioning-in": {
+        const t = Math.min(elapsed / PING_CONFIG.morphDuration, 1);
+        const e = this._easeInOutCubic(t);
+        // Lerp from start (ring) to target (ping screen pos)
+        const curX = ping.transitionStartX + (screenPos.x - ping.transitionStartX) * e;
+        const curY = ping.transitionStartY + (screenPos.y - ping.transitionStartY) * e;
+        const curRot = ping.transitionStartRot + (0 - ping.transitionStartRot) * e;
+
+        el.style.display = "block";
+        el.style.left = curX + "px";
+        el.style.top = curY + "px";
+        el.style.transform = `translate(-50%, -50%) rotate(${curRot}deg)`;
+        if (label) label.style.display = "none";
+
+        if (t >= 1) {
           this._setIndicatorState(ping, "onscreen");
+        } else if (!isOnScreen && pastGrace) {
+          // Reverse mid-transition: record current lerped position as new start
+          ping.transitionStartX = curX;
+          ping.transitionStartY = curY;
+          ping.transitionStartRot = curRot;
+          ping.transitionStartTime = now;
+          this._setIndicatorState(ping, "transitioning-out");
+        }
+        break;
+      }
+
+      case "onscreen":
+        if (!isOnScreen) {
+          // Record current screen position as start for lerp out
+          ping.transitionStartX = screenPos.x;
+          ping.transitionStartY = screenPos.y;
+          ping.transitionStartRot = 0;
+          ping.transitionStartTime = now;
+          this._setIndicatorState(ping, "transitioning-out");
+          // Render at current position (first lerp frame)
           el.style.left = screenPos.x + "px";
           el.style.top = screenPos.y + "px";
           el.style.transform = "translate(-50%, -50%) rotate(0deg)";
           if (label) label.style.display = "none";
-        } else if (!isOnScreen && pastGrace) {
-          // Ping left screen mid-transition → reverse
-          ping.transitionStartTime = now;
-          this._setIndicatorState(ping, "transitioning-out");
-          el.offsetHeight;
-          el.style.left = arrowX + "px";
-          el.style.top = arrowY + "px";
-          el.style.transform = `translate(-50%, -50%) rotate(${rotation}deg)`;
-          if (label) label.style.display = "none";
         } else {
-          // Update target position (CSS transition retargets smoothly)
-          el.style.left = screenPos.x + "px";
-          el.style.top = screenPos.y + "px";
-        }
-        break;
-
-      case "onscreen":
-        if (!isOnScreen) {
-          // Start morphing back: diamond → arrow, slide ping → ring
-          ping.transitionStartTime = now;
-          this._setIndicatorState(ping, "transitioning-out");
-          // Force reflow so browser registers current position as start
-          el.offsetHeight;
-          el.style.left = arrowX + "px";
-          el.style.top = arrowY + "px";
-          el.style.transform = `translate(-50%, -50%) rotate(${rotation}deg)`;
-          if (label) label.style.display = "none";
-        } else {
-          // Track ping screen position (no transition, instant)
+          // Track ping screen position (instant, no transition)
           el.style.display = "block";
           el.style.left = screenPos.x + "px";
           el.style.top = screenPos.y + "px";
@@ -598,14 +644,22 @@ class PingMarkerSystem {
         }
         break;
 
-      case "transitioning-out":
-        if (elapsed >= PING_CONFIG.morphDuration) {
-          // Transition complete → offscreen
+      case "transitioning-out": {
+        const t = Math.min(elapsed / PING_CONFIG.morphDuration, 1);
+        const e = this._easeInOutCubic(t);
+        // Lerp from start (ping screen pos) to target (ring)
+        const curX = ping.transitionStartX + (arrowX - ping.transitionStartX) * e;
+        const curY = ping.transitionStartY + (arrowY - ping.transitionStartY) * e;
+        const curRot = ping.transitionStartRot + (rotation - ping.transitionStartRot) * e;
+
+        el.style.display = "block";
+        el.style.left = curX + "px";
+        el.style.top = curY + "px";
+        el.style.transform = `translate(-50%, -50%) rotate(${curRot}deg)`;
+
+        if (t >= 1) {
           this._setIndicatorState(ping, "offscreen");
-          el.style.left = arrowX + "px";
-          el.style.top = arrowY + "px";
-          el.style.transform = `translate(-50%, -50%) rotate(${rotation}deg)`;
-          // Show distance label
+          // Show distance label now that we're fully offscreen
           if (label) {
             const labelOffset = 24;
             label.style.display = "block";
@@ -622,17 +676,18 @@ class PingMarkerSystem {
             }
           }
         } else if (isOnScreen && pastGrace) {
-          // Ping came back on screen mid-transition → reverse
+          // Reverse mid-transition: record current lerped position as new start
+          ping.transitionStartX = curX;
+          ping.transitionStartY = curY;
+          ping.transitionStartRot = curRot;
           ping.transitionStartTime = now;
           this._setIndicatorState(ping, "transitioning-in");
-          el.offsetHeight;
-          el.style.left = screenPos.x + "px";
-          el.style.top = screenPos.y + "px";
-          el.style.transform = "translate(-50%, -50%) rotate(0deg)";
+          if (label) label.style.display = "none";
+        } else {
           if (label) label.style.display = "none";
         }
-        // Otherwise let CSS transition continue to ring position
         break;
+      }
     }
   }
 
