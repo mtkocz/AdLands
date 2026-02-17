@@ -3800,6 +3800,8 @@
     if (frameCount === 0) {
       // Recalculate title once per second (when FPS counter resets)
       titleSystem.updateTitle();
+      // Always sync title to player tag (self-heals stale titles after respawn/race conditions)
+      playerTags.updateTitle("player", titleSystem.getTitle());
     }
 
     // Update commander system (rankings, bodyguards, drawing, tips)

@@ -51,6 +51,7 @@ class TankDamageEffects {
             case 'healthy':
                 effects.smoke = false;
                 effects.fire = false;
+                effects.opacity = 1.0;
                 this._clearParticlesForTank(tankId);
                 break;
             case 'damaged':

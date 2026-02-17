@@ -1447,6 +1447,7 @@
       if (existing) {
         // Revive existing dead/waiting tank (restores materials, resets fade state)
         existing.revive();
+        tankDamageEffects.setDamageState(playerData.id, existing.group, "healthy");
         existing.setFaction(playerData.faction);
         existing.setTargetState({
           t: playerData.theta, p: playerData.phi,
