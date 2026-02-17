@@ -989,6 +989,7 @@ class Dashboard {
       const uploadBtn = e.target.closest(".territory-item-upload");
       if (uploadBtn) {
         const territoryId = uploadBtn.dataset.territoryId;
+        console.log(`[Dashboard] Upload button clicked for territory ${territoryId}`);
         const input = document.createElement("input");
         input.type = "file";
         input.accept = "image/*";
@@ -2656,12 +2657,15 @@ class Dashboard {
   }
 
   _handleTerritoryUpload(inputEl, territoryId) {
+    console.log(`[Dashboard] _handleTerritoryUpload called for territory ${territoryId}`);
     const file = inputEl.files[0];
-    if (!file) return;
+    if (!file) { console.warn("[Dashboard] No file selected"); return; }
+    console.log(`[Dashboard] File selected: ${file.name} (${(file.size / 1024).toFixed(1)}KB, ${file.type})`);
 
     const reader = new FileReader();
     reader.onload = (e) => {
       const dataUrl = e.target.result;
+      console.log(`[Dashboard] FileReader loaded, dataUrl length: ${dataUrl.length}`);
 
       const territory = this._playerTerritories.find((t) => t.id === territoryId);
       if (!territory) return;
@@ -2692,6 +2696,7 @@ class Dashboard {
       // Submit to server for admin review via socket
       let socketAckReceived = false;
       if (window._mp?.net?.socket) {
+        console.log("[Dashboard] Socket available, submitting image for review");
         // Listen for server acknowledgment
         const ackHandler = (ackData) => {
           if (ackData?.territoryId === territoryId) {
@@ -2699,11 +2704,23 @@ class Dashboard {
             window._mp.net.socket.off("territory-image-submitted", ackHandler);
             if (ackData.status === "error") {
               console.warn("[Dashboard] Image submit error from server:", ackData.message);
+            } else {
+              console.log("[Dashboard] Image submit acknowledged by server, status:", ackData.status);
+              // Notify admin portal via BroadcastChannel
+              if (typeof SponsorStorage !== "undefined") {
+                const storageId = territory._sponsorStorageId ||
+                  (SponsorStorage._cache && SponsorStorage.getAll().find(s => s._territoryId === territoryId)?.id);
+                if (storageId) {
+                  SponsorStorage._broadcast("update", { id: storageId });
+                  console.log("[Dashboard] BroadcastChannel update sent for", storageId);
+                }
+              }
             }
           }
         };
         window._mp.net.socket.on("territory-image-submitted", ackHandler);
 
+        console.log(`[Dashboard] Emitting submit-territory-image via socket (territoryId=${territoryId}, dataUrl=${dataUrl.length} chars)`);
         window._mp.net.socket.emit("submit-territory-image", {
           territoryId,
           pendingImage: dataUrl,
@@ -2748,6 +2765,8 @@ class Dashboard {
             }
           }
         }, 3000);
+      } else {
+        console.warn("[Dashboard] No socket available! Cannot submit image via socket. window._mp:", !!window._mp, "net:", !!window._mp?.net, "socket:", !!window._mp?.net?.socket);
       }
 
       // Patch SponsorStorage local cache directly (avoid PUT /api/sponsors which

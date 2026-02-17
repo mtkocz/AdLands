@@ -349,7 +349,7 @@
                 level: 1, rank: remoteTank.rank || 0,
                 avatar: null, avatarColor: remoteTank.avatarColor || null, squad: null,
                 faction: remoteTank.faction,
-                title: "Contractor",
+                title: window.profileCard?.playerCache?.get(id)?.title || "Contractor",
                 hp: state.hp || 100, maxHp: 100,
               });
             }
@@ -972,6 +972,7 @@
         playerTags.updateName?.(data.id, data.name);
         playerTags.updateFaction?.(data.id, data.faction);
         playerTags.updateLevel?.(data.id, data.level);
+        playerTags.updateTitle?.(data.id, data.title || "Contractor");
         tankHeadlights.updateFaction?.(data.id, data.faction);
 
         // Update tag avatar for the new profile
@@ -1138,6 +1139,11 @@
           title: data.title || "Contractor",
           avatarColor: data.avatarColor || null,
         });
+      }
+
+      // Update player tag title
+      if (data.title) {
+        playerTags.updateTitle?.(data.id, data.title);
       }
 
       // Update player tag avatar if avatarColor changed

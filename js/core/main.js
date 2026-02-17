@@ -1232,6 +1232,16 @@
   cannonSystem.setTitleSystem(titleSystem);
   titleSystem.onTitleChange = (newTitle, oldTitle) => {
     playerTags.updateTitle("player", newTitle);
+    dashboard.updateTitle(newTitle);
+    // Broadcast title change to other players
+    if (window.networkManager?.connected) {
+      window.networkManager.sendProfile({
+        badges: window.badgeSystem?.getUnlockedBadges()?.map((b) => b.id) || [],
+        totalCrypto: window.cryptoSystem?.stats?.totalCrypto || 0,
+        title: newTitle,
+        avatarColor: window.avatarColor || null,
+      });
+    }
   };
   // Update player tag with current title (tag was created before titleSystem)
   playerTags.updateTitle("player", titleSystem.getTitle());
