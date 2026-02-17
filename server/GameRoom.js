@@ -1464,11 +1464,14 @@ class GameRoom {
     const wasWaiting = player.waitingForPortal;
 
     // Economy: deduct cost based on portal reason
+    let portalCost = 0;
     if (player._portalReason === 'fastTravel') {
-      this._deductCrypto(player, this.costs.fastTravel);
+      portalCost = this.costs.fastTravel;
+      this._deductCrypto(player, portalCost);
     } else if (player._portalReason === 'respawn') {
+      portalCost = this.costs.respawn;
       const wasBrokeAlready = player.crypto < 0;
-      this._deductCrypto(player, this.costs.respawn);
+      this._deductCrypto(player, portalCost);
       if (player.crypto < 0 && !wasBrokeAlready && this.tuskChat) {
         this.tuskChat.onLoanTaken(player.name, player.crypto, socketId);
       }
@@ -1515,6 +1518,7 @@ class GameRoom {
         theta: player.theta,
         phi: player.phi,
         heading: player.heading,
+        cost: portalCost, // 0 for deploy, 500 for fast travel, 150 for respawn
       });
     }
 

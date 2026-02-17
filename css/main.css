@@ -2126,6 +2126,21 @@ body.tip-dragging .chat-mention.tip-highlight {
     font-size: var(--font-size-body); /* 16px - body tier */
 }
 
+/* Crypto spend (red deduction floaters) */
+.crypto-floating-number.crypto-spend {
+    color: #ff4444;
+    text-shadow:
+        -1px -1px 0 #000,
+        1px -1px 0 #000,
+        -1px 1px 0 #000,
+        1px 1px 0 #000,
+        -1px 0 0 #000,
+        1px 0 0 #000,
+        0 -1px 0 #000,
+        0 1px 0 #000,
+        0 0 6px rgba(255, 68, 68, 0.5);
+}
+
 /* Crypto HUD Bar - Hidden (using dashboard profile crypto instead) */
 #crypto-hud-bar {
     display: none;
@@ -2543,6 +2558,13 @@ body.tip-dragging .chat-mention.tip-highlight {
     flex-shrink: 0;
     -webkit-clip-path: var(--clip-rounded-8);
     clip-path: var(--clip-rounded-8);
+    cursor: pointer;
+    transition: filter 0.15s, transform 0.15s;
+}
+
+.header-level:hover {
+    filter: brightness(1.3);
+    transform: scale(1.1);
 }
 
 .header-crypto-amount {

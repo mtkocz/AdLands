@@ -189,24 +189,35 @@ class CryptoVisuals {
   _spawnFloatingNumber(amount, worldPosition) {
     // Skip if no valid world position
     if (!worldPosition) return;
+    if (amount === 0) return;
 
     // Check if position is occluded by planet at spawn time
     if (this._isOccludedByPlanet(worldPosition)) {
       return;
     }
 
+    const isSpend = amount < 0;
+    const absAmount = Math.abs(amount);
+
     const element = document.createElement("div");
     element.className = "crypto-floating-number";
 
-    // All crypto numbers are white - size varies by magnitude
+    // Size varies by magnitude
     let sizeClass = "crypto-small";
-    let text = `¢ ${amount.toLocaleString()}`;
+    let text;
 
-    if (amount >= 5000) {
+    if (isSpend) {
+      text = `-¢${absAmount.toLocaleString()}`;
+      element.classList.add("crypto-spend");
+    } else {
+      text = `¢ ${absAmount.toLocaleString()}`;
+    }
+
+    if (absAmount >= 5000) {
       sizeClass = "crypto-massive";
-    } else if (amount >= 1000) {
+    } else if (absAmount >= 1000) {
       sizeClass = "crypto-large";
-    } else if (amount >= 100) {
+    } else if (absAmount >= 100) {
       sizeClass = "crypto-medium";
     }
 

@@ -112,7 +112,6 @@ const TUSK_LINES = {
     "Tip: The shield ability exists. I know, revolutionary concept.",
     "Here's a thought: enemies behind cover are harder to hit. So flank them. Basic geometry.",
     "Pro tip: Bullets travel in straight lines. Aim where they're going, not where they are.",
-    "Quick tip: High ground gives you a tactical advantage. I didn't build this planet flat.",
     "Here's a freebie: Reload BEFORE you run out of ammo. Timing is everything.",
     "Tip: If you're getting shot, you're in someone's line of sight. Consider... moving.",
     "Pro tip: Strafing while shooting makes you harder to hit. Basic survival economics.",

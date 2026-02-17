@@ -835,6 +835,12 @@ class CannonSystem {
       this.titleSystem.trackShots(1, 0); // 1 fired, 0 hits (hits tracked on impact)
     }
 
+    // Show red spend floater for cannon fire cost
+    if (isPlayerShot && window.cryptoVisuals && this.playerTank?.group) {
+      const fireCost = 5 + Math.ceil(chargePower);
+      window.cryptoVisuals._spawnFloatingNumber(-fireCost, this.playerTank.group.position);
+    }
+
     // Calculate charge ratio (0-1)
     const chargeRatio = chargePower / this.charging.maxPower;
 

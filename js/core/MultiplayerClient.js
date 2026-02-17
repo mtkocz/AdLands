@@ -885,6 +885,12 @@
       tank.teleportTo(data.theta, data.phi);
       tank.state.heading = data.heading;
 
+      // Show red spend floater for portal cost (fast travel / respawn)
+      if (data.cost > 0 && window.cryptoVisuals && tank.group) {
+        tank.group.getWorldPosition(_tipScreenPos);
+        window.cryptoVisuals._spawnFloatingNumber(-data.cost, _tipScreenPos);
+      }
+
       // Exit fast travel (shows tank, swoops camera down, enables controls)
       if (mp.fastTravel && mp.fastTravel.active) {
         mp.fastTravel._exitFastTravel();
@@ -1482,6 +1488,11 @@
     };
 
     net.onLevelUpConfirmed = (data) => {
+      // Show red spend floater for level-up cost
+      if (data.cost > 0 && window.cryptoVisuals && tank.group) {
+        tank.group.getWorldPosition(_tipScreenPos);
+        window.cryptoVisuals._spawnFloatingNumber(-data.cost, _tipScreenPos);
+      }
       // Update local level
       if (window.cryptoSystem) {
         window.cryptoSystem.stats.level = data.level;

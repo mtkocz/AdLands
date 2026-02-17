@@ -951,13 +951,13 @@ class Planet {
               float dist = distance(vPos, uCenter) / uMaxDist;
 
               // Color palette
-              vec3 cyanBright = vec3(0.1, 0.9, 1.0);
-              vec3 cyanDim    = vec3(0.0, 0.55, 0.65);
+              vec3 cyanBright = vec3(0.15, 1.0, 1.0);
+              vec3 cyanDim    = vec3(0.0, 0.65, 0.75);
 
               // --- Three staggered ripple rings ---
-              float speed = 0.4;
+              float speed = 0.5;
               float phase = uTime * speed;
-              float w = 0.10;
+              float w = 0.14;
 
               float r1 = fract(phase);
               float r2 = fract(phase + 0.333);
@@ -971,13 +971,13 @@ class Planet {
 
               // --- Breathing center glow ---
               float breath = 0.5 + 0.5 * sin(uTime * 1.5);
-              float centerGlow = exp(-dist * 5.0) * (0.2 + 0.12 * breath);
+              float centerGlow = exp(-dist * 4.0) * (0.35 + 0.2 * breath);
 
               // --- Faint persistent edge ---
-              float edge = smoothstep(0.55, 1.0, dist) * 0.06;
+              float edge = smoothstep(0.5, 1.0, dist) * 0.12;
 
               // Combine layers
-              vec3 color = cyanBright * (rings * 0.55 + centerGlow) + cyanDim * edge;
+              vec3 color = cyanBright * (rings * 0.85 + centerGlow) + cyanDim * edge;
               gl_FragColor = vec4(color, 1.0);
             }
           `,
