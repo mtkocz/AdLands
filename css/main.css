@@ -3595,6 +3595,84 @@ body.tip-dragging .chat-mention.tip-highlight {
     padding: var(--space-sm);
 }
 
+/* Territory Rental Popup */
+.territory-rental-modal {
+    width: 360px;
+}
+
+.rental-field {
+    margin-bottom: var(--space-sm);
+}
+
+.rental-label {
+    display: block;
+    font-family: var(--font-body);
+    font-size: var(--font-size-small);
+    color: var(--text-muted);
+    margin-bottom: 2px;
+}
+
+.rental-input {
+    font-family: var(--font-body);
+    font-size: var(--font-size-small);
+    background: rgba(0, 0, 0, 0.3);
+    border: var(--border-width) solid var(--border-dark);
+    color: var(--text-primary);
+    padding: 3px var(--space-xs);
+    outline: none;
+    width: 100%;
+    box-sizing: border-box;
+}
+
+.rental-input::placeholder {
+    color: var(--text-muted);
+}
+
+.rental-input:focus {
+    border-color: var(--accent-cyan);
+}
+
+.rental-upload-area {
+    cursor: pointer;
+}
+
+.rental-upload-preview {
+    width: 100%;
+    height: 120px;
+    border: var(--border-width) dashed var(--border-dark);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: rgba(0, 0, 0, 0.3);
+    overflow: hidden;
+}
+
+.rental-upload-preview:hover {
+    border-color: var(--accent-cyan);
+}
+
+.rental-upload-preview img {
+    max-width: 100%;
+    max-height: 100%;
+    object-fit: contain;
+}
+
+.rental-upload-hint {
+    font-family: var(--font-body);
+    font-size: var(--font-size-small);
+    color: var(--text-muted);
+}
+
+.rental-actions {
+    display: flex;
+    gap: var(--space-xs);
+    margin-top: var(--space-sm);
+}
+
+.rental-actions .territory-btn {
+    flex: 1;
+}
+
 /* Social Panel */
 .social-section {
     margin-bottom: var(--space-sm); /* 4px - 1 grid unit */

@@ -646,11 +646,6 @@ class Dashboard {
                     <div class="preview-hex-count" id="territory-hex-count"></div>
                     <div class="preview-overlap-warning hidden" id="territory-overlap-warning"></div>
                     <div class="preview-pricing" id="territory-pricing"></div>
-                    <div class="territory-info-fields">
-                        <input type="text" class="territory-info-input" id="territory-title-input" placeholder="Territory Title" maxlength="40">
-                        <input type="text" class="territory-info-input" id="territory-tagline-input" placeholder="Tagline" maxlength="80">
-                        <input type="url" class="territory-info-input" id="territory-url-input" placeholder="https://yoursite.com" maxlength="200">
-                    </div>
                     <div class="preview-actions">
                         <button class="territory-btn territory-btn-claim" id="btn-territory-claim">
                             Claim Territory
@@ -2525,7 +2520,7 @@ class Dashboard {
     }
   }
 
-  async _claimTerritory() {
+  _claimTerritory() {
     // Prompt guest users to create an account before claiming
     if (window.authManager?.isGuest) {
       if (window._authScreenInstance) {
@@ -2538,22 +2533,109 @@ class Dashboard {
     if (!preview || preview.tileIndices.length === 0) return;
     if (!this._territoryPlanet) return;
 
+    // Show rental popup for user to fill in territory info
+    this._showRentalPopup();
+  }
+
+  _showRentalPopup() {
+    const popup = document.getElementById("territory-rental-popup");
+    if (!popup) return;
+
+    // Reset fields
+    document.getElementById("rental-name").value = "";
+    document.getElementById("rental-tagline").value = "";
+    document.getElementById("rental-url").value = "";
+    this._rentalUploadedImage = null;
+    const previewEl = document.getElementById("rental-upload-preview");
+    if (previewEl) {
+      previewEl.innerHTML = '<span class="rental-upload-hint">Click to upload image (optional)</span>';
+    }
+
+    popup.classList.add("visible");
+
+    // Wire up events (clean up previous listeners)
+    this._cleanupRentalPopup();
+
+    const closeBtn = document.getElementById("rental-popup-close");
+    const cancelBtn = document.getElementById("rental-cancel-btn");
+    const confirmBtn = document.getElementById("rental-confirm-btn");
+    const uploadArea = document.getElementById("rental-upload-area");
+    const fileInput = document.getElementById("rental-image-input");
+
+    this._rentalCloseHandler = () => this._hideRentalPopup();
+    this._rentalCancelHandler = () => this._hideRentalPopup();
+    this._rentalConfirmHandler = () => this._confirmTerritoryRental();
+    this._rentalUploadClickHandler = () => fileInput.click();
+    this._rentalFileChangeHandler = () => this._handleRentalImageSelect(fileInput);
+
+    closeBtn.addEventListener("click", this._rentalCloseHandler);
+    cancelBtn.addEventListener("click", this._rentalCancelHandler);
+    confirmBtn.addEventListener("click", this._rentalConfirmHandler);
+    uploadArea.addEventListener("click", this._rentalUploadClickHandler);
+    fileInput.addEventListener("change", this._rentalFileChangeHandler);
+  }
+
+  _hideRentalPopup() {
+    const popup = document.getElementById("territory-rental-popup");
+    if (popup) popup.classList.remove("visible");
+    this._cleanupRentalPopup();
+  }
+
+  _cleanupRentalPopup() {
+    const closeBtn = document.getElementById("rental-popup-close");
+    const cancelBtn = document.getElementById("rental-cancel-btn");
+    const confirmBtn = document.getElementById("rental-confirm-btn");
+    const uploadArea = document.getElementById("rental-upload-area");
+    const fileInput = document.getElementById("rental-image-input");
+
+    if (this._rentalCloseHandler) closeBtn?.removeEventListener("click", this._rentalCloseHandler);
+    if (this._rentalCancelHandler) cancelBtn?.removeEventListener("click", this._rentalCancelHandler);
+    if (this._rentalConfirmHandler) confirmBtn?.removeEventListener("click", this._rentalConfirmHandler);
+    if (this._rentalUploadClickHandler) uploadArea?.removeEventListener("click", this._rentalUploadClickHandler);
+    if (this._rentalFileChangeHandler) fileInput?.removeEventListener("change", this._rentalFileChangeHandler);
+  }
+
+  _handleRentalImageSelect(inputEl) {
+    const file = inputEl.files[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      this._rentalUploadedImage = e.target.result;
+      const previewEl = document.getElementById("rental-upload-preview");
+      if (previewEl) {
+        previewEl.innerHTML = "";
+        const img = document.createElement("img");
+        img.src = this._rentalUploadedImage;
+        previewEl.appendChild(img);
+      }
+    };
+    reader.readAsDataURL(file);
+  }
+
+  async _confirmTerritoryRental() {
+    const preview = this._territoryPreview;
+    if (!preview || preview.tileIndices.length === 0) return;
+    if (!this._territoryPlanet) return;
+
     const planet = this._territoryPlanet;
     const playerName = this.playerName || "Player";
 
-    // Read territory info fields
-    const titleInput = document.getElementById("territory-title-input");
-    const taglineInput = document.getElementById("territory-tagline-input");
-    const urlInput = document.getElementById("territory-url-input");
-    const title = (titleInput?.value || "").trim() || playerName;
-    const tagline = (taglineInput?.value || "").trim();
-    const websiteUrl = this._sanitizeTerritoryUrl((urlInput?.value || "").trim());
+    // Read from rental popup fields
+    const title = (document.getElementById("rental-name")?.value || "").trim() || playerName;
+    const tagline = (document.getElementById("rental-tagline")?.value || "").trim();
+    const websiteUrl = this._sanitizeTerritoryUrl((document.getElementById("rental-url")?.value || "").trim());
+    const uploadedImage = this._rentalUploadedImage || null;
+
+    // Close the popup
+    this._hideRentalPopup();
 
     // Generate unique territory ID
     const territoryId = `territory_${Date.now()}_${Math.random().toString(36).substr(2, 6)}`;
 
-    // Generate placeholder texture (canvas with territory title)
-    const patternImage = this._generateTerritoryTexture(title);
+    // Use uploaded image or generate placeholder texture
+    const patternImage = uploadedImage || this._generateTerritoryTexture(title);
+    const imageStatus = uploadedImage ? "pending" : "placeholder";
 
     // Create virtual sponsor object (matches applySponsorCluster interface)
     const virtualSponsor = {
@@ -2597,6 +2679,7 @@ class Dashboard {
       title: title,
       tagline: tagline,
       websiteUrl: websiteUrl,
+      imageStatus: imageStatus,
     };
     this._playerTerritories.push(territoryRecord);
 
@@ -2616,6 +2699,16 @@ class Dashboard {
         title: title,
         tagline: tagline,
         websiteUrl: websiteUrl,
+        imageStatus: imageStatus,
+      });
+    }
+
+    // If user uploaded an image, also submit it for admin review
+    if (uploadedImage && window._mp?.net?.socket) {
+      window._mp.net.socket.emit("submit-territory-image", {
+        territoryId,
+        pendingImage: uploadedImage,
+        patternAdjustment: virtualSponsor.patternAdjustment,
       });
     }
 
@@ -3056,6 +3149,8 @@ class Dashboard {
           title: territory.title || "",
           tagline: territory.tagline || "",
           websiteUrl: territory.websiteUrl || "",
+          imageStatus: territory.imageStatus || "placeholder",
+          pendingImage: territory.imageStatus === "pending" ? territory.patternImage : null,
           purchasedAt: firebase.firestore.FieldValue.serverTimestamp(),
           active: true,
         });
@@ -3083,7 +3178,7 @@ class Dashboard {
           playerFaction: this.playerFaction,
           tierName: territory.tierName,
           createdAt: new Date().toISOString(),
-          imageStatus: "placeholder",
+          imageStatus: territory.imageStatus || "placeholder",
           ownerUid: window.authManager?.uid || null,
         };
         // Use player's profile picture as the logo in the admin portal

@@ -322,6 +322,43 @@
             </div>
         </div>
 
+        <!-- Territory Rental Popup -->
+        <div id="territory-rental-popup" class="modal-overlay">
+            <div class="modal-container territory-rental-modal">
+                <div class="modal-header">
+                    <span class="modal-title">Claim Territory</span>
+                    <button class="modal-close" id="rental-popup-close">&times;</button>
+                </div>
+                <div class="modal-body">
+                    <div class="rental-field">
+                        <label class="rental-label" for="rental-name">Territory Name</label>
+                        <input type="text" id="rental-name" class="rental-input" placeholder="Name your territory" maxlength="40">
+                    </div>
+                    <div class="rental-field">
+                        <label class="rental-label" for="rental-tagline">Tagline</label>
+                        <input type="text" id="rental-tagline" class="rental-input" placeholder="A short description" maxlength="80">
+                    </div>
+                    <div class="rental-field">
+                        <label class="rental-label" for="rental-url">Website URL</label>
+                        <input type="url" id="rental-url" class="rental-input" placeholder="https://yoursite.com" maxlength="200">
+                    </div>
+                    <div class="rental-field">
+                        <label class="rental-label">Territory Image</label>
+                        <div class="rental-upload-area" id="rental-upload-area">
+                            <input type="file" id="rental-image-input" accept="image/*" style="display:none">
+                            <div class="rental-upload-preview" id="rental-upload-preview">
+                                <span class="rental-upload-hint">Click to upload image (optional)</span>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="rental-actions">
+                        <button class="territory-btn territory-btn-claim" id="rental-confirm-btn">Claim Territory</button>
+                        <button class="territory-btn territory-btn-cancel" id="rental-cancel-btn">Cancel</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
         <!-- Territory Intel Popup -->
         <div id="territory-intel-popup" class="hidden">
             <div class="intel-header card-header-row">
