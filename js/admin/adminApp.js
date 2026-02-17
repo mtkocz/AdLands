@@ -265,7 +265,7 @@
         } else {
           const group = clusterRow.closest(".sponsor-group");
           // If already editing this group, just switch territory (saves unsaved changes)
-          if (editingGroup && editingGroup.name.toLowerCase() === group.dataset.name.toLowerCase()) {
+          if (editingGroup && editingGroup.groupKey === group.dataset.name) {
             const idx = editingGroup.ids.indexOf(id);
             if (idx !== -1 && idx !== editingGroup.activeIndex) {
               switchCluster(idx);
@@ -496,7 +496,7 @@
 
     // Update group header aggregated stats if editing a group
     if (editingGroup && editingId) {
-      const groupEl = sponsorsListEl.querySelector(`.sponsor-group[data-name="${escapeHtml(editingGroup.name)}"]`);
+      const groupEl = sponsorsListEl.querySelector(`.sponsor-group[data-name="${escapeHtml(editingGroup.groupKey)}"]`);
       if (groupEl) {
         let groupTiles = 0;
         let groupRev = 0;
@@ -959,6 +959,28 @@
     return HexTierSystem.calculateBillboardPricing(indices).billboardTotal;
   }
 
+  /** Get the grouping key for a sponsor/territory entry */
+  function getGroupKey(s) {
+    if (s.isPlayerTerritory) {
+      return "player:" + (s.ownerEmail || s.ownerUid || s.name || "");
+    }
+    return (s.name || "").toLowerCase();
+  }
+
+  /** Resolve all group members from a groupKey */
+  function getGroupMembers(groupKey) {
+    const sponsors = SponsorStorage.getAll();
+    if (groupKey.startsWith("player:")) {
+      const identifier = groupKey.slice(7);
+      return sponsors.filter(
+        (s) => s.isPlayerTerritory && (s.ownerEmail === identifier || s.ownerUid === identifier)
+      );
+    }
+    return sponsors.filter(
+      (s) => (s.name || "").toLowerCase() === groupKey.toLowerCase()
+    );
+  }
+
   function refreshSponsorsList() {
     const allSponsors = SponsorStorage.getAll();
 
@@ -1061,10 +1083,10 @@
       }),
     );
 
-    // Group by exact name (case-insensitive)
+    // Group: player territories by ownerEmail, sponsors by name
     const groups = new Map();
     for (const s of sortedSponsors) {
-      const key = (s.name || "").toLowerCase();
+      const key = getGroupKey(s);
       if (!groups.has(key)) groups.set(key, []);
       groups.get(key).push(s);
     }
@@ -1073,7 +1095,6 @@
     let totalMonthly = 0;
     const htmlParts = [];
     const currentEditingId = sponsorForm ? sponsorForm.getEditingSponsorId() : null;
-    const currentEditingGroupName = editingGroup ? editingGroup.name : null;
 
     for (const [, members] of groups) {
       const hasPlayerTerritory = members.some((s) => !!s.isPlayerTerritory);
@@ -1090,7 +1111,7 @@
         const logoSrc = sponsor.logoUrl || sponsor.logoImage;
         const isPaused = !!sponsor.paused;
         htmlParts.push(`
-            <div class="sponsor-card${isEditing ? " editing" : ""}${isPaused ? " paused" : ""}" data-id="${sponsor.id}" data-name="${escapeHtml(sponsor.name)}">
+            <div class="sponsor-card${isEditing ? " editing" : ""}${isPaused ? " paused" : ""}" data-id="${sponsor.id}" data-name="${escapeHtml(getGroupKey(sponsor))}">
                 <div class="sponsor-card-logo">
                     ${
                       logoSrc
@@ -1173,8 +1194,9 @@
 
           const isActive = s.id === activeEditId;
 
-          // Territory texture thumbnail + review UI for player territories
+          // Territory texture thumbnail + info fields + review UI for player territories
           let textureHtml = "";
+          let infoFieldsHtml = "";
           let reviewHtml = "";
           if (s.isPlayerTerritory) {
             // Pick the best image to display: pending upload > approved pattern > extracted URL
@@ -1182,6 +1204,18 @@
             if (textureSrc) {
               textureHtml = `<div class="territory-row-texture"><img src="${textureSrc}" alt="Texture" class="territory-texture-thumb"></div>`;
             }
+
+            // Show title/tagline/URL (pending values take priority over approved)
+            const infoTitle = s.pendingTitle || s.title || s.name || "";
+            const infoTagline = s.pendingTagline || s.tagline || "";
+            const infoUrl = s.pendingWebsiteUrl || s.websiteUrl || "";
+            infoFieldsHtml = `<div class="territory-row-info">`;
+            if (infoTitle) infoFieldsHtml += `<div class="territory-row-info-field"><span class="territory-info-label">Title:</span> <span class="territory-info-value">${escapeHtml(infoTitle)}</span></div>`;
+            if (infoTagline) infoFieldsHtml += `<div class="territory-row-info-field"><span class="territory-info-label">Tagline:</span> <span class="territory-info-value">${escapeHtml(infoTagline)}</span></div>`;
+            if (infoUrl) infoFieldsHtml += `<div class="territory-row-info-field"><span class="territory-info-label">URL:</span> <span class="territory-info-value"><a href="${escapeHtml(infoUrl)}" target="_blank" rel="noopener">${escapeHtml(infoUrl)}</a></span></div>`;
+            if (!infoTitle && !infoTagline && !infoUrl) infoFieldsHtml += `<div class="territory-row-info-field territory-info-empty">No info submitted</div>`;
+            infoFieldsHtml += `</div>`;
+
             const subStatus = s.submissionStatus || s.imageStatus;
             if (subStatus === "pending") {
               reviewHtml = `
@@ -1207,6 +1241,7 @@
                 ${revSpan}
                 <button class="icon-btn delete-sponsor-btn" title="Delete territory">&times;</button>
                 ${textureHtml}
+                ${infoFieldsHtml}
                 ${reviewHtml}
             </div>
           `;
@@ -1223,14 +1258,15 @@
           ? `<div class="sponsor-card-revenue"><span class="sponsor-card-revenue-total">$${fmtUSD(groupRevenue)}/mo</span></div>`
           : "";
 
-        const isGroupEditing = currentEditingGroupName && currentEditingGroupName.toLowerCase() === (first.name || "").toLowerCase();
+        const groupKey = getGroupKey(first);
+        const isGroupEditing = editingGroup && editingGroup.groupKey === groupKey;
         const groupLogoSrc = first.logoUrl || first.logoImage;
         const isGroupPaused = members.some((s) => !!s.paused);
         const isNewTerritory = hasPlayerTerritory && members.some((s) => s.imageStatus === "placeholder" || !s.imageStatus);
         const hasPendingImage = hasPlayerTerritory && members.some((s) => s.imageStatus === "pending");
         const groupHighlight = hasPendingImage ? " highlight-pending" : isNewTerritory ? " highlight-new" : "";
         htmlParts.push(`
-            <div class="sponsor-group${isGroupEditing ? " editing expanded" : ""}${isGroupPaused ? " paused" : ""}${groupHighlight}" data-name="${escapeHtml(first.name)}">
+            <div class="sponsor-group${isGroupEditing ? " editing expanded" : ""}${isGroupPaused ? " paused" : ""}${groupHighlight}" data-name="${escapeHtml(groupKey)}">
                 <div class="sponsor-group-header">
                     <span class="sponsor-group-chevron">&#x25B6;</span>
                     <div class="sponsor-card-logo">
@@ -1348,14 +1384,11 @@
 
   /**
    * Edit all clusters of a sponsor group
-   * @param {string} sponsorName - The shared sponsor name
+   * @param {string} groupKey - The group key (from getGroupKey / data-name)
    * @param {string|null} startAtId - Optionally start at a specific cluster ID
    */
-  async function editGroup(sponsorName, startAtId) {
-    const sponsors = SponsorStorage.getAll();
-    const members = sponsors.filter(
-      (s) => (s.name || "").toLowerCase() === sponsorName.toLowerCase()
-    );
+  async function editGroup(groupKey, startAtId) {
+    const members = getGroupMembers(groupKey);
     if (members.length === 0) {
       showToast("Sponsor group not found", "error");
       return;
@@ -1379,7 +1412,8 @@
 
     // Initialize group editing state
     editingGroup = {
-      name: sponsorName,
+      groupKey: groupKey,
+      name: members[0].name || groupKey,
       ids: members.map((s) => s.id),
       activeIndex: activeIndex,
       clusterStates: new Map(),
@@ -1569,7 +1603,7 @@
    * Add a new cluster to a group from the sponsor list (without being in edit mode)
    * Creates a new entry with shared fields, then enters group edit on the new cluster
    */
-  async function addClusterToGroup(sponsorName) {
+  async function addClusterToGroup(groupKey) {
     if (busy) {
       showToast("Please wait for the current operation to finish", "info");
       return;
@@ -1577,10 +1611,7 @@
     busy = true;
 
     try {
-      const sponsors = SponsorStorage.getAll();
-      const members = sponsors.filter(
-        (s) => (s.name || "").toLowerCase() === sponsorName.toLowerCase()
-      );
+      const members = getGroupMembers(groupKey);
       if (members.length === 0) {
         showToast("Sponsor group not found", "error");
         return;
@@ -1590,20 +1621,28 @@
       const first = members[0];
       await SponsorStorage.fetchFull(first.id);
       const firstFull = SponsorStorage.getById(first.id) || first;
-      const newSponsor = await SponsorStorage.create({
+      const createData = {
         name: firstFull.name || first.name,
         tagline: firstFull.tagline || first.tagline || "",
         websiteUrl: firstFull.websiteUrl || first.websiteUrl || "",
         logoImage: firstFull.logoImage || first.logoImage || null,
         cluster: { tileIndices: [] },
         rewards: [],
-      });
+      };
+      // Preserve player territory ownership so new entry stays in the same group
+      if (first.isPlayerTerritory) {
+        createData.isPlayerTerritory = true;
+        if (first.ownerUid) createData.ownerUid = first.ownerUid;
+        if (first.ownerEmail) createData.ownerEmail = first.ownerEmail;
+      }
+      const newSponsor = await SponsorStorage.create(createData);
 
       // Enter group edit mode on the new territory
       refreshSponsorsList();
-      editGroup(sponsorName, newSponsor.id);
+      editGroup(groupKey, newSponsor.id);
 
-      showToast(`New territory added to "${sponsorName}"`, "success");
+      const displayName = first.ownerEmail || first.name || groupKey;
+      showToast(`New territory added to "${displayName}"`, "success");
     } catch (e) {
       showToast(e.message || "Failed to add territory", "error");
     } finally {
@@ -1829,21 +1868,19 @@
   /**
    * Delete an entire sponsor group (all territories with the same name)
    */
-  async function deleteEntireSponsor(sponsorName) {
+  async function deleteEntireSponsor(groupKey) {
     if (busy) {
       showToast("Please wait for the current operation to finish", "info");
       return;
     }
 
-    const sponsors = SponsorStorage.getAll();
-    const members = sponsors.filter(
-      (s) => (s.name || "").toLowerCase() === sponsorName.toLowerCase()
-    );
+    const members = getGroupMembers(groupKey);
     if (members.length === 0) return;
 
+    const displayName = members[0].ownerEmail || members[0].name || groupKey;
     const label = members.length === 1
-      ? `Are you sure you want to delete "${sponsorName}"?`
-      : `Delete "${sponsorName}" and all ${members.length} territories?`;
+      ? `Are you sure you want to delete "${displayName}"?`
+      : `Delete "${displayName}" and all ${members.length} territories?`;
     if (!confirm(label)) return;
 
     busy = true;
@@ -1852,13 +1889,14 @@
         await SponsorStorage.delete(s.id);
       }
       // Clear moon/billboard assignments
+      const sponsorName = members[0].name || "";
       if (moonManager) await moonManager.clearMoonsForSponsor(sponsorName);
       if (billboardManager) await billboardManager.clearBillboardsForSponsor(sponsorName);
 
-      showToast(`Deleted "${sponsorName}"`, "success");
+      showToast(`Deleted "${displayName}"`, "success");
 
       // Clear form if we were editing this sponsor
-      if (editingGroup && editingGroup.name.toLowerCase() === sponsorName.toLowerCase()) {
+      if (editingGroup && editingGroup.groupKey === groupKey) {
         handleClearForm();
       } else {
         const editingId = sponsorForm.getEditingSponsorId();
@@ -1879,27 +1917,25 @@
   /**
    * Toggle the paused state of a sponsor (all territories with the same name)
    */
-  async function togglePauseSponsor(sponsorName) {
+  async function togglePauseSponsor(groupKey) {
     if (busy) {
       showToast("Please wait for the current operation to finish", "info");
       return;
     }
 
-    const sponsors = SponsorStorage.getAll();
-    const members = sponsors.filter(
-      (s) => (s.name || "").toLowerCase() === sponsorName.toLowerCase()
-    );
+    const members = getGroupMembers(groupKey);
     if (members.length === 0) return;
 
     // Toggle: if any member is not paused, pause all; otherwise unpause all
     const shouldPause = members.some((s) => !s.paused);
+    const displayName = members[0].ownerEmail || members[0].name || groupKey;
 
     busy = true;
     try {
       for (const s of members) {
         await SponsorStorage.update(s.id, { paused: shouldPause });
       }
-      showToast(`${shouldPause ? "Paused" : "Resumed"} "${sponsorName}"`, "success");
+      showToast(`${shouldPause ? "Paused" : "Resumed"} "${displayName}"`, "success");
       refreshSponsorsList();
     } finally {
       busy = false;

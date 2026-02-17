@@ -1970,4 +1970,31 @@ textarea.review-comment {
     border: 1px solid #333;
     image-rendering: pixelated;
 }
+.territory-row-info {
+    margin-top: 4px;
+    padding: 4px 6px;
+    background: rgba(255,255,255,0.03);
+    border-left: 2px solid #333;
+}
+.territory-row-info-field {
+    font-family: var(--font-small);
+    font-size: 10px;
+    color: #ccc;
+    line-height: 1.5;
+}
+.territory-info-label {
+    color: #888;
+    margin-right: 4px;
+}
+.territory-info-value a {
+    color: var(--accent-cyan);
+    text-decoration: none;
+}
+.territory-info-value a:hover {
+    text-decoration: underline;
+}
+.territory-info-empty {
+    color: #555;
+    font-style: italic;
+}
 
