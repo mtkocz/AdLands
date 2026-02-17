@@ -212,7 +212,7 @@ class CryptoVisuals {
 
     // Size varies by magnitude
     let sizeClass = "crypto-small";
-    let text = `+¢ ${absAmount.toLocaleString()}`;
+    let text = `+¢${absAmount.toLocaleString()}`;
 
     if (absAmount >= 5000) {
       sizeClass = "crypto-massive";

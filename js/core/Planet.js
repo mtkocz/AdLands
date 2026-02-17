@@ -102,6 +102,8 @@ class Planet {
     // Volumetric light cones at polar openings
     this._volLightMeshes = [];
     this._volLightTime = 0;
+    this._distortAngles = [0, 0, 0, 0];
+    this._distortStrengths = [0, 0, 0, 0];
 
     // Portal pulse animation
     this._portalMeshes = [];
@@ -1507,16 +1509,93 @@ class Planet {
 
     const fragmentShader = `
       uniform float uTime;
+      uniform int uDistortCount;
+      uniform float uDistortAngles[4];
+      uniform float uDistortStrengths[4];
       varying float vHeight;
       varying vec3 vPos;
+
+      // Wrapping-aware angular distance
+      float angleDist(float a, float b) {
+        float d = mod(a - b + 3.14159, 6.28318) - 3.14159;
+        return abs(d);
+      }
+
+      // Signed angular difference (a - b), wrapped to [-PI, PI]
+      float angleDiff(float a, float b) {
+        return mod(a - b + 3.14159, 6.28318) - 3.14159;
+      }
+
+      // Compute distortion from one tank source
+      // Returns vec2(angleOffset, alphaMultiplier)
+      vec2 computeDistortion(float angle, float tankAngle, float strength, float height, float time) {
+        float dist = angleDist(angle, tankAngle);
+
+        // Width of the parting effect (slightly narrower going outward)
+        float widthAtHeight = 0.5 * (1.0 - height * 0.4);
+
+        // Core proximity falloff
+        float proxFalloff = 1.0 - smoothstep(0.0, widthAtHeight, dist);
+        proxFalloff *= strength;
+
+        // Parting: push angle away from tank position
+        float signD = sign(angleDiff(angle, tankAngle));
+        float partAngle = signD * proxFalloff * 0.6;
+
+        // Upward-traveling ripples propagating along vHeight
+        float ripple1 = sin(height * 40.0 - time * 3.0 + dist * 8.0) * 0.5 + 0.5;
+        float ripple2 = sin(height * 25.0 - time * 2.0 + dist * 12.0) * 0.5 + 0.5;
+        float ripplePattern = ripple1 * 0.6 + ripple2 * 0.4;
+        float rippleStrength = proxFalloff * ripplePattern * 0.3;
+        partAngle += rippleStrength * signD;
+
+        // Edge brightening: light bunches at gap edges
+        float edgeDist = abs(dist - widthAtHeight * 0.4);
+        float edgeBright = smoothstep(widthAtHeight * 0.3, 0.0, edgeDist) * proxFalloff;
+
+        // Center dimming: gap center darkens
+        float centerDim = 1.0 - proxFalloff * 0.7;
+
+        float alphaMult = centerDim + edgeBright * 0.8;
+
+        return vec2(partAngle, alphaMult);
+      }
+
       void main() {
         // Angular coord around pole axis for curtain variation
         float angle = atan(vPos.z, vPos.x);
 
+        // Accumulate distortion from nearby tanks
+        float totalAngleOffset = 0.0;
+        float totalAlphaMult = 1.0;
+        if (uDistortCount > 0) {
+          vec2 d = computeDistortion(angle, uDistortAngles[0], uDistortStrengths[0], vHeight, uTime);
+          totalAngleOffset += d.x;
+          totalAlphaMult *= d.y;
+        }
+        if (uDistortCount > 1) {
+          vec2 d = computeDistortion(angle, uDistortAngles[1], uDistortStrengths[1], vHeight, uTime);
+          totalAngleOffset += d.x;
+          totalAlphaMult *= d.y;
+        }
+        if (uDistortCount > 2) {
+          vec2 d = computeDistortion(angle, uDistortAngles[2], uDistortStrengths[2], vHeight, uTime);
+          totalAngleOffset += d.x;
+          totalAlphaMult *= d.y;
+        }
+        if (uDistortCount > 3) {
+          vec2 d = computeDistortion(angle, uDistortAngles[3], uDistortStrengths[3], vHeight, uTime);
+          totalAngleOffset += d.x;
+          totalAlphaMult *= d.y;
+        }
+
+        // Apply angular distortion to wave calculations
+        float distortedAngle = angle + totalAngleOffset;
+
         // Layered sine waves — traveling outward (core → space)
-        float w1 = sin(vHeight * 30.0 - uTime * 0.8 + angle * 6.0) * 0.5 + 0.5;
-        float w2 = sin(vHeight * 20.0 - uTime * 0.5 + angle * 10.0 + 1.5) * 0.5 + 0.5;
-        float w3 = sin(vHeight * 50.0 - uTime * 1.2 + angle * 4.0 + 3.0) * 0.5 + 0.5;
+        float w1 = sin(vHeight * 30.0 - uTime * 0.8 + distortedAngle * 6.0) * 0.5 + 0.5;
+        float w2 = sin(vHeight * 20.0 - uTime * 0.5 + distortedAngle * 10.0 + 1.5) * 0.5 + 0.5;
+        float w3 = sin(vHeight * 50.0 - uTime * 1.2 + distortedAngle * 4.0 + 3.0) * 0.5 + 0.5;
         float pattern = w1 * 0.5 + w2 * 0.3 + w3 * 0.2;
 
         // Aurora spectrum: cyan (core) → green (mid) → purple (outer)
@@ -1528,9 +1607,13 @@ class Planet {
           ? mix(cCyan, cGreen, colorT * 2.0)
           : mix(cGreen, cPurple, (colorT - 0.5) * 2.0);
 
+        // Boost color at distortion edges (white-hot bunching)
+        color += vec3(0.3, 0.4, 0.5) * max(0.0, totalAlphaMult - 1.0);
+
         // Height fade + curtain modulation
         float alpha = pow(1.0 - vHeight, 1.2) * 0.5;
         alpha *= pattern * pattern;
+        alpha *= totalAlphaMult;
 
         if (alpha < 0.005) discard;
         gl_FragColor = vec4(color, alpha);
@@ -1548,6 +1631,9 @@ class Planet {
       const material = new THREE.ShaderMaterial({
         uniforms: {
           uTime: { value: 0.0 },
+          uDistortCount: { value: 0 },
+          uDistortAngles: { value: [0, 0, 0, 0] },
+          uDistortStrengths: { value: [0, 0, 0, 0] },
         },
         vertexShader,
         fragmentShader,
@@ -1557,18 +1643,60 @@ class Planet {
         depthWrite: false,
       });
 
+      const isNorth = (edges === northEdges);
       const mesh = new THREE.Mesh(geometry, material);
-      mesh.userData = { isVolumetricLight: true };
+      mesh.userData = { isVolumetricLight: true, pole: isNorth ? 'north' : 'south' };
       this.hexGroup.add(mesh);
       this._volLightMeshes.push(mesh);
     }
   }
 
-  updateVolumetricLights(dt) {
+  updateVolumetricLights(dt, nearPoleTanks, planetRotation) {
     if (this._volLightMeshes.length === 0) return;
     this._volLightTime += dt;
+
+    const POLAR_PHI_LIMIT = (10 * Math.PI) / 180;
+    const ACTIVATION_RANGE = 0.15;
+    const NORTH_BOUNDARY = POLAR_PHI_LIMIT;
+    const SOUTH_BOUNDARY = Math.PI - POLAR_PHI_LIMIT;
+
     for (const mesh of this._volLightMeshes) {
-      mesh.material.uniforms.uTime.value = this._volLightTime;
+      const uniforms = mesh.material.uniforms;
+      uniforms.uTime.value = this._volLightTime;
+
+      const isNorth = mesh.userData.pole === 'north';
+      const angles = this._distortAngles;
+      const strengths = this._distortStrengths;
+      angles[0] = angles[1] = angles[2] = angles[3] = 0;
+      strengths[0] = strengths[1] = strengths[2] = strengths[3] = 0;
+      let count = 0;
+
+      if (nearPoleTanks) {
+        for (let i = 0; i < nearPoleTanks.length && count < 4; i++) {
+          const t = nearPoleTanks[i];
+          let proximity;
+          if (isNorth) {
+            if (t.phi >= NORTH_BOUNDARY + ACTIVATION_RANGE) continue;
+            proximity = 1.0 - Math.max(0, t.phi - NORTH_BOUNDARY) / ACTIVATION_RANGE;
+          } else {
+            if (t.phi <= SOUTH_BOUNDARY - ACTIVATION_RANGE) continue;
+            proximity = 1.0 - Math.max(0, SOUTH_BOUNDARY - t.phi) / ACTIVATION_RANGE;
+          }
+          proximity = Math.max(0, Math.min(1, proximity));
+
+          // Convert tank theta to cone's local-space angle
+          // hexGroup rotates around Y by planetRotation
+          const localAngle = t.theta - (planetRotation || 0);
+
+          angles[count] = localAngle;
+          strengths[count] = proximity;
+          count++;
+        }
+      }
+
+      uniforms.uDistortCount.value = count;
+      uniforms.uDistortAngles.value = angles;
+      uniforms.uDistortStrengths.value = strengths;
     }
   }
 

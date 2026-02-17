@@ -3713,7 +3713,45 @@
 
     // Update terrain visibility culling (hide tiles on far side of planet + frustum cull overlays)
     planet.updateVisibility(camera, sharedFrustum);
-    planet.updateVolumetricLights(deltaTime);
+    // Gather tanks near polar boundaries for aurora distortion effect
+    const _polarPhiLimit = (10 * Math.PI) / 180;
+    const _poleActivationRange = 0.15;
+    const _northBound = _polarPhiLimit + _poleActivationRange;
+    const _southBound = Math.PI - _polarPhiLimit - _poleActivationRange;
+    const _nearPoleTanks = [];
+
+    // Local player
+    if (tank.state.phi < _northBound || tank.state.phi > _southBound) {
+      _nearPoleTanks.push({ theta: tank.state.theta, phi: tank.state.phi });
+    }
+
+    // Bots
+    if (_nearPoleTanks.length < 4) {
+      const allBots = botTanks.bots;
+      for (let i = 0; i < allBots.length && _nearPoleTanks.length < 4; i++) {
+        const bot = allBots[i];
+        if (bot.isDead || bot.isDeploying) continue;
+        if (bot.phi < _northBound || bot.phi > _southBound) {
+          _nearPoleTanks.push({ theta: bot.theta, phi: bot.phi });
+        }
+      }
+    }
+
+    // Remote multiplayer tanks
+    if (_nearPoleTanks.length < 4) {
+      const remotes = window._remoteTanks;
+      if (remotes) {
+        for (const [, rt] of remotes) {
+          if (_nearPoleTanks.length >= 4) break;
+          if (rt.isDead) continue;
+          if (rt.state.phi < _northBound || rt.state.phi > _southBound) {
+            _nearPoleTanks.push({ theta: rt.state.theta, phi: rt.state.phi });
+          }
+        }
+      }
+    }
+
+    planet.updateVolumetricLights(deltaTime, _nearPoleTanks, planetRotation);
     planet.updatePortalPulse(deltaTime);
 
     // Commander mode LOD options (colored dots instead of boxes)
