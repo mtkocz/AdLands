@@ -2202,41 +2202,21 @@ class GameRoom {
         if (counts[faction] <= 0) continue;
         const ticsToAdd = counts[faction] * this.tickDelta;
 
-        if (isFull) {
-          // CONTEST PHASE: subtract from enemies before adding
-          let enemyCount = 0;
+        // Subtract from enemy factions (split evenly among those with tics)
+        let enemyCount = 0;
+        for (const f of FACTIONS) {
+          if (f !== faction && state.tics[f] > 0) enemyCount++;
+        }
+        if (enemyCount > 0) {
+          const lossPerEnemy = ticsToAdd / enemyCount;
           for (const f of FACTIONS) {
-            if (f !== faction && state.tics[f] > 0) enemyCount++;
-          }
-          if (enemyCount > 0) {
-            const lossPerEnemy = ticsToAdd / enemyCount;
-            for (const f of FACTIONS) {
-              if (f !== faction && state.tics[f] > 0) {
-                state.tics[f] = Math.max(0, state.tics[f] - lossPerEnemy);
-              }
+            if (f !== faction && state.tics[f] > 0) {
+              state.tics[f] = Math.max(0, state.tics[f] - lossPerEnemy);
             }
           }
         }
 
         state.tics[faction] += ticsToAdd;
-      }
-
-      // --- SOLO OCCUPATION: decay absent enemy tics ---
-      const presentFactions = [];
-      for (const f of FACTIONS) {
-        if (counts[f] > 0) presentFactions.push(f);
-      }
-
-      if (presentFactions.length === 1) {
-        const soloFaction = presentFactions[0];
-        const decayRate = counts[soloFaction] * this.tickDelta;
-
-        for (const f of FACTIONS) {
-          if (f === soloFaction || state.tics[f] <= 0) continue;
-          const decay = Math.min(state.tics[f], decayRate);
-          state.tics[f] -= decay;
-          state.tics[soloFaction] += decay;
-        }
       }
 
       // Cap total tics at cluster capacity

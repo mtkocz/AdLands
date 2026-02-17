@@ -187,16 +187,24 @@ class CryptoVisuals {
   }
 
   _spawnFloatingNumber(amount, worldPosition) {
+    if (amount === 0) return;
+
+    const isSpend = amount < 0;
+
+    // Spend amounts spawn from the dashboard crypto counter instead of the tank
+    if (isSpend) {
+      this._spawnDashboardFloatingNumber(amount);
+      return;
+    }
+
     // Skip if no valid world position
     if (!worldPosition) return;
-    if (amount === 0) return;
 
     // Check if position is occluded by planet at spawn time
     if (this._isOccludedByPlanet(worldPosition)) {
       return;
     }
 
-    const isSpend = amount < 0;
     const absAmount = Math.abs(amount);
 
     const element = document.createElement("div");
@@ -204,14 +212,7 @@ class CryptoVisuals {
 
     // Size varies by magnitude
     let sizeClass = "crypto-small";
-    let text;
-
-    if (isSpend) {
-      text = `-¢${absAmount.toLocaleString()}`;
-      element.classList.add("crypto-spend");
-    } else {
-      text = `¢ ${absAmount.toLocaleString()}`;
-    }
+    let text = `¢ ${absAmount.toLocaleString()}`;
 
     if (absAmount >= 5000) {
       sizeClass = "crypto-massive";
@@ -254,6 +255,53 @@ class CryptoVisuals {
       element.style.left = `${Math.round(screen.x)}px`;
       element.style.top = `${Math.round(screen.y)}px`;
     }
+  }
+
+  /**
+   * Spawn a floating spend number from the dashboard crypto counter.
+   * Pure 2D screen-space animation — drifts downward from the counter.
+   */
+  _spawnDashboardFloatingNumber(amount) {
+    const counterEl = document.querySelector(".header-crypto-amount");
+    if (!counterEl) return;
+
+    const absAmount = Math.abs(amount);
+    const rect = counterEl.getBoundingClientRect();
+
+    const element = document.createElement("div");
+    element.className = "crypto-floating-number crypto-spend";
+
+    let sizeClass = "crypto-small";
+    if (absAmount >= 5000) {
+      sizeClass = "crypto-massive";
+    } else if (absAmount >= 1000) {
+      sizeClass = "crypto-large";
+    } else if (absAmount >= 100) {
+      sizeClass = "crypto-medium";
+    }
+    element.classList.add(sizeClass);
+    element.textContent = `-¢${absAmount.toLocaleString()}`;
+    element.style.opacity = "0.8";
+
+    // Position at the crypto counter
+    const startX = rect.left + rect.width / 2;
+    const startY = rect.bottom + 4;
+    element.style.left = `${Math.round(startX)}px`;
+    element.style.top = `${Math.round(startY)}px`;
+
+    this.container.appendChild(element);
+
+    const duration = 1500;
+    const floater = {
+      element,
+      screenMode: true, // Flag: pure 2D, no 3D tracking
+      startX,
+      startY,
+      startTime: performance.now(),
+      duration,
+    };
+
+    this.floatingNumbers.push(floater);
   }
 
   _worldToScreen(worldPosition) {
@@ -418,6 +466,19 @@ class CryptoVisuals {
         // Remove completed
         floater.element.remove();
         this.floatingNumbers.splice(i, 1);
+        continue;
+      }
+
+      // Screen-mode floaters (spend amounts from dashboard counter)
+      if (floater.screenMode) {
+        const driftY = 40 * progress; // Drift 40px downward
+        let opacity = 0.8;
+        if (progress > 0.6) {
+          opacity *= 1 - (progress - 0.6) / 0.4;
+        }
+        floater.element.style.left = `${Math.round(floater.startX)}px`;
+        floater.element.style.top = `${Math.round(floater.startY + driftY)}px`;
+        floater.element.style.opacity = opacity;
         continue;
       }
 

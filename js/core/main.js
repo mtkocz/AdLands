@@ -2057,28 +2057,21 @@
         if (counts[faction] <= 0) continue;
         const ticsToAdd = counts[faction];
 
-        if (isFull) {
-          // CONTEST PHASE: Capacity is full, subtract from enemies before adding
-          // Count enemy factions with tics (avoid .filter() allocation)
-          let enemyCount = 0;
-          for (const f of _captureFactions) {
-            if (f !== faction && state.tics[f] > 0) enemyCount++;
-          }
+        // Subtract from enemy factions (split evenly among those with tics)
+        let enemyCount = 0;
+        for (const f of _captureFactions) {
+          if (f !== faction && state.tics[f] > 0) enemyCount++;
+        }
 
-          if (enemyCount > 0) {
-            // Subtract tics from enemies (split evenly)
-            const lossPerEnemy = ticsToAdd / enemyCount;
-            for (const f of _captureFactions) {
-              if (f !== faction && state.tics[f] > 0) {
-                state.tics[f] = Math.max(0, state.tics[f] - lossPerEnemy);
-              }
+        if (enemyCount > 0) {
+          const lossPerEnemy = ticsToAdd / enemyCount;
+          for (const f of _captureFactions) {
+            if (f !== faction && state.tics[f] > 0) {
+              state.tics[f] = Math.max(0, state.tics[f] - lossPerEnemy);
             }
           }
         }
 
-        // FILLING PHASE or CONTEST PHASE: Add tics for this faction
-        // In filling phase, all factions cooperatively fill capacity
-        // In contest phase, tics are added after subtracting from enemies
         state.tics[faction] += ticsToAdd;
 
         // Award crypto for player contributing tics
