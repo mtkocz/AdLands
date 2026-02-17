@@ -231,8 +231,15 @@
           if (mp.setSpawnedIn) mp.setSpawnedIn();
         }
       }
-      // Otherwise (new player or reconnected-but-dead): normal flow,
-      // player must choose a portal via the fast travel UI.
+      // Fallback: if server says we need to choose a portal but fast travel
+      // UI isn't showing (mid-game reconnect that fell through to addPlayer),
+      // enter fast travel so the player isn't stuck with ignored inputs.
+      if (data.you.waitingForPortal && mp.fastTravel && !mp.fastTravel.active) {
+        net.pendingInputs = [];
+        tank.setVisible(false);
+        tank.setControlsEnabled(false);
+        mp.fastTravel.startRespawn();
+      }
 
       // Apply server-authoritative celestial body configs
       if (data.celestial && mp.applyCelestialConfig) {

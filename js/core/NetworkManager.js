@@ -490,6 +490,9 @@ class NetworkManager {
   sendRefreshToken(token) {
     if (!this.connected) return;
     this.socket.emit("refresh-token", token);
+    // Update Socket.IO auth so reconnection attempts use the fresh token
+    // (without this, reconnects send the original token which may be expired)
+    if (this.socket) this.socket.auth = { token };
   }
 
   /**
