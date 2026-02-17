@@ -243,8 +243,11 @@ io.use(async (socket, next) => {
 io.on("connection", (socket) => {
   console.log(`[Server] New connection: ${socket.id}${socket.uid ? ` (uid: ${socket.uid})` : " (guest)"}`);
 
-  // Add player to the main room
-  const player = mainRoom.addPlayer(socket);
+  // Attempt to restore an existing session for authenticated players
+  let player = socket.uid ? mainRoom.reconnectPlayer(socket) : null;
+  if (!player) {
+    player = mainRoom.addPlayer(socket);
+  }
 
   // ---- Input ----
   // Client sends input every frame (keys + turret angle + sequence number)

@@ -214,8 +214,25 @@
         planet.updateDirtyFactionOutlines?.();
       }
 
-      // DO NOT teleport or exit fast travel — player must choose a portal.
-      // The fast travel UI is already showing from main.js enterFastTravelAtStart().
+      // Handle reconnection: restore position if player was alive on the surface
+      if (data.you.reconnected && !data.you.waitingForPortal) {
+        // Clear stale prediction inputs accumulated during disconnect
+        net.pendingInputs = [];
+
+        tank.teleportTo(data.you.theta, data.you.phi);
+        tank.state.heading = data.you.heading;
+
+        // Exit fast travel UI if it was active, otherwise directly show the tank
+        if (mp.fastTravel && mp.fastTravel.active) {
+          mp.fastTravel._exitFastTravel();
+        } else {
+          tank.setVisible(true);
+          tank.setControlsEnabled(true);
+          if (mp.setSpawnedIn) mp.setSpawnedIn();
+        }
+      }
+      // Otherwise (new player or reconnected-but-dead): normal flow,
+      // player must choose a portal via the fast travel UI.
 
       // Apply server-authoritative celestial body configs
       if (data.celestial && mp.applyCelestialConfig) {
@@ -343,17 +360,15 @@
             // Transition back to alive (catches missed player-activated events)
             remoteTank.revive();
             tankDamageEffects.setDamageState(id, remoteTank.group, "healthy");
-            // Recreate tag if fadeOutTag removed it
-            if (!playerTags.tags?.has(id)) {
-              playerTags.createTag?.(id, remoteTank, {
-                name: remoteTank.playerName || "Unknown",
-                level: 1, rank: remoteTank.rank || 0,
-                avatar: null, avatarColor: remoteTank.avatarColor || null, squad: null,
-                faction: remoteTank.faction,
-                title: window.profileCard?.playerCache?.get(id)?.title || "Contractor",
-                hp: state.hp || 100, maxHp: 100,
-              });
-            }
+            // Recreate tag (createTag handles removing any existing/fading tag)
+            playerTags.createTag?.(id, remoteTank, {
+              name: remoteTank.playerName || "Unknown",
+              level: 1, rank: remoteTank.rank || 0,
+              avatar: null, avatarColor: remoteTank.avatarColor || null, squad: null,
+              faction: remoteTank.faction,
+              title: window.profileCard?.playerCache?.get(id)?.title || "Contractor",
+              hp: state.hp || 100, maxHp: 100,
+            });
           } else if (state.d === 0 && !remoteTank.isDead && state.hp !== undefined) {
             // Alive — sync damage state from HP (catches gradual damage via state ticks)
             const newState = computeDamageState(state.hp, remoteTank.maxHp);

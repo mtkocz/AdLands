@@ -29,6 +29,9 @@ const BOT_NAME_POOL = [
   "AthenaX", "ValkyrieFury", "NovaFlare", "ZeldaMain", "SamusRun",
 ];
 
+// Grace period for reconnecting players (ms)
+const RECONNECT_GRACE_MS = 30000;
+
 class GameRoom {
   constructor(io, roomId, sponsorStore, sponsorImageUrls, moonSponsorStore, moonSponsorImageUrls, billboardSponsorStore, billboardSponsorImageUrls) {
     this.io = io;
@@ -45,6 +48,9 @@ class GameRoom {
 
     // Resigned commanders: socketId → resignedUntil (ms timestamp)
     this.resignedPlayers = new Map();
+
+    // Reconnect grace: uid → { player, disconnectedAt, cleanupTimer }
+    this.disconnectedSessions = new Map();
 
     // Projectiles in flight
     this.projectiles = [];
@@ -686,6 +692,192 @@ class GameRoom {
     return player;
   }
 
+  /**
+   * Attempt to restore a recently-disconnected authenticated player.
+   * Returns the restored player object, or null if no session found.
+   */
+  reconnectPlayer(socket) {
+    const uid = socket.uid;
+    if (!uid) return null;
+
+    const session = this.disconnectedSessions.get(uid);
+    if (!session) return null;
+
+    // Clean up the grace period
+    clearTimeout(session.cleanupTimer);
+    this.disconnectedSessions.delete(uid);
+
+    const saved = session.player;
+    const oldId = saved.id;
+
+    // Re-key to new socket ID
+    saved.id = socket.id;
+
+    // Reset volatile input state
+    saved.keys = { w: false, a: false, s: false, d: false, shift: false };
+    saved.lastInputSeq = 0;
+    saved.speed = 0;
+
+    // If player was dead at disconnect, send them to portal selection
+    if (saved.isDead) {
+      saved.hp = saved.maxHp;
+      saved.isDead = false;
+      saved.speed = 0;
+      saved.waitingForPortal = true;
+    }
+
+    // Insert into players map under new socket ID
+    this.players.set(socket.id, saved);
+    socket.join(this.roomId);
+
+    // --- Update all references from oldId to new socket ID ---
+
+    // Profile cache
+    if (saved.uid && this.profileCacheReady) {
+      const cacheKey = `${saved.uid}:${saved.profileIndex}`;
+      const entry = this.profileCacheIndex.get(cacheKey);
+      if (entry) {
+        entry.isOnline = true;
+        entry.socketId = socket.id;
+        entry.name = saved.name;
+        entry.level = saved.level || 1;
+        entry.totalCrypto = saved.totalCrypto || 0;
+        entry.territoryCaptured = saved.territoryCaptured || entry.territoryCaptured;
+      }
+    }
+
+    // Commander references
+    for (const faction of FACTIONS) {
+      const cmdr = this.commanders[faction];
+      if (cmdr && cmdr.id === oldId) {
+        cmdr.id = socket.id;
+      }
+    }
+
+    // Resigned players
+    if (this.resignedPlayers.has(oldId)) {
+      const until = this.resignedPlayers.get(oldId);
+      this.resignedPlayers.delete(oldId);
+      this.resignedPlayers.set(socket.id, until);
+    }
+
+    // In-flight projectiles
+    for (const proj of this.projectiles) {
+      if (proj.ownerId === oldId) {
+        proj.ownerId = socket.id;
+      }
+    }
+
+    // lastKilledBy references on other players
+    for (const [, p] of this.players) {
+      if (p.lastKilledBy === oldId) {
+        p.lastKilledBy = socket.id;
+      }
+    }
+
+    // --- Send welcome payload (same structure as addPlayer) ---
+    const captureState = {};
+    for (const [clusterId, state] of this.clusterCaptureState) {
+      const total = state.tics.rust + state.tics.cobalt + state.tics.viridian;
+      if (total > 0 || state.owner) {
+        captureState[clusterId] = {
+          tics: { ...state.tics },
+          owner: state.owner,
+          capacity: state.capacity,
+        };
+      }
+    }
+
+    socket.emit("welcome", {
+      you: {
+        id: saved.id,
+        name: saved.name,
+        faction: saved.faction,
+        waitingForPortal: saved.waitingForPortal,
+        factionTotal: this.factionMemberCounts[saved.faction] || 0,
+        // Reconnection-specific: restore position/state
+        reconnected: true,
+        theta: saved.theta,
+        phi: saved.phi,
+        heading: saved.heading,
+        hp: saved.hp,
+        isDead: saved.isDead,
+      },
+      players: this._getAllPlayerStates(),
+      bodyguards: this.bodyguardManager.getFullStatesForWelcome(),
+      tickRate: this.tickRate,
+      planetRotation: this.planetRotation,
+      world: this._worldPayload,
+      captureState,
+      commanders: this._getCommanderSnapshot(),
+      celestial: {
+        moons: this.moons.map(m => ({
+          angle: m.angle, speed: m.speed,
+          distance: m.distance, inclination: m.inclination, radius: m.radius,
+        })),
+        stations: this.stations.map(s => ({
+          orbitalAngle: s.orbitalAngle, speed: s.speed,
+          orbitRadius: s.orbitRadius, inclination: s.inclination,
+          ascendingNode: s.ascendingNode, rotationSpeed: s.rotationSpeed,
+          localRotation: s.localRotation,
+        })),
+        billboards: this.billboardOrbits.map(b => ({
+          orbitalAngle: b.orbitalAngle, speed: b.speed,
+          orbitRadius: b.orbitRadius, inclination: b.inclination,
+          ascendingNode: b.ascendingNode,
+          wobbleX: b.wobbleX, wobbleY: b.wobbleY, wobbleZ: b.wobbleZ,
+        })),
+      },
+    });
+
+    // Notify other players
+    if (!saved.waitingForPortal) {
+      // Player was alive on the surface — spawn their tank for others
+      socket.to(this.roomId).emit("player-activated", {
+        id: saved.id,
+        name: saved.name,
+        faction: saved.faction,
+        theta: saved.theta,
+        phi: saved.phi,
+        heading: saved.heading,
+        hp: saved.hp,
+        level: saved.level,
+        badges: saved.badges,
+        totalCrypto: saved.totalCrypto,
+        title: saved.title,
+        crypto: saved.crypto,
+        avatarColor: saved.avatarColor || null,
+      });
+    } else {
+      // Player is waiting for portal (was dead or in portal selection)
+      socket.to(this.roomId).emit("player-joined", {
+        id: saved.id,
+        name: saved.name,
+        faction: saved.faction,
+        hp: saved.hp,
+        level: saved.level,
+        waitingForPortal: true,
+        badges: saved.badges,
+        totalCrypto: saved.totalCrypto,
+        title: saved.title,
+        crypto: saved.crypto,
+        rank: saved.rank || 0,
+        avatarColor: saved.avatarColor || null,
+      });
+    }
+
+    this._recomputeRanks();
+    this._sendRosterToPlayer(socket.id);
+
+    console.log(
+      `[Room ${this.roomId}] ${saved.name} (${saved.faction}) reconnected ` +
+      `after ${((Date.now() - session.disconnectedAt) / 1000).toFixed(1)}s. ` +
+      `Players: ${this.players.size}`
+    );
+
+    return saved;
+  }
+
   removePlayer(socketId) {
     const player = this.players.get(socketId);
     if (!player) return;
@@ -706,6 +898,24 @@ class GameRoom {
 
     this.players.delete(socketId);
     this.resignedPlayers.delete(socketId);
+
+    // Stash session for authenticated players to allow seamless reconnect
+    if (player.uid) {
+      const existing = this.disconnectedSessions.get(player.uid);
+      if (existing && existing.cleanupTimer) clearTimeout(existing.cleanupTimer);
+
+      const uid = player.uid;
+      const cleanupTimer = setTimeout(() => {
+        this.disconnectedSessions.delete(uid);
+        console.log(`[Room ${this.roomId}] Reconnect grace expired for ${player.name} (${uid})`);
+      }, RECONNECT_GRACE_MS);
+
+      this.disconnectedSessions.set(player.uid, {
+        player: { ...player },
+        disconnectedAt: Date.now(),
+        cleanupTimer,
+      });
+    }
 
     // Recompute ranks and commander (player now offline — may trigger Acting Commander)
     this._markRanksDirty();

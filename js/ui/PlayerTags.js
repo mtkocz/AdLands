@@ -485,9 +485,12 @@ class PlayerTags {
       if (progress < 1) {
         requestAnimationFrame(fadeStep);
       } else {
-        // Fade complete - remove tag
-        tag.element.remove();
-        this.tags.delete(tankId);
+        // Fade complete - only remove if this tag is still the active one
+        // (createTag may have replaced it during the fade)
+        if (this.tags.get(tankId) === tag) {
+          tag.element.remove();
+          this.tags.delete(tankId);
+        }
       }
     };
 

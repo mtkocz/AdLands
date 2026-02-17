@@ -51,6 +51,7 @@ class TankDamageEffects {
             case 'healthy':
                 effects.smoke = false;
                 effects.fire = false;
+                this._clearParticlesForTank(tankId);
                 break;
             case 'damaged':
                 effects.smoke = 'gray';
@@ -72,6 +73,22 @@ class TankDamageEffects {
      */
     removeTank(tankId) {
         this.tankEffects.delete(tankId);
+    }
+
+    /**
+     * Immediately remove all active particles belonging to a tank
+     */
+    _clearParticlesForTank(tankId) {
+        // Clear smoke particles owned by this tank
+        for (let i = this.smoke.activeCount - 1; i >= 0; i--) {
+            if (this.smoke.tankIds[i] === tankId) {
+                this._removeSmokeParticle(i);
+            }
+        }
+        if (this.smoke.activeCount >= 0) {
+            this.smokeSystem.geometry.setDrawRange(0, this.smoke.activeCount);
+            this._markSmokeBuffersDirty();
+        }
     }
 
     /**
