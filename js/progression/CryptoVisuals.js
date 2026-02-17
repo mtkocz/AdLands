@@ -268,28 +268,34 @@ class CryptoVisuals {
     const absAmount = Math.abs(amount);
     const rect = counterEl.getBoundingClientRect();
 
-    const element = document.createElement("div");
-    element.className = "crypto-floating-number crypto-spend";
-
-    let sizeClass = "crypto-small";
-    if (absAmount >= 5000) {
-      sizeClass = "crypto-massive";
-    } else if (absAmount >= 1000) {
-      sizeClass = "crypto-large";
-    } else if (absAmount >= 100) {
-      sizeClass = "crypto-medium";
-    }
-    element.classList.add(sizeClass);
-    element.textContent = `-¢${absAmount.toLocaleString()}`;
-    element.style.opacity = "0.8";
-
     // Position at the crypto counter
     const startX = rect.left + rect.width / 2;
     const startY = rect.bottom + 4;
-    element.style.left = `${Math.round(startX)}px`;
-    element.style.top = `${Math.round(startY)}px`;
 
-    this.container.appendChild(element);
+    // Use inline styles only (no crypto-floating-number class) to avoid
+    // CSS conflicts (position:absolute, opacity:0) and match counter font
+    const counterStyle = window.getComputedStyle(counterEl);
+    const element = document.createElement("div");
+    element.textContent = `-¢${absAmount.toLocaleString()}`;
+    element.style.cssText = `
+      position: fixed;
+      left: ${Math.round(startX)}px;
+      top: ${Math.round(startY)}px;
+      z-index: 251;
+      pointer-events: none;
+      white-space: nowrap;
+      transform: translateX(-50%);
+      opacity: 0.8;
+      color: #ff4444;
+      font-family: ${counterStyle.fontFamily};
+      font-size: ${counterStyle.fontSize};
+      text-shadow:
+        -1px -1px 0 #000, 1px -1px 0 #000,
+        -1px 1px 0 #000, 1px 1px 0 #000,
+        0 0 6px rgba(255, 68, 68, 0.5);
+    `;
+
+    document.body.appendChild(element);
 
     const duration = 1500;
     const floater = {
