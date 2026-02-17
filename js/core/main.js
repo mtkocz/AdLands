@@ -3800,8 +3800,20 @@
     if (frameCount === 0) {
       // Recalculate title once per second (when FPS counter resets)
       titleSystem.updateTitle();
-      // Always sync title to player tag (self-heals stale titles after respawn/race conditions)
-      playerTags.updateTitle("player", titleSystem.getTitle());
+      // Self-correcting title sync — mirrors dashboard's self-healing approach
+      const isCmd = window.commanderSystem?.isHumanCommander?.() || false;
+      const tag = playerTags.tags?.get("player");
+      if (tag) {
+        const hasClass = tag.element.classList.contains("commander");
+        if (isCmd && !hasClass) {
+          const isActing = window.commanderSystem?.isHumanActingCommander?.() || false;
+          playerTags.setCommander("player", true, null, isActing);
+        } else if (!isCmd && hasClass) {
+          playerTags.setCommander("player", false);
+        } else if (!isCmd) {
+          playerTags.updateTitle("player", titleSystem.getTitle());
+        }
+      }
     }
 
     // Update commander system (rankings, bodyguards, drawing, tips)
