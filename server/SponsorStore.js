@@ -1,6 +1,7 @@
 /**
  * AdLands - Server-Side Sponsor Store
  * Reads/writes data/sponsors.json with in-memory cache.
+ * Syncs to Firestore for persistence across container restarts.
  * Mirrors the client SponsorStorage API for consistency.
  */
 
@@ -8,17 +9,40 @@ const fs = require("fs");
 const fsp = require("fs").promises;
 const path = require("path");
 
+/** Fields to strip when a Firestore document exceeds the 1MB size limit */
+const IMAGE_FIELDS = ["patternImage", "logoImage", "pendingImage"];
+
 class SponsorStore {
-  constructor(filePath) {
+  /**
+   * @param {string} filePath - Path to sponsors.json
+   * @param {{ getFirestore?: Function }} [opts]
+   */
+  constructor(filePath, opts = {}) {
     this.filePath = filePath;
     this._cache = null;
+    this._getFirestore = opts.getFirestore || null;
+    this._firestoreCollection = "sponsor_store";
   }
 
   /**
-   * Load sponsors from disk into memory cache.
-   * Auto-creates directory and file if missing.
+   * Load sponsors from disk, then merge/override with Firestore data.
+   * On first run (Firestore empty), seeds Firestore from JSON data.
    */
-  load() {
+  async load() {
+    // 1. Read JSON file (local fallback)
+    this._loadFromDisk();
+
+    // 2. Merge with Firestore (source of truth)
+    await this._mergeFromFirestore();
+
+    // 3. Clean up duplicate player territory entries (same _territoryId)
+    this._deduplicatePlayerTerritories();
+  }
+
+  /**
+   * Read sponsors.json into memory cache.
+   */
+  _loadFromDisk() {
     const dir = path.dirname(this.filePath);
     if (!fs.existsSync(dir)) {
       fs.mkdirSync(dir, { recursive: true });
@@ -39,9 +63,149 @@ class SponsorStore {
       console.error("[SponsorStore] Failed to read sponsors file:", e.message);
       this._cache = { version: 1, sponsors: [], lastModified: "" };
     }
+  }
 
-    // Clean up duplicate player territory entries (same _territoryId)
-    this._deduplicatePlayerTerritories();
+  /**
+   * Load from Firestore and merge with in-memory cache.
+   * Firestore data takes precedence over JSON for matching IDs.
+   * If Firestore is empty (first run), seed it from JSON data.
+   */
+  async _mergeFromFirestore() {
+    if (!this._getFirestore) return;
+
+    try {
+      const db = this._getFirestore();
+      const snap = await db.collection(this._firestoreCollection).get();
+
+      if (snap.empty) {
+        // First run: seed Firestore from JSON data
+        if (this._cache.sponsors.length > 0) {
+          console.log(`[SponsorStore] Firestore empty — seeding ${this._cache.sponsors.length} sponsors`);
+          await this._seedFirestore();
+        }
+        return;
+      }
+
+      // Build map of Firestore sponsors by ID
+      const firestoreSponsors = new Map();
+      for (const doc of snap.docs) {
+        firestoreSponsors.set(doc.id, doc.data());
+      }
+
+      // Build map of JSON sponsors by ID
+      const jsonById = new Map();
+      for (const s of this._cache.sponsors) {
+        jsonById.set(s.id, s);
+      }
+
+      // Merge: Firestore wins for matching IDs, new Firestore entries are added
+      const merged = [];
+      const seen = new Set();
+
+      // First pass: all Firestore sponsors (source of truth)
+      for (const [id, fsData] of firestoreSponsors) {
+        merged.push(fsData);
+        seen.add(id);
+      }
+
+      // Second pass: JSON-only sponsors (not in Firestore yet — sync them up)
+      let synced = 0;
+      for (const s of this._cache.sponsors) {
+        if (!seen.has(s.id)) {
+          merged.push(s);
+          this._syncToFirestore(s); // fire-and-forget
+          synced++;
+        }
+      }
+
+      this._cache.sponsors = merged;
+      await this._saveToDisk();
+
+      const fsCount = firestoreSponsors.size;
+      console.log(`[SponsorStore] Merged ${fsCount} from Firestore` + (synced > 0 ? `, synced ${synced} new to Firestore` : ""));
+    } catch (err) {
+      console.warn("[SponsorStore] Firestore merge failed, using disk data:", err.message);
+    }
+  }
+
+  /**
+   * Seed Firestore with all current in-memory sponsors (first-run migration).
+   */
+  async _seedFirestore() {
+    if (!this._getFirestore) return;
+
+    try {
+      const db = this._getFirestore();
+      let batch = db.batch();
+      let count = 0;
+      let batchCount = 0;
+
+      for (const sponsor of this._cache.sponsors) {
+        const ref = db.collection(this._firestoreCollection).doc(sponsor.id);
+        batch.set(ref, sponsor);
+        count++;
+        batchCount++;
+
+        // Firestore batches limited to 500 operations
+        if (batchCount === 500) {
+          await batch.commit();
+          batch = db.batch();
+          batchCount = 0;
+          console.log(`[SponsorStore] Seeded batch of 500 to Firestore...`);
+        }
+      }
+
+      // Commit any remaining
+      if (batchCount > 0) {
+        await batch.commit();
+      }
+
+      console.log(`[SponsorStore] Seeded ${count} sponsors to Firestore`);
+    } catch (err) {
+      console.warn("[SponsorStore] Firestore seed failed:", err.message);
+    }
+  }
+
+  /**
+   * Sync a single sponsor to Firestore. On document-too-large error,
+   * retries without image fields so metadata still persists.
+   */
+  async _syncToFirestore(sponsor) {
+    if (!this._getFirestore) return;
+
+    try {
+      const db = this._getFirestore();
+      await db.collection(this._firestoreCollection).doc(sponsor.id).set(sponsor);
+    } catch (err) {
+      // If document too large, retry without image data
+      if (err.code === 3 || (err.message && err.message.includes("exceeds the maximum"))) {
+        try {
+          const stripped = { ...sponsor };
+          for (const f of IMAGE_FIELDS) delete stripped[f];
+          const db = this._getFirestore();
+          await db.collection(this._firestoreCollection).doc(sponsor.id).set(stripped);
+          console.warn(`[SponsorStore] Sponsor ${sponsor.id} too large for Firestore — saved without images`);
+        } catch (retryErr) {
+          console.warn(`[SponsorStore] Firestore sync failed for ${sponsor.id}:`, retryErr.message);
+        }
+      } else {
+        console.warn(`[SponsorStore] Firestore sync failed for ${sponsor.id}:`, err.message);
+      }
+    }
+  }
+
+  /**
+   * Delete a sponsor document from Firestore.
+   */
+  async _deleteFromFirestore(id) {
+    if (!this._getFirestore) return;
+
+    try {
+      const db = this._getFirestore();
+      await db.collection(this._firestoreCollection).doc(id).delete();
+    } catch (err) {
+      console.warn(`[SponsorStore] Firestore delete failed for ${id}:`, err.message);
+    }
   }
 
   /**
@@ -137,6 +301,7 @@ class SponsorStore {
     };
     this._cache.sponsors.push(newSponsor);
     await this._saveToDisk();
+    this._syncToFirestore(newSponsor);
     return { sponsor: newSponsor };
   }
 
@@ -163,6 +328,7 @@ class SponsorStore {
     merged.updatedAt = new Date().toISOString();
     this._cache.sponsors[index] = merged;
     await this._saveToDisk();
+    this._syncToFirestore(merged);
     return { sponsor: merged };
   }
 
@@ -175,6 +341,7 @@ class SponsorStore {
     this._cache.sponsors = this._cache.sponsors.filter((s) => s.id !== id);
     if (this._cache.sponsors.length < initialLength) {
       await this._saveToDisk();
+      this._deleteFromFirestore(id);
       return true;
     }
     return false;
@@ -301,6 +468,12 @@ class SponsorStore {
     }
 
     await this._saveToDisk();
+
+    // Sync all sponsors to Firestore after import
+    for (const s of this._cache.sponsors) {
+      this._syncToFirestore(s);
+    }
+
     return { success: true, imported: importedCount, errors };
   }
 }

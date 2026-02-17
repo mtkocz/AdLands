@@ -1235,7 +1235,7 @@
 
           return `
             <div class="sponsor-cluster-row${isActive ? " active-territory" : ""}" data-id="${s.id}">
-                <span class="sponsor-cluster-row-label">Territory ${i + 1}</span>
+                <span class="sponsor-cluster-row-label">${escapeHtml(s.pendingTitle || s.title || s.name || ("Territory " + (i + 1)))}</span>
                 <span class="sponsor-cluster-row-type ${typeClass}">${typeLabel}</span>
                 <span class="sponsor-cluster-row-stats">${tileCount} tiles, ${s.rewards?.length || 0} rewards</span>
                 ${revSpan}

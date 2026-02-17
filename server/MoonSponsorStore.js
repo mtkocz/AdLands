@@ -1,6 +1,7 @@
 /**
  * AdLands - Server-Side Moon Sponsor Store
  * Reads/writes data/moonSponsors.json with in-memory cache.
+ * Syncs to Firestore for persistence across container restarts.
  * Manages 3 fixed moon slots (index 0, 1, 2) — each can hold one sponsor.
  */
 
@@ -8,17 +9,33 @@ const fs = require("fs");
 const fsp = require("fs").promises;
 const path = require("path");
 
+/** Fields to strip when a Firestore document exceeds the 1MB size limit */
+const IMAGE_FIELDS = ["patternImage", "logoImage", "pendingImage"];
+
 class MoonSponsorStore {
-  constructor(filePath) {
+  /**
+   * @param {string} filePath - Path to moonSponsors.json
+   * @param {{ getFirestore?: Function }} [opts]
+   */
+  constructor(filePath, opts = {}) {
     this.filePath = filePath;
     this._cache = null;
+    this._getFirestore = opts.getFirestore || null;
+    this._firestoreCollection = "moon_sponsor_store";
   }
 
   /**
-   * Load moon sponsors from disk into memory cache.
-   * Auto-creates directory and file if missing.
+   * Load moon sponsors from disk, then merge with Firestore data.
    */
-  load() {
+  async load() {
+    this._loadFromDisk();
+    await this._mergeFromFirestore();
+  }
+
+  /**
+   * Read moonSponsors.json into memory cache.
+   */
+  _loadFromDisk() {
     const dir = path.dirname(this.filePath);
     if (!fs.existsSync(dir)) {
       fs.mkdirSync(dir, { recursive: true });
@@ -41,6 +58,93 @@ class MoonSponsorStore {
     } catch (e) {
       console.error("[MoonSponsorStore] Failed to read moon sponsors file:", e.message);
       this._cache = { version: 1, moonSponsors: [null, null, null], lastModified: "" };
+    }
+  }
+
+  /**
+   * Merge Firestore data into in-memory cache.
+   * Firestore slots take precedence. Seeds Firestore on first run.
+   */
+  async _mergeFromFirestore() {
+    if (!this._getFirestore) return;
+
+    try {
+      const db = this._getFirestore();
+      const snap = await db.collection(this._firestoreCollection).get();
+
+      if (snap.empty) {
+        // First run: seed Firestore from JSON data
+        const hasData = this._cache.moonSponsors.some(Boolean);
+        if (hasData) {
+          console.log("[MoonSponsorStore] Firestore empty — seeding from disk");
+          await this._seedFirestore();
+        }
+        return;
+      }
+
+      // Override slots from Firestore
+      let loaded = 0;
+      for (const doc of snap.docs) {
+        const idx = parseInt(doc.id, 10);
+        if (idx >= 0 && idx < 3) {
+          const data = doc.data();
+          this._cache.moonSponsors[idx] = data.empty ? null : data;
+          if (!data.empty) loaded++;
+        }
+      }
+
+      await this._saveToDisk();
+      console.log(`[MoonSponsorStore] Merged ${loaded} moon sponsors from Firestore`);
+    } catch (err) {
+      console.warn("[MoonSponsorStore] Firestore merge failed, using disk data:", err.message);
+    }
+  }
+
+  /**
+   * Seed Firestore with current slot data.
+   */
+  async _seedFirestore() {
+    if (!this._getFirestore) return;
+
+    try {
+      const db = this._getFirestore();
+      const batch = db.batch();
+      for (let i = 0; i < 3; i++) {
+        const ref = db.collection(this._firestoreCollection).doc(String(i));
+        const data = this._cache.moonSponsors[i];
+        batch.set(ref, data || { empty: true });
+      }
+      await batch.commit();
+      console.log("[MoonSponsorStore] Seeded 3 slots to Firestore");
+    } catch (err) {
+      console.warn("[MoonSponsorStore] Firestore seed failed:", err.message);
+    }
+  }
+
+  /**
+   * Sync a single slot to Firestore.
+   */
+  async _syncSlotToFirestore(moonIndex, data) {
+    if (!this._getFirestore) return;
+
+    try {
+      const db = this._getFirestore();
+      await db.collection(this._firestoreCollection).doc(String(moonIndex)).set(data || { empty: true });
+    } catch (err) {
+      // Retry without images if too large
+      if (data && !data.empty && (err.code === 3 || (err.message && err.message.includes("exceeds the maximum")))) {
+        try {
+          const stripped = { ...data };
+          for (const f of IMAGE_FIELDS) delete stripped[f];
+          const db = this._getFirestore();
+          await db.collection(this._firestoreCollection).doc(String(moonIndex)).set(stripped);
+          console.warn(`[MoonSponsorStore] Slot ${moonIndex} too large — saved without images`);
+        } catch (retryErr) {
+          console.warn(`[MoonSponsorStore] Firestore sync failed for slot ${moonIndex}:`, retryErr.message);
+        }
+      } else {
+        console.warn(`[MoonSponsorStore] Firestore sync failed for slot ${moonIndex}:`, err.message);
+      }
     }
   }
 
@@ -98,6 +202,7 @@ class MoonSponsorStore {
 
     this._cache.moonSponsors[moonIndex] = sponsor;
     await this._saveToDisk();
+    this._syncSlotToFirestore(moonIndex, sponsor);
     return { sponsor };
   }
 
@@ -111,6 +216,7 @@ class MoonSponsorStore {
     if (this._cache.moonSponsors[moonIndex] === null) return false;
     this._cache.moonSponsors[moonIndex] = null;
     await this._saveToDisk();
+    this._syncSlotToFirestore(moonIndex, null);
     return true;
   }
 

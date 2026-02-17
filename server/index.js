@@ -43,8 +43,7 @@ const server = http.createServer(app);
 // SPONSOR STORE + API
 // ========================
 
-const sponsorStore = new SponsorStore(path.join(__dirname, "..", "data", "sponsors.json"));
-sponsorStore.load();
+const sponsorStore = new SponsorStore(path.join(__dirname, "..", "data", "sponsors.json"), { getFirestore });
 
 // Extract base64 sponsor images to static PNG files (avoids sending MB of base64 over WebSocket)
 const gameDir = path.join(__dirname, "..");
@@ -111,12 +110,10 @@ async function reconcilePlayerTerritories() {
 }
 
 // Moon sponsor store
-const moonSponsorStore = new MoonSponsorStore(path.join(__dirname, "..", "data", "moonSponsors.json"));
-moonSponsorStore.load();
+const moonSponsorStore = new MoonSponsorStore(path.join(__dirname, "..", "data", "moonSponsors.json"), { getFirestore });
 
 // Billboard sponsor store
-const billboardSponsorStore = new BillboardSponsorStore(path.join(__dirname, "..", "data", "billboardSponsors.json"));
-billboardSponsorStore.load();
+const billboardSponsorStore = new BillboardSponsorStore(path.join(__dirname, "..", "data", "billboardSponsors.json"), { getFirestore });
 
 // Socket.IO with CORS for development (allows connecting from file:// or other origins)
 const io = new Server(server, {
@@ -155,6 +152,11 @@ app.get("/", (req, res) => {
 let mainRoom;
 
 (async () => {
+  // Load sponsor stores (reads JSON from disk, then merges Firestore data)
+  await sponsorStore.load();
+  await moonSponsorStore.load();
+  await billboardSponsorStore.load();
+
   // Reconcile Firestore territories → SponsorStore (self-healing sync)
   await reconcilePlayerTerritories();
 
@@ -229,6 +231,7 @@ io.use(async (socket, next) => {
   }
 
   socket.uid = decoded.uid;
+  socket.email = decoded.email || null;
   socket.isGuest = decoded.firebase?.sign_in_provider === "anonymous";
 
   // Load active profile from Firestore
@@ -452,11 +455,11 @@ io.on("connection", (socket) => {
     try {
       const db = getFirestore();
 
-      // Look up account email for admin display
-      let ownerEmail = null;
+      // Look up account email for admin display (token email as fallback)
+      let ownerEmail = socket.email || null;
       try {
         const accountDoc = await db.collection("accounts").doc(socket.uid).get();
-        if (accountDoc.exists) ownerEmail = accountDoc.data().email || null;
+        if (accountDoc.exists) ownerEmail = accountDoc.data().email || ownerEmail;
       } catch (_) {}
       const displayName = ownerEmail || playerName || "Player";
 
@@ -582,11 +585,11 @@ io.on("connection", (socket) => {
       } else {
         // Territory not yet in SponsorStore — create it from Firestore data
         const firestoreData = doc.data();
-        // Look up account email for admin display
-        let ownerEmail = null;
+        // Look up account email for admin display (token email as fallback)
+        let ownerEmail = socket.email || null;
         try {
           const accDoc = await db.collection("accounts").doc(socket.uid).get();
-          if (accDoc.exists) ownerEmail = accDoc.data().email || null;
+          if (accDoc.exists) ownerEmail = accDoc.data().email || ownerEmail;
         } catch (_) {}
         const createResult = await sponsorStore.create({
           _territoryId: territoryId,
