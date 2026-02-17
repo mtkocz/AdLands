@@ -60,14 +60,25 @@ async function reconcilePlayerTerritories() {
     const snap = await db.collection("territories").where("active", "==", true).get();
     if (snap.empty) return;
 
+    // Batch-lookup emails for all owner UIDs
+    const ownerUids = [...new Set(snap.docs.map(d => d.data().ownerUid).filter(Boolean))];
+    const emailMap = new Map();
+    for (const uid of ownerUids) {
+      try {
+        const acc = await db.collection("accounts").doc(uid).get();
+        if (acc.exists) emailMap.set(uid, acc.data().email || null);
+      } catch (_) {}
+    }
+
     let created = 0;
     for (const doc of snap.docs) {
       const data = doc.data();
       const existing = sponsorStore.getAll().find(s => s._territoryId === doc.id);
       if (!existing) {
+        const displayName = emailMap.get(data.ownerUid) || data.playerName || "Player";
         const result = await sponsorStore.create({
           _territoryId: doc.id,
-          name: data.playerName || "Player",
+          name: displayName,
           cluster: { tileIndices: data.tileIndices || [] },
           patternImage: data.patternImage || null,
           pendingImage: data.pendingImage || null,
@@ -413,8 +424,18 @@ io.on("connection", (socket) => {
 
     try {
       const db = getFirestore();
+
+      // Look up account email for admin display
+      let ownerEmail = null;
+      try {
+        const accountDoc = await db.collection("accounts").doc(socket.uid).get();
+        if (accountDoc.exists) ownerEmail = accountDoc.data().email || null;
+      } catch (_) {}
+      const displayName = ownerEmail || playerName || "Player";
+
       await db.collection("territories").doc(territoryId).set({
         ownerUid: socket.uid,
+        ownerEmail,
         tileIndices,
         tierName: tierName || "outpost",
         patternImage: patternImage || null,
@@ -430,7 +451,7 @@ io.on("connection", (socket) => {
       // Dedup guard in SponsorStore.create() prevents duplicates if client POST also arrives
       const createResult = await sponsorStore.create({
         _territoryId: territoryId,
-        name: playerName || "Player",
+        name: displayName,
         cluster: { tileIndices },
         patternImage: patternImage || null,
         patternAdjustment: patternAdjustment || {},
@@ -515,9 +536,15 @@ io.on("connection", (socket) => {
       } else {
         // Territory not yet in SponsorStore — create it from Firestore data
         const firestoreData = doc.data();
+        // Look up account email for admin display
+        let ownerEmail = null;
+        try {
+          const accDoc = await db.collection("accounts").doc(socket.uid).get();
+          if (accDoc.exists) ownerEmail = accDoc.data().email || null;
+        } catch (_) {}
         const createResult = await sponsorStore.create({
           _territoryId: territoryId,
-          name: firestoreData.playerName || "Player",
+          name: ownerEmail || firestoreData.playerName || "Player",
           cluster: { tileIndices: firestoreData.tileIndices || [] },
           patternImage: firestoreData.patternImage || null,
           pendingImage,
