@@ -593,6 +593,7 @@
 
   // Crypto Visuals (connects to cryptoSystem initialized above, with planet for occlusion)
   const cryptoVisuals = new CryptoVisuals(camera, cryptoSystem, planet);
+  window.cryptoVisuals = cryptoVisuals; // Global reference for spend floaters
   window.cryptoSystem = cryptoSystem; // Global reference for debugging
 
   // Register player for tread tracks

@@ -145,12 +145,31 @@ function createSponsorRoutes(sponsorStore, gameRoom, { imageUrls, gameDir } = {}
   }
 
   // GET /api/sponsors — list all sponsors (lite by default, ?full=1 for base64)
-  router.get("/", (req, res) => {
+  router.get("/", async (req, res) => {
     const full = req.query.full === "1";
     const sponsors = sponsorStore.getAll();
+    const out = full ? sponsors : sponsors.map(toLite);
+
+    // Enrich player territories with ownerEmail from Firestore accounts
+    const playerSponsors = out.filter(s => s.isPlayerTerritory && s.ownerUid && !s.ownerEmail);
+    if (playerSponsors.length > 0) {
+      const uids = [...new Set(playerSponsors.map(s => s.ownerUid))];
+      const emailMap = new Map();
+      for (const uid of uids) {
+        try {
+          const acc = await getFirestore().collection("accounts").doc(uid).get();
+          if (acc.exists && acc.data().email) emailMap.set(uid, acc.data().email);
+        } catch (_) {}
+      }
+      for (const s of playerSponsors) {
+        const email = emailMap.get(s.ownerUid);
+        if (email) s.ownerEmail = email;
+      }
+    }
+
     const data = {
       version: 1,
-      sponsors: full ? sponsors : sponsors.map(toLite),
+      sponsors: out,
       lastModified: sponsorStore._cache?.lastModified || "",
     };
     res.json(data);

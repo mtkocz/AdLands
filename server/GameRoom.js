@@ -89,9 +89,8 @@ class GameRoom {
     this.captureProgressCounter = 0;
     this.captureProgressRate = Math.round(this.tickRate / 4);
 
-    // Throttle holding crypto awards to once per 60 seconds
-    this.holdingCryptoCounter = 0;
-    this.holdingCryptoInterval = this.tickRate * 60; // 1200 ticks = 60s
+    // Award holding crypto at the top of each wall-clock minute
+    this._lastHoldingMinute = Math.floor(Date.now() / 60000);
 
     // Throttle rank recomputation to once per second (or when dirty flag is set)
     this.rankRecomputeCounter = 0;
@@ -1689,10 +1688,10 @@ class GameRoom {
       this._broadcastFactionRosters();
     }
 
-    // 7. Award holding crypto (every 60 seconds)
-    this.holdingCryptoCounter++;
-    if (this.holdingCryptoCounter >= this.holdingCryptoInterval) {
-      this.holdingCryptoCounter = 0;
+    // 7. Award holding crypto (at the top of each wall-clock minute)
+    const currentMinute = Math.floor(Date.now() / 60000);
+    if (currentMinute !== this._lastHoldingMinute) {
+      this._lastHoldingMinute = currentMinute;
       this._awardHoldingCrypto();
     }
 
