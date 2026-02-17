@@ -218,17 +218,31 @@ class BodyguardManager {
       bg.theta -= (PLANET_ROTATION_SPEED * dt60) / 60;
       if (bg.theta < 0) bg.theta += Math.PI * 2;
 
-      // 5. Terrain collision
+      // 5. Terrain collision with wall sliding
       if (this._checkTerrainCollision(bg, planetRotation)) {
-        bg.theta = prevTheta - (PLANET_ROTATION_SPEED * dt) / 1;
-        // Re-apply planet counter-rotation to prevTheta
-        bg.theta = prevTheta;
-        // Need to re-apply the planet rotation counter that happened since prev
-        bg.theta -= (PLANET_ROTATION_SPEED * dt60) / 60;
-        if (bg.theta < 0) bg.theta += Math.PI * 2;
-        if (bg.theta >= Math.PI * 2) bg.theta -= Math.PI * 2;
+        const newTheta = bg.theta;
+        const newPhi = bg.phi;
+        let thetaRev = prevTheta - (PLANET_ROTATION_SPEED * dt60) / 60;
+        if (thetaRev < 0) thetaRev += Math.PI * 2;
+        if (thetaRev >= Math.PI * 2) thetaRev -= Math.PI * 2;
+
+        // Try theta-only slide (keep phi from before)
         bg.phi = prevPhi;
-        bg.speed = 0;
+        if (!this._checkTerrainCollision(bg, planetRotation)) {
+          bg.speed *= 0.85;
+        } else {
+          // Try phi-only slide (theta reverted, phi moved)
+          bg.theta = thetaRev;
+          bg.phi = newPhi;
+          if (!this._checkTerrainCollision(bg, planetRotation)) {
+            bg.speed *= 0.85;
+          } else {
+            // Both axes blocked — full revert
+            bg.theta = thetaRev;
+            bg.phi = prevPhi;
+            bg.speed *= 0.3;
+          }
+        }
       }
     }
   }

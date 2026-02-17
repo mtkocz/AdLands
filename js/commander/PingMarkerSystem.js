@@ -302,7 +302,7 @@ class PingMarkerSystem {
   _createArrowElement(isCommander, isOwn) {
     // Wrapper — positioned on screen, holds both arrow and diamond children
     const wrapper = document.createElement("div");
-    wrapper.className = "ping-indicator state-offscreen";
+    wrapper.className = "ping-indicator";
     wrapper.setAttribute("data-commander", isCommander ? "true" : "false");
     wrapper.setAttribute("data-own", isOwn ? "true" : "false");
     wrapper.style.display = "none";
@@ -316,6 +316,10 @@ class PingMarkerSystem {
     const diamondChild = document.createElement("div");
     diamondChild.className = "ping-indicator-diamond";
     wrapper.appendChild(diamondChild);
+
+    // Store references for JS-driven opacity
+    wrapper._arrowChild = arrowChild;
+    wrapper._diamondChild = diamondChild;
 
     this.arrowsContainer.appendChild(wrapper);
 
@@ -469,14 +473,6 @@ class PingMarkerSystem {
   }
 
   _setIndicatorState(ping, newState) {
-    const el = ping.arrowElement;
-    el.classList.remove(
-      "state-offscreen",
-      "state-transitioning-in",
-      "state-onscreen",
-      "state-transitioning-out",
-    );
-    el.classList.add("state-" + newState);
     ping.indicatorState = newState;
   }
 
@@ -487,6 +483,8 @@ class PingMarkerSystem {
   _updateIndicator(ping, pingWorldPos, isOccluded) {
     const el = ping.arrowElement;
     const label = el._distanceLabel;
+    const arrowEl = el._arrowChild;
+    const diamondEl = el._diamondChild;
 
     // Project ping position to screen
     const screenPos = this._projectToScreen(pingWorldPos);
@@ -523,6 +521,9 @@ class PingMarkerSystem {
       if (ping.indicatorState !== "offscreen") {
         this._setIndicatorState(ping, "offscreen");
       }
+      // Reset child opacities for orbital mode
+      arrowEl.style.opacity = "1";
+      diamondEl.style.opacity = "0";
       if (isOnScreen) {
         el.style.display = "none";
         if (label) label.style.display = "none";
@@ -550,13 +551,17 @@ class PingMarkerSystem {
       return;
     }
 
-    // Surface view: full morph state machine with JS-driven lerp
+    // Surface view: full morph state machine — all JS-driven
     const now = Date.now();
     const elapsed = now - ping.transitionStartTime;
     const pastGrace = elapsed > PING_CONFIG.morphGracePeriod;
 
     switch (ping.indicatorState) {
       case "offscreen":
+        // Arrow visible, diamond hidden
+        arrowEl.style.opacity = "1";
+        diamondEl.style.opacity = "0";
+
         if (isOnScreen) {
           // Record start position for lerp, then transition
           ping.transitionStartX = arrowX;
@@ -564,7 +569,6 @@ class PingMarkerSystem {
           ping.transitionStartRot = rotation;
           ping.transitionStartTime = now;
           this._setIndicatorState(ping, "transitioning-in");
-          // Immediately render at start position (first lerp frame)
           el.style.display = "block";
           el.style.left = arrowX + "px";
           el.style.top = arrowY + "px";
@@ -597,10 +601,15 @@ class PingMarkerSystem {
       case "transitioning-in": {
         const t = Math.min(elapsed / PING_CONFIG.morphDuration, 1);
         const e = this._easeInOutCubic(t);
-        // Lerp from start (ring) to target (ping screen pos)
+
+        // Lerp position from start (ring) to target (ping screen pos)
         const curX = ping.transitionStartX + (screenPos.x - ping.transitionStartX) * e;
         const curY = ping.transitionStartY + (screenPos.y - ping.transitionStartY) * e;
         const curRot = ping.transitionStartRot + (0 - ping.transitionStartRot) * e;
+
+        // Lerp opacity: arrow fades out, diamond fades in
+        arrowEl.style.opacity = String(1 - e);
+        diamondEl.style.opacity = String(e);
 
         el.style.display = "block";
         el.style.left = curX + "px";
@@ -622,6 +631,10 @@ class PingMarkerSystem {
       }
 
       case "onscreen":
+        // Diamond visible, arrow hidden
+        arrowEl.style.opacity = "0";
+        diamondEl.style.opacity = "1";
+
         if (!isOnScreen) {
           // Record current screen position as start for lerp out
           ping.transitionStartX = screenPos.x;
@@ -629,7 +642,6 @@ class PingMarkerSystem {
           ping.transitionStartRot = 0;
           ping.transitionStartTime = now;
           this._setIndicatorState(ping, "transitioning-out");
-          // Render at current position (first lerp frame)
           el.style.left = screenPos.x + "px";
           el.style.top = screenPos.y + "px";
           el.style.transform = "translate(-50%, -50%) rotate(0deg)";
@@ -647,10 +659,15 @@ class PingMarkerSystem {
       case "transitioning-out": {
         const t = Math.min(elapsed / PING_CONFIG.morphDuration, 1);
         const e = this._easeInOutCubic(t);
-        // Lerp from start (ping screen pos) to target (ring)
+
+        // Lerp position from start (ping screen pos) to target (ring)
         const curX = ping.transitionStartX + (arrowX - ping.transitionStartX) * e;
         const curY = ping.transitionStartY + (arrowY - ping.transitionStartY) * e;
         const curRot = ping.transitionStartRot + (rotation - ping.transitionStartRot) * e;
+
+        // Lerp opacity: diamond fades out, arrow fades in
+        arrowEl.style.opacity = String(e);
+        diamondEl.style.opacity = String(1 - e);
 
         el.style.display = "block";
         el.style.left = curX + "px";

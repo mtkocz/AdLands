@@ -1605,60 +1605,28 @@ class GameRoom {
       // Move on sphere
       moveOnSphere(player, PLANET_ROTATION_SPEED, dt);
 
-      // Terrain collision: probe center + 4 body corners
-      // Tank body: ~5.5 long × ~3 wide → half-length 2.75, half-width 1.5
-      // Sphere surface directions from heading h:
-      //   Forward: dPhi = -cos(h), dTheta = -sin(h)/sinPhi
-      //   Right:   dPhi =  sin(h), dTheta = -cos(h)/sinPhi
-      const sinPhi = Math.sin(player.phi);
-      const safeSinPhi = Math.abs(sinPhi) < 0.01 ? 0.01 * Math.sign(sinPhi || 1) : sinPhi;
-      const dir = player.speed > 0 ? 1 : player.speed < 0 ? -1 : 0;
-      const cosH = Math.cos(player.heading);
-      const sinH = Math.sin(player.heading);
-      const R = 480;
+      // Terrain collision with wall sliding
+      if (this._isTerrainBlockedAt(player.theta, player.phi, player.heading, player.speed)) {
+        const rotDelta = PLANET_ROTATION_SPEED * dt;
+        let thetaRev = prevTheta - rotDelta;
+        if (thetaRev < 0) thetaRev += Math.PI * 2;
+        if (thetaRev >= Math.PI * 2) thetaRev -= Math.PI * 2;
 
-      // Forward/right unit vectors in (dPhi, dTheta) space
-      const fwdPhi = -cosH;
-      const fwdTh  = -sinH / safeSinPhi;
-      const rgtPhi =  sinH;
-      const rgtTh  = -cosH / safeSinPhi;
-
-      // Probe offsets: [forward_units, right_units]
-      // Center, front-left, front-right, rear-left, rear-right
-      const HALF_LEN = 2.75;
-      const HALF_WID = 1.5;
-      const probes = [
-        [0, 0],                          // center
-        [HALF_LEN * dir, -HALF_WID],     // front-left
-        [HALF_LEN * dir,  HALF_WID],     // front-right
-        [-HALF_LEN * dir, -HALF_WID],    // rear-left
-        [-HALF_LEN * dir,  HALF_WID],    // rear-right
-      ];
-
-      let blocked = false;
-      for (const [fwd, rgt] of probes) {
-        const pPhi = player.phi + (fwdPhi * fwd + rgtPhi * rgt) / R;
-        const pTh  = player.theta + (fwdTh * fwd + rgtTh * rgt) / R;
-
-        // Precise polar hole check using actual hex boundary polygon
-        if (this.worldGen.isInsidePolarHole(pTh + this.planetRotation, pPhi)) {
-          blocked = true;
-          break;
+        // Wall sliding: try each axis independently before full revert
+        if (!this._isTerrainBlockedAt(player.theta, prevPhi, player.heading, player.speed)) {
+          // Slide along latitude (theta moved, phi reverted)
+          player.phi = prevPhi;
+          player.speed *= 0.85;
+        } else if (!this._isTerrainBlockedAt(thetaRev, player.phi, player.heading, player.speed)) {
+          // Slide along longitude (theta reverted, phi moved)
+          player.theta = thetaRev;
+          player.speed *= 0.85;
+        } else {
+          // Both axes blocked — full revert with speed decay
+          player.theta = thetaRev;
+          player.phi = prevPhi;
+          player.speed *= 0.3;
         }
-        const result = this.worldGen.getNearestTile(pTh + this.planetRotation, pPhi);
-        if (result && this.terrain.getElevationAtTileIndex(result.tileIndex) > 0) {
-          blocked = true;
-          break;
-        }
-      }
-
-      if (blocked) {
-        // Revert movement but apply planet counter-rotation to stay on surface
-        player.theta = prevTheta - PLANET_ROTATION_SPEED * dt;
-        if (player.theta < 0) player.theta += Math.PI * 2;
-        if (player.theta >= Math.PI * 2) player.theta -= Math.PI * 2;
-        player.phi = prevPhi;
-        player.speed = 0;
       }
     }
 
@@ -1717,6 +1685,36 @@ class GameRoom {
     }
 
     this.lastTickTime = now;
+  }
+
+  _isTerrainBlockedAt(theta, phi, heading, speed) {
+    const sinPhi = Math.sin(phi);
+    const safeSinPhi = Math.abs(sinPhi) < 0.01 ? 0.01 * Math.sign(sinPhi || 1) : sinPhi;
+    const dir = speed > 0 ? 1 : speed < 0 ? -1 : 0;
+    const cosH = Math.cos(heading);
+    const sinH = Math.sin(heading);
+    const R = 480;
+    const fwdPhi = -cosH;
+    const fwdTh  = -sinH / safeSinPhi;
+    const rgtPhi =  sinH;
+    const rgtTh  = -cosH / safeSinPhi;
+    const HALF_LEN = 2.75;
+    const HALF_WID = 1.5;
+    const probes = [
+      [0, 0],
+      [HALF_LEN * dir, -HALF_WID],
+      [HALF_LEN * dir,  HALF_WID],
+      [-HALF_LEN * dir, -HALF_WID],
+      [-HALF_LEN * dir,  HALF_WID],
+    ];
+    for (const [fwd, rgt] of probes) {
+      const pPhi = phi + (fwdPhi * fwd + rgtPhi * rgt) / R;
+      const pTh  = theta + (fwdTh * fwd + rgtTh * rgt) / R;
+      if (this.worldGen.isInsidePolarHole(pTh + this.planetRotation, pPhi)) return true;
+      const result = this.worldGen.getNearestTile(pTh + this.planetRotation, pPhi);
+      if (result && this.terrain.getElevationAtTileIndex(result.tileIndex) > 0) return true;
+    }
+    return false;
   }
 
   _updateProjectiles(dt) {

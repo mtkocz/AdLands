@@ -275,6 +275,21 @@ class NetworkManager {
       if (this.onTerritoryImageSubmitted) this.onTerritoryImageSubmitted(data);
     });
 
+    // Admin approved a full territory submission (name, tagline, URL, image)
+    this.socket.on("territory-submission-approved", (data) => {
+      if (this.onTerritorySubmissionApproved) this.onTerritorySubmissionApproved(data);
+    });
+
+    // Personal review result for full submission (approve/reject)
+    this.socket.on("territory-review-result", (data) => {
+      if (this.onTerritoryReviewResult) this.onTerritoryReviewResult(data);
+    });
+
+    // Server acknowledged territory info submission as pending
+    this.socket.on("territory-info-submitted", (data) => {
+      if (this.onTerritoryInfoSubmitted) this.onTerritoryInfoSubmitted(data);
+    });
+
     // Server-authoritative commander change (immediate)
     this.socket.on("commander-update", (data) => {
       if (this.onCommanderUpdate) this.onCommanderUpdate(data);

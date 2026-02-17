@@ -1077,7 +1077,7 @@ class Dashboard {
         patternAdjustment: territory.patternAdjustment,
       });
 
-      // Territory info text inputs (title, tagline, URL)
+      // Territory info text inputs (title, tagline, URL) — submit as pending for admin review
       const infoInput = e.target.closest(".territory-info-edit");
       if (infoInput) {
         const tid = infoInput.dataset.territoryId;
@@ -1086,33 +1086,30 @@ class Dashboard {
         const field = infoInput.dataset.field; // "title", "tagline", or "websiteUrl"
         let val = (infoInput.value || "").trim();
         if (field === "websiteUrl") val = this._sanitizeTerritoryUrl(val);
-        t[field] = val;
 
-        // Update sponsor data in Planet for intel popup
-        const sponsorEntry = this._territoryPlanet?.sponsorClusters?.get(tid);
-        if (sponsorEntry?.sponsor) {
-          if (field === "title") sponsorEntry.sponsor.name = val || this.playerName || "Player";
-          else if (field === "tagline") sponsorEntry.sponsor.tagline = val;
-          else if (field === "websiteUrl") sponsorEntry.sponsor.websiteUrl = val;
-        }
+        // Store as pending (active fields unchanged until admin approves)
+        const pendingField = "pending" + field.charAt(0).toUpperCase() + field.slice(1);
+        t[pendingField] = val;
+        t.submissionStatus = "pending";
 
-        // Persist to Firestore + SponsorStorage
+        // Persist pending fields to Firestore + SponsorStorage
         const changes = {};
-        changes[field] = val;
-        if (field === "title") changes.name = val || this.playerName || "Player";
+        changes[pendingField] = val;
+        changes.submissionStatus = "pending";
         this._updatePlayerTerritory(tid, changes);
 
-        // Broadcast to other players
+        // Submit to server as pending (NOT broadcast to other players)
         if (window._mp?.net?.socket) {
           window._mp.net.socket.emit("update-territory-info", {
             territoryId: tid,
-            title: t.title || "",
-            tagline: t.tagline || "",
-            websiteUrl: t.websiteUrl || "",
+            title: t.pendingTitle ?? t.title ?? "",
+            tagline: t.pendingTagline ?? t.tagline ?? "",
+            websiteUrl: t.pendingWebsiteUrl ?? t.websiteUrl ?? "",
           });
         }
 
         this._savePlayerTerritories();
+        this._renderTerritoryList();
       }
     });
 
@@ -2622,10 +2619,10 @@ class Dashboard {
     const playerName = this.playerName || "Player";
 
     // Read from rental popup fields
-    const title = (document.getElementById("rental-name")?.value || "").trim() || playerName;
-    const tagline = (document.getElementById("rental-tagline")?.value || "").trim();
-    const websiteUrl = this._sanitizeTerritoryUrl((document.getElementById("rental-url")?.value || "").trim());
-    const uploadedImage = this._rentalUploadedImage || null;
+    const pendingTitle = (document.getElementById("rental-name")?.value || "").trim();
+    const pendingTagline = (document.getElementById("rental-tagline")?.value || "").trim();
+    const pendingWebsiteUrl = this._sanitizeTerritoryUrl((document.getElementById("rental-url")?.value || "").trim());
+    const pendingImage = this._rentalUploadedImage || null;
 
     // Close the popup
     this._hideRentalPopup();
@@ -2633,20 +2630,19 @@ class Dashboard {
     // Generate unique territory ID
     const territoryId = `territory_${Date.now()}_${Math.random().toString(36).substr(2, 6)}`;
 
-    // Use uploaded image or generate placeholder texture
-    const patternImage = uploadedImage || this._generateTerritoryTexture(title);
-    const imageStatus = uploadedImage ? "pending" : "placeholder";
+    // Placeholder texture always used on planet until admin approves
+    const placeholderImage = this._generateTerritoryTexture(playerName);
 
-    // Create virtual sponsor object (matches applySponsorCluster interface)
+    // Create virtual sponsor object with placeholder (matches applySponsorCluster interface)
     const virtualSponsor = {
       id: territoryId,
-      name: title,
-      tagline: tagline,
-      websiteUrl: websiteUrl,
+      name: playerName,
+      tagline: "",
+      websiteUrl: "",
       cluster: {
         tileIndices: preview.tileIndices,
       },
-      patternImage: patternImage,
+      patternImage: placeholderImage,
       patternAdjustment: {
         scale: 1.0,
         offsetX: 0,
@@ -2663,28 +2659,35 @@ class Dashboard {
     // Clear highlight before applying textures
     planet.clearHighlightedTiles();
 
-    // Apply through sponsor pipeline
+    // Apply placeholder through sponsor pipeline
     planet.applySponsorCluster(virtualSponsor);
     planet.deElevateSponsorTiles();
 
-    // Track territory
+    // Determine submission status
+    const hasPendingContent = pendingTitle || pendingTagline || pendingWebsiteUrl || pendingImage;
+    const submissionStatus = hasPendingContent ? "pending" : "placeholder";
+
+    // Track territory locally with pending fields
     const tierName = this._selectedTerritoryTier;
     const territoryRecord = {
       id: territoryId,
       tierName: tierName,
       tileIndices: preview.tileIndices,
       timestamp: Date.now(),
-      patternImage: patternImage,
+      patternImage: placeholderImage,
       patternAdjustment: virtualSponsor.patternAdjustment,
-      title: title,
-      tagline: tagline,
-      websiteUrl: websiteUrl,
-      imageStatus: imageStatus,
+      title: "",
+      tagline: "",
+      websiteUrl: "",
+      pendingTitle: pendingTitle,
+      pendingTagline: pendingTagline,
+      pendingWebsiteUrl: pendingWebsiteUrl,
+      pendingImage: pendingImage,
+      submissionStatus: submissionStatus,
     };
     this._playerTerritories.push(territoryRecord);
 
     // Save to SponsorStorage (and localStorage fallback) + Firestore
-    // Await ensures SponsorStore entry exists before user can upload images
     await this._savePlayerTerritory(territoryRecord);
 
     // Emit server event for multiplayer territory broadcast
@@ -2693,22 +2696,13 @@ class Dashboard {
         territoryId: territoryId,
         tileIndices: preview.tileIndices,
         tierName: tierName,
-        patternImage: patternImage,
+        patternImage: placeholderImage,
         patternAdjustment: virtualSponsor.patternAdjustment,
         playerName: playerName,
-        title: title,
-        tagline: tagline,
-        websiteUrl: websiteUrl,
-        imageStatus: imageStatus,
-      });
-    }
-
-    // If user uploaded an image, also submit it for admin review
-    if (uploadedImage && window._mp?.net?.socket) {
-      window._mp.net.socket.emit("submit-territory-image", {
-        territoryId,
-        pendingImage: uploadedImage,
-        patternAdjustment: virtualSponsor.patternAdjustment,
+        title: pendingTitle,
+        tagline: pendingTagline,
+        websiteUrl: pendingWebsiteUrl,
+        pendingImage: pendingImage,
       });
     }
 
@@ -3060,17 +3054,19 @@ class Dashboard {
         const label = tierLabels[t.tierName] || "Territory";
         const age = this._formatTimeAgo(t.timestamp);
         const adj = t.patternAdjustment || { scale: 1.0, offsetX: 0, offsetY: 0 };
-        const escTitle = (t.title || "").replace(/"/g, "&quot;");
-        const escTagline = (t.tagline || "").replace(/"/g, "&quot;");
-        const escUrl = (t.websiteUrl || "").replace(/"/g, "&quot;");
+        const status = t.submissionStatus || t.imageStatus || "placeholder";
+        // Show pending values in edit fields (fall back to approved values)
+        const escTitle = (t.pendingTitle ?? t.title ?? "").replace(/"/g, "&quot;");
+        const escTagline = (t.pendingTagline ?? t.tagline ?? "").replace(/"/g, "&quot;");
+        const escUrl = (t.pendingWebsiteUrl ?? t.websiteUrl ?? "").replace(/"/g, "&quot;");
         return `
           <div class="territory-owned-item" data-territory-id="${t.id}">
               <div class="territory-item-header">
                   <span class="territory-item-name">${label}</span>
                   <span class="territory-item-detail">${t.tileIndices.length} hex${t.tileIndices.length !== 1 ? "es" : ""} · ${age}</span>
-                  ${t.imageStatus === "pending" ? '<span class="territory-status-badge pending">Pending Review</span>' : ""}
-                  ${t.imageStatus === "rejected" ? '<span class="territory-status-badge rejected">Rejected — Upload New</span>' : ""}
-                  ${t.imageStatus === "approved" ? '<span class="territory-status-badge approved">Approved</span>' : ""}
+                  ${status === "pending" ? '<span class="territory-status-badge pending">Pending Review</span>' : ""}
+                  ${status === "rejected" ? '<span class="territory-status-badge rejected">Rejected — Resubmit</span>' : ""}
+                  ${status === "approved" ? '<span class="territory-status-badge approved">Approved</span>' : ""}
               </div>
               <div class="territory-info-edit-group">
                   <input type="text" class="territory-info-edit" data-territory-id="${t.id}" data-field="title" value="${escTitle}" placeholder="Title" maxlength="40">
@@ -3149,8 +3145,11 @@ class Dashboard {
           title: territory.title || "",
           tagline: territory.tagline || "",
           websiteUrl: territory.websiteUrl || "",
-          imageStatus: territory.imageStatus || "placeholder",
-          pendingImage: territory.imageStatus === "pending" ? territory.patternImage : null,
+          pendingTitle: territory.pendingTitle || null,
+          pendingTagline: territory.pendingTagline || null,
+          pendingWebsiteUrl: territory.pendingWebsiteUrl || null,
+          pendingImage: territory.pendingImage || null,
+          submissionStatus: territory.submissionStatus || "placeholder",
           purchasedAt: firebase.firestore.FieldValue.serverTimestamp(),
           active: true,
         });
@@ -3160,7 +3159,6 @@ class Dashboard {
     }
 
     // Save individual territory to SponsorStorage (appears in admin portal)
-    // Ensure SponsorStorage init has completed before checking _cache
     if (window._sponsorStorageReady) {
       await window._sponsorStorageReady;
     }
@@ -3168,7 +3166,7 @@ class Dashboard {
       try {
         const sponsor = {
           _territoryId: territory.id,
-          name: territory.title || window.authManager?.email || this.playerName || "Player",
+          name: territory.title || this.playerName || "Player",
           tagline: territory.tagline || "",
           websiteUrl: territory.websiteUrl || "",
           cluster: { tileIndices: territory.tileIndices },
@@ -3178,15 +3176,17 @@ class Dashboard {
           playerFaction: this.playerFaction,
           tierName: territory.tierName,
           createdAt: new Date().toISOString(),
-          imageStatus: territory.imageStatus || "placeholder",
+          submissionStatus: territory.submissionStatus || "placeholder",
+          pendingTitle: territory.pendingTitle || null,
+          pendingTagline: territory.pendingTagline || null,
+          pendingWebsiteUrl: territory.pendingWebsiteUrl || null,
+          pendingImage: territory.pendingImage || null,
           ownerUid: window.authManager?.uid || null,
         };
-        // Use player's profile picture as the logo in the admin portal
         if (this.avatarColor?.startsWith("data:")) {
           sponsor.logoImage = this.avatarColor;
         }
         const created = await SponsorStorage.create(sponsor);
-        // Store the SponsorStorage-generated ID for future updates
         territory._sponsorStorageId = created.id;
       } catch (e) {
         console.warn("[Dashboard] SponsorStorage save failed:", e);

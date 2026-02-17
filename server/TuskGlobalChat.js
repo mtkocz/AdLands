@@ -93,6 +93,11 @@ class TuskGlobalChat {
         "{faction} now controls {percent}% of the planet. {loser1}, {loser2} — are you even trying?",
         "{faction} takes the lead with {percent}%. The other factions are invited to cope.",
         "New standings: {faction} at {percent}%. Corporate is watching.",
+        "MARKET REPORT: {faction} stock is UP. {loser1} and {loser2} stock is... well, I wouldn't invest.",
+        "{faction} at {percent}%. That's called market dominance. {loser1} and {loser2}, that's called getting acquired.",
+        "If {faction} were a company, I'd buy shares. If {loser1} or {loser2} were companies, I'd short them into the ground.",
+        "{faction} is running this planet at {percent}%. {loser1} and {loser2} are just renting space at this point. From {faction}.",
+        "BREAKING: {faction} controls {percent}% of the map. I'm starting to think {loser1} and {loser2} are here for the vibes, not the victory.",
       ],
       factionStruggle: [
         "{faction} controls just {percent}% of the planet. Should I start writing their eulogy?",
@@ -100,6 +105,11 @@ class TuskGlobalChat {
         "Thoughts and prayers for {faction}. {percent}% and sinking.",
         "{faction} is at {percent}%. At this point they're paying rent on someone else's land.",
         "Someone check {faction}'s pulse. {percent}% territory isn't a strategy, it's a cry for help.",
+        "INVESTOR ALERT: {faction} is at {percent}%. I'm pulling their funding. Effective immediately. I'm kidding. They never had funding.",
+        "{faction} at {percent}%. I've seen startups fail more gracefully than this.",
+        "If {faction} were a stock it'd be delisted. {percent}% territory is not even a rounding error.",
+        "{faction} holds {percent}% of the planet. That's less than my personal bathroom. And I would know — it's massive.",
+        "BREAKING: {faction} territory has dropped to {percent}%. At this rate they'll be a Wikipedia article by tomorrow.",
       ],
       playerMilestone: [
         "@{player} just hit {count} kills this session. Somebody's gunning for Employee of the Month.",
@@ -128,6 +138,13 @@ class TuskGlobalChat {
       randomChaos: [
         "Performance reviews are next week. Just kidding. Or am I?",
         "Fun fact: one of you is secretly my favorite. Guess who. It's probably not you.",
+        "PRO TIP: Every crypto you spend on ammo is crypto you're not spending on territory. Think about that. Then buy territory. From me.",
+        "FINANCIAL WISDOM: The best investment you can make is in real estate. Specifically, MY real estate. Rent territory today.",
+        "TUSK TIP: Stop dying. Every respawn costs crypto. I'm not running a charity. Well, I am, but it's for tax purposes.",
+        "Did you know? 73% of contractors retire broke. The other 27% rent territory. This is definitely a real statistic.",
+        "ECONOMY UPDATE: Crypto doesn't grow on trees. It grows on territory you capture. So go capture some. This has been a Tusk Financial Minute.",
+        "Reminder: You miss 100% of the territory you don't capture. — Lord Elon Tusk, visionary, landlord, humble genius.",
+        "PSA: In-game crypto is worth exactly nothing in the real world. You want REAL territory? That costs REAL dollars. I've said too much.",
       ],
       commanderReturns: [
         "Step aside @{acting}, Daddy @{commander} is home.",
@@ -144,6 +161,7 @@ class TuskGlobalChat {
         "@{player} just bounced a check. In a warzone. Peak comedy.",
         "FINANCIAL ADVISORY: @{player}, your balance is lower than your K/D ratio. And that's saying something.",
         "@{player} can't afford anything. This is what happens when you don't diversify your portfolio.",
+        "@{player} can't afford to {action}. Have you tried being born into an emerald mine? Worked great for me.",
       ],
       loan: [
         "@{player} just went into debt to respawn. Congratulations, you now owe me money.",

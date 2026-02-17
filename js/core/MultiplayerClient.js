@@ -1419,7 +1419,7 @@
       planet.deElevateSponsorTiles();
     };
 
-    // Territory info (title/tagline/URL) updated by another player
+    // Territory info (title/tagline/URL) updated by another player (kept for backward compat)
     net.onTerritoryInfoUpdated = (data) => {
       if (!planet || !data || !data.territoryId) return;
       const entry = planet.sponsorClusters.get(data.territoryId);
@@ -1430,10 +1430,32 @@
       }
     };
 
-    // Admin approved a territory image — update texture on planet for all players
-    net.onTerritoryImageApproved = (data) => {
+    // Admin approved a territory submission — update texture + info on planet for all players
+    net.onTerritorySubmissionApproved = (data) => {
       if (!planet || !data || !data.tileIndices) return;
 
+      // Update texture
+      const sponsor = {
+        id: data.territoryId,
+        patternImage: data.patternImage,
+        patternAdjustment: data.patternAdjustment || {},
+      };
+      if (data.patternImage) {
+        planet._applySponsorTexture(sponsor, data.tileIndices);
+      }
+
+      // Update sponsor info (name, tagline, URL)
+      const entry = planet.sponsorClusters.get(data.territoryId);
+      if (entry?.sponsor) {
+        if (data.title) entry.sponsor.name = data.title;
+        entry.sponsor.tagline = data.tagline || "";
+        entry.sponsor.websiteUrl = data.websiteUrl || "";
+      }
+    };
+
+    // Backward compat: old image-only approval event
+    net.onTerritoryImageApproved = (data) => {
+      if (!planet || !data || !data.tileIndices) return;
       const sponsor = {
         id: data.territoryId,
         patternImage: data.patternImage,
@@ -1450,8 +1472,8 @@
       dashboard._onAdminDeleteTerritory(data.territoryId, data.sponsorStorageId);
     };
 
-    // Personal review result for the territory owner (approve or reject)
-    net.onTerritoryImageReviewResult = (data) => {
+    // Personal review result for the territory owner (approve or reject all fields)
+    net.onTerritoryReviewResult = (data) => {
       if (!data) return;
       const dashboard = window.dashboard;
       if (!dashboard || !dashboard._playerTerritories) return;
@@ -1459,26 +1481,54 @@
       const territory = dashboard._playerTerritories.find(t => t.id === data.territoryId);
       if (!territory) return;
 
-      territory.imageStatus = data.status;
+      territory.submissionStatus = data.status;
 
       if (data.status === "rejected") {
-        // Revert to placeholder texture
-        const placeholderImage = dashboard._generateTerritoryTexture(dashboard.playerName || "Player");
-        territory.patternImage = placeholderImage;
-        if (dashboard._territoryPlanet) {
+        // Clear pending fields
+        territory.pendingTitle = null;
+        territory.pendingTagline = null;
+        territory.pendingWebsiteUrl = null;
+        territory.pendingImage = null;
+        const reason = data.reason ? `: ${data.reason}` : "";
+        dashboard.addNotification(`Territory submission rejected${reason}. Please resubmit.`, "info", "territory");
+      } else if (data.status === "approved") {
+        // Move approved data to active fields
+        if (data.title !== undefined) territory.title = data.title;
+        if (data.tagline !== undefined) territory.tagline = data.tagline;
+        if (data.websiteUrl !== undefined) territory.websiteUrl = data.websiteUrl;
+        if (data.patternImage) territory.patternImage = data.patternImage;
+        // Clear pending fields
+        territory.pendingTitle = null;
+        territory.pendingTagline = null;
+        territory.pendingWebsiteUrl = null;
+        territory.pendingImage = null;
+
+        // Update planet texture for the owning player
+        if (data.patternImage && dashboard._territoryPlanet) {
           dashboard._territoryPlanet._applySponsorTexture(
-            { id: territory.id, patternImage: placeholderImage, patternAdjustment: territory.patternAdjustment },
+            { id: territory.id, patternImage: data.patternImage, patternAdjustment: territory.patternAdjustment },
             territory.tileIndices,
           );
         }
-        const reason = data.reason ? `: ${data.reason}` : "";
-        dashboard.addNotification(`Territory image rejected${reason}. Upload a new one.`, "info", "territory");
-      } else if (data.status === "approved") {
-        dashboard.addNotification("Your territory image was approved!", "info", "territory");
+        // Update sponsor info on planet
+        const entry = dashboard._territoryPlanet?.sponsorClusters?.get(territory.id);
+        if (entry?.sponsor) {
+          if (data.title) entry.sponsor.name = data.title;
+          entry.sponsor.tagline = data.tagline || "";
+          entry.sponsor.websiteUrl = data.websiteUrl || "";
+        }
+
+        dashboard.addNotification("Your territory submission was approved!", "info", "territory");
       }
 
       dashboard._savePlayerTerritories();
       dashboard._renderTerritoryList();
+    };
+
+    // Backward compat: old image-only review result
+    net.onTerritoryImageReviewResult = (data) => {
+      // Delegate to the new handler
+      if (net.onTerritoryReviewResult) net.onTerritoryReviewResult(data);
     };
 
     // Server acknowledged image submission — notify admin portal to reload
@@ -1486,9 +1536,23 @@
       if (data && data.status === "error") {
         console.warn("[Territory] Image submission failed:", data.message);
       } else if (data && data.status === "pending") {
-        // Server confirmed save — tell admin portal (other tab) to reload
         if (typeof SponsorStorage !== "undefined") {
           SponsorStorage._broadcast("update", { id: data.territoryId });
+        }
+      }
+    };
+
+    // Server acknowledged info submission as pending
+    net.onTerritoryInfoSubmitted = (data) => {
+      if (data && data.status === "pending") {
+        const dashboard = window.dashboard;
+        if (dashboard) {
+          const territory = dashboard._playerTerritories?.find(t => t.id === data.territoryId);
+          if (territory) {
+            territory.submissionStatus = "pending";
+            dashboard._renderTerritoryList();
+          }
+          dashboard.addNotification("Territory info submitted for review", "info", "territory");
         }
       }
     };

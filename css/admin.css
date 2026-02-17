@@ -1859,6 +1859,66 @@ body {
     font-size: 10px;
 }
 
+.pending-review-fields {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    margin-bottom: 6px;
+}
+
+.review-field {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.review-field label {
+    width: 50px;
+    font-family: var(--font-small);
+    font-size: 10px;
+    color: #888;
+    flex-shrink: 0;
+}
+
+.review-input {
+    flex: 1;
+    font-family: var(--font-small);
+    font-size: 11px;
+    background: #111;
+    border: 1px solid #333;
+    color: #eee;
+    padding: 2px 4px;
+}
+
+.review-input:focus {
+    border-color: var(--accent-cyan, #4dd0e1);
+    outline: none;
+}
+
+.review-comment-field {
+    margin-top: 6px;
+    flex-direction: column;
+    align-items: stretch;
+}
+
+.review-comment-field label {
+    width: auto;
+    margin-bottom: 2px;
+}
+
+textarea.review-comment {
+    resize: vertical;
+    min-height: 32px;
+}
+
+.pending-review-no-image {
+    font-family: var(--font-small);
+    font-size: 10px;
+    color: #666;
+    padding: 8px 0;
+    text-align: center;
+}
+
 .pending-badge {
     display: inline-block;
     background: #c8a82a;

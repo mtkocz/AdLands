@@ -440,10 +440,10 @@ io.on("connection", (socket) => {
   socket.on("claim-territory", async (data) => {
     if (!socket.uid) return;
     const { territoryId, tileIndices, tierName, patternImage, patternAdjustment, playerName,
-            title, tagline, websiteUrl } = data || {};
+            title, tagline, websiteUrl, pendingImage } = data || {};
     if (!territoryId || !Array.isArray(tileIndices) || tileIndices.length === 0) return;
 
-    // Sanitize text fields
+    // Sanitize text fields (stored as pending — active fields stay empty until admin approves)
     const safeTitle = typeof title === "string" ? title.slice(0, 40).trim() : "";
     const safeTagline = typeof tagline === "string" ? tagline.slice(0, 80).trim() : "";
     let safeUrl = typeof websiteUrl === "string" ? websiteUrl.slice(0, 200).trim() : "";
@@ -460,36 +460,46 @@ io.on("connection", (socket) => {
       } catch (_) {}
       const displayName = ownerEmail || playerName || "Player";
 
+      // All player-submitted info goes to pending fields awaiting admin approval
+      const hasPendingContent = safeTitle || safeTagline || safeUrl || pendingImage;
       await db.collection("territories").doc(territoryId).set({
         ownerUid: socket.uid,
         ownerEmail,
         tileIndices,
         tierName: tierName || "outpost",
+        // Active fields: placeholder until admin approves
         patternImage: patternImage || null,
         patternAdjustment: patternAdjustment || {},
         playerName: playerName || "Player",
-        title: safeTitle,
-        tagline: safeTagline,
-        websiteUrl: safeUrl,
+        title: "",
+        tagline: "",
+        websiteUrl: "",
+        // Pending fields: await admin review
+        pendingTitle: safeTitle,
+        pendingTagline: safeTagline,
+        pendingWebsiteUrl: safeUrl,
+        pendingImage: pendingImage || null,
+        submissionStatus: hasPendingContent ? "pending" : "placeholder",
         purchasedAt: require("firebase-admin").firestore.FieldValue.serverTimestamp(),
         active: true,
-        imageStatus: "placeholder",
-        pendingImage: null,
       });
 
       // Create SponsorStore entry so admin portal can see/manage this territory
-      // Dedup guard in SponsorStore.create() prevents duplicates if client POST also arrives
       const createResult = await sponsorStore.create({
         _territoryId: territoryId,
-        name: safeTitle || displayName,
-        tagline: safeTagline,
-        websiteUrl: safeUrl,
+        name: displayName,
+        tagline: "",
+        websiteUrl: "",
         cluster: { tileIndices },
         patternImage: patternImage || null,
         patternAdjustment: patternAdjustment || {},
         isPlayerTerritory: true,
         tierName: tierName || "outpost",
-        imageStatus: "placeholder",
+        submissionStatus: hasPendingContent ? "pending" : "placeholder",
+        pendingTitle: safeTitle,
+        pendingTagline: safeTagline,
+        pendingWebsiteUrl: safeUrl,
+        pendingImage: pendingImage || null,
         ownerUid: socket.uid,
         ownerEmail: ownerEmail || null,
       });
@@ -499,22 +509,22 @@ io.on("connection", (socket) => {
         console.log(`[Territory] SponsorStore entry created: ${createResult.sponsor.id}`);
       }
 
-      // Broadcast to all players so they see the new territory
+      // Broadcast placeholder territory to all players (no player-submitted info yet)
       io.to(mainRoom.roomId).emit("player-territory-claimed", {
         id: territoryId,
         tileIndices,
         patternImage,
         patternAdjustment: patternAdjustment || {},
         playerName: playerName || "Player",
-        title: safeTitle,
-        tagline: safeTagline,
-        websiteUrl: safeUrl,
+        title: "",
+        tagline: "",
+        websiteUrl: "",
       });
 
-      // Elon Tusk commentary on territory rent (pass socket ID for current name resolution)
+      // Elon Tusk commentary on territory rent
       mainRoom.tuskChat?.onTerritoryRent?.(playerName || "Someone", socket.id);
 
-      console.log(`[Territory] Player ${socket.uid} claimed ${tierName}: ${tileIndices.length} hexes`);
+      console.log(`[Territory] Player ${socket.uid} claimed ${tierName}: ${tileIndices.length} hexes (submissionStatus: ${hasPendingContent ? "pending" : "placeholder"})`);
     } catch (err) {
       console.warn(`[Territory] Claim failed:`, err.message);
     }
@@ -551,7 +561,7 @@ io.on("connection", (socket) => {
       await db.collection("territories").doc(territoryId).update({
         pendingImage,
         pendingImageAt: require("firebase-admin").firestore.FieldValue.serverTimestamp(),
-        imageStatus: "pending",
+        submissionStatus: "pending",
         patternAdjustment: patternAdjustment || doc.data().patternAdjustment || {},
       });
 
@@ -562,7 +572,7 @@ io.on("connection", (socket) => {
         const updateResult = await sponsorStore.update(match.id, {
           pendingImage,
           pendingImageAt: new Date().toISOString(),
-          imageStatus: "pending",
+          submissionStatus: "pending",
           ownerUid: socket.uid,
           patternAdjustment: patternAdjustment || match.patternAdjustment || {},
         });
@@ -588,7 +598,7 @@ io.on("connection", (socket) => {
           patternAdjustment: patternAdjustment || firestoreData.patternAdjustment || {},
           isPlayerTerritory: true,
           tierName: firestoreData.tierName || "outpost",
-          imageStatus: "pending",
+          submissionStatus: "pending",
           ownerUid: socket.uid,
           createdAt: firestoreData.purchasedAt?.toDate?.()?.toISOString() || new Date().toISOString(),
         });
@@ -605,10 +615,10 @@ io.on("connection", (socket) => {
     }
   });
 
-  // ---- Territory Info Update (title, tagline, URL) ----
+  // ---- Territory Info Update (title, tagline, URL) — stored as pending for admin review ----
   socket.on("update-territory-info", async (data) => {
     if (!socket.uid) return;
-    const { territoryId, title, tagline, websiteUrl } = data || {};
+    const { territoryId, title, tagline, websiteUrl, pendingImage } = data || {};
     if (!territoryId) return;
 
     // Sanitize
@@ -622,31 +632,38 @@ io.on("connection", (socket) => {
       const doc = await db.collection("territories").doc(territoryId).get();
       if (!doc.exists || doc.data().ownerUid !== socket.uid) return;
 
-      // Update Firestore
-      await db.collection("territories").doc(territoryId).update({
-        title: safeTitle,
-        tagline: safeTagline,
-        websiteUrl: safeUrl,
-      });
+      // Store as pending fields awaiting admin approval (active fields unchanged)
+      const updateFields = {
+        pendingTitle: safeTitle,
+        pendingTagline: safeTagline,
+        pendingWebsiteUrl: safeUrl,
+        submissionStatus: "pending",
+      };
+      if (pendingImage) {
+        updateFields.pendingImage = pendingImage;
+      }
+      await db.collection("territories").doc(territoryId).update(updateFields);
 
-      // Update SponsorStore
+      // Update SponsorStore with pending fields
       const allSponsors = sponsorStore.getAll();
       const match = allSponsors.find(s => s._territoryId === territoryId || s.id === territoryId);
       if (match) {
-        await sponsorStore.update(match.id, {
-          name: safeTitle || match.name,
-          tagline: safeTagline,
-          websiteUrl: safeUrl,
-        });
+        const storeUpdate = {
+          pendingTitle: safeTitle,
+          pendingTagline: safeTagline,
+          pendingWebsiteUrl: safeUrl,
+          submissionStatus: "pending",
+        };
+        if (pendingImage) {
+          storeUpdate.pendingImage = pendingImage;
+        }
+        await sponsorStore.update(match.id, storeUpdate);
       }
 
-      // Broadcast to all players
-      io.to(mainRoom.roomId).emit("territory-info-updated", {
-        territoryId,
-        title: safeTitle,
-        tagline: safeTagline,
-        websiteUrl: safeUrl,
-      });
+      // Confirm to submitter (do NOT broadcast to other players — wait for admin approval)
+      socket.emit("territory-info-submitted", { territoryId, status: "pending" });
+
+      console.log(`[Territory] Player ${socket.uid} submitted info update for review: ${territoryId}`);
     } catch (err) {
       console.warn(`[Territory] Info update failed:`, err.message);
     }

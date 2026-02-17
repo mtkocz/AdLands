@@ -409,81 +409,81 @@ class Tank {
     this.state.theta = entity.theta;
     this.state.phi = entity.phi;
 
-    // Collision: probe full tank body box for terrain + polar boundary
-    // 5 probes (center + 4 corners) matching server-side collision in GameRoom.js
+    // Collision with wall sliding
     if (this.planet && this.state.speed !== 0) {
-      const r = this.sphereRadius;
-      const t = Tank._terrainTemp;
-      const sinPhi = Math.sin(this.state.phi);
-      const cosPhi = Math.cos(this.state.phi);
-      const sinTheta = Math.sin(this.state.theta);
-      const cosTheta = Math.cos(this.state.theta);
-
-      const h = this.state.heading;
-      const cosH = Math.cos(h);
-      const sinH = Math.sin(h);
-      const dir = Math.sign(this.state.speed);
-
-      // Tank center in world space
-      const cx = r * sinPhi * cosTheta;
-      const cy = r * cosPhi;
-      const cz = r * sinPhi * sinTheta;
-
-      // Forward and right unit vectors on sphere surface
-      // Forward = cosH * North + (-sinH) * East
-      // Right   = sinH * North +   cosH  * East
-      // North = (-cosPhi*cosTheta, sinPhi, -cosPhi*sinTheta)
-      // East  = (-sinTheta, 0, cosTheta)
-      const fwd_x = -cosH * cosPhi * cosTheta + sinH * sinTheta;
-      const fwd_y =  cosH * sinPhi;
-      const fwd_z = -cosH * cosPhi * sinTheta - sinH * cosTheta;
-      const rgt_x = -sinH * cosPhi * cosTheta - cosH * sinTheta;
-      const rgt_y =  sinH * sinPhi;
-      const rgt_z = -sinH * cosPhi * sinTheta + cosH * cosTheta;
-
-      let blocked = false;
-      for (const [fwd, rgt] of Tank._collisionProbes) {
-        const f = fwd * dir;
-        t.testPos.set(
-          cx + fwd_x * f + rgt_x * rgt,
-          cy + fwd_y * f + rgt_y * rgt,
-          cz + fwd_z * f + rgt_z * rgt,
-        );
-
-        this.planet.hexGroup.worldToLocal(t.testPos);
-
-        // Check polar + terrain collision via polygon test + tile lookup
-        if (this.planet.terrainElevation) {
-          const inPolar = this.planet.isInsidePolarHole
-            ? this.planet.isInsidePolarHole(t.testPos)
-            : this.planet.polarTileIndices.has(
-                this.planet.terrainElevation.getNearestTileIndex(t.testPos)
-              );
-          if (inPolar) {
-            blocked = true;
-            break;
-          }
-          const tileIdx = this.planet.terrainElevation.getNearestTileIndex(t.testPos);
-          if (tileIdx >= 0 &&
-            this.planet.terrainElevation.getElevationAtTileIndex(tileIdx) > 0
-          ) {
-            blocked = true;
-            break;
-          }
-        }
-      }
-
-      if (blocked) {
-        // Revert movement but keep planet rotation compensation
+      if (this._isTerrainBlocked(this.state.theta, this.state.phi)) {
         const dt60 = deltaTime * 60;
         const rotDelta = (planetRotationSpeed * dt60) / 60;
-        this.state.theta = prevTheta - rotDelta;
-        if (this.state.theta < 0) this.state.theta += Math.PI * 2;
-        if (this.state.theta > Math.PI * 2) this.state.theta -= Math.PI * 2;
-        this.state.phi = prevPhi;
-        this.state.speed = 0;
+        let thetaRev = prevTheta - rotDelta;
+        if (thetaRev < 0) thetaRev += Math.PI * 2;
+        if (thetaRev > Math.PI * 2) thetaRev -= Math.PI * 2;
+
+        // Wall sliding: try each axis independently before full revert
+        if (!this._isTerrainBlocked(this.state.theta, prevPhi)) {
+          // Slide along latitude (theta moved, phi reverted)
+          this.state.phi = prevPhi;
+          this.state.speed *= 0.85;
+        } else if (!this._isTerrainBlocked(thetaRev, this.state.phi)) {
+          // Slide along longitude (theta reverted, phi moved)
+          this.state.theta = thetaRev;
+          this.state.speed *= 0.85;
+        } else {
+          // Both axes blocked — full revert with speed decay
+          this.state.theta = thetaRev;
+          this.state.phi = prevPhi;
+          this.state.speed *= 0.3;
+        }
       }
     }
+  }
+
+  _isTerrainBlocked(theta, phi) {
+    if (!this.planet || !this.planet.terrainElevation) return false;
+    const r = this.sphereRadius;
+    const t = Tank._terrainTemp;
+    const sinPhi = Math.sin(phi);
+    const cosPhi = Math.cos(phi);
+    const sinTheta = Math.sin(theta);
+    const cosTheta = Math.cos(theta);
+    const cosH = Math.cos(this.state.heading);
+    const sinH = Math.sin(this.state.heading);
+    const dir = Math.sign(this.state.speed);
+
+    const cx = r * sinPhi * cosTheta;
+    const cy = r * cosPhi;
+    const cz = r * sinPhi * sinTheta;
+
+    const fwd_x = -cosH * cosPhi * cosTheta + sinH * sinTheta;
+    const fwd_y =  cosH * sinPhi;
+    const fwd_z = -cosH * cosPhi * sinTheta - sinH * cosTheta;
+    const rgt_x = -sinH * cosPhi * cosTheta - cosH * sinTheta;
+    const rgt_y =  sinH * sinPhi;
+    const rgt_z = -sinH * cosPhi * sinTheta + cosH * cosTheta;
+
+    for (const [fwd, rgt] of Tank._collisionProbes) {
+      const f = fwd * dir;
+      t.testPos.set(
+        cx + fwd_x * f + rgt_x * rgt,
+        cy + fwd_y * f + rgt_y * rgt,
+        cz + fwd_z * f + rgt_z * rgt,
+      );
+      this.planet.hexGroup.worldToLocal(t.testPos);
+
+      const inPolar = this.planet.isInsidePolarHole
+        ? this.planet.isInsidePolarHole(t.testPos)
+        : this.planet.polarTileIndices.has(
+            this.planet.terrainElevation.getNearestTileIndex(t.testPos)
+          );
+      if (inPolar) return true;
+
+      const tileIdx = this.planet.terrainElevation.getNearestTileIndex(t.testPos);
+      if (tileIdx >= 0 &&
+        this.planet.terrainElevation.getElevationAtTileIndex(tileIdx) > 0
+      ) {
+        return true;
+      }
+    }
+    return false;
   }
 
   // ========================

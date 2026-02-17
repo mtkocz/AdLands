@@ -5473,8 +5473,6 @@ body.colorblind-tritanopia {
     left: 50%;
     top: 50%;
     transform: translate(-50%, -50%);
-    transition: opacity 200ms ease;
-    opacity: 1;
 }
 
 /* Diamond child — outlined rotated square (~32px diagonal) */
@@ -5488,7 +5486,6 @@ body.colorblind-tritanopia {
     left: 50%;
     top: 50%;
     transform: translate(-50%, -50%) rotate(45deg);
-    transition: opacity 200ms ease;
     opacity: 0;
 }
 
@@ -5502,28 +5499,6 @@ body.colorblind-tritanopia {
     z-index: 50;
     transform: translate(-50%, -50%);
     text-shadow: 0 0 2px rgba(0, 0, 0, 0.8), 1px 1px 0 #000;
-}
-
-/* Position/rotation is JS-driven (lerp), no CSS transitions on wrapper */
-
-/* --- Morph: arrow visible when offscreen / transitioning-out --- */
-.ping-indicator.state-offscreen .ping-indicator-arrow,
-.ping-indicator.state-transitioning-out .ping-indicator-arrow {
-    opacity: 1;
-}
-.ping-indicator.state-offscreen .ping-indicator-diamond,
-.ping-indicator.state-transitioning-out .ping-indicator-diamond {
-    opacity: 0;
-}
-
-/* --- Morph: diamond visible when onscreen / transitioning-in --- */
-.ping-indicator.state-transitioning-in .ping-indicator-arrow,
-.ping-indicator.state-onscreen .ping-indicator-arrow {
-    opacity: 0;
-}
-.ping-indicator.state-transitioning-in .ping-indicator-diamond,
-.ping-indicator.state-onscreen .ping-indicator-diamond {
-    opacity: 1;
 }
 
 /* --- Color variants: own (cyan) --- */

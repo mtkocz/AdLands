@@ -270,9 +270,9 @@ function createSponsorRoutes(sponsorStore, gameRoom, { imageUrls, gameDir } = {}
     res.json({ success: true });
   });
 
-  // POST /api/sponsors/:id/review-image — admin approves or rejects a pending territory image
-  router.post("/:id/review-image", async (req, res) => {
-    const { action, rejectionReason } = req.body || {};
+  // POST /api/sponsors/:id/review — admin approves or rejects a pending territory submission (all fields)
+  router.post("/:id/review", async (req, res) => {
+    const { action, rejectionReason, overrides } = req.body || {};
     if (!["approve", "reject"].includes(action)) {
       return res.status(400).json({ errors: ["Invalid action. Must be 'approve' or 'reject'."] });
     }
@@ -281,34 +281,56 @@ function createSponsorRoutes(sponsorStore, gameRoom, { imageUrls, gameDir } = {}
     if (!sponsor || !sponsor.isPlayerTerritory) {
       return res.status(404).json({ errors: ["Player territory not found"] });
     }
-    if (sponsor.imageStatus !== "pending" || !sponsor.pendingImage) {
-      return res.status(400).json({ errors: ["No pending image to review"] });
+    // Check for any pending content (image or text fields)
+    const hasPending = sponsor.submissionStatus === "pending" || sponsor.imageStatus === "pending";
+    if (!hasPending) {
+      return res.status(400).json({ errors: ["No pending submission to review"] });
     }
 
     const territoryId = sponsor._territoryId || sponsor.id;
 
     try {
       if (action === "approve") {
-        // Move pending image to approved pattern in SponsorStorage
-        const approvedImage = sponsor.pendingImage;
+        // Admin can override any field before approving
+        const approvedTitle = overrides?.title ?? sponsor.pendingTitle ?? sponsor.name ?? "";
+        const approvedTagline = overrides?.tagline ?? sponsor.pendingTagline ?? sponsor.tagline ?? "";
+        const approvedUrl = overrides?.websiteUrl ?? sponsor.pendingWebsiteUrl ?? sponsor.websiteUrl ?? "";
+        const approvedImage = overrides?.patternImage ?? sponsor.pendingImage ?? sponsor.patternImage ?? null;
+
+        // Move all pending fields to active in SponsorStore
         await sponsorStore.update(req.params.id, {
+          name: approvedTitle || sponsor.name,
+          tagline: approvedTagline,
+          websiteUrl: approvedUrl,
           patternImage: approvedImage,
+          pendingTitle: null,
+          pendingTagline: null,
+          pendingWebsiteUrl: null,
           pendingImage: null,
+          submissionStatus: "approved",
           imageStatus: "approved",
           reviewedAt: new Date().toISOString(),
           rejectionReason: null,
         });
 
         // Re-extract image to static file
-        await reExtractImages(req.params.id);
+        if (approvedImage) {
+          await reExtractImages(req.params.id);
+        }
 
         // Update Firestore
         try {
           const db = getFirestore();
           await db.collection("territories").doc(territoryId).update({
+            title: approvedTitle,
+            tagline: approvedTagline,
+            websiteUrl: approvedUrl,
             patternImage: approvedImage,
+            pendingTitle: null,
+            pendingTagline: null,
+            pendingWebsiteUrl: null,
             pendingImage: null,
-            imageStatus: "approved",
+            submissionStatus: "approved",
             reviewedAt: require("firebase-admin").firestore.FieldValue.serverTimestamp(),
             rejectionReason: null,
           });
@@ -316,15 +338,17 @@ function createSponsorRoutes(sponsorStore, gameRoom, { imageUrls, gameDir } = {}
           console.warn("[Territory] Firestore approve update failed:", e.message);
         }
 
-        // Broadcast approved image to all connected players
+        // Broadcast approved submission to all connected players
         const urls = _imageUrls[req.params.id] || {};
         if (gameRoom) {
-          gameRoom.io.to(gameRoom.roomId).emit("territory-image-approved", {
+          gameRoom.io.to(gameRoom.roomId).emit("territory-submission-approved", {
             territoryId,
+            title: approvedTitle,
+            tagline: approvedTagline,
+            websiteUrl: approvedUrl,
             patternImage: urls.patternUrl || approvedImage,
             patternAdjustment: sponsor.patternAdjustment || {},
             tileIndices: sponsor.cluster?.tileIndices || [],
-            playerName: sponsor.name,
           });
 
           // Notify the owning player specifically
@@ -332,34 +356,48 @@ function createSponsorRoutes(sponsorStore, gameRoom, { imageUrls, gameDir } = {}
             const sockets = await gameRoom.io.in(gameRoom.roomId).fetchSockets();
             for (const s of sockets) {
               if (s.uid === sponsor.ownerUid) {
-                s.emit("territory-image-review-result", { territoryId, status: "approved" });
+                s.emit("territory-review-result", {
+                  territoryId,
+                  status: "approved",
+                  title: approvedTitle,
+                  tagline: approvedTagline,
+                  websiteUrl: approvedUrl,
+                  patternImage: urls.patternUrl || approvedImage,
+                });
               }
             }
           }
         }
 
-        // Update world payload so future joiners see the approved image
+        // Update world payload so future joiners see approved content
         reloadIfLive();
 
-        console.log(`[Territory] Image approved for ${territoryId}`);
+        console.log(`[Territory] Submission approved for ${territoryId}`);
         res.json({ success: true, action: "approved" });
       } else {
-        // Reject: clear pending image, set status
+        // Reject: clear all pending fields, set status
         await sponsorStore.update(req.params.id, {
+          pendingTitle: null,
+          pendingTagline: null,
+          pendingWebsiteUrl: null,
           pendingImage: null,
+          submissionStatus: "rejected",
           imageStatus: "rejected",
           reviewedAt: new Date().toISOString(),
-          rejectionReason: rejectionReason || "Image rejected by admin",
+          rejectionReason: rejectionReason || "Submission rejected by admin",
         });
 
         // Update Firestore
         try {
           const db = getFirestore();
           await db.collection("territories").doc(territoryId).update({
+            pendingTitle: null,
+            pendingTagline: null,
+            pendingWebsiteUrl: null,
             pendingImage: null,
-            imageStatus: "rejected",
+            submissionStatus: "rejected",
             reviewedAt: require("firebase-admin").firestore.FieldValue.serverTimestamp(),
-            rejectionReason: rejectionReason || "Image rejected by admin",
+            rejectionReason: rejectionReason || "Submission rejected by admin",
           });
         } catch (e) {
           console.warn("[Territory] Firestore reject update failed:", e.message);
@@ -370,22 +408,28 @@ function createSponsorRoutes(sponsorStore, gameRoom, { imageUrls, gameDir } = {}
           const sockets = await gameRoom.io.in(gameRoom.roomId).fetchSockets();
           for (const s of sockets) {
             if (s.uid === sponsor.ownerUid) {
-              s.emit("territory-image-review-result", {
+              s.emit("territory-review-result", {
                 territoryId,
                 status: "rejected",
-                reason: rejectionReason || "Image rejected by admin",
+                reason: rejectionReason || "Submission rejected by admin",
               });
             }
           }
         }
 
-        console.log(`[Territory] Image rejected for ${territoryId}`);
+        console.log(`[Territory] Submission rejected for ${territoryId}`);
         res.json({ success: true, action: "rejected" });
       }
     } catch (err) {
       console.error("[Territory] Review failed:", err);
       res.status(500).json({ errors: ["Review failed: " + err.message] });
     }
+  });
+
+  // Backward compat: old endpoint name still works
+  router.post("/:id/review-image", (req, res, next) => {
+    req.url = req.url.replace("/review-image", "/review");
+    router.handle(req, res, next);
   });
 
   return router;

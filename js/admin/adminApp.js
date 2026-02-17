@@ -240,15 +240,15 @@
         return;
       }
 
-      // Handle image review buttons (approve/reject)
-      const approveBtn = e.target.closest(".approve-image-btn");
+      // Handle submission review buttons (approve/reject)
+      const approveBtn = e.target.closest(".approve-submission-btn") || e.target.closest(".approve-image-btn");
       if (approveBtn) {
-        reviewTerritoryImage(approveBtn.dataset.id, "approve");
+        reviewTerritorySubmission(approveBtn.dataset.id, "approve");
         return;
       }
-      const rejectBtn = e.target.closest(".reject-image-btn");
+      const rejectBtn = e.target.closest(".reject-submission-btn") || e.target.closest(".reject-image-btn");
       if (rejectBtn) {
-        reviewTerritoryImage(rejectBtn.dataset.id, "reject");
+        reviewTerritorySubmission(rejectBtn.dataset.id, "reject");
         return;
       }
 
@@ -974,7 +974,7 @@
 
     // Update tab counts
     const playerCount = allSponsors.filter((s) => !!s.isPlayerTerritory).length;
-    const pendingCount = allSponsors.filter((s) => s.isPlayerTerritory && s.imageStatus === "pending").length;
+    const pendingCount = allSponsors.filter((s) => s.isPlayerTerritory && (s.submissionStatus === "pending" || s.imageStatus === "pending")).length;
     const sponsorCount = allSponsors.length - playerCount;
     const tabEls = document.querySelectorAll(".sponsor-tab");
     tabEls.forEach((tab) => {
@@ -997,23 +997,35 @@
     // Build pending review section for player territories tab
     let pendingHtml = "";
     if (sponsorListFilter === "players") {
-      const pendingSponsors = sponsors.filter(s => s.imageStatus === "pending" && s.pendingImage);
+      const pendingSponsors = sponsors.filter(s =>
+        s.submissionStatus === "pending" || (s.imageStatus === "pending" && s.pendingImage)
+      );
       if (pendingSponsors.length > 0) {
         const pendingCards = pendingSponsors.map(s => {
           const logoSrc = s.logoUrl || s.logoImage;
           const tileCount = s.cluster?.tileIndices?.length || 0;
           const adj = s.patternAdjustment || {};
+          const pTitle = escapeHtml(s.pendingTitle || s.name || "");
+          const pTagline = escapeHtml(s.pendingTagline || s.tagline || "");
+          const pUrl = escapeHtml(s.pendingWebsiteUrl || s.websiteUrl || "");
+          const hasImage = !!s.pendingImage;
           return `
             <div class="pending-review-card" data-id="${s.id}">
               <div class="pending-review-card-header">
                 <div class="sponsor-card-logo">
-                  ${logoSrc ? `<img src="${logoSrc}" alt="${escapeHtml(s.name)}">` : '<span style="color:#666;font-size:12px;">No logo</span>'}
+                  ${logoSrc ? `<img src="${logoSrc}" alt="${pTitle}">` : '<span style="color:#666;font-size:12px;">No logo</span>'}
                 </div>
                 <div class="pending-review-card-info">
-                  <div class="sponsor-card-name">${escapeHtml(s.name)}</div>
+                  <div class="sponsor-card-name">${pTitle || escapeHtml(s.name)}</div>
                   <div class="sponsor-card-stats">${tileCount} tiles &middot; ${s.tierName || "territory"}</div>
                 </div>
               </div>
+              <div class="pending-review-fields" data-id="${s.id}">
+                <div class="review-field"><label>Name</label><input type="text" class="review-input review-title" value="${pTitle}" maxlength="40"></div>
+                <div class="review-field"><label>Tagline</label><input type="text" class="review-input review-tagline" value="${pTagline}" maxlength="80"></div>
+                <div class="review-field"><label>URL</label><input type="url" class="review-input review-url" value="${pUrl}" maxlength="200"></div>
+              </div>
+              ${hasImage ? `
               <div class="pending-review-card-texture">
                 <img src="${s.pendingImage}" alt="Uploaded texture" class="territory-pending-img">
               </div>
@@ -1022,10 +1034,11 @@
                 <div class="adj-row"><label>Offset X</label><input type="range" class="adj-offsetX" min="-1" max="1" step="0.05" value="${adj.offsetX ?? 0}"><span class="adj-val">${adj.offsetX ?? 0}</span></div>
                 <div class="adj-row"><label>Offset Y</label><input type="range" class="adj-offsetY" min="-1" max="1" step="0.05" value="${adj.offsetY ?? 0}"><span class="adj-val">${adj.offsetY ?? 0}</span></div>
                 <div class="adj-row"><label>Saturation</label><input type="range" class="adj-saturation" min="0" max="1.5" step="0.05" value="${adj.saturation ?? 0.7}"><span class="adj-val">${adj.saturation ?? 0.7}</span></div>
-              </div>
+              </div>` : '<div class="pending-review-no-image">No image uploaded</div>'}
+              <div class="review-field review-comment-field"><label>Rejection Comment</label><textarea class="review-input review-comment" placeholder="Reason for rejection (sent to player)" rows="2"></textarea></div>
               <div class="territory-review-actions">
-                <button class="btn-approve approve-image-btn" data-id="${s.id}">Approve</button>
-                <button class="btn-reject reject-image-btn" data-id="${s.id}">Reject</button>
+                <button class="btn-approve approve-submission-btn" data-id="${s.id}">Approve</button>
+                <button class="btn-reject reject-submission-btn" data-id="${s.id}">Reject</button>
               </div>
             </div>`;
         }).join("");
@@ -1035,7 +1048,9 @@
             <div class="pending-review-grid">${pendingCards}</div>
           </div>`;
         // Remove pending sponsors from the main list so they don't duplicate
-        sponsors = sponsors.filter(s => !(s.imageStatus === "pending" && s.pendingImage));
+        sponsors = sponsors.filter(s =>
+          !(s.submissionStatus === "pending" || (s.imageStatus === "pending" && s.pendingImage))
+        );
       }
     }
 
@@ -1167,18 +1182,19 @@
             if (textureSrc) {
               textureHtml = `<div class="territory-row-texture"><img src="${textureSrc}" alt="Texture" class="territory-texture-thumb"></div>`;
             }
-            if (s.imageStatus === "pending" && s.pendingImage) {
+            const subStatus = s.submissionStatus || s.imageStatus;
+            if (subStatus === "pending") {
               reviewHtml = `
                 <div class="territory-review-section">
-                  <div class="territory-review-label">Pending Image Review</div>
+                  <div class="territory-review-label">Pending Review</div>
                   <div class="territory-review-actions">
-                    <button class="btn-approve approve-image-btn" data-id="${s.id}">Approve</button>
-                    <button class="btn-reject reject-image-btn" data-id="${s.id}">Reject</button>
+                    <button class="btn-approve approve-submission-btn" data-id="${s.id}">Approve</button>
+                    <button class="btn-reject reject-submission-btn" data-id="${s.id}">Reject</button>
                   </div>
                 </div>`;
-            } else if (s.imageStatus === "rejected") {
+            } else if (subStatus === "rejected") {
               reviewHtml = `<div class="territory-review-status rejected">Rejected</div>`;
-            } else if (s.imageStatus === "approved") {
+            } else if (subStatus === "approved") {
               reviewHtml = `<div class="territory-review-status approved">Approved</div>`;
             }
           }
@@ -1696,27 +1712,49 @@
     }
   }
 
-  async function reviewTerritoryImage(id, action) {
+  async function reviewTerritorySubmission(id, action) {
     if (busy) {
       showToast("Please wait for the current operation to finish", "info");
       return;
     }
 
+    // Read admin overrides from the editable fields in the pending review card
+    const card = document.querySelector(`.pending-review-card[data-id="${id}"]`);
+    const overrides = {};
+    if (card) {
+      const titleInput = card.querySelector(".review-title");
+      const taglineInput = card.querySelector(".review-tagline");
+      const urlInput = card.querySelector(".review-url");
+      if (titleInput) overrides.title = titleInput.value.trim();
+      if (taglineInput) overrides.tagline = taglineInput.value.trim();
+      if (urlInput) overrides.websiteUrl = urlInput.value.trim();
+    }
+
+    // Read rejection comment from the card
     let rejectionReason = "";
     if (action === "reject") {
-      rejectionReason = prompt("Rejection reason (optional):") || "";
+      const commentEl = card?.querySelector(".review-comment");
+      rejectionReason = commentEl?.value?.trim() || "";
+      if (!rejectionReason) {
+        rejectionReason = prompt("Rejection reason (optional):") || "";
+      }
     }
 
     busy = true;
     try {
-      const res = await fetch(`/api/sponsors/${encodeURIComponent(id)}/review-image`, {
+      const res = await fetch(`/api/sponsors/${encodeURIComponent(id)}/review`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action, rejectionReason }),
+        body: JSON.stringify({ action, rejectionReason, overrides: action === "approve" ? overrides : undefined }),
       });
       const result = await res.json();
       if (result.success) {
-        showToast(action === "approve" ? "Image approved and broadcast to players" : "Image rejected. Player notified.", "success");
+        showToast(
+          action === "approve"
+            ? "Submission approved and broadcast to players"
+            : "Submission rejected. Player notified.",
+          "success",
+        );
         await SponsorStorage.reload();
         refreshSponsorsList();
       } else {
