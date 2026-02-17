@@ -63,6 +63,7 @@ class NetworkManager {
     this.onMoonSponsorsReloaded = null; // (data) => { moonSponsors }
     this.onBillboardSponsorsReloaded = null; // (data) => { billboardSponsors }
     this.onPlayerTerritoryClaimed = null; // (data) => { id, tileIndices, patternImage, ... }
+    this.onTerritoryInfoUpdated = null; // (data) => { territoryId, title, tagline, websiteUrl }
     this.onCommanderUpdate = null;  // (data) => { faction, commander: { id, name } | null, isActing, trueCommanderName }
     this.onFactionRoster = null;    // (data) => { faction, total, members: [{ rank, name, level, online, isSelf }] }
     this.onCryptoUpdate = null;     // (cryptoState) => { playerId: amount, ... }
@@ -247,6 +248,11 @@ class NetworkManager {
     // Another player claimed a territory — apply it visually
     this.socket.on("player-territory-claimed", (data) => {
       if (this.onPlayerTerritoryClaimed) this.onPlayerTerritoryClaimed(data);
+    });
+
+    // Territory info (title/tagline/URL) updated by owner
+    this.socket.on("territory-info-updated", (data) => {
+      if (this.onTerritoryInfoUpdated) this.onTerritoryInfoUpdated(data);
     });
 
     // Admin approved a territory image — apply new texture for all players

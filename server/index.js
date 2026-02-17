@@ -439,8 +439,15 @@ io.on("connection", (socket) => {
   // ---- Territory Claim (server-authoritative, persists to Firestore) ----
   socket.on("claim-territory", async (data) => {
     if (!socket.uid) return;
-    const { territoryId, tileIndices, tierName, patternImage, patternAdjustment, playerName } = data || {};
+    const { territoryId, tileIndices, tierName, patternImage, patternAdjustment, playerName,
+            title, tagline, websiteUrl } = data || {};
     if (!territoryId || !Array.isArray(tileIndices) || tileIndices.length === 0) return;
+
+    // Sanitize text fields
+    const safeTitle = typeof title === "string" ? title.slice(0, 40).trim() : "";
+    const safeTagline = typeof tagline === "string" ? tagline.slice(0, 80).trim() : "";
+    let safeUrl = typeof websiteUrl === "string" ? websiteUrl.slice(0, 200).trim() : "";
+    if (safeUrl && !/^https?:\/\//i.test(safeUrl)) safeUrl = "https://" + safeUrl;
 
     try {
       const db = getFirestore();
@@ -461,6 +468,9 @@ io.on("connection", (socket) => {
         patternImage: patternImage || null,
         patternAdjustment: patternAdjustment || {},
         playerName: playerName || "Player",
+        title: safeTitle,
+        tagline: safeTagline,
+        websiteUrl: safeUrl,
         purchasedAt: require("firebase-admin").firestore.FieldValue.serverTimestamp(),
         active: true,
         imageStatus: "placeholder",
@@ -471,7 +481,9 @@ io.on("connection", (socket) => {
       // Dedup guard in SponsorStore.create() prevents duplicates if client POST also arrives
       const createResult = await sponsorStore.create({
         _territoryId: territoryId,
-        name: displayName,
+        name: safeTitle || displayName,
+        tagline: safeTagline,
+        websiteUrl: safeUrl,
         cluster: { tileIndices },
         patternImage: patternImage || null,
         patternAdjustment: patternAdjustment || {},
@@ -494,6 +506,9 @@ io.on("connection", (socket) => {
         patternImage,
         patternAdjustment: patternAdjustment || {},
         playerName: playerName || "Player",
+        title: safeTitle,
+        tagline: safeTagline,
+        websiteUrl: safeUrl,
       });
 
       // Elon Tusk commentary on territory rent (pass socket ID for current name resolution)
@@ -587,6 +602,53 @@ io.on("connection", (socket) => {
     } catch (err) {
       console.warn(`[Territory] Image submission failed:`, err.message);
       socket.emit("territory-image-submitted", { territoryId, status: "error", message: err.message });
+    }
+  });
+
+  // ---- Territory Info Update (title, tagline, URL) ----
+  socket.on("update-territory-info", async (data) => {
+    if (!socket.uid) return;
+    const { territoryId, title, tagline, websiteUrl } = data || {};
+    if (!territoryId) return;
+
+    // Sanitize
+    const safeTitle = typeof title === "string" ? title.slice(0, 40).trim() : "";
+    const safeTagline = typeof tagline === "string" ? tagline.slice(0, 80).trim() : "";
+    let safeUrl = typeof websiteUrl === "string" ? websiteUrl.slice(0, 200).trim() : "";
+    if (safeUrl && !/^https?:\/\//i.test(safeUrl)) safeUrl = "https://" + safeUrl;
+
+    try {
+      const db = getFirestore();
+      const doc = await db.collection("territories").doc(territoryId).get();
+      if (!doc.exists || doc.data().ownerUid !== socket.uid) return;
+
+      // Update Firestore
+      await db.collection("territories").doc(territoryId).update({
+        title: safeTitle,
+        tagline: safeTagline,
+        websiteUrl: safeUrl,
+      });
+
+      // Update SponsorStore
+      const allSponsors = sponsorStore.getAll();
+      const match = allSponsors.find(s => s._territoryId === territoryId || s.id === territoryId);
+      if (match) {
+        await sponsorStore.update(match.id, {
+          name: safeTitle || match.name,
+          tagline: safeTagline,
+          websiteUrl: safeUrl,
+        });
+      }
+
+      // Broadcast to all players
+      io.to(mainRoom.roomId).emit("territory-info-updated", {
+        territoryId,
+        title: safeTitle,
+        tagline: safeTagline,
+        websiteUrl: safeUrl,
+      });
+    } catch (err) {
+      console.warn(`[Territory] Info update failed:`, err.message);
     }
   });
 

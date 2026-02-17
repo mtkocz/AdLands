@@ -1407,7 +1407,9 @@
 
       const virtualSponsor = {
         id: data.id,
-        name: data.playerName || "Player",
+        name: data.title || data.playerName || "Player",
+        tagline: data.tagline || "",
+        websiteUrl: data.websiteUrl || "",
         cluster: { tileIndices: data.tileIndices },
         patternImage: data.patternImage,
         patternAdjustment: data.patternAdjustment || {},
@@ -1415,6 +1417,17 @@
 
       planet.applySponsorCluster(virtualSponsor);
       planet.deElevateSponsorTiles();
+    };
+
+    // Territory info (title/tagline/URL) updated by another player
+    net.onTerritoryInfoUpdated = (data) => {
+      if (!planet || !data || !data.territoryId) return;
+      const entry = planet.sponsorClusters.get(data.territoryId);
+      if (entry?.sponsor) {
+        if (data.title) entry.sponsor.name = data.title;
+        entry.sponsor.tagline = data.tagline || "";
+        entry.sponsor.websiteUrl = data.websiteUrl || "";
+      }
     };
 
     // Admin approved a territory image — update texture on planet for all players

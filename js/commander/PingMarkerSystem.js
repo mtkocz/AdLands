@@ -10,7 +10,10 @@ const PING_CONFIG = {
   heightAboveSurface: 10, // Float above planet
   duration: 60000, // 60 seconds total
   fadeDuration: 10000, // Final 10 seconds fade
-  arrivalDistance: 30, // Distance to trigger arrival pop
+  morphDuration: 350, // Arrow<->diamond morph transition (ms)
+  enterMargin: 30, // Screen margin for "entering" (hysteresis inner)
+  exitMargin: 70, // Screen margin for "leaving" (hysteresis outer)
+  morphGracePeriod: 100, // Min ms before allowing state reversal
   ownColor: 0x00ffff, // Cyan (player's own ping)
   commanderColor: 0xffd700, // Gold (other commanders)
   squadColor: 0xa064dc, // Purple (other squad members)
@@ -193,7 +196,8 @@ class PingMarkerSystem {
       faction,
       squad,
       arrowElement,
-      arrived: false, // Track if player has reached this ping
+      indicatorState: "offscreen", // 'offscreen' | 'transitioning-in' | 'onscreen' | 'transitioning-out'
+      transitionStartTime: 0,
       followingPlayerId: options.followingPlayerId || null, // Player ID to follow
     };
 
@@ -293,16 +297,28 @@ class PingMarkerSystem {
   }
 
   _createArrowElement(isCommander, isOwn) {
-    const arrow = document.createElement("div");
-    arrow.className = "ping-arrow";
-    arrow.setAttribute("data-commander", isCommander ? "true" : "false");
-    arrow.setAttribute("data-own", isOwn ? "true" : "false");
-    arrow.style.display = "none";
-    this.arrowsContainer.appendChild(arrow);
+    // Wrapper — positioned on screen, holds both arrow and diamond children
+    const wrapper = document.createElement("div");
+    wrapper.className = "ping-indicator state-offscreen";
+    wrapper.setAttribute("data-commander", isCommander ? "true" : "false");
+    wrapper.setAttribute("data-own", isOwn ? "true" : "false");
+    wrapper.style.display = "none";
 
-    // Distance label — separate sibling element (avoids touching arrow animation)
+    // Arrow child — clip-path triangle
+    const arrowChild = document.createElement("div");
+    arrowChild.className = "ping-indicator-arrow";
+    wrapper.appendChild(arrowChild);
+
+    // Diamond child — outlined rotated square
+    const diamondChild = document.createElement("div");
+    diamondChild.className = "ping-indicator-diamond";
+    wrapper.appendChild(diamondChild);
+
+    this.arrowsContainer.appendChild(wrapper);
+
+    // Distance label — separate sibling element
     const label = document.createElement("div");
-    label.className = "ping-arrow-distance";
+    label.className = "ping-indicator-distance";
     if (isCommander) {
       label.style.color = "#ffd700";
     } else if (isOwn) {
@@ -312,9 +328,9 @@ class PingMarkerSystem {
     }
     label.style.display = "none";
     this.arrowsContainer.appendChild(label);
-    arrow._distanceLabel = label;
+    wrapper._distanceLabel = label;
 
-    return arrow;
+    return wrapper;
   }
 
   // ========================
@@ -358,6 +374,9 @@ class PingMarkerSystem {
         ping.arrowElement.style.display = "none";
         if (ping.arrowElement._distanceLabel) {
           ping.arrowElement._distanceLabel.style.display = "none";
+        }
+        if (ping.indicatorState !== "offscreen") {
+          this._setIndicatorState(ping, "offscreen");
         }
       }
       return;
@@ -408,9 +427,9 @@ class PingMarkerSystem {
       const pingWorldPos = this._tempVec3.copy(ping.position);
       this.planet.hexGroup.localToWorld(pingWorldPos);
 
-      // Update arrow (always, in all camera modes)
+      // Update indicator (always, in all camera modes)
       const isOccluded = this._isOccluded(pingWorldPos);
-      this._updateArrow(ping, pingWorldPos, isOccluded);
+      this._updateIndicator(ping, pingWorldPos, isOccluded);
 
       // Only update 3D markers when in orbital/fast travel view
       if (!this.markersVisible) {
@@ -446,13 +465,26 @@ class PingMarkerSystem {
     }
   }
 
-  _updateArrow(ping, pingWorldPos, isOccluded) {
-    const label = ping.arrowElement._distanceLabel;
+  _setIndicatorState(ping, newState) {
+    const el = ping.arrowElement;
+    el.classList.remove(
+      "state-offscreen",
+      "state-transitioning-in",
+      "state-onscreen",
+      "state-transitioning-out",
+    );
+    el.classList.add("state-" + newState);
+    ping.indicatorState = newState;
+  }
 
-    // Project ping position to screen (needed for positioning)
+  _updateIndicator(ping, pingWorldPos, isOccluded) {
+    const el = ping.arrowElement;
+    const label = el._distanceLabel;
+
+    // Project ping position to screen
     const screenPos = this._projectToScreen(pingWorldPos);
 
-    // Calculate arrow position on ring
+    // Calculate arrow ring position (off-screen indicator)
     const cx = window.innerWidth / 2;
     const cy = window.innerHeight / 2;
     const vmin = Math.min(window.innerWidth, window.innerHeight);
@@ -464,110 +496,143 @@ class PingMarkerSystem {
     const arrowY = cy + Math.sin(angle) * arrowRadius;
     const rotation = (angle * 180) / Math.PI + 90;
 
-    // Check arrival/departure (surface view only)
-    if (this.playerTank && !this.markersVisible) {
-      const playerPos = this.playerTank.getPosition();
-      if (playerPos) {
-        const distance = playerPos.distanceTo(pingWorldPos);
-        const inArrivalZone = distance < PING_CONFIG.arrivalDistance;
-
-        if (inArrivalZone && !ping.arrived) {
-          // Player has arrived! Trigger pop animation
-          ping.arrived = true;
-          ping.arrowElement.classList.remove("ping-arrow-appear");
-          // Position arrow before pop animation
-          ping.arrowElement.style.left = arrowX + "px";
-          ping.arrowElement.style.top = arrowY + "px";
-          ping.arrowElement.style.setProperty(
-            "--arrow-rotation",
-            `${rotation}deg`,
-          );
-          ping.arrowElement.style.display = "block";
-          ping.arrowElement.classList.add("ping-arrow-pop");
-          if (label) label.style.display = "none";
-          // Hide after animation completes (500ms)
-          setTimeout(() => {
-            if (ping.arrived) {
-              ping.arrowElement.style.display = "none";
-            }
-          }, 500);
-          return;
-        } else if (!inArrivalZone && ping.arrived) {
-          // Player has left the arrival zone! Trigger reappear animation
-          ping.arrived = false;
-          ping.animatingAppear = true;
-          ping.arrowElement.classList.remove("ping-arrow-pop");
-          // Position arrow before appear animation
-          ping.arrowElement.style.left = arrowX + "px";
-          ping.arrowElement.style.top = arrowY + "px";
-          ping.arrowElement.style.setProperty(
-            "--arrow-rotation",
-            `${rotation}deg`,
-          );
-          ping.arrowElement.style.display = "block";
-          ping.arrowElement.classList.add("ping-arrow-appear");
-          if (label) label.style.display = "none";
-          // Remove animation class after it finishes so normal transforms work
-          setTimeout(() => {
-            ping.arrowElement.classList.remove("ping-arrow-appear");
-            ping.animatingAppear = false;
-          }, 500);
-          return;
-        } else if (ping.arrived) {
-          // Still in arrival zone, keep hidden
-          ping.arrowElement.style.display = "none";
-          if (label) label.style.display = "none";
-          return;
-        }
-      }
-    }
-
-    // Don't hide during appear animation
-    if (ping.animatingAppear) {
-      return;
-    }
-
-    // Screen bounds check
-    const margin = 50;
+    // Screen bounds check with hysteresis margins
+    const state = ping.indicatorState;
+    const useEnterMargin =
+      state === "offscreen" || state === "transitioning-out";
+    const margin = useEnterMargin
+      ? PING_CONFIG.enterMargin
+      : PING_CONFIG.exitMargin;
     const isOnScreen =
       screenPos.x >= margin &&
       screenPos.x <= window.innerWidth - margin &&
       screenPos.y >= margin &&
       screenPos.y <= window.innerHeight - margin &&
-      screenPos.z < 1 && // Not behind camera
+      screenPos.z < 1 &&
       !isOccluded;
 
-    if (isOnScreen) {
-      ping.arrowElement.style.display = "none";
-      if (label) label.style.display = "none";
-      return;
-    }
+    const now = Date.now();
+    const elapsed = now - ping.transitionStartTime;
+    const pastGrace = elapsed > PING_CONFIG.morphGracePeriod;
 
-    // Position arrow on ring (values calculated at top of function)
-    ping.arrowElement.style.display = "block";
-    ping.arrowElement.style.left = arrowX + "px";
-    ping.arrowElement.style.top = arrowY + "px";
-    ping.arrowElement.style.setProperty("--arrow-rotation", `${rotation}deg`);
-    // Only set transform directly if no animation is active
-    if (
-      !ping.arrowElement.classList.contains("ping-arrow-appear") &&
-      !ping.arrowElement.classList.contains("ping-arrow-pop")
-    ) {
-      ping.arrowElement.style.transform = `translate(-50%, -50%) rotate(${rotation}deg)`;
-    }
-
-    // Position distance label between center and arrow (close to arrow, always horizontal)
-    if (label) {
-      const labelOffset = 24;
-      label.style.display = "block";
-      label.style.left = (arrowX - Math.cos(angle) * labelOffset) + "px";
-      label.style.top = (arrowY - Math.sin(angle) * labelOffset) + "px";
-      if (this.playerTank) {
-        const playerPos = this.playerTank.getPosition();
-        if (playerPos) {
-          label.textContent = Math.round(playerPos.distanceTo(pingWorldPos)) + "m";
+    switch (ping.indicatorState) {
+      case "offscreen":
+        if (isOnScreen) {
+          // Start morphing: arrow → diamond, slide ring → ping screen pos
+          ping.transitionStartTime = now;
+          this._setIndicatorState(ping, "transitioning-in");
+          // Force reflow so browser registers current position as transition start
+          el.offsetHeight;
+          // Set target: ping's screen position, no rotation
+          el.style.left = screenPos.x + "px";
+          el.style.top = screenPos.y + "px";
+          el.style.transform = "translate(-50%, -50%) rotate(0deg)";
+          if (label) label.style.display = "none";
+        } else {
+          // Normal off-screen: position arrow on ring
+          el.style.display = "block";
+          el.style.left = arrowX + "px";
+          el.style.top = arrowY + "px";
+          el.style.transform = `translate(-50%, -50%) rotate(${rotation}deg)`;
+          // Distance label
+          if (label) {
+            const labelOffset = 24;
+            label.style.display = "block";
+            label.style.left =
+              arrowX - Math.cos(angle) * labelOffset + "px";
+            label.style.top =
+              arrowY - Math.sin(angle) * labelOffset + "px";
+            if (this.playerTank) {
+              const playerPos = this.playerTank.getPosition();
+              if (playerPos) {
+                label.textContent =
+                  Math.round(playerPos.distanceTo(pingWorldPos)) + "m";
+              }
+            }
+          }
         }
-      }
+        break;
+
+      case "transitioning-in":
+        if (elapsed >= PING_CONFIG.morphDuration) {
+          // Transition complete → onscreen
+          this._setIndicatorState(ping, "onscreen");
+          el.style.left = screenPos.x + "px";
+          el.style.top = screenPos.y + "px";
+          el.style.transform = "translate(-50%, -50%) rotate(0deg)";
+          if (label) label.style.display = "none";
+        } else if (!isOnScreen && pastGrace) {
+          // Ping left screen mid-transition → reverse
+          ping.transitionStartTime = now;
+          this._setIndicatorState(ping, "transitioning-out");
+          el.offsetHeight;
+          el.style.left = arrowX + "px";
+          el.style.top = arrowY + "px";
+          el.style.transform = `translate(-50%, -50%) rotate(${rotation}deg)`;
+          if (label) label.style.display = "none";
+        } else {
+          // Update target position (CSS transition retargets smoothly)
+          el.style.left = screenPos.x + "px";
+          el.style.top = screenPos.y + "px";
+        }
+        break;
+
+      case "onscreen":
+        if (!isOnScreen) {
+          // Start morphing back: diamond → arrow, slide ping → ring
+          ping.transitionStartTime = now;
+          this._setIndicatorState(ping, "transitioning-out");
+          // Force reflow so browser registers current position as start
+          el.offsetHeight;
+          el.style.left = arrowX + "px";
+          el.style.top = arrowY + "px";
+          el.style.transform = `translate(-50%, -50%) rotate(${rotation}deg)`;
+          if (label) label.style.display = "none";
+        } else {
+          // Track ping screen position (no transition, instant)
+          el.style.display = "block";
+          el.style.left = screenPos.x + "px";
+          el.style.top = screenPos.y + "px";
+          el.style.transform = "translate(-50%, -50%) rotate(0deg)";
+          if (label) label.style.display = "none";
+        }
+        break;
+
+      case "transitioning-out":
+        if (elapsed >= PING_CONFIG.morphDuration) {
+          // Transition complete → offscreen
+          this._setIndicatorState(ping, "offscreen");
+          el.style.left = arrowX + "px";
+          el.style.top = arrowY + "px";
+          el.style.transform = `translate(-50%, -50%) rotate(${rotation}deg)`;
+          // Show distance label
+          if (label) {
+            const labelOffset = 24;
+            label.style.display = "block";
+            label.style.left =
+              arrowX - Math.cos(angle) * labelOffset + "px";
+            label.style.top =
+              arrowY - Math.sin(angle) * labelOffset + "px";
+            if (this.playerTank) {
+              const playerPos = this.playerTank.getPosition();
+              if (playerPos) {
+                label.textContent =
+                  Math.round(playerPos.distanceTo(pingWorldPos)) + "m";
+              }
+            }
+          }
+        } else if (isOnScreen && pastGrace) {
+          // Ping came back on screen mid-transition → reverse
+          ping.transitionStartTime = now;
+          this._setIndicatorState(ping, "transitioning-in");
+          el.offsetHeight;
+          el.style.left = screenPos.x + "px";
+          el.style.top = screenPos.y + "px";
+          el.style.transform = "translate(-50%, -50%) rotate(0deg)";
+          if (label) label.style.display = "none";
+        }
+        // Otherwise let CSS transition continue to ring position
+        break;
     }
   }
 

@@ -646,6 +646,11 @@ class Dashboard {
                     <div class="preview-hex-count" id="territory-hex-count"></div>
                     <div class="preview-overlap-warning hidden" id="territory-overlap-warning"></div>
                     <div class="preview-pricing" id="territory-pricing"></div>
+                    <div class="territory-info-fields">
+                        <input type="text" class="territory-info-input" id="territory-title-input" placeholder="Territory Title" maxlength="40">
+                        <input type="text" class="territory-info-input" id="territory-tagline-input" placeholder="Tagline" maxlength="80">
+                        <input type="url" class="territory-info-input" id="territory-url-input" placeholder="https://yoursite.com" maxlength="200">
+                    </div>
                     <div class="preview-actions">
                         <button class="territory-btn territory-btn-claim" id="btn-territory-claim">
                             Claim Territory
@@ -1076,6 +1081,44 @@ class Dashboard {
       this._updatePlayerTerritory(territoryId, {
         patternAdjustment: territory.patternAdjustment,
       });
+
+      // Territory info text inputs (title, tagline, URL)
+      const infoInput = e.target.closest(".territory-info-edit");
+      if (infoInput) {
+        const tid = infoInput.dataset.territoryId;
+        const t = this._playerTerritories.find((t) => t.id === tid);
+        if (!t) return;
+        const field = infoInput.dataset.field; // "title", "tagline", or "websiteUrl"
+        let val = (infoInput.value || "").trim();
+        if (field === "websiteUrl") val = this._sanitizeTerritoryUrl(val);
+        t[field] = val;
+
+        // Update sponsor data in Planet for intel popup
+        const sponsorEntry = this._territoryPlanet?.sponsorClusters?.get(tid);
+        if (sponsorEntry?.sponsor) {
+          if (field === "title") sponsorEntry.sponsor.name = val || this.playerName || "Player";
+          else if (field === "tagline") sponsorEntry.sponsor.tagline = val;
+          else if (field === "websiteUrl") sponsorEntry.sponsor.websiteUrl = val;
+        }
+
+        // Persist to Firestore + SponsorStorage
+        const changes = {};
+        changes[field] = val;
+        if (field === "title") changes.name = val || this.playerName || "Player";
+        this._updatePlayerTerritory(tid, changes);
+
+        // Broadcast to other players
+        if (window._mp?.net?.socket) {
+          window._mp.net.socket.emit("update-territory-info", {
+            territoryId: tid,
+            title: t.title || "",
+            tagline: t.tagline || "",
+            websiteUrl: t.websiteUrl || "",
+          });
+        }
+
+        this._savePlayerTerritories();
+      }
     });
 
     // Note: H key toggle is handled by main.js to coordinate with chat window
@@ -2498,16 +2541,26 @@ class Dashboard {
     const planet = this._territoryPlanet;
     const playerName = this.playerName || "Player";
 
+    // Read territory info fields
+    const titleInput = document.getElementById("territory-title-input");
+    const taglineInput = document.getElementById("territory-tagline-input");
+    const urlInput = document.getElementById("territory-url-input");
+    const title = (titleInput?.value || "").trim() || playerName;
+    const tagline = (taglineInput?.value || "").trim();
+    const websiteUrl = this._sanitizeTerritoryUrl((urlInput?.value || "").trim());
+
     // Generate unique territory ID
     const territoryId = `territory_${Date.now()}_${Math.random().toString(36).substr(2, 6)}`;
 
-    // Generate placeholder texture (canvas with player name)
-    const patternImage = this._generateTerritoryTexture(playerName);
+    // Generate placeholder texture (canvas with territory title)
+    const patternImage = this._generateTerritoryTexture(title);
 
     // Create virtual sponsor object (matches applySponsorCluster interface)
     const virtualSponsor = {
       id: territoryId,
-      name: playerName,
+      name: title,
+      tagline: tagline,
+      websiteUrl: websiteUrl,
       cluster: {
         tileIndices: preview.tileIndices,
       },
@@ -2541,6 +2594,9 @@ class Dashboard {
       timestamp: Date.now(),
       patternImage: patternImage,
       patternAdjustment: virtualSponsor.patternAdjustment,
+      title: title,
+      tagline: tagline,
+      websiteUrl: websiteUrl,
     };
     this._playerTerritories.push(territoryRecord);
 
@@ -2557,6 +2613,9 @@ class Dashboard {
         patternImage: patternImage,
         patternAdjustment: virtualSponsor.patternAdjustment,
         playerName: playerName,
+        title: title,
+        tagline: tagline,
+        websiteUrl: websiteUrl,
       });
     }
 
@@ -2908,6 +2967,9 @@ class Dashboard {
         const label = tierLabels[t.tierName] || "Territory";
         const age = this._formatTimeAgo(t.timestamp);
         const adj = t.patternAdjustment || { scale: 1.0, offsetX: 0, offsetY: 0 };
+        const escTitle = (t.title || "").replace(/"/g, "&quot;");
+        const escTagline = (t.tagline || "").replace(/"/g, "&quot;");
+        const escUrl = (t.websiteUrl || "").replace(/"/g, "&quot;");
         return `
           <div class="territory-owned-item" data-territory-id="${t.id}">
               <div class="territory-item-header">
@@ -2916,6 +2978,11 @@ class Dashboard {
                   ${t.imageStatus === "pending" ? '<span class="territory-status-badge pending">Pending Review</span>' : ""}
                   ${t.imageStatus === "rejected" ? '<span class="territory-status-badge rejected">Rejected — Upload New</span>' : ""}
                   ${t.imageStatus === "approved" ? '<span class="territory-status-badge approved">Approved</span>' : ""}
+              </div>
+              <div class="territory-info-edit-group">
+                  <input type="text" class="territory-info-edit" data-territory-id="${t.id}" data-field="title" value="${escTitle}" placeholder="Title" maxlength="40">
+                  <input type="text" class="territory-info-edit" data-territory-id="${t.id}" data-field="tagline" value="${escTagline}" placeholder="Tagline" maxlength="80">
+                  <input type="url" class="territory-info-edit" data-territory-id="${t.id}" data-field="websiteUrl" value="${escUrl}" placeholder="https://yoursite.com" maxlength="200">
               </div>
               <div class="territory-controls" data-territory-id="${t.id}">
                   <div class="territory-control-row">
@@ -2942,6 +3009,15 @@ class Dashboard {
         `;
       })
       .join("");
+  }
+
+  _sanitizeTerritoryUrl(url) {
+    if (!url) return "";
+    // Ensure URL starts with a valid protocol
+    if (!/^https?:\/\//i.test(url)) url = "https://" + url;
+    // Basic length limit
+    if (url.length > 200) url = url.slice(0, 200);
+    return url;
   }
 
   _formatTimeAgo(timestamp) {
@@ -2977,6 +3053,9 @@ class Dashboard {
           patternAdjustment: territory.patternAdjustment,
           playerName: this.playerName || "Player",
           playerFaction: this.playerFaction,
+          title: territory.title || "",
+          tagline: territory.tagline || "",
+          websiteUrl: territory.websiteUrl || "",
           purchasedAt: firebase.firestore.FieldValue.serverTimestamp(),
           active: true,
         });
@@ -2994,7 +3073,9 @@ class Dashboard {
       try {
         const sponsor = {
           _territoryId: territory.id,
-          name: window.authManager?.email || this.playerName || "Player",
+          name: territory.title || window.authManager?.email || this.playerName || "Player",
+          tagline: territory.tagline || "",
+          websiteUrl: territory.websiteUrl || "",
           cluster: { tileIndices: territory.tileIndices },
           patternImage: territory.patternImage,
           patternAdjustment: territory.patternAdjustment,
@@ -3154,6 +3235,11 @@ class Dashboard {
         ? territory.pendingImage
         : territory.patternImage;
 
+      // Resolve title/tagline/URL from territory data (Firestore or SponsorStorage)
+      const loadedTitle = territory.title || territory.name || "";
+      const loadedTagline = territory.tagline || "";
+      const loadedUrl = territory.websiteUrl || "";
+
       const record = {
         id: territory._territoryId || territory.id,
         _sponsorStorageId: territory._territoryId ? territory.id : undefined,
@@ -3163,11 +3249,16 @@ class Dashboard {
         patternImage: displayImage,
         patternAdjustment: adj,
         imageStatus: territory.imageStatus || "placeholder",
+        title: loadedTitle,
+        tagline: loadedTagline,
+        websiteUrl: loadedUrl,
       };
 
       const virtualSponsor = {
         id: record.id,
-        name: this.playerName || "Player",
+        name: loadedTitle || this.playerName || "Player",
+        tagline: loadedTagline,
+        websiteUrl: loadedUrl,
         cluster: { tileIndices: validTiles },
         patternImage: displayImage,
         patternAdjustment: adj,

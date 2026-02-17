@@ -1640,11 +1640,13 @@ class GameRoom {
         const pPhi = player.phi + (fwdPhi * fwd + rgtPhi * rgt) / R;
         const pTh  = player.theta + (fwdTh * fwd + rgtTh * rgt) / R;
 
+        // Precise polar hole check using actual hex boundary polygon
+        if (this.worldGen.isInsidePolarHole(pTh + this.planetRotation, pPhi)) {
+          blocked = true;
+          break;
+        }
         const result = this.worldGen.getNearestTile(pTh + this.planetRotation, pPhi);
-        if (result && (
-          this.worldGen.polarTileIndices.has(result.tileIndex) ||
-          this.terrain.getElevationAtTileIndex(result.tileIndex) > 0
-        )) {
+        if (result && this.terrain.getElevationAtTileIndex(result.tileIndex) > 0) {
           blocked = true;
           break;
         }

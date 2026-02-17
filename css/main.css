@@ -3957,6 +3957,37 @@ body.tip-dragging .chat-mention.tip-highlight {
     color: var(--text-muted);
 }
 
+.territory-info-fields,
+.territory-info-edit-group {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    margin-bottom: var(--space-xs);
+}
+
+.territory-info-input,
+.territory-info-edit {
+    font-family: var(--font-body);
+    font-size: var(--font-size-small);
+    background: rgba(0, 0, 0, 0.3);
+    border: var(--border-width) solid var(--border-dark);
+    color: var(--text-primary);
+    padding: 3px var(--space-xs);
+    outline: none;
+    width: 100%;
+    box-sizing: border-box;
+}
+
+.territory-info-input::placeholder,
+.territory-info-edit::placeholder {
+    color: var(--text-muted);
+}
+
+.territory-info-input:focus,
+.territory-info-edit:focus {
+    border-color: var(--accent-cyan);
+}
+
 .territory-controls {
     margin-bottom: var(--space-xs);
 }
@@ -5344,20 +5375,47 @@ body.colorblind-tritanopia {
     z-index: 50;
 }
 
-.ping-arrow {
+/* Ping indicator wrapper — positioned on screen, holds arrow + diamond */
+.ping-indicator {
     position: fixed;
-    width: 0;
-    height: 0;
-    border-left: 8px solid transparent;
-    border-right: 8px solid transparent;
-    border-bottom: 16px solid #a064dc; /* Purple - squad color */
     pointer-events: none;
     z-index: 50;
-    filter: drop-shadow(0 0 4px rgba(160, 100, 220, 0.6));
-    transition: opacity 0.2s;
+    width: 0;
+    height: 0;
 }
 
-.ping-arrow-distance {
+/* Arrow child — clip-path triangle (filled) */
+.ping-indicator-arrow {
+    width: 16px;
+    height: 16px;
+    background: #a064dc;
+    clip-path: polygon(50% 0%, 0% 100%, 100% 100%);
+    filter: drop-shadow(0 0 4px rgba(160, 100, 220, 0.6));
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    transform: translate(-50%, -50%);
+    transition: opacity 200ms ease;
+    opacity: 1;
+}
+
+/* Diamond child — outlined rotated square (~32px diagonal) */
+.ping-indicator-diamond {
+    width: 22px;
+    height: 22px;
+    border: 2px solid #a064dc;
+    background: transparent;
+    filter: drop-shadow(0 0 4px rgba(160, 100, 220, 0.6));
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    transform: translate(-50%, -50%) rotate(45deg);
+    transition: opacity 200ms ease;
+    opacity: 0;
+}
+
+/* Distance label */
+.ping-indicator-distance {
     position: fixed;
     font-family: var(--font-small);
     font-size: 12px;
@@ -5368,82 +5426,58 @@ body.colorblind-tritanopia {
     text-shadow: 0 0 2px rgba(0, 0, 0, 0.8), 1px 1px 0 #000;
 }
 
-/* Own non-commander ping = cyan */
-.ping-arrow[data-own="true"] {
-    border-bottom-color: #00ffff;
+/* --- State: offscreen / onscreen — no position transitions (instant tracking) --- */
+.ping-indicator.state-offscreen,
+.ping-indicator.state-onscreen {
+    transition: none;
+}
+
+/* --- State: transitioning — smooth slide + rotate --- */
+.ping-indicator.state-transitioning-in,
+.ping-indicator.state-transitioning-out {
+    transition: left 350ms cubic-bezier(0.25, 0.1, 0.25, 1),
+                top 350ms cubic-bezier(0.25, 0.1, 0.25, 1),
+                transform 350ms cubic-bezier(0.25, 0.1, 0.25, 1);
+}
+
+/* --- Morph: arrow visible when offscreen / transitioning-out --- */
+.ping-indicator.state-offscreen .ping-indicator-arrow,
+.ping-indicator.state-transitioning-out .ping-indicator-arrow {
+    opacity: 1;
+}
+.ping-indicator.state-offscreen .ping-indicator-diamond,
+.ping-indicator.state-transitioning-out .ping-indicator-diamond {
+    opacity: 0;
+}
+
+/* --- Morph: diamond visible when onscreen / transitioning-in --- */
+.ping-indicator.state-transitioning-in .ping-indicator-arrow,
+.ping-indicator.state-onscreen .ping-indicator-arrow {
+    opacity: 0;
+}
+.ping-indicator.state-transitioning-in .ping-indicator-diamond,
+.ping-indicator.state-onscreen .ping-indicator-diamond {
+    opacity: 1;
+}
+
+/* --- Color variants: own (cyan) --- */
+.ping-indicator[data-own="true"] .ping-indicator-arrow {
+    background: #00ffff;
+    filter: drop-shadow(0 0 4px rgba(0, 255, 255, 0.6));
+}
+.ping-indicator[data-own="true"] .ping-indicator-diamond {
+    border-color: #00ffff;
     filter: drop-shadow(0 0 4px rgba(0, 255, 255, 0.6));
 }
 
-/* Commander pings always gold (takes precedence over own) */
-.ping-arrow[data-commander="true"] {
-    border-bottom-color: #ffd700;
+/* --- Color variants: commander (gold, takes precedence) --- */
+.ping-indicator[data-commander="true"] .ping-indicator-arrow {
+    background: #ffd700;
     filter: drop-shadow(0 0 4px rgba(255, 215, 0, 0.6));
 }
-
-/* Arrival pop animation - shrink + bounce (implode) */
-@keyframes ping-arrow-pop {
-    0% {
-        transform: translate(-50%, -50%) rotate(var(--arrow-rotation, 0deg))
-            scale(1);
-        opacity: 1;
-    }
-    20% {
-        transform: translate(-50%, -50%) rotate(var(--arrow-rotation, 0deg))
-            scale(1.15);
-        opacity: 1;
-    }
-    50% {
-        transform: translate(-50%, -50%) rotate(var(--arrow-rotation, 0deg))
-            scale(0.6);
-        opacity: 0.9;
-    }
-    70% {
-        transform: translate(-50%, -50%) rotate(var(--arrow-rotation, 0deg))
-            scale(0.3);
-        opacity: 0.6;
-    }
-    100% {
-        transform: translate(-50%, -50%) rotate(var(--arrow-rotation, 0deg))
-            scale(0);
-        opacity: 0;
-    }
-}
-
-.ping-arrow-pop {
-    animation: ping-arrow-pop 0.5s ease-in-out forwards;
-}
-
-/* Reappear animation - grow + bounce (reverse of pop) */
-@keyframes ping-arrow-appear {
-    0% {
-        transform: translate(-50%, -50%) rotate(var(--arrow-rotation, 0deg))
-            scale(0);
-        opacity: 0;
-    }
-    30% {
-        transform: translate(-50%, -50%) rotate(var(--arrow-rotation, 0deg))
-            scale(0.3);
-        opacity: 0.6;
-    }
-    50% {
-        transform: translate(-50%, -50%) rotate(var(--arrow-rotation, 0deg))
-            scale(0.6);
-        opacity: 0.9;
-    }
-    80% {
-        transform: translate(-50%, -50%) rotate(var(--arrow-rotation, 0deg))
-            scale(1.15);
-        opacity: 1;
-    }
-    100% {
-        transform: translate(-50%, -50%) rotate(var(--arrow-rotation, 0deg))
-            scale(1);
-        opacity: 1;
-    }
-}
-
-.ping-arrow-appear {
-    animation: ping-arrow-appear 0.5s ease-in-out forwards;
+.ping-indicator[data-commander="true"] .ping-indicator-diamond {
+    border-color: #ffd700;
+    filter: drop-shadow(0 0 4px rgba(255, 215, 0, 0.6));
 }
 
 /* ========================

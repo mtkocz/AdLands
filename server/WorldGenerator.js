@@ -65,6 +65,7 @@ class WorldGenerator {
     this._markPortalTiles(hexasphere.tiles);
     this.adjacencyMap = this._generateClusters(hexasphere.tiles);
     this._buildSpatialHash();
+    this._buildPolarBoundaryPolygons();
 
     const clusterCount = this.clusterData.length;
     const portalCount = this.portalTileIndices.size;
@@ -431,6 +432,186 @@ class WorldGenerator {
     this._nearestResult.tileIndex = tileIndex;
     this._nearestResult.clusterId = clusterId !== undefined ? clusterId : null;
     return this._nearestResult;
+  }
+
+  // ========================
+  // POLAR BOUNDARY POLYGON (precise collision)
+  // ========================
+
+  /**
+   * Find boundary edges between polar and non-polar tiles.
+   * These are the actual hex edges at the rim of each pole opening.
+   */
+  _findPolarBoundaryEdges() {
+    const tiles = this.tiles;
+    const edges = [];
+    const seenEdges = new Set();
+
+    for (const tileIdx of this.polarTileIndices) {
+      const neighbors = this.adjacencyMap.get(tileIdx) || [];
+      for (const neighborIdx of neighbors) {
+        if (this.polarTileIndices.has(neighborIdx)) continue;
+
+        const polarBoundary = tiles[tileIdx].boundary;
+        const neighborBoundary = tiles[neighborIdx].boundary;
+
+        for (let i = 0; i < neighborBoundary.length; i++) {
+          const nv1 = neighborBoundary[i];
+          const nv2 = neighborBoundary[(i + 1) % neighborBoundary.length];
+          const nk1 = `${nv1.x},${nv1.y},${nv1.z}`;
+          const nk2 = `${nv2.x},${nv2.y},${nv2.z}`;
+
+          for (let j = 0; j < polarBoundary.length; j++) {
+            const pv1 = polarBoundary[j];
+            const pv2 = polarBoundary[(j + 1) % polarBoundary.length];
+            const pk1 = `${pv1.x},${pv1.y},${pv1.z}`;
+            const pk2 = `${pv2.x},${pv2.y},${pv2.z}`;
+
+            if (
+              (nk1 === pk1 && nk2 === pk2) ||
+              (nk1 === pk2 && nk2 === pk1)
+            ) {
+              const edgeKey =
+                nk1 < nk2 ? `${nk1}|${nk2}` : `${nk2}|${nk1}`;
+              if (!seenEdges.has(edgeKey)) {
+                seenEdges.add(edgeKey);
+                edges.push({
+                  v1: {
+                    x: parseFloat(nv1.x),
+                    y: parseFloat(nv1.y),
+                    z: parseFloat(nv1.z),
+                  },
+                  v2: {
+                    x: parseFloat(nv2.x),
+                    y: parseFloat(nv2.y),
+                    z: parseFloat(nv2.z),
+                  },
+                });
+              }
+            }
+          }
+        }
+      }
+    }
+
+    return edges;
+  }
+
+  /**
+   * Build ordered 2D boundary polygons for each pole hole.
+   */
+  _buildPolarBoundaryPolygons() {
+    const edges = this._findPolarBoundaryEdges();
+    this._northPolePolygon = null;
+    this._southPolePolygon = null;
+    if (edges.length === 0) return;
+
+    const northEdges = [];
+    const southEdges = [];
+    for (const edge of edges) {
+      const midY = (edge.v1.y + edge.v2.y) / 2;
+      if (midY > 0) northEdges.push(edge);
+      else southEdges.push(edge);
+    }
+
+    this._northPolePolygon = this._chainEdgesToPolygon2D(northEdges);
+    this._southPolePolygon = this._chainEdgesToPolygon2D(southEdges);
+  }
+
+  /**
+   * Chain unordered edge segments into an ordered polygon vertex ring.
+   * Projects to XZ plane for 2D point-in-polygon tests.
+   */
+  _chainEdgesToPolygon2D(edges) {
+    if (edges.length === 0) return null;
+
+    const keyOf = (v) =>
+      `${v.x.toFixed(4)},${v.y.toFixed(4)},${v.z.toFixed(4)}`;
+    const adj = new Map();
+    for (let i = 0; i < edges.length; i++) {
+      const k1 = keyOf(edges[i].v1);
+      const k2 = keyOf(edges[i].v2);
+      if (!adj.has(k1)) adj.set(k1, []);
+      if (!adj.has(k2)) adj.set(k2, []);
+      adj.get(k1).push({ idx: i, key: k2, v: edges[i].v2 });
+      adj.get(k2).push({ idx: i, key: k1, v: edges[i].v1 });
+    }
+
+    const used = new Set();
+    const poly = [{ x: edges[0].v1.x, z: edges[0].v1.z }];
+    used.add(0);
+    let cur = keyOf(edges[0].v2);
+    poly.push({ x: edges[0].v2.x, z: edges[0].v2.z });
+    const startKey = keyOf(edges[0].v1);
+
+    while (cur !== startKey) {
+      const neighbors = adj.get(cur);
+      if (!neighbors) break;
+      let found = false;
+      for (const n of neighbors) {
+        if (!used.has(n.idx)) {
+          used.add(n.idx);
+          cur = n.key;
+          poly.push({ x: n.v.x, z: n.v.z });
+          found = true;
+          break;
+        }
+      }
+      if (!found) break;
+    }
+
+    if (poly.length > 1) {
+      const f = poly[0], l = poly[poly.length - 1];
+      if (Math.abs(f.x - l.x) < 0.01 && Math.abs(f.z - l.z) < 0.01) {
+        poly.pop();
+      }
+    }
+
+    return poly;
+  }
+
+  /**
+   * Test if a spherical position is inside a polar hole using actual hex boundary.
+   * @param {number} theta - longitude in hexasphere local frame
+   * @param {number} phi - colatitude (0 = north pole, PI = south pole)
+   * @returns {boolean}
+   */
+  isInsidePolarHole(theta, phi) {
+    // Quick rejection: only test near poles (20° threshold > actual ~14.5° boundary)
+    const polarCheckRad = (20 * Math.PI) / 180;
+    if (phi > polarCheckRad && phi < Math.PI - polarCheckRad) return false;
+
+    const sinPhi = Math.sin(phi);
+    const px = this.radius * sinPhi * Math.cos(theta);
+    const py = this.radius * Math.cos(phi);
+    const pz = this.radius * sinPhi * Math.sin(theta);
+
+    if (py > 0 && this._northPolePolygon) {
+      return this._pointInPolygon2D(px, pz, this._northPolePolygon);
+    }
+    if (py < 0 && this._southPolePolygon) {
+      return this._pointInPolygon2D(px, pz, this._southPolePolygon);
+    }
+    return false;
+  }
+
+  /**
+   * Ray-casting point-in-polygon test in 2D (XZ plane).
+   */
+  _pointInPolygon2D(px, pz, polygon) {
+    let inside = false;
+    const n = polygon.length;
+    for (let i = 0, j = n - 1; i < n; j = i++) {
+      const xi = polygon[i].x, zi = polygon[i].z;
+      const xj = polygon[j].x, zj = polygon[j].z;
+      if (
+        ((zi > pz) !== (zj > pz)) &&
+        (px < ((xj - xi) * (pz - zi)) / (zj - zi) + xi)
+      ) {
+        inside = !inside;
+      }
+    }
+    return inside;
   }
 }
 

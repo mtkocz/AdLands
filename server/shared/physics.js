@@ -79,7 +79,7 @@
    * @param {number} [minPhi] - minimum latitude (polar opening boundary)
    * @param {number} [maxPhi] - maximum latitude (polar opening boundary)
    */
-  var POLAR_PHI_LIMIT = (10 * Math.PI) / 180; // 10° from pole = polar tile opening edge
+  var POLAR_PHI_LIMIT = (3 * Math.PI) / 180; // 3° safety net (polygon collision is primary boundary)
   function moveOnSphere(
     entity,
     planetRotationSpeed,

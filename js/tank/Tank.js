@@ -176,7 +176,8 @@ class Tank {
   checkTerrainCollision(prevTheta, prevPhi, planetRotationSpeed, deltaTime) {
     if (!this.planet?.terrainElevation) {
       // Fallback: phi-based polar check when no terrain system
-      if (this.state.phi < Tank.POLAR_PHI_LIMIT || this.state.phi > Math.PI - Tank.POLAR_PHI_LIMIT) {
+      const fallbackLimit = (10 * Math.PI) / 180; // 10° hard limit
+      if (this.state.phi < fallbackLimit || this.state.phi > Math.PI - fallbackLimit) {
         const dt60 = deltaTime * 60;
         const rotDelta = (planetRotationSpeed * dt60) / 60;
         this.state.theta = prevTheta - rotDelta;
@@ -204,9 +205,14 @@ class Tank {
     );
     this.planet.hexGroup.worldToLocal(t.testPos);
 
+    // Precise polar hole check using actual hex boundary polygon
+    const inPolar = this.planet.isInsidePolarHole
+      ? this.planet.isInsidePolarHole(t.testPos)
+      : this.planet.polarTileIndices.has(
+          this.planet.terrainElevation.getNearestTileIndex(t.testPos)
+        );
     const tileIdx = this.planet.terrainElevation.getNearestTileIndex(t.testPos);
-    if (tileIdx >= 0 && (
-      this.planet.polarTileIndices.has(tileIdx) ||
+    if (inPolar || (tileIdx >= 0 &&
       this.planet.terrainElevation.getElevationAtTileIndex(tileIdx) > 0
     )) {
       const dt60 = deltaTime * 60;
@@ -446,13 +452,21 @@ class Tank {
 
         this.planet.hexGroup.worldToLocal(t.testPos);
 
-        // Check polar + terrain collision via tile lookup
+        // Check polar + terrain collision via polygon test + tile lookup
         if (this.planet.terrainElevation) {
+          const inPolar = this.planet.isInsidePolarHole
+            ? this.planet.isInsidePolarHole(t.testPos)
+            : this.planet.polarTileIndices.has(
+                this.planet.terrainElevation.getNearestTileIndex(t.testPos)
+              );
+          if (inPolar) {
+            blocked = true;
+            break;
+          }
           const tileIdx = this.planet.terrainElevation.getNearestTileIndex(t.testPos);
-          if (tileIdx >= 0 && (
-            this.planet.polarTileIndices.has(tileIdx) ||
+          if (tileIdx >= 0 &&
             this.planet.terrainElevation.getElevationAtTileIndex(tileIdx) > 0
-          )) {
+          ) {
             blocked = true;
             break;
           }
@@ -1498,7 +1512,7 @@ class Tank {
  * @param {number} minPhi - Minimum latitude (polar opening boundary)
  * @param {number} maxPhi - Maximum latitude (polar opening boundary)
  */
-Tank.POLAR_PHI_LIMIT = (10 * Math.PI) / 180; // 10° from pole = polar tile opening edge
+Tank.POLAR_PHI_LIMIT = (3 * Math.PI) / 180; // 3° safety net (polygon collision is primary boundary)
 Tank.moveEntityOnSphere = function (
   entity,
   planetRotationSpeed,
