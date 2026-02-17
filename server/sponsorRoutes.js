@@ -178,7 +178,10 @@ function createSponsorRoutes(sponsorStore, gameRoom, { imageUrls, gameDir } = {}
     if (req.body.isPlayerTerritory && req.body.ownerUid) {
       try {
         const acc = await getFirestore().collection("accounts").doc(req.body.ownerUid).get();
-        if (acc.exists && acc.data().email) req.body.name = acc.data().email;
+        if (acc.exists && acc.data().email) {
+          req.body.name = acc.data().email;
+          req.body.ownerEmail = acc.data().email;
+        }
       } catch (_) {}
     }
     const result = await sponsorStore.create(req.body);

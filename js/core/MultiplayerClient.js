@@ -1275,18 +1275,16 @@
 
     // Server awarded holding crypto (once per minute for territory holdings)
     const _holdingCryptoPos = new THREE.Vector3();
-    const _holdingHexPos = new THREE.Vector3();
     net.onHoldingCrypto = (data) => {
       if (!window.cryptoSystem) return;
       tank.group.getWorldPosition(_holdingCryptoPos);
 
-      // Build per-hex data from local state so floating numbers appear at each owned hex
+      // Use server-provided cluster IDs to spawn floating numbers at each owned hex
       const adjacencyMap = planet._adjacencyMap;
-      if (adjacencyMap && planet.clusterCaptureState.size > 0) {
-        const faction = tank.faction;
+      if (data.clusters && data.clusters.length > 0 && adjacencyMap) {
+        const HOLDING_EXPONENT = 1.05;
         const ownedHexes = new Set();
-        for (const [clusterId, state] of planet.clusterCaptureState) {
-          if (state.owner !== faction) continue;
+        for (const clusterId of data.clusters) {
           const cluster = planet.clusterData[clusterId];
           if (!cluster) continue;
           for (const tileIdx of cluster.tiles) {
@@ -1295,22 +1293,20 @@
         }
 
         if (ownedHexes.size > 0) {
-          const HOLDING_EXPONENT = 1.05;
-          planet.hexGroup.updateMatrixWorld();
-          const hexGroupMatrix = planet.hexGroup.matrixWorld;
           const hexData = [];
-
           for (const tileIdx of ownedHexes) {
-            const tileData = planet.tileCenters[tileIdx];
-            if (!tileData) continue;
+            const tileCenter = planet.tileCenters[tileIdx];
+            if (!tileCenter) continue;
             const neighbors = adjacencyMap.get(tileIdx) || [];
             let friendlyNeighbors = 0;
             for (const n of neighbors) {
               if (ownedHexes.has(n)) friendlyNeighbors++;
             }
             const crypto = Math.pow(HOLDING_EXPONENT, friendlyNeighbors);
-            _holdingHexPos.copy(tileData.position).applyMatrix4(hexGroupMatrix);
-            hexData.push({ pos: _holdingHexPos.clone(), crypto });
+            // Project to surface and convert to world space (matches single-player pattern)
+            const surfacePos = tileCenter.position.clone().normalize().multiplyScalar(planet.radius);
+            planet.hexGroup.localToWorld(surfacePos);
+            hexData.push({ pos: surfacePos, crypto });
           }
 
           window.cryptoSystem.awardHoldingCrypto(data.amount, _holdingCryptoPos, hexData);
@@ -1318,7 +1314,7 @@
         }
       }
 
-      // Fallback: no local hex data, show single number at tank position
+      // Fallback: single floating number at tank position
       window.cryptoSystem.awardCrypto(data.amount, "holding", _holdingCryptoPos);
     };
 

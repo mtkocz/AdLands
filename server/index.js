@@ -74,7 +74,8 @@ async function reconcilePlayerTerritories() {
     for (const doc of snap.docs) {
       const data = doc.data();
       const existing = sponsorStore.getAll().find(s => s._territoryId === doc.id);
-      const displayName = emailMap.get(data.ownerUid) || data.playerName || "Player";
+      const email = emailMap.get(data.ownerUid);
+      const displayName = email || data.playerName || "Player";
       if (!existing) {
         const result = await sponsorStore.create({
           _territoryId: doc.id,
@@ -87,12 +88,18 @@ async function reconcilePlayerTerritories() {
           tierName: data.tierName || "outpost",
           imageStatus: data.imageStatus || "placeholder",
           ownerUid: data.ownerUid,
+          ownerEmail: email || null,
         });
         if (result.sponsor) created++;
         else if (result.errors) console.warn(`[Reconcile] Failed for ${doc.id}:`, result.errors);
-      } else if (existing.name !== displayName) {
-        // Update name to email if it changed
-        await sponsorStore.update(existing.id, { name: displayName });
+      } else {
+        // Only update name to email if we actually found one — never downgrade to profile name
+        const updates = {};
+        if (email && existing.name !== email) updates.name = email;
+        if (email && existing.ownerEmail !== email) updates.ownerEmail = email;
+        if (Object.keys(updates).length > 0) {
+          await sponsorStore.update(existing.id, updates);
+        }
       }
     }
     if (created > 0) {
@@ -472,6 +479,7 @@ io.on("connection", (socket) => {
         tierName: tierName || "outpost",
         imageStatus: "placeholder",
         ownerUid: socket.uid,
+        ownerEmail: ownerEmail || null,
       });
       if (createResult.errors) {
         console.warn(`[Territory] SponsorStore create failed for ${territoryId}:`, createResult.errors);

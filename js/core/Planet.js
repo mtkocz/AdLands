@@ -4692,6 +4692,9 @@ class Planet {
       transparent: true,
       side: THREE.DoubleSide,
       depthWrite: false,
+      polygonOffset: true,
+      polygonOffsetFactor: -1,
+      polygonOffsetUnits: -4,
       // Overlay blend: Result = Src × DstColor + Dst × SrcColor
       blending: THREE.CustomBlending,
       blendEquation: THREE.AddEquation,
@@ -4730,7 +4733,7 @@ class Planet {
           y = pos[i + 1],
           z = pos[i + 2];
         const len = Math.sqrt(x * x + y * y + z * z);
-        const offset = 0.01; // Slight offset to prevent z-fighting
+        const offset = 0.03; // Offset to prevent z-fighting
         positions.push(
           x + (x / len) * offset,
           y + (y / len) * offset,

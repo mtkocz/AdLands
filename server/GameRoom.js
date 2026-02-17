@@ -2412,17 +2412,19 @@ class GameRoom {
     const adjacencyMap = worldResult.adjacencyMap;
     const HOLDING_EXPONENT = 1.05;
 
-    // Build owned hex sets per faction (one pass over all clusters)
+    // Build owned hex sets and cluster lists per faction (one pass over all clusters)
     const factionOwnedHexes = {
       rust: new Set(),
       cobalt: new Set(),
       viridian: new Set(),
     };
+    const factionClusters = { rust: [], cobalt: [], viridian: [] };
 
     for (const [clusterId, state] of this.clusterCaptureState) {
       if (!state.owner) continue;
       const cluster = worldResult.clusterData[clusterId];
       if (!cluster) continue;
+      factionClusters[state.owner].push(clusterId);
       for (const tileIdx of cluster.tiles) {
         factionOwnedHexes[state.owner].add(tileIdx);
       }
@@ -2447,7 +2449,9 @@ class GameRoom {
       factionCrypto[faction] = Math.round(total);
     }
 
-    // Award to each alive player and emit event
+    console.log(`[HoldingCrypto] R:${factionCrypto.rust} C:${factionCrypto.cobalt} V:${factionCrypto.viridian}`);
+
+    // Award to each alive player and emit event (include cluster IDs for client visuals)
     for (const [id, player] of this.players) {
       if (player.isDead || player.waitingForPortal) continue;
 
@@ -2455,7 +2459,10 @@ class GameRoom {
       if (amount <= 0) continue;
 
       player.crypto += amount;
-      this.io.to(id).emit("holding-crypto", { amount });
+      this.io.to(id).emit("holding-crypto", {
+        amount,
+        clusters: factionClusters[player.faction],
+      });
     }
   }
 

@@ -1225,7 +1225,7 @@
                         }
                     </div>
                     <div class="sponsor-card-info">
-                        <div class="sponsor-card-name">${escapeHtml(first.name)}${isGroupPaused ? ' <span class="paused-badge">PAUSED</span>' : ""}${hasPendingImage ? ' <span class="pending-status-badge">PENDING</span>' : ""}${isNewTerritory && !hasPendingImage ? ' <span class="new-status-badge">NEW</span>' : ""}</div>
+                        <div class="sponsor-card-name">${escapeHtml(hasPlayerTerritory ? (first.ownerEmail || first.name) : first.name)}${isGroupPaused ? ' <span class="paused-badge">PAUSED</span>' : ""}${hasPendingImage ? ' <span class="pending-status-badge">PENDING</span>' : ""}${isNewTerritory && !hasPendingImage ? ' <span class="new-status-badge">NEW</span>' : ""}</div>
                         <span class="sponsor-group-badge">${members.length} territories</span>
                         <div class="sponsor-card-stats">
                             ${totalTiles} tiles${groupMoonCount > 0 ? ", " + groupMoonCount + " moons" : ""}${groupBbCount > 0 ? ", " + groupBbCount + " billboards" : ""}, ${totalRewards} rewards
