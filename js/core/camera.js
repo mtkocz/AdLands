@@ -913,6 +913,8 @@ class GameCamera {
     // +/- keys zoom between surface/orbital (works regardless of scroll setting)
     window.addEventListener("keydown", (e) => {
       if (window._authScreenInstance?.isVisible) return;
+      const _tag = document.activeElement?.tagName;
+      if (_tag === "INPUT" || _tag === "TEXTAREA" || document.activeElement?.isContentEditable) return;
       if (e.key === "+" || e.key === "=") {
         if (this.mode === "orbital" && !this.fastTravelEnabled) {
           this._startTransition("surface");

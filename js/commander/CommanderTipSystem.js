@@ -474,15 +474,15 @@ class CommanderTipSystem {
                     transition: width 0.3s ease;
                 }
                 #commander-tip-panel .tip-budget-text {
-                    font-size: 16px;
+                    font-size: var(--font-size-body);
                 }
                 #tip-drag-indicator {
                     position: fixed;
                     padding: 6px 10px;
                     background: rgba(0, 0, 0, 0.9);
                     border: 2px solid #ffd700;
-                    font-family: 'Atari ST 8x16', monospace;
-                    font-size: 16px;
+                    font-family: var(--font-body);
+                    font-size: var(--font-size-body);
                     font-weight: bold;
                     color: #ffd700;
                     pointer-events: none;
@@ -855,8 +855,8 @@ class CommanderTipSystem {
             background: rgba(255, 50, 50, 0.9);
             color: #fff;
             padding: 8px 12px;
-            font-family: 'Atari ST 8x16', monospace;
-            font-size: 16px;
+            font-family: var(--font-body);
+            font-size: var(--font-size-body);
             z-index: 10001;
             border: 1px solid #ff0000;
         `;

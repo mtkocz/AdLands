@@ -421,7 +421,7 @@ class Dashboard {
                     <div class="faction-roster-count" id="faction-roster-count">Loading...</div>
                 </div>
                 <div class="faction-roster-list" id="faction-roster-list">
-                    <div class="empty-state" style="padding:12px;opacity:0.5;font-size:12px;">Waiting for roster data...</div>
+                    <div class="empty-state" style="padding:12px;opacity:0.5;font-family:var(--font-small);font-size:var(--font-size-small);">Waiting for roster data...</div>
                 </div>
             </div>
         `;
@@ -440,7 +440,7 @@ class Dashboard {
     if (countEl) countEl.textContent = "Loading...";
     const listEl = document.getElementById("faction-roster-list");
     if (listEl) {
-      listEl.innerHTML = '<div class="empty-state" style="padding:12px;opacity:0.5;font-size:12px;">Waiting for roster data...</div>';
+      listEl.innerHTML = '<div class="empty-state" style="padding:12px;opacity:0.5;font-family:var(--font-small);font-size:var(--font-size-small);">Waiting for roster data...</div>';
     }
   }
 
@@ -520,7 +520,7 @@ class Dashboard {
     }
 
     if (data.members.length === 0) {
-      html = '<div class="empty-state" style="padding:12px;opacity:0.5;font-size:12px;">No faction members</div>';
+      html = '<div class="empty-state" style="padding:12px;opacity:0.5;font-family:var(--font-small);font-size:var(--font-size-small);">No faction members</div>';
     }
 
     listEl.innerHTML = html;

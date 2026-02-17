@@ -2624,7 +2624,8 @@ body.tip-dragging .chat-mention.tip-highlight {
 }
 
 .level-up-popup-header {
-    font-size: 18px;
+    font-family: var(--font-header);
+    font-size: var(--font-size-header);
     color: var(--accent-cyan);
     margin-bottom: 16px;
     text-align: center;
@@ -2638,14 +2639,16 @@ body.tip-dragging .chat-mention.tip-highlight {
 
 .level-up-current {
     color: #ccc;
-    font-size: 14px;
+    font-family: var(--font-small);
+    font-size: var(--font-size-small);
     margin-bottom: 8px;
     text-align: center;
 }
 
 .level-up-cost {
     color: var(--accent-cyan);
-    font-size: 16px;
+    font-family: var(--font-body);
+    font-size: var(--font-size-body);
     text-align: center;
     margin-bottom: 4px;
 }
@@ -2656,14 +2659,16 @@ body.tip-dragging .chat-mention.tip-highlight {
 
 .level-up-insufficient {
     color: #ff4444;
-    font-size: 12px;
+    font-family: var(--font-small);
+    font-size: var(--font-size-small);
     text-align: center;
     margin-top: 4px;
 }
 
 .level-up-unlock {
     color: #aaa;
-    font-size: 12px;
+    font-family: var(--font-small);
+    font-size: var(--font-size-small);
     text-align: center;
     margin-top: 8px;
     padding-top: 8px;
@@ -2681,8 +2686,8 @@ body.tip-dragging .chat-mention.tip-highlight {
     border: 1px solid var(--accent-cyan);
     background: transparent;
     color: var(--accent-cyan);
-    font-family: var(--font-body);
-    font-size: 14px;
+    font-family: var(--font-small);
+    font-size: var(--font-size-small);
     cursor: pointer;
     transition: background 0.15s, color 0.15s;
 }
@@ -2717,8 +2722,8 @@ body.tip-dragging .chat-mention.tip-highlight {
     border: 1px solid #ff4444;
     color: #ff4444;
     padding: 10px 20px;
-    font-family: var(--font-body);
-    font-size: 13px;
+    font-family: var(--font-small);
+    font-size: var(--font-size-small);
     z-index: 10001;
     opacity: 0;
     transition: opacity 0.3s, transform 0.3s;
@@ -3606,14 +3611,14 @@ body.tip-dragging .chat-mention.tip-highlight {
 
 .rental-label {
     display: block;
-    font-family: var(--font-body);
+    font-family: var(--font-small);
     font-size: var(--font-size-small);
     color: var(--text-muted);
     margin-bottom: 2px;
 }
 
 .rental-input {
-    font-family: var(--font-body);
+    font-family: var(--font-small);
     font-size: var(--font-size-small);
     background: rgba(0, 0, 0, 0.3);
     border: var(--border-width) solid var(--border-dark);
@@ -3658,7 +3663,7 @@ body.tip-dragging .chat-mention.tip-highlight {
 }
 
 .rental-upload-hint {
-    font-family: var(--font-body);
+    font-family: var(--font-small);
     font-size: var(--font-size-small);
     color: var(--text-muted);
 }
@@ -3919,7 +3924,7 @@ body.tip-dragging .chat-mention.tip-highlight {
 .territory-btn {
     flex: 1;
     padding: var(--space-xs) var(--space-sm);
-    font-family: var(--font-body);
+    font-family: var(--font-small);
     font-size: var(--font-size-small);
     border: var(--border-width) solid var(--border-dark);
     cursor: pointer;
@@ -4001,7 +4006,7 @@ body.tip-dragging .chat-mention.tip-highlight {
 
 /* Owned Territories */
 .territory-section-title {
-    font-family: var(--font-body);
+    font-family: var(--font-small);
     font-size: var(--font-size-small);
     color: var(--text-muted);
     text-transform: uppercase;
@@ -4045,7 +4050,7 @@ body.tip-dragging .chat-mention.tip-highlight {
 
 .territory-info-input,
 .territory-info-edit {
-    font-family: var(--font-body);
+    font-family: var(--font-small);
     font-size: var(--font-size-small);
     background: rgba(0, 0, 0, 0.3);
     border: var(--border-width) solid var(--border-dark);
@@ -4142,7 +4147,7 @@ body.tip-dragging .chat-mention.tip-highlight {
 .territory-status-badge {
     display: inline-block;
     font-family: var(--font-small);
-    font-size: 9px;
+    font-size: var(--font-size-small);
     padding: 1px 6px;
     margin-left: 6px;
     text-transform: uppercase;
@@ -4455,15 +4460,16 @@ body.tip-dragging .chat-mention.tip-highlight {
     display: flex;
     align-items: center;
     gap: var(--space-xs);
-    font-size: var(--font-sm);
+    font-family: var(--font-small);
+    font-size: var(--font-size-small);
     color: var(--text-secondary);
 }
 
 .controls-hint kbd {
     display: inline-block;
     padding: 1px 4px;
-    font-family: var(--font-mono);
-    font-size: var(--font-xs);
+    font-family: var(--font-small);
+    font-size: var(--font-size-small);
     color: var(--text-primary);
     background: var(--bg-panel);
     border: 1px solid var(--border-dark);
@@ -4474,7 +4480,7 @@ body.tip-dragging .chat-mention.tip-highlight {
 .controls-hint span {
     margin-left: auto;
     color: var(--text-muted);
-    font-size: var(--font-xs);
+    font-size: var(--font-size-small);
 }
 
 /* Toggle Switch (32x16 grid aligned) */
@@ -5316,7 +5322,7 @@ body.colorblind-tritanopia {
     clip-path: var(--clip-rounded-4);
     color: var(--text-primary);
     font-family: var(--font-body);
-    font-size: 16px;
+    font-size: var(--font-size-body);
     text-align: center;
     outline: none;
 }
@@ -5331,7 +5337,8 @@ body.colorblind-tritanopia {
 
 /* Faction prompt label */
 .onboarding-faction-prompt {
-    font-size: 0.75rem;
+    font-family: var(--font-small);
+    font-size: var(--font-size-small);
     text-transform: uppercase;
     letter-spacing: 0.1em;
     color: var(--text-secondary);
@@ -5350,8 +5357,8 @@ body.colorblind-tritanopia {
     padding: 8px 4px;
     border: 2px solid var(--border-dark);
     color: var(--text-secondary);
-    font-family: var(--font-body);
-    font-size: 14px;
+    font-family: var(--font-small);
+    font-size: var(--font-size-small);
     cursor: pointer;
     -webkit-clip-path: var(--clip-rounded-4);
     clip-path: var(--clip-rounded-4);
@@ -5418,7 +5425,7 @@ body.colorblind-tritanopia {
     clip-path: var(--clip-rounded-8);
     color: var(--bg-panel);
     font-family: var(--font-body);
-    font-size: 16px;
+    font-size: var(--font-size-body);
     cursor: pointer;
     transition: all 0.15s ease;
     filter: drop-shadow(2px 0 0 var(--accent-gold))
@@ -5493,7 +5500,7 @@ body.colorblind-tritanopia {
 .ping-indicator-distance {
     position: fixed;
     font-family: var(--font-small);
-    font-size: 12px;
+    font-size: var(--font-size-small);
     white-space: nowrap;
     pointer-events: none;
     z-index: 50;

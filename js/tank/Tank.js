@@ -1464,6 +1464,8 @@ class Tank {
   _setupInput() {
     window.addEventListener("keydown", (e) => {
       if (window._authScreenInstance?.isVisible) return;
+      const tag = document.activeElement?.tagName;
+      if (tag === "INPUT" || tag === "TEXTAREA" || document.activeElement?.isContentEditable) return;
       if (!this.controlsEnabled || this.isDead) return;
       if (e.key === "Shift") {
         this.state.keys.shift = true;
@@ -1477,6 +1479,8 @@ class Tank {
     });
 
     window.addEventListener("keyup", (e) => {
+      const tag = document.activeElement?.tagName;
+      if (tag === "INPUT" || tag === "TEXTAREA" || document.activeElement?.isContentEditable) return;
       if (e.key === "Shift") {
         this.state.keys.shift = false;
         return;
@@ -1486,6 +1490,14 @@ class Tank {
         this.state.keys[key] = false;
       }
     });
+
+    // Clear all keys when user focuses a text input (prevents stuck keys)
+    window.addEventListener("focus", (e) => {
+      const tag = e.target?.tagName;
+      if (tag === "INPUT" || tag === "TEXTAREA" || e.target?.isContentEditable) {
+        for (const k in this.state.keys) this.state.keys[k] = false;
+      }
+    }, true);
 
     // Throttle mousemove to ~60fps (16ms) - turret aiming doesn't need higher frequency
     let lastMouseMoveTime = 0;

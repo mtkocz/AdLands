@@ -2867,6 +2867,8 @@
 
   window.addEventListener("keydown", (e) => {
     if (window._authScreenInstance?.isVisible) return;
+    const _tag = document.activeElement?.tagName;
+    if (_tag === "INPUT" || _tag === "TEXTAREA" || document.activeElement?.isContentEditable) return;
     if (e.key === "e" || e.key === "E") {
       const portalIndex = fastTravel.checkPortalEntry();
       const isOrbitalView = gameCamera.mode === "orbital";

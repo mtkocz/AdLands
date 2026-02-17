@@ -338,8 +338,8 @@ class CryptoVisuals {
             top: 50%;
             right: 48px;
             transform: translateY(-50%);
-            font-family: 'Atari ST 8x16', monospace;
-            font-size: 16px;
+            font-family: var(--font-body);
+            font-size: var(--font-size-body);
             color: #FFD700;
             text-shadow: 0 0 8px #FFD700, 0 0 16px #FFD700;
             pointer-events: none;

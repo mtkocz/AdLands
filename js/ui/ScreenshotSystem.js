@@ -423,8 +423,8 @@ class ScreenshotSystem {
             background: rgba(0, 0, 0, 0.85);
             color: #ffd700;
             padding: 12px 24px;
-            font-family: 'Atari ST 8x16', monospace;
-            font-size: 16px;
+            font-family: var(--font-body);
+            font-size: var(--font-size-body);
             border: 2px solid #ffd700;
             z-index: 10000;
             pointer-events: none;

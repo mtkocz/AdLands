@@ -1035,7 +1035,7 @@
             <div class="pending-review-card" data-id="${s.id}">
               <div class="pending-review-card-header">
                 <div class="sponsor-card-logo">
-                  ${logoSrc ? `<img src="${logoSrc}" alt="${pTitle}">` : '<span style="color:#666;font-size:12px;">No logo</span>'}
+                  ${logoSrc ? `<img src="${logoSrc}" alt="${pTitle}">` : '<span style="color:#666;font-family:var(--font-small);font-size:var(--font-size-small);">No logo</span>'}
                 </div>
                 <div class="pending-review-card-info">
                   <div class="sponsor-card-name">${pTitle || escapeHtml(s.name)}</div>
@@ -1116,7 +1116,7 @@
                     ${
                       logoSrc
                         ? `<img src="${logoSrc}" alt="${escapeHtml(sponsor.name)}">`
-                        : '<span style="color:#666;font-size:12px;">No logo</span>'
+                        : '<span style="color:#666;font-family:var(--font-small);font-size:var(--font-size-small);">No logo</span>'
                     }
                 </div>
                 <div class="sponsor-card-info">
@@ -1273,7 +1273,7 @@
                         ${
                           groupLogoSrc
                             ? `<img src="${groupLogoSrc}" alt="${escapeHtml(first.name)}">`
-                            : '<span style="color:#666;font-size:12px;">No logo</span>'
+                            : '<span style="color:#666;font-family:var(--font-small);font-size:var(--font-size-small);">No logo</span>'
                         }
                     </div>
                     <div class="sponsor-card-info">

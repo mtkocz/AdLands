@@ -35,12 +35,12 @@ class TankLODInteraction {
             padding: 6px 12px;
             background: rgba(0, 0, 0, 0.85);
             color: white;
-            font-size: 16px;
+            font-size: var(--font-size-body);
             border: 1px solid #FFD700;
             border-radius: 4px;
             pointer-events: none;
             z-index: 1000;
-            font-family: 'Atari ST 8x16', monospace;
+            font-family: var(--font-body);
         `;
     document.body.appendChild(this.nameTag);
   }

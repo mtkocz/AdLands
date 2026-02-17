@@ -100,8 +100,8 @@ body {
 .badge {
     display: inline-block;
     padding: 2px 8px;
-    font-family: var(--font-body);
-    font-size: 12px;
+    font-family: var(--font-small);
+    font-size: var(--font-size-small);
 }
 .badge-server {
     background: #627941;
@@ -1213,7 +1213,7 @@ body {
 }
 
 .inventory-label {
-    font-size: 10px;
+    font-size: var(--font-size-small);
     font-family: var(--font-small);
     color: var(--text-muted);
     text-transform: uppercase;
@@ -1547,7 +1547,7 @@ body {
 .sponsor-group-badge {
     display: inline-block;
     font-family: var(--font-small);
-    font-size: 10px;
+    font-size: var(--font-size-small);
     color: var(--accent-cyan);
     background: rgba(0, 200, 200, 0.1);
     padding: 1px 6px;
@@ -1653,7 +1653,7 @@ body {
 
 .sponsor-cluster-row-type {
     font-family: var(--font-small);
-    font-size: 10px;
+    font-size: var(--font-size-small);
     padding: 1px 6px;
     margin-left: var(--space-xs);
 }
@@ -1699,7 +1699,7 @@ body {
 
 .paused-badge {
     font-family: var(--font-small);
-    font-size: 9px;
+    font-size: var(--font-size-small);
     color: var(--accent-gold);
     background: rgba(251, 191, 36, 0.15);
     padding: 1px 5px;
@@ -1730,7 +1730,7 @@ body {
 }
 .territory-review-label {
     font-family: var(--font-small);
-    font-size: 10px;
+    font-size: var(--font-size-small);
     color: #c8a82a;
     text-transform: uppercase;
     letter-spacing: 1px;
@@ -1751,8 +1751,8 @@ body {
 }
 .btn-approve,
 .btn-reject {
-    font-family: var(--font-body);
-    font-size: 11px;
+    font-family: var(--font-small);
+    font-size: var(--font-size-small);
     padding: 4px 12px;
     border: 1px solid;
     cursor: pointer;
@@ -1778,7 +1778,7 @@ body {
 
 .territory-review-status {
     font-family: var(--font-small);
-    font-size: 9px;
+    font-size: var(--font-size-small);
     text-transform: uppercase;
     letter-spacing: 1px;
     margin-top: 4px;
@@ -1794,7 +1794,7 @@ body {
 }
 .pending-review-section-header {
     font-family: var(--font-small);
-    font-size: 11px;
+    font-size: var(--font-size-small);
     color: #c8a82a;
     text-transform: uppercase;
     letter-spacing: 1px;
@@ -1839,7 +1839,8 @@ body {
     align-items: center;
     gap: 6px;
     margin-bottom: 3px;
-    font-size: 11px;
+    font-family: var(--font-small);
+    font-size: var(--font-size-small);
 }
 .pending-review-adjustments .adj-row label {
     width: 65px;
@@ -1854,9 +1855,9 @@ body {
 .pending-review-adjustments .adj-val {
     width: 35px;
     text-align: right;
-    font-family: monospace;
+    font-family: var(--font-small);
     color: #aaa;
-    font-size: 10px;
+    font-size: var(--font-size-small);
 }
 
 .pending-review-fields {
@@ -1875,7 +1876,7 @@ body {
 .review-field label {
     width: 50px;
     font-family: var(--font-small);
-    font-size: 10px;
+    font-size: var(--font-size-small);
     color: #888;
     flex-shrink: 0;
 }
@@ -1883,7 +1884,7 @@ body {
 .review-input {
     flex: 1;
     font-family: var(--font-small);
-    font-size: 11px;
+    font-size: var(--font-size-small);
     background: #111;
     border: 1px solid #333;
     color: #eee;
@@ -1913,7 +1914,7 @@ textarea.review-comment {
 
 .pending-review-no-image {
     font-family: var(--font-small);
-    font-size: 10px;
+    font-size: var(--font-size-small);
     color: #666;
     padding: 8px 0;
     text-align: center;
@@ -1926,7 +1927,7 @@ textarea.review-comment {
     border-radius: 8px;
     padding: 0 6px;
     font-family: var(--font-small);
-    font-size: 9px;
+    font-size: var(--font-size-small);
     font-weight: bold;
     vertical-align: middle;
     margin-left: 4px;
@@ -1945,7 +1946,7 @@ textarea.review-comment {
 .pending-status-badge,
 .new-status-badge {
     font-family: var(--font-small);
-    font-size: 9px;
+    font-size: var(--font-size-small);
     padding: 1px 6px;
     margin-left: 4px;
     text-transform: uppercase;
@@ -1978,7 +1979,7 @@ textarea.review-comment {
 }
 .territory-row-info-field {
     font-family: var(--font-small);
-    font-size: 10px;
+    font-size: var(--font-size-small);
     color: #ccc;
     line-height: 1.5;
 }
