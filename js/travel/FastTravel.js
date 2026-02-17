@@ -144,6 +144,23 @@ class FastTravel {
     enterFastTravel(portalIndex) {
         if (this.active) return;
 
+        // Economy: client-side pre-check for fast travel cost
+        const ftCost = 500;
+        if (window.cryptoSystem) {
+            const balance = (window.dashboard && window.dashboard._lastServerCrypto !== undefined)
+                ? window.dashboard._lastServerCrypto
+                : window.cryptoSystem.stats.totalCrypto;
+            if (balance < ftCost) {
+                if (window.dashboard) {
+                    window.dashboard.showToast?.(`Not enough crypto for fast travel (need ¢${ftCost})`);
+                }
+                if (window.tuskCommentary) {
+                    window.tuskCommentary.onBroke?.();
+                }
+                return;
+            }
+        }
+
         this.active = true;
         this.state = 'fastTravel';
 

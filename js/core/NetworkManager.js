@@ -289,6 +289,21 @@ class NetworkManager {
       if (this.onCryptoUpdate) this.onCryptoUpdate(data);
     });
 
+    // Economy: action denied (insufficient crypto)
+    this.socket.on("action-denied", (data) => {
+      if (this.onActionDenied) this.onActionDenied(data);
+    });
+
+    // Economy: level-up confirmed
+    this.socket.on("level-up-confirmed", (data) => {
+      if (this.onLevelUpConfirmed) this.onLevelUpConfirmed(data);
+    });
+
+    // Economy: loadout slot unlocked
+    this.socket.on("slot-unlocked", (data) => {
+      if (this.onSlotUnlocked) this.onSlotUnlocked(data);
+    });
+
     // Commander tip events
     this.socket.on("tip-received", (data) => {
       if (this.onTipReceived) this.onTipReceived(data);
@@ -420,6 +435,18 @@ class NetworkManager {
   sendChoosePortal(portalTileIndex) {
     if (!this.connected) return;
     this.socket.emit("choose-portal", { portalTileIndex });
+  }
+
+  /** Request a level-up purchase from the server */
+  sendLevelUp() {
+    if (!this.connected) return;
+    this.socket.emit("level-up");
+  }
+
+  /** Request a loadout slot unlock from the server */
+  sendUnlockSlot(slotId) {
+    if (!this.connected) return;
+    this.socket.emit("unlock-slot", { slotId });
   }
 
   /**

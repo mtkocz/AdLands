@@ -174,6 +174,13 @@ function createSponsorRoutes(sponsorStore, gameRoom, { imageUrls, gameDir } = {}
 
   // POST /api/sponsors — create new sponsor
   router.post("/", async (req, res) => {
+    // Override name with account email for player territories
+    if (req.body.isPlayerTerritory && req.body.ownerUid) {
+      try {
+        const acc = await getFirestore().collection("accounts").doc(req.body.ownerUid).get();
+        if (acc.exists && acc.data().email) req.body.name = acc.data().email;
+      } catch (_) {}
+    }
     const result = await sponsorStore.create(req.body);
     if (result.errors) return res.status(400).json({ errors: result.errors });
     await reExtractImages(result.sponsor.id);

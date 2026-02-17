@@ -292,6 +292,16 @@ io.on("connection", (socket) => {
     mainRoom.handleChoosePortal(socket.id, data.portalTileIndex);
   });
 
+  // ---- Level Up Purchase ----
+  socket.on("level-up", () => {
+    mainRoom.handleLevelUp(socket.id);
+  });
+
+  // ---- Loadout Slot Unlock ----
+  socket.on("unlock-slot", (data) => {
+    if (data?.slotId) mainRoom.handleUnlockSlot(socket.id, data.slotId);
+  });
+
   // ---- Self-Damage (debug K key) ----
   socket.on("self-damage", (data) => {
     if (typeof data?.amount !== "number") return;
@@ -574,12 +584,32 @@ io.on("connection", (socket) => {
 
   // ---- Disconnect ----
   socket.on("disconnect", async (reason) => {
-    // Save profile to Firestore on disconnect (fire-and-forget)
+    // Save profile to Firestore before removing the player
     if (socket.uid) {
-      mainRoom.savePlayerProfile(socket.id).catch(() => {});
+      try {
+        await mainRoom.savePlayerProfile(socket.id);
+      } catch (err) {
+        console.warn(`[Server] Failed to save profile on disconnect for ${socket.id}:`, err.message);
+      }
     }
     mainRoom.removePlayer(socket.id);
     console.log(`[Server] Disconnected: ${socket.id} (${reason})`);
   });
 });
+
+// ---- Graceful Shutdown ----
+// Save all player profiles before the server exits (restart, Ctrl+C, deploy, etc.)
+async function gracefulShutdown(signal) {
+  console.log(`\n[Server] ${signal} received — saving all player profiles before exit...`);
+  try {
+    await mainRoom.saveAllPlayers();
+    console.log("[Server] All profiles saved. Shutting down.");
+  } catch (err) {
+    console.warn("[Server] Error during shutdown save:", err.message);
+  }
+  process.exit(0);
+}
+
+process.on("SIGINT", () => gracefulShutdown("SIGINT"));
+process.on("SIGTERM", () => gracefulShutdown("SIGTERM"));
 

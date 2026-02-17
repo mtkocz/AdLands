@@ -799,6 +799,27 @@ class CannonSystem {
 
   _fireWithCharge(tank, faction, chargePower) {
     if (tank.isDead) return;
+
+    // Economy: client-side pre-check for cannon fire cost
+    const isPlayerShot_ = faction === this.playerTank?.faction;
+    if (isPlayerShot_ && window.cryptoSystem) {
+      const fireCost = 5 + Math.ceil(chargePower);
+      // Use server balance from dashboard if available, otherwise totalCrypto
+      const balance = (window.dashboard && window.dashboard._lastServerCrypto !== undefined)
+        ? window.dashboard._lastServerCrypto
+        : window.cryptoSystem.stats.totalCrypto;
+      if (balance < fireCost) {
+        // Show denial message locally
+        if (window.dashboard) {
+          window.dashboard.showToast?.(`Not enough crypto to fire (need ¢${fireCost})`);
+        }
+        if (window.tuskCommentary) {
+          window.tuskCommentary.onBroke?.();
+        }
+        return;
+      }
+    }
+
     const now = performance.now() / 1000;
     let cooldown = this.config.cooldown;
     if (this.weaponSlotSystem) {

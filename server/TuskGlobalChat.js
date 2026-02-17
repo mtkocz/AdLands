@@ -37,6 +37,8 @@ class TuskGlobalChat {
         commanderTip: 0.8,
         quietLobby: 0.05,
         randomChaos: 0.05,
+        broke: 0.15,
+        loan: 0.4,
       },
     };
 
@@ -133,6 +135,24 @@ class TuskGlobalChat {
         "BREAKING: The real Commander @{commander} has returned. Acting Commander @{acting}, please return the gold trim.",
         "@{commander} is back. @{acting}, it was fun while it lasted.",
         "The Commander has returned! @{acting}, back to the ranks with you.",
+      ],
+      broke: [
+        "@{player} just tried to {action} with no crypto. The audacity of the impoverished.",
+        "POVERTY ALERT: @{player} can't afford to {action}. Maybe try capturing territory?",
+        "@{player} is broke. In a war zone. This is what peak financial planning looks like.",
+        "Someone get @{player} a GoFundMe. They can't even afford to {action}.",
+        "@{player} just bounced a check. In a warzone. Peak comedy.",
+        "FINANCIAL ADVISORY: @{player}, your balance is lower than your K/D ratio. And that's saying something.",
+        "@{player} can't afford anything. This is what happens when you don't diversify your portfolio.",
+      ],
+      loan: [
+        "@{player} just went into debt to respawn. Congratulations, you now owe me money.",
+        "LOAN APPROVED: @{player} is borrowing from the Bank of Tusk. Interest rate: your dignity.",
+        "@{player} is now in crypto debt. I own you now. Well, more than before.",
+        "BREAKING: @{player} has a negative balance of ¢{balance}. They're literally worth less than nothing.",
+        "@{player} just took a predatory loan from me to stay alive. The system works!",
+        "@{player} is fighting on borrowed time AND borrowed money. Inspirational.",
+        "Debt notice for @{player}. Don't worry, I charge compound interest on your suffering.",
       ],
     };
 
@@ -442,6 +462,28 @@ class TuskGlobalChat {
       .replace(/@?\{commander\}/g, `@${commanderName || "Commander"}`)
       .replace(/@?\{acting\}/g, `@${actingName || "Acting Commander"}`);
     this._sendMessage(msg);
+  }
+
+  /** Triggered when a player can't afford an action */
+  onBrokePlayer(playerName, action, socketId) {
+    const actionLabels = {
+      'fast-travel': 'fast travel',
+      'fire': 'fire their cannon',
+      'level-up': 'level up',
+      'unlock-slot': 'unlock a loadout slot',
+    };
+    this.onEvent("broke", {
+      player: playerName || "Unknown",
+      action: actionLabels[action] || action,
+    }, socketId ? { player: socketId } : null);
+  }
+
+  /** Triggered when respawn pushes a player into negative balance */
+  onLoanTaken(playerName, balance, socketId) {
+    this.onEvent("loan", {
+      player: playerName || "Unknown",
+      balance: Math.abs(Math.round(balance)).toLocaleString(),
+    }, socketId ? { player: socketId } : null);
   }
 }
 

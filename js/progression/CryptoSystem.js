@@ -162,25 +162,15 @@ class CryptoSystem {
             return;
         }
 
-        const oldLevel = this.stats.level;
-
         this.stats.totalCrypto += amount;
         this.stats.sessionCrypto += amount;
-
 
         // Notify commander system of session crypto change
         if (this.onSessionCryptoChange) {
             this.onSessionCryptoChange('player', this.stats.sessionCrypto);
         }
 
-        // Check for level up
-        const newLevel = this.getLevelFromCrypto(this.stats.totalCrypto);
-        if (newLevel > oldLevel) {
-            this.stats.level = newLevel;
-            if (this.onLevelUp) {
-                this.onLevelUp(newLevel, oldLevel);
-            }
-        }
+        // Level-up is now purchased manually (no auto level-up)
 
         // Trigger visual feedback
         if (this.onCryptoGain) {
@@ -244,15 +234,10 @@ class CryptoSystem {
         if (totalCrypto <= 0) return 0;
 
         if (hexData && hexData.length > 0) {
-            const oldLevel = this.stats.level;
             this.stats.totalCrypto += totalCrypto;
             this.stats.sessionCrypto += totalCrypto;
 
-            const newLevel = this.getLevelFromCrypto(this.stats.totalCrypto);
-            if (newLevel > oldLevel) {
-                this.stats.level = newLevel;
-                if (this.onLevelUp) this.onLevelUp(newLevel, oldLevel);
-            }
+            // Level-up is now purchased manually (no auto level-up)
 
             // Each hex has its own crypto value based on adjacency
             hexData.forEach(({ pos, crypto }) => {
@@ -282,16 +267,10 @@ class CryptoSystem {
             const remainder = totalCrypto % hexCenters.length;
 
             // Award crypto without visual (we'll spawn individual hex crypto numbers)
-            const oldLevel = this.stats.level;
             this.stats.totalCrypto += totalCrypto;
             this.stats.sessionCrypto += totalCrypto;
 
-            // Check for level up
-            const newLevel = this.getLevelFromCrypto(this.stats.totalCrypto);
-            if (newLevel > oldLevel) {
-                this.stats.level = newLevel;
-                if (this.onLevelUp) this.onLevelUp(newLevel, oldLevel);
-            }
+            // Level-up is now purchased manually (no auto level-up)
 
             // Spawn individual crypto numbers at each hex center
             hexCenters.forEach((hexCenter, index) => {
@@ -387,11 +366,15 @@ class CryptoSystem {
     }
 
     /**
-     * Recalculate level from totalCrypto.
+     * Recalculate level from totalCrypto (legacy migration only).
+     * Level is now purchased manually, so this only runs if no level is stored.
      * Called by ProfileManager after loading persistent data.
      */
     _recalculateLevel() {
-        this.stats.level = this.getLevelFromCrypto(this.stats.totalCrypto);
+        // Only auto-calculate for legacy players who have no stored level yet
+        if (!this.stats.level || this.stats.level < 1) {
+            this.stats.level = this.getLevelFromCrypto(this.stats.totalCrypto);
+        }
     }
 
     /**

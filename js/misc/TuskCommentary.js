@@ -202,6 +202,24 @@ const TUSK_LINES = {
     "First place in your faction leaderboard? I might name my 21st child after you!",
     "You are the best performing member of your faction.... What a try-hard!",
   ],
+  on_broke: [
+    "You can't afford that. Try being better at capitalism.",
+    "Insufficient funds. Have you tried not being poor?",
+    "Your wallet says no. Maybe earn some crypto first.",
+    "Broke. The word you're looking for is broke.",
+    "That costs money. Which you don't have. Awkward.",
+    "Your bank account just sent me a distress signal.",
+    "Error: funds not found. Have you considered winning more?",
+  ],
+  on_loan: [
+    "Welcome to debt! I knew you'd end up here eventually.",
+    "Negative balance. I'll add it to your clone bill.",
+    "You owe me money now. I love this game.",
+    "Going negative? Bold financial strategy. Let's see how it plays out.",
+    "Debt mode activated. Your respawns are now sponsored by embarrassment.",
+    "Congrats on your new loan! The interest rate is... unfavorable.",
+    "You're in the red now. My favorite color when it's someone else's balance.",
+  ],
   on_level_up: [
     "Level up! Your performance metrics just improved. Marginally.",
     "Congratulations on leveling up! Your clone is now slightly more expensive to replace.",
@@ -353,6 +371,8 @@ class TuskCommentary {
       on_tip_received: "important",
       on_tip_sent: "full",
       on_commander_drawing: "full",
+      on_broke: "important",
+      on_loan: "important",
     };
 
     // Cooldown durations (ms) - 4x original for less frequent commentary
@@ -383,6 +403,8 @@ class TuskCommentary {
       on_tip_sent: 0, // Always notify sender
       on_commander_drawing: 120000,
       on_commander_returns: 0, // Always announce when true commander returns
+      on_broke: 30000,
+      on_loan: 0, // Always comment on loans
     };
 
     // Suppression flag — prevents _show() during terminal sequence
@@ -631,6 +653,20 @@ class TuskCommentary {
     if (!this._shouldTrigger("on_level_up")) return;
     if (!this._canTrigger("on_level_up")) return;
     const line = this._getRandomLine("on_level_up");
+    if (line) this._queueMessage(line);
+  }
+
+  onBroke() {
+    if (!this._shouldTrigger("on_broke")) return;
+    if (!this._canTrigger("on_broke")) return;
+    const line = this._getRandomLine("on_broke");
+    if (line) this._queueMessage(line);
+  }
+
+  onLoan() {
+    if (!this._shouldTrigger("on_loan")) return;
+    if (!this._canTrigger("on_loan")) return;
+    const line = this._getRandomLine("on_loan");
     if (line) this._queueMessage(line);
   }
 

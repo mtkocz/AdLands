@@ -97,6 +97,28 @@ class GameRoom {
     this.rankRecomputeCounter = 0;
     this._ranksDirty = false;
 
+    // Economy: action costs (in ¢)
+    this.costs = {
+      fastTravel: 500,
+      respawn: 150,
+      cannonBase: 5,
+      cannonPerCharge: 1,
+      slotUnlock: {
+        'defense-1': 15000,
+        'tactical-1': 30000,
+        'offense-2': 60000,
+        'defense-2': 120000,
+        'tactical-2': 200000,
+      },
+      slotLevels: {
+        'defense-1': 3,
+        'tactical-1': 5,
+        'offense-2': 8,
+        'defense-2': 12,
+        'tactical-2': 15,
+      },
+    };
+
     // ---- Server-authoritative world generation ----
     this.worldGen = new WorldGenerator(480, 22, 42);
     const worldResult = this.worldGen.generate();
@@ -218,6 +240,9 @@ class GameRoom {
 
     // Load all Firestore profiles into cache (async, non-blocking)
     this._loadAllProfiles();
+
+    // Periodic auto-save: persist all active players every 60 seconds
+    this._autoSaveInterval = setInterval(() => this._autoSaveAllPlayers(), 60000);
   }
 
   /**
@@ -272,6 +297,10 @@ class GameRoom {
     if (this.tickInterval) {
       clearTimeout(this.tickInterval);
       this.tickInterval = null;
+    }
+    if (this._autoSaveInterval) {
+      clearInterval(this._autoSaveInterval);
+      this._autoSaveInterval = null;
     }
     console.log(`[Room ${this.roomId}] Stopped`);
   }
@@ -533,6 +562,7 @@ class GameRoom {
 
       // Player is waiting to choose a deployment portal
       waitingForPortal: true,
+      _portalReason: 'deploy', // 'deploy' | 'fastTravel' | 'respawn'
 
       // Latest input from client (updated every time we receive input)
       keys: { w: false, a: false, s: false, d: false, shift: false },
@@ -560,6 +590,7 @@ class GameRoom {
       profilePicture: profileData?.profilePicture || null,
       avatarColor: profileData?.profilePicture || null,
       loadout: profileData?.loadout || {},
+      unlockedSlots: profileData?.unlockedSlots || ['offense-1'],
       tankUpgrades: profileData?.tankUpgrades || { armor: 0, speed: 0, fireRate: 0, damage: 0 },
 
       // Session tracking for Firestore saves (deltas accumulated this session)
@@ -724,6 +755,7 @@ class GameRoom {
       saved.isDead = false;
       saved.speed = 0;
       saved.waitingForPortal = true;
+      saved._portalReason = 'respawn';
     }
 
     // Insert into players map under new socket ID
@@ -1009,6 +1041,31 @@ class GameRoom {
   }
 
   /**
+   * Save all authenticated players' profiles to Firestore.
+   * Used for periodic auto-save and graceful shutdown.
+   * @returns {Promise<void>}
+   */
+  async saveAllPlayers() {
+    const saves = [];
+    for (const [socketId, player] of this.players) {
+      if (player.uid) {
+        saves.push(this.savePlayerProfile(socketId));
+      }
+    }
+    await Promise.allSettled(saves);
+  }
+
+  /** @private */
+  _autoSaveAllPlayers() {
+    const authCount = [...this.players.values()].filter(p => p.uid).length;
+    if (authCount === 0) return;
+    console.log(`[Room ${this.roomId}] Auto-saving ${authCount} player profile(s)...`);
+    this.saveAllPlayers().catch(err => {
+      console.warn(`[Room ${this.roomId}] Auto-save error:`, err.message);
+    });
+  }
+
+  /**
    * Handle a player switching their active profile mid-game.
    * Resets player state with new profile data and broadcasts to all clients.
    */
@@ -1044,6 +1101,7 @@ class GameRoom {
     player.hp = player.maxHp;
     player.isDead = false;
     player.waitingForPortal = true;
+    player._portalReason = 'deploy'; // Profile switch = free re-deploy
     player.territoryCaptured = 0;
 
     // Broadcast to all clients
@@ -1130,6 +1188,96 @@ class GameRoom {
   }
 
   // ========================
+  // ECONOMY: COST HELPERS
+  // ========================
+
+  /** Deduct crypto from a player (can go negative for respawn loans) */
+  _deductCrypto(player, amount) {
+    player.crypto -= amount;
+  }
+
+  /** Deny an action due to insufficient funds and notify client + Elon */
+  _denyAction(socketId, action, cost) {
+    const player = this.players.get(socketId);
+    const socket = this.io.sockets.sockets.get(socketId);
+    if (socket) {
+      socket.emit("action-denied", { action, cost, balance: player ? player.crypto : 0 });
+    }
+    if (player && this.tuskChat) {
+      this.tuskChat.onBrokePlayer(player.name, action, socketId);
+    }
+  }
+
+  /** Get cost to reach a specific level */
+  _getLevelCost(level) {
+    if (level <= 1) return 0;
+    if (level <= 5) return level * 10000;
+    if (level <= 10) return 50000 + (level - 5) * 20000;
+    if (level <= 20) return 150000 + (level - 10) * 35000;
+    return 500000 + (level - 20) * 50000;
+  }
+
+  /** Handle level-up purchase request */
+  handleLevelUp(socketId) {
+    const player = this.players.get(socketId);
+    if (!player) return;
+
+    const nextLevel = player.level + 1;
+    const cost = this._getLevelCost(nextLevel);
+    if (cost <= 0) return;
+
+    if (player.crypto < cost) {
+      this._denyAction(socketId, 'level-up', cost);
+      return;
+    }
+
+    this._deductCrypto(player, cost);
+    player.level = nextLevel;
+
+    const socket = this.io.sockets.sockets.get(socketId);
+    if (socket) {
+      socket.emit("level-up-confirmed", { level: nextLevel, cost });
+    }
+
+    // Broadcast updated level to all via rank recomputation
+    this._markRanksDirty();
+
+    console.log(`[Room ${this.roomId}] ${player.name} purchased level ${nextLevel} for ¢${cost}`);
+  }
+
+  /** Handle loadout slot unlock purchase */
+  handleUnlockSlot(socketId, slotId) {
+    const player = this.players.get(socketId);
+    if (!player) return;
+
+    const cost = this.costs.slotUnlock[slotId];
+    if (!cost) return; // Invalid slot or offense-1 (free)
+
+    // Check level requirement
+    const requiredLevel = this.costs.slotLevels[slotId];
+    if (requiredLevel && player.level < requiredLevel) return;
+
+    // Check already unlocked
+    if (player.unlockedSlots && player.unlockedSlots.includes(slotId)) return;
+
+    if (player.crypto < cost) {
+      this._denyAction(socketId, 'unlock-slot', cost);
+      return;
+    }
+
+    this._deductCrypto(player, cost);
+    if (!player.unlockedSlots) player.unlockedSlots = ['offense-1'];
+    player.unlockedSlots.push(slotId);
+
+    const socket = this.io.sockets.sockets.get(socketId);
+    if (socket) {
+      socket.emit("slot-unlocked", { slotId, cost });
+    }
+
+    console.log(`[Room ${this.roomId}] ${player.name} unlocked slot ${slotId} for ¢${cost}`);
+  }
+
+  // ========================
   // INPUT HANDLING
   // ========================
 
@@ -1168,6 +1316,15 @@ class GameRoom {
 
     // Clamp charge power to valid range (0-10)
     const chargePower = Math.max(0, Math.min(10, power || 0));
+
+    // Economy: deduct cannon fire cost (5¢ base + 1¢ per charge level)
+    const fireCost = this.costs.cannonBase + Math.ceil(chargePower) * this.costs.cannonPerCharge;
+    if (player.crypto < fireCost) {
+      this._denyAction(socketId, 'fire', fireCost);
+      return;
+    }
+    this._deductCrypto(player, fireCost);
+
     const chargeRatio = chargePower / 10;
 
     // Scale projectile stats with charge (matches client CannonSystem formulas)
@@ -1275,8 +1432,15 @@ class GameRoom {
     const player = this.players.get(socketId);
     if (!player || player.isDead || player.waitingForPortal) return;
 
+    // Economy: check if player can afford fast travel
+    if (player.crypto < this.costs.fastTravel) {
+      this._denyAction(socketId, 'fast-travel', this.costs.fastTravel);
+      return;
+    }
+
     // Mark as waiting so _recomputeRanks won't respawn bodyguards
     player.waitingForPortal = true;
+    player._portalReason = 'fastTravel';
 
     // Kill bodyguards immediately when commander enters fast travel
     for (const faction of FACTIONS) {
@@ -1298,6 +1462,19 @@ class GameRoom {
     }
 
     const wasWaiting = player.waitingForPortal;
+
+    // Economy: deduct cost based on portal reason
+    if (player._portalReason === 'fastTravel') {
+      this._deductCrypto(player, this.costs.fastTravel);
+    } else if (player._portalReason === 'respawn') {
+      const wasBrokeAlready = player.crypto < 0;
+      this._deductCrypto(player, this.costs.respawn);
+      if (player.crypto < 0 && !wasBrokeAlready && this.tuskChat) {
+        this.tuskChat.onLoanTaken(player.name, player.crypto, socketId);
+      }
+    }
+    // 'deploy' (initial spawn) is free
+    player._portalReason = null;
 
     // Pick the adjacent hex tile farthest from other tanks
     const neighbors = this.portalNeighborPositions.get(portalTileIndex) || [];
@@ -1762,6 +1939,7 @@ class GameRoom {
     player.isDead = false;
     player.speed = 0;
     player.waitingForPortal = true;
+    player._portalReason = 'respawn';
 
     // Recompute ranks and commander
     this._markRanksDirty();

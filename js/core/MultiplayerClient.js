@@ -1446,6 +1446,68 @@
     };
 
     // ========================
+    // ECONOMY: ACTION DENIED / LEVEL-UP / SLOT UNLOCK
+    // ========================
+
+    net.onActionDenied = (data) => {
+      const actionLabels = {
+        'fast-travel': 'fast travel',
+        'fire': 'firing',
+        'level-up': 'leveling up',
+        'unlock-slot': 'unlocking slot',
+      };
+      const label = actionLabels[data.action] || data.action;
+      const msg = `Not enough crypto for ${label} (need ¢${data.cost.toLocaleString()})`;
+
+      // Show floating message near tank
+      if (window.cryptoVisuals && tank.group) {
+        tank.group.getWorldPosition(_tipScreenPos);
+        window.cryptoVisuals._spawnFloatingNumber?.(-data.cost, 'denied', _tipScreenPos);
+      }
+
+      // Show toast notification
+      if (window.dashboard) {
+        window.dashboard.showToast?.(msg);
+      }
+
+      // Trigger local Tusk commentary
+      if (window.tuskCommentary) {
+        window.tuskCommentary.onBroke?.();
+      }
+
+      // If fast travel was denied, exit portal UI if it was entered optimistically
+      if (data.action === 'fast-travel' && mp.fastTravel && mp.fastTravel.active) {
+        mp.fastTravel.exitFastTravel?.();
+      }
+    };
+
+    net.onLevelUpConfirmed = (data) => {
+      // Update local level
+      if (window.cryptoSystem) {
+        window.cryptoSystem.stats.level = data.level;
+      }
+      // Trigger level-up effects
+      if (window.cryptoSystem && window.cryptoSystem.onLevelUp) {
+        window.cryptoSystem.onLevelUp(data.level, data.level - 1);
+      }
+      // Update dashboard
+      if (window.dashboard) {
+        window.dashboard.setPlayerLevel?.(data.level);
+      }
+      // Trigger local Tusk level-up commentary
+      if (window.tuskCommentary) {
+        window.tuskCommentary.onLevelUp?.();
+      }
+    };
+
+    net.onSlotUnlocked = (data) => {
+      // Update dashboard loadout UI
+      if (window.dashboard) {
+        window.dashboard.onSlotUnlocked?.(data.slotId);
+      }
+    };
+
+    // ========================
     // REMOTE TANK MANAGEMENT
     // ========================
 

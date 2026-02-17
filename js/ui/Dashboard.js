@@ -193,6 +193,9 @@ class Dashboard {
     // Setup resign dropdown after header is created
     setTimeout(() => this._setupResignDropdown(), 0);
 
+    // Setup level-up popup click handler
+    setTimeout(() => this._setupLevelUpPopup(), 0);
+
     return header;
   }
 
@@ -1450,7 +1453,20 @@ class Dashboard {
    */
   updateCrypto(amount) {
     this._serverCryptoMode = true; // Server owns the roller from now on
-    const formatted = Number(amount).toLocaleString(undefined, {
+    this._lastServerCrypto = amount; // Track for economy pre-checks
+
+    // Handle negative balance display
+    const cryptoEl = document.querySelector(".header-crypto-amount");
+    if (cryptoEl) {
+      if (amount < 0) {
+        cryptoEl.classList.add("crypto-negative");
+      } else {
+        cryptoEl.classList.remove("crypto-negative");
+      }
+    }
+
+    const absAmount = Math.abs(amount);
+    const formatted = (amount < 0 ? "-" : "") + Number(absAmount).toLocaleString(undefined, {
       minimumFractionDigits: 2,
       maximumFractionDigits: 2,
     });
@@ -2973,7 +2989,7 @@ class Dashboard {
       try {
         const sponsor = {
           _territoryId: territory.id,
-          name: this.playerName || "Player",
+          name: window.authManager?.email || this.playerName || "Player",
           cluster: { tileIndices: territory.tileIndices },
           patternImage: territory.patternImage,
           patternAdjustment: territory.patternAdjustment,
@@ -3844,5 +3860,135 @@ class Dashboard {
       this._renderUpgrades(playerLevel);
       this._updateSlotStates(playerLevel);
     }
+  }
+
+  // ========================
+  // ECONOMY: LEVEL-UP POPUP
+  // ========================
+
+  _setupLevelUpPopup() {
+    const levelEl = document.getElementById("dashboard-level");
+    if (!levelEl) return;
+
+    levelEl.style.cursor = "pointer";
+    levelEl.title = "Click to level up";
+
+    levelEl.addEventListener("click", (e) => {
+      e.stopPropagation();
+      this._showLevelUpPopup();
+    });
+  }
+
+  _showLevelUpPopup() {
+    // Remove existing popup if any
+    const existing = document.getElementById("level-up-popup");
+    if (existing) existing.remove();
+
+    const currentLevel = this.playerLevel || 1;
+    const nextLevel = currentLevel + 1;
+
+    // Calculate cost using same formula as server
+    let cost = 0;
+    if (nextLevel <= 5) cost = nextLevel * 10000;
+    else if (nextLevel <= 10) cost = 50000 + (nextLevel - 5) * 20000;
+    else if (nextLevel <= 20) cost = 150000 + (nextLevel - 10) * 35000;
+    else cost = 500000 + (nextLevel - 20) * 50000;
+
+    const balance = this._lastServerCrypto !== undefined ? this._lastServerCrypto : 0;
+    const canAfford = balance >= cost;
+
+    // Check what unlocks at next level
+    const slotUnlocks = {
+      3: 'Defense Slot 1',
+      5: 'Tactical Slot 1',
+      8: 'Offense Slot 2',
+      12: 'Defense Slot 2',
+      15: 'Tactical Slot 2',
+    };
+    const slotCosts = {
+      3: 15000, 5: 30000, 8: 60000, 12: 120000, 15: 200000
+    };
+    const unlock = slotUnlocks[nextLevel];
+
+    // Build popup
+    const popup = document.createElement("div");
+    popup.id = "level-up-popup";
+    popup.className = "level-up-popup";
+    popup.innerHTML = `
+      <div class="level-up-popup-content">
+        <div class="level-up-popup-header">Level Up</div>
+        <div class="level-up-popup-body">
+          <div class="level-up-current">Level ${currentLevel} → <strong>Level ${nextLevel}</strong></div>
+          <div class="level-up-cost ${canAfford ? '' : 'level-up-cost-insufficient'}">
+            Cost: ¢${cost.toLocaleString()}
+          </div>
+          ${!canAfford ? '<div class="level-up-insufficient">Not enough crypto</div>' : ''}
+          ${unlock ? `<div class="level-up-unlock">Unlocks: ${unlock} (¢${slotCosts[nextLevel].toLocaleString()})</div>` : ''}
+        </div>
+        <div class="level-up-popup-buttons">
+          <button class="level-up-btn level-up-confirm" ${canAfford ? '' : 'disabled'}>Confirm</button>
+          <button class="level-up-btn level-up-cancel">Cancel</button>
+        </div>
+      </div>
+    `;
+
+    document.body.appendChild(popup);
+
+    // Event handlers
+    const confirmBtn = popup.querySelector(".level-up-confirm");
+    const cancelBtn = popup.querySelector(".level-up-cancel");
+
+    confirmBtn.addEventListener("click", () => {
+      // Send level-up request to server
+      if (window._mp && window._mp.net) {
+        window._mp.net.sendLevelUp();
+      }
+      popup.remove();
+    });
+
+    cancelBtn.addEventListener("click", () => {
+      popup.remove();
+    });
+
+    // Close on outside click
+    popup.addEventListener("click", (e) => {
+      if (e.target === popup) popup.remove();
+    });
+  }
+
+  // ========================
+  // ECONOMY: TOAST NOTIFICATIONS
+  // ========================
+
+  showToast(message) {
+    // Remove existing toast if any
+    const existing = document.querySelector(".dashboard-toast");
+    if (existing) existing.remove();
+
+    const toast = document.createElement("div");
+    toast.className = "dashboard-toast";
+    toast.textContent = message;
+    document.body.appendChild(toast);
+
+    // Animate in
+    requestAnimationFrame(() => toast.classList.add("visible"));
+
+    // Remove after 3 seconds
+    setTimeout(() => {
+      toast.classList.remove("visible");
+      setTimeout(() => toast.remove(), 300);
+    }, 3000);
+  }
+
+  // ========================
+  // ECONOMY: SLOT UNLOCK CALLBACK
+  // ========================
+
+  onSlotUnlocked(slotId) {
+    // Re-render loadout to reflect the unlocked slot
+    if (this.loadoutInitialized) {
+      this._renderUpgrades(this.playerLevel || 1);
+    }
+    this.showToast(`Loadout slot unlocked: ${slotId}`);
   }
 }
