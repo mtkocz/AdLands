@@ -74,8 +74,8 @@ async function reconcilePlayerTerritories() {
     for (const doc of snap.docs) {
       const data = doc.data();
       const existing = sponsorStore.getAll().find(s => s._territoryId === doc.id);
+      const displayName = emailMap.get(data.ownerUid) || data.playerName || "Player";
       if (!existing) {
-        const displayName = emailMap.get(data.ownerUid) || data.playerName || "Player";
         const result = await sponsorStore.create({
           _territoryId: doc.id,
           name: displayName,
@@ -90,6 +90,9 @@ async function reconcilePlayerTerritories() {
         });
         if (result.sponsor) created++;
         else if (result.errors) console.warn(`[Reconcile] Failed for ${doc.id}:`, result.errors);
+      } else if (existing.name !== displayName) {
+        // Update name to email if it changed
+        await sponsorStore.update(existing.id, { name: displayName });
       }
     }
     if (created > 0) {
