@@ -484,11 +484,15 @@ class TerrainElevation {
     return this.elevatedTileSet.has(tileIndex);
   }
 
-  getElevationAtPosition(localPos) {
-    if (!this._spatialGrid) return 0;
+  /**
+   * Find the nearest tile index for a planet-local-space position.
+   * Returns the tile index, or -1 if not found.
+   */
+  getNearestTileIndex(localPos) {
+    if (!this._spatialGrid) return -1;
 
     const r = localPos.length();
-    if (r < 0.001) return 0;
+    if (r < 0.001) return -1;
 
     const phi = Math.acos(Math.max(-1, Math.min(1, localPos.y / r)));
     const theta = Math.atan2(localPos.z, localPos.x) + Math.PI;
@@ -526,12 +530,14 @@ class TerrainElevation {
       }
     }
 
-    if (closestArrayIdx < 0) return 0;
-    return (
-      this.tileElevation.get(
-        this.planet.tileCenters[closestArrayIdx].tileIndex,
-      ) || 0
-    );
+    if (closestArrayIdx < 0) return -1;
+    return this.planet.tileCenters[closestArrayIdx].tileIndex;
+  }
+
+  getElevationAtPosition(localPos) {
+    const tileIndex = this.getNearestTileIndex(localPos);
+    if (tileIndex < 0) return 0;
+    return this.tileElevation.get(tileIndex) || 0;
   }
 
   getExtrusion(elevation) {

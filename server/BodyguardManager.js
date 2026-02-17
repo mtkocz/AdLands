@@ -586,8 +586,9 @@ class BodyguardManager {
       const pTh = bg.theta + (fwdTh * fwd + rgtTh * rgt) / R;
       const result = this.worldGen.getNearestTile(pTh + planetRotation, pPhi);
       if (
-        result &&
-        this.terrain.getElevationAtTileIndex(result.tileIndex) > 0
+        result && (
+        this.worldGen.polarTileIndices.has(result.tileIndex) ||
+        this.terrain.getElevationAtTileIndex(result.tileIndex) > 0)
       ) {
         return true;
       }

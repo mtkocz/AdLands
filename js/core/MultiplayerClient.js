@@ -616,6 +616,13 @@
             b.userData.ascendingNode = arr[2];
             b.userData.orbitRadius = arr[3];
           }
+          // Wobble and speed (sent with full orbital params every ~5s)
+          if (arr.length >= 8) {
+            b.userData.wobbleX = arr[4];
+            b.userData.wobbleY = arr[5];
+            b.userData.wobbleZ = arr[6];
+            b.userData.speed = arr[7];
+          }
         });
       }
     };

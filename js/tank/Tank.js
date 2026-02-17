@@ -174,19 +174,20 @@ class Tank {
    * @returns {boolean} true if collision detected and position reverted
    */
   checkTerrainCollision(prevTheta, prevPhi, planetRotationSpeed, deltaTime) {
-    // Pole collision: block movement into polar openings
-    if (this.state.phi < Tank.POLAR_PHI_LIMIT || this.state.phi > Math.PI - Tank.POLAR_PHI_LIMIT) {
-      const dt60 = deltaTime * 60;
-      const rotDelta = (planetRotationSpeed * dt60) / 60;
-      this.state.theta = prevTheta - rotDelta;
-      if (this.state.theta < 0) this.state.theta += Math.PI * 2;
-      if (this.state.theta > Math.PI * 2) this.state.theta -= Math.PI * 2;
-      this.state.phi = prevPhi;
-      this.state.speed = 0;
-      return true;
+    if (!this.planet?.terrainElevation) {
+      // Fallback: phi-based polar check when no terrain system
+      if (this.state.phi < Tank.POLAR_PHI_LIMIT || this.state.phi > Math.PI - Tank.POLAR_PHI_LIMIT) {
+        const dt60 = deltaTime * 60;
+        const rotDelta = (planetRotationSpeed * dt60) / 60;
+        this.state.theta = prevTheta - rotDelta;
+        if (this.state.theta < 0) this.state.theta += Math.PI * 2;
+        if (this.state.theta > Math.PI * 2) this.state.theta -= Math.PI * 2;
+        this.state.phi = prevPhi;
+        this.state.speed = 0;
+        return true;
+      }
+      return false;
     }
-
-    if (!this.planet?.terrainElevation) return false;
 
     const r = this.sphereRadius;
     const t = Tank._terrainTemp;
@@ -203,7 +204,11 @@ class Tank {
     );
     this.planet.hexGroup.worldToLocal(t.testPos);
 
-    if (this.planet.terrainElevation.getElevationAtPosition(t.testPos) > 0) {
+    const tileIdx = this.planet.terrainElevation.getNearestTileIndex(t.testPos);
+    if (tileIdx >= 0 && (
+      this.planet.polarTileIndices.has(tileIdx) ||
+      this.planet.terrainElevation.getElevationAtTileIndex(tileIdx) > 0
+    )) {
       const dt60 = deltaTime * 60;
       const rotDelta = (planetRotationSpeed * dt60) / 60;
       this.state.theta = prevTheta - rotDelta;
@@ -441,19 +446,16 @@ class Tank {
 
         this.planet.hexGroup.worldToLocal(t.testPos);
 
-        // Check polar collision: is probe inside the hollow pole opening?
-        const probeR = t.testPos.length();
-        const probePhi = Math.acos(Math.max(-1, Math.min(1, t.testPos.y / probeR)));
-        if (probePhi < Tank.POLAR_PHI_LIMIT || probePhi > Math.PI - Tank.POLAR_PHI_LIMIT) {
-          blocked = true;
-          break;
-        }
-
-        // Check terrain collision: is probe on elevated terrain?
-        if (this.planet.terrainElevation &&
-          this.planet.terrainElevation.getElevationAtPosition(t.testPos) > 0) {
-          blocked = true;
-          break;
+        // Check polar + terrain collision via tile lookup
+        if (this.planet.terrainElevation) {
+          const tileIdx = this.planet.terrainElevation.getNearestTileIndex(t.testPos);
+          if (tileIdx >= 0 && (
+            this.planet.polarTileIndices.has(tileIdx) ||
+            this.planet.terrainElevation.getElevationAtTileIndex(tileIdx) > 0
+          )) {
+            blocked = true;
+            break;
+          }
         }
       }
 

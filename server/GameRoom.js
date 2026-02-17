@@ -1631,14 +1631,11 @@ class GameRoom {
         const pPhi = player.phi + (fwdPhi * fwd + rgtPhi * rgt) / R;
         const pTh  = player.theta + (fwdTh * fwd + rgtTh * rgt) / R;
 
-        // Block if probe enters hollow polar opening
-        if (pPhi < POLAR_PHI_LIMIT || pPhi > Math.PI - POLAR_PHI_LIMIT) {
-          blocked = true;
-          break;
-        }
-
         const result = this.worldGen.getNearestTile(pTh + this.planetRotation, pPhi);
-        if (result && this.terrain.getElevationAtTileIndex(result.tileIndex) > 0) {
+        if (result && (
+          this.worldGen.polarTileIndices.has(result.tileIndex) ||
+          this.terrain.getElevationAtTileIndex(result.tileIndex) > 0
+        )) {
           blocked = true;
           break;
         }
@@ -2510,7 +2507,7 @@ class GameRoom {
     // Update billboard orbital angles in-place
     if (this.tick % 100 === 0) {
       // Full orbital params every ~5s
-      statePayload.ba = this.billboardOrbits.map(b => [b.orbitalAngle, b.inclination, b.ascendingNode, b.orbitRadius]);
+      statePayload.ba = this.billboardOrbits.map(b => [b.orbitalAngle, b.inclination, b.ascendingNode, b.orbitRadius, b.wobbleX, b.wobbleY, b.wobbleZ, b.speed]);
     } else {
       statePayload.ba.length = this.billboardOrbits.length;
       for (let i = 0; i < this.billboardOrbits.length; i++) {

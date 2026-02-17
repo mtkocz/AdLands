@@ -937,37 +937,20 @@ gl_FragColor = vec4( outgoingLight, diffuseColor.a );`
         rightHub.position.set(panelWidth / 2 + bt + 0.96, 0, 0);
         group.add(rightHub);
 
-        // Random orbital parameters — avoid poles by clamping inclination
-        // inclination 0 = equatorial, π/2 = polar
-        // Clamp to ~60° max so orbits never pass directly over poles
-        const maxInclination = Math.PI / 3; // 60°
-        const inclination = Math.random() * maxInclination;
-        const ascendingNode = Math.random() * Math.PI * 2;
-        const orbitalAngle = Math.random() * Math.PI * 2;
-
-        // Per-billboard distance offset (±30 units) to stagger orbits and avoid collisions
-        const distanceOffset = (Math.random() - 0.5) * 60;
-
-        // Orbital speed — slower for higher orbits, random direction
-        const speed = 0.008 * Math.sqrt(this.sphereRadius / orbit.distance) * (Math.random() > 0.5 ? 1 : -1);
-
-        // Slight random orientation wobble (±5° on each axis)
-        const wobbleRange = 0.087; // ~5° in radians
-        const wobbleX = (Math.random() - 0.5) * 2 * wobbleRange;
-        const wobbleY = (Math.random() - 0.5) * 2 * wobbleRange;
-        const wobbleZ = (Math.random() - 0.5) * 2 * wobbleRange;
-
+        // Zeroed defaults — server provides authoritative orbital params via welcome packet
+        // and periodic ba broadcast. Billboards start hidden (visible = false) so these
+        // defaults are never rendered before server values arrive.
         group.userData = {
           isBillboard: true,
           billboardIndex: globalIndex,
-          orbitRadius: orbit.distance + distanceOffset,
-          inclination,
-          ascendingNode,
-          orbitalAngle,
-          speed,
-          wobbleX,
-          wobbleY,
-          wobbleZ,
+          orbitRadius: orbit.distance,
+          inclination: 0,
+          ascendingNode: 0,
+          orbitalAngle: 0,
+          speed: 0,
+          wobbleX: 0,
+          wobbleY: 0,
+          wobbleZ: 0,
         };
 
         group.visible = false; // hidden until a sponsor rents this slot
