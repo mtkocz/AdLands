@@ -55,6 +55,7 @@
 
     const net = new NetworkManager();
     window.networkManager = net; // Expose for debugging
+    mp.net = net; // Expose on _mp so Dashboard can access socket
 
     // Remote player tank instances: socketId → RemoteTank
     const remoteTanks = new Map();
