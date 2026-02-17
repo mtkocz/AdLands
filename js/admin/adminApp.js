@@ -1038,7 +1038,7 @@
                   ${logoSrc ? `<img src="${logoSrc}" alt="${pTitle}">` : '<span style="color:#666;font-family:var(--font-small);font-size:var(--font-size-small);">No logo</span>'}
                 </div>
                 <div class="pending-review-card-info">
-                  <div class="sponsor-card-name">${pTitle || escapeHtml(s.name)}</div>
+                  <div class="sponsor-card-name">${escapeHtml(s.ownerEmail || s.name)}</div>
                   <div class="sponsor-card-stats">${tileCount} tiles &middot; ${s.tierName || "territory"}</div>
                 </div>
               </div>

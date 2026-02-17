@@ -375,49 +375,38 @@ function createSponsorRoutes(sponsorStore, gameRoom, { imageUrls, gameDir } = {}
         console.log(`[Territory] Submission approved for ${territoryId}`);
         res.json({ success: true, action: "approved" });
       } else {
-        // Reject: clear all pending fields, set status
-        await sponsorStore.update(req.params.id, {
-          pendingTitle: null,
-          pendingTagline: null,
-          pendingWebsiteUrl: null,
-          pendingImage: null,
-          submissionStatus: "rejected",
-          imageStatus: "rejected",
-          reviewedAt: new Date().toISOString(),
-          rejectionReason: rejectionReason || "Submission rejected by admin",
-        });
+        // Reject: delete the territory entirely and notify the player
+        const reason = rejectionReason || "Submission rejected by admin";
 
-        // Update Firestore
+        // Delete from SponsorStore
+        await sponsorStore.delete(req.params.id);
+        await cleanupSponsorImages(req.params.id);
+
+        // Delete from Firestore
         try {
           const db = getFirestore();
-          await db.collection("territories").doc(territoryId).update({
-            pendingTitle: null,
-            pendingTagline: null,
-            pendingWebsiteUrl: null,
-            pendingImage: null,
-            submissionStatus: "rejected",
-            reviewedAt: require("firebase-admin").firestore.FieldValue.serverTimestamp(),
-            rejectionReason: rejectionReason || "Submission rejected by admin",
-          });
+          await db.collection("territories").doc(territoryId).delete();
         } catch (e) {
-          console.warn("[Territory] Firestore reject update failed:", e.message);
+          console.warn("[Territory] Firestore reject delete failed:", e.message);
         }
 
-        // Notify the owning player
+        // Notify the owning player with rejection reason
         if (gameRoom && sponsor.ownerUid) {
           const sockets = await gameRoom.io.in(gameRoom.roomId).fetchSockets();
           for (const s of sockets) {
             if (s.uid === sponsor.ownerUid) {
               s.emit("territory-review-result", {
                 territoryId,
+                sponsorStorageId: req.params.id,
                 status: "rejected",
-                reason: rejectionReason || "Submission rejected by admin",
+                reason,
               });
             }
           }
         }
 
-        console.log(`[Territory] Submission rejected for ${territoryId}`);
+        reloadIfLive();
+        console.log(`[Territory] Submission rejected & deleted for ${territoryId}`);
         res.json({ success: true, action: "rejected" });
       }
     } catch (err) {

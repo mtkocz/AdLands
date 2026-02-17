@@ -1484,13 +1484,21 @@
       territory.submissionStatus = data.status;
 
       if (data.status === "rejected") {
-        // Clear pending fields
-        territory.pendingTitle = null;
-        territory.pendingTagline = null;
-        territory.pendingWebsiteUrl = null;
-        territory.pendingImage = null;
+        // Remove territory from planet
+        if (dashboard._territoryPlanet) {
+          dashboard._territoryPlanet.removeSponsorCluster(territory.id);
+        }
+        // Remove from local array
+        const idx = dashboard._playerTerritories.indexOf(territory);
+        if (idx !== -1) dashboard._playerTerritories.splice(idx, 1);
+
+        // Show rejection reason
         const reason = data.reason ? `: ${data.reason}` : "";
-        dashboard.addNotification(`Territory submission rejected${reason}. Please resubmit.`, "info", "territory");
+        dashboard.addNotification(`Territory rejected${reason}`, "info", "territory");
+
+        dashboard._savePlayerTerritories();
+        dashboard._renderTerritoryList();
+        return;
       } else if (data.status === "approved") {
         // Move approved data to active fields
         if (data.title !== undefined) territory.title = data.title;
