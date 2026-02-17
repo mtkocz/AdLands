@@ -1634,6 +1634,20 @@
     }
     net.connect(connectOpts);
 
+    // If token wasn't available at connect time, send it once auth resolves
+    if (!connectOpts.token && window.authManager) {
+      // Poll briefly — token may resolve between our check and socket connect
+      const tokenPoll = setInterval(() => {
+        if (window.authManager.idToken && net.connected) {
+          clearInterval(tokenPoll);
+          net.sendRefreshToken(window.authManager.idToken);
+          console.log("[Multiplayer] Sent auth token after late resolve");
+        }
+      }, 200);
+      // Stop polling after 10s to avoid leaking
+      setTimeout(() => clearInterval(tokenPoll), 10000);
+    }
+
     // Expose for debugging
     window._mpState = {
       net,
