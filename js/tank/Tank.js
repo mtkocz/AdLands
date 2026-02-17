@@ -339,7 +339,7 @@ class Tank {
   // ========================
 
   _updatePhysics(deltaTime) {
-    if (!this.controlsEnabled) return;
+    if (!this.controlsEnabled || window._modalOpen) return;
 
     const { keys } = this.state;
     const p = this.physics;
@@ -1463,7 +1463,7 @@ class Tank {
 
   _setupInput() {
     window.addEventListener("keydown", (e) => {
-      if (window._authScreenInstance?.isVisible) return;
+      if (window._authScreenInstance?.isVisible || window._modalOpen) return;
       const tag = document.activeElement?.tagName;
       if (tag === "INPUT" || tag === "TEXTAREA" || document.activeElement?.isContentEditable) return;
       if (!this.controlsEnabled || this.isDead) return;
@@ -1479,6 +1479,7 @@ class Tank {
     });
 
     window.addEventListener("keyup", (e) => {
+      if (window._modalOpen) return;
       const tag = document.activeElement?.tagName;
       if (tag === "INPUT" || tag === "TEXTAREA" || document.activeElement?.isContentEditable) return;
       if (e.key === "Shift") {
@@ -1502,7 +1503,7 @@ class Tank {
     // Throttle mousemove to ~60fps (16ms) - turret aiming doesn't need higher frequency
     let lastMouseMoveTime = 0;
     window.addEventListener("mousemove", (e) => {
-      if (window._authScreenInstance?.isVisible) return;
+      if (window._authScreenInstance?.isVisible || window._modalOpen) return;
       const now = performance.now();
       if (now - lastMouseMoveTime < 16) return;
       lastMouseMoveTime = now;

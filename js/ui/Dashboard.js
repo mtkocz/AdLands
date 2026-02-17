@@ -1011,6 +1011,18 @@ class Dashboard {
         const territoryId = cancelBtn.dataset.territoryId;
         this._cancelTerritorySubscription(territoryId);
       }
+
+      // Dismiss rejected territory
+      const dismissBtn = e.target.closest(".territory-reject-dismiss");
+      if (dismissBtn) {
+        const territoryId = dismissBtn.dataset.territoryId;
+        const idx = this._playerTerritories.findIndex((t) => t.id === territoryId);
+        if (idx !== -1) {
+          this._playerTerritories.splice(idx, 1);
+          this._savePlayerTerritories();
+          this._renderTerritoryList();
+        }
+      }
     });
 
     // Territory adjustment sliders (scale, offsetX, offsetY)
@@ -2549,6 +2561,7 @@ class Dashboard {
     }
 
     popup.classList.add("visible");
+    window._modalOpen = true;
 
     // Wire up events (clean up previous listeners)
     this._cleanupRentalPopup();
@@ -2575,6 +2588,7 @@ class Dashboard {
   _hideRentalPopup() {
     const popup = document.getElementById("territory-rental-popup");
     if (popup) popup.classList.remove("visible");
+    window._modalOpen = false;
     this._cleanupRentalPopup();
   }
 
@@ -3052,9 +3066,27 @@ class Dashboard {
     listEl.innerHTML = this._playerTerritories
       .map((t) => {
         const label = tierLabels[t.tierName] || "Territory";
+        const status = t.submissionStatus || t.imageStatus || "placeholder";
+
+        // Rejected: show rejection reason with dismiss button
+        if (status === "rejected") {
+          const reason = t.rejectionReason || "Submission rejected by admin";
+          return `
+            <div class="territory-owned-item territory-rejected-item" data-territory-id="${t.id}">
+                <div class="territory-item-header">
+                    <span class="territory-item-name">${label}</span>
+                    <span class="territory-status-badge rejected">Rejected</span>
+                </div>
+                <div class="territory-rejection-reason">${reason}</div>
+                <div class="territory-item-actions">
+                    <button class="territory-reject-dismiss" data-territory-id="${t.id}">Dismiss</button>
+                </div>
+            </div>
+          `;
+        }
+
         const age = this._formatTimeAgo(t.timestamp);
         const adj = t.patternAdjustment || { scale: 1.0, offsetX: 0, offsetY: 0 };
-        const status = t.submissionStatus || t.imageStatus || "placeholder";
         // Show pending values in edit fields (fall back to approved values)
         const escTitle = (t.pendingTitle ?? t.title ?? "").replace(/"/g, "&quot;");
         const escTagline = (t.pendingTagline ?? t.tagline ?? "").replace(/"/g, "&quot;");
@@ -3065,7 +3097,6 @@ class Dashboard {
                   <span class="territory-item-name">${label}</span>
                   <span class="territory-item-detail">${t.tileIndices.length} hex${t.tileIndices.length !== 1 ? "es" : ""} · ${age}</span>
                   ${status === "pending" ? '<span class="territory-status-badge pending">Pending Review</span>' : ""}
-                  ${status === "rejected" ? '<span class="territory-status-badge rejected">Rejected — Resubmit</span>' : ""}
                   ${status === "approved" ? '<span class="territory-status-badge approved">Approved</span>' : ""}
               </div>
               <div class="territory-info-edit-group">

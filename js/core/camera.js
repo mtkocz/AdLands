@@ -912,7 +912,7 @@ class GameCamera {
     // ====== KEYBOARD ZOOM ======
     // +/- keys zoom between surface/orbital (works regardless of scroll setting)
     window.addEventListener("keydown", (e) => {
-      if (window._authScreenInstance?.isVisible) return;
+      if (window._authScreenInstance?.isVisible || window._modalOpen) return;
       const _tag = document.activeElement?.tagName;
       if (_tag === "INPUT" || _tag === "TEXTAREA" || document.activeElement?.isContentEditable) return;
       if (e.key === "+" || e.key === "=") {

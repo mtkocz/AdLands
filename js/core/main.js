@@ -1075,6 +1075,7 @@
   );
 
   window.addEventListener("mousedown", (e) => {
+    if (window._modalOpen) return;
     if (
       e.button === 0 &&
       tank.controlsEnabled &&
@@ -2866,7 +2867,7 @@
   // ========================
 
   window.addEventListener("keydown", (e) => {
-    if (window._authScreenInstance?.isVisible) return;
+    if (window._authScreenInstance?.isVisible || window._modalOpen) return;
     const _tag = document.activeElement?.tagName;
     if (_tag === "INPUT" || _tag === "TEXTAREA" || document.activeElement?.isContentEditable) return;
     if (e.key === "e" || e.key === "E") {

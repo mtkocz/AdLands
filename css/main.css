@@ -4165,6 +4165,33 @@ body.tip-dragging .chat-mention.tip-highlight {
     background: rgba(34, 170, 85, 0.15);
     color: #2a5;
 }
+.territory-rejected-item {
+    background: rgba(239, 68, 68, 0.05);
+    opacity: 0.85;
+}
+.territory-rejection-reason {
+    padding: var(--space-xs) var(--space-sm);
+    background: rgba(239, 68, 68, 0.08);
+    border-left: 2px solid #ef4444;
+    color: #ef4444;
+    font-size: var(--font-size-small);
+    font-family: var(--font-body);
+    margin: var(--space-xs) 0;
+    line-height: 1.4;
+}
+.territory-reject-dismiss {
+    font-family: var(--font-body);
+    font-size: var(--font-size-small);
+    padding: var(--space-xs) var(--space-sm);
+    background: transparent;
+    border: 1px solid #555;
+    color: #999;
+    cursor: pointer;
+}
+.territory-reject-dismiss:hover {
+    border-color: #ef4444;
+    color: #ef4444;
+}
 
 /* Share Panel */
 .share-btn {

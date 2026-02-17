@@ -1488,13 +1488,13 @@
         if (dashboard._territoryPlanet) {
           dashboard._territoryPlanet.removeSponsorCluster(territory.id);
         }
-        // Remove from local array
-        const idx = dashboard._playerTerritories.indexOf(territory);
-        if (idx !== -1) dashboard._playerTerritories.splice(idx, 1);
-
-        // Show rejection reason
-        const reason = data.reason ? `: ${data.reason}` : "";
-        dashboard.addNotification(`Territory rejected${reason}`, "info", "territory");
+        // Keep entry as rejection stub (shown in dashboard until dismissed)
+        territory.rejectionReason = data.reason || "Submission rejected by admin";
+        territory.tileIndices = [];
+        territory.pendingTitle = null;
+        territory.pendingTagline = null;
+        territory.pendingWebsiteUrl = null;
+        territory.pendingImage = null;
 
         dashboard._savePlayerTerritories();
         dashboard._renderTerritoryList();
