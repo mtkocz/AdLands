@@ -382,8 +382,23 @@ class GameRoom {
       this.terrain.elevatedTileSet.add(v);
     }
 
-    // 2. Clear old sponsor state
+    // 2. Snapshot old sponsor state so we can restore unchanged sponsors
     const oldSponsorClusterIds = new Set(this.clusterSponsorMap.keys());
+    const oldSponsorClusterMap = new Map(this.sponsorClusterMap);   // sponsorId → clusterId
+    const oldCaptureSnapshots = new Map();
+    for (const [sponsorId, clusterId] of oldSponsorClusterMap) {
+      const capture = this.clusterCaptureState.get(clusterId);
+      const timer = this.sponsorHoldTimers.get(sponsorId);
+      if (capture) {
+        oldCaptureSnapshots.set(sponsorId, {
+          clusterId,
+          tics: { ...capture.tics },
+          owner: capture.owner,
+          timer: timer ? { ...timer } : null,
+        });
+      }
+    }
+
     this.sponsorClusterMap.clear();
     this.clusterSponsorMap.clear();
     this.sponsorHoldTimers.clear();
@@ -395,12 +410,29 @@ class GameRoom {
     // 4. Rebuild world payload
     this._worldPayload = this._buildWorldPayload(wr);
 
-    // 5. Update capture state: remove stale sponsor clusters, add new ones
+    // 5. Update capture state: remove stale sponsor clusters, add new ones,
+    //    and restore capture progress for sponsors whose cluster didn't change
     for (const oldId of oldSponsorClusterIds) {
-      this.clusterCaptureState.delete(oldId);
+      if (!this.clusterSponsorMap.has(oldId)) {
+        this.clusterCaptureState.delete(oldId);
+      }
     }
-    for (const [, clusterId] of this.sponsorClusterMap) {
-      if (!this.clusterCaptureState.has(clusterId)) {
+    for (const [sponsorId, clusterId] of this.sponsorClusterMap) {
+      const old = oldCaptureSnapshots.get(sponsorId);
+      if (old && old.clusterId === clusterId) {
+        // Same cluster assignment — restore capture progress
+        const state = this.clusterCaptureState.get(clusterId);
+        if (state) {
+          state.tics.rust = old.tics.rust;
+          state.tics.cobalt = old.tics.cobalt;
+          state.tics.viridian = old.tics.viridian;
+          state.owner = old.owner;
+        }
+        if (old.timer) {
+          this.sponsorHoldTimers.set(sponsorId, { ...old.timer });
+        }
+      } else if (!this.clusterCaptureState.has(clusterId)) {
+        // New or reassigned sponsor — fresh capture state
         const cluster = wr.clusterData[clusterId];
         const capacity = cluster ? cluster.tiles.length * 5 : 25;
         this.clusterCaptureState.set(clusterId, {
