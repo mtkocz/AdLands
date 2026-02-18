@@ -299,7 +299,8 @@ function createSponsorRoutes(sponsorStore, gameRoom, { imageUrls, gameDir } = {}
 
         // Move all pending fields to active in SponsorStore
         await sponsorStore.update(req.params.id, {
-          name: approvedTitle || sponsor.name,
+          name: sponsor.isPlayerTerritory ? sponsor.name : (approvedTitle || sponsor.name),
+          title: approvedTitle,
           tagline: approvedTagline,
           websiteUrl: approvedUrl,
           patternImage: approvedImage,
