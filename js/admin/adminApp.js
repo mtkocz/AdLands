@@ -1784,6 +1784,9 @@
       }
       const newSponsor = await SponsorStorage.create(createData);
 
+      // Clear any existing selection before entering the new territory
+      hexSelector.clearSelection();
+
       // Enter group edit mode on the new territory
       refreshSponsorsList();
       editGroup(groupKey, newSponsor.id);
