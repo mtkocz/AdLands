@@ -128,9 +128,10 @@ class SponsorStore {
         return;
       }
 
-      // Build map of Firestore sponsors by ID
+      // Build map of Firestore sponsors by ID (skip internal metadata docs)
       const firestoreSponsors = new Map();
       for (const doc of snap.docs) {
+        if (doc.id.startsWith("__")) continue;
         firestoreSponsors.set(doc.id, doc.data());
       }
 
@@ -139,6 +140,9 @@ class SponsorStore {
       for (const s of this._cache.sponsors) {
         if (s.id) localById.set(s.id, s);
       }
+
+      // Load deleted IDs from Firestore (survives container rebuilds / fresh deploys)
+      await this._loadDeletedIdsFromFirestore();
 
       // Merge: Firestore wins for matching IDs, new Firestore entries are added
       const merged = [];
@@ -230,6 +234,45 @@ class SponsorStore {
       await db.collection(this._firestoreCollection).doc(id).delete();
     } catch (err) {
       console.warn(`[SponsorStore] Firestore delete failed for ${id}:`, err.message);
+    }
+  }
+
+  /**
+   * Persist deletedIds to Firestore so they survive container rebuilds.
+   * Stored as a single document in the sponsor_store collection.
+   */
+  async _saveDeletedIdsToFirestore() {
+    if (!this._getFirestore) return;
+
+    try {
+      const db = this._getFirestore();
+      await db.collection(this._firestoreCollection).doc("__deletedIds").set({
+        ids: this._cache.deletedIds || [],
+      });
+    } catch (err) {
+      console.warn("[SponsorStore] Failed to save deletedIds to Firestore:", err.message);
+    }
+  }
+
+  /**
+   * Load deletedIds from Firestore and merge with local cache.
+   * Called during _mergeFromFirestore to recover deletion records after fresh deploys.
+   */
+  async _loadDeletedIdsFromFirestore() {
+    if (!this._getFirestore) return;
+
+    try {
+      const db = this._getFirestore();
+      const doc = await db.collection(this._firestoreCollection).doc("__deletedIds").get();
+      if (doc.exists) {
+        const firestoreIds = doc.data().ids || [];
+        const localIds = this._cache.deletedIds || [];
+        // Merge both sets (Firestore may have IDs the local cache doesn't after a fresh deploy)
+        const merged = [...new Set([...localIds, ...firestoreIds])];
+        this._cache.deletedIds = merged;
+      }
+    } catch (err) {
+      console.warn("[SponsorStore] Failed to load deletedIds from Firestore:", err.message);
     }
   }
 
@@ -382,11 +425,12 @@ class SponsorStore {
     const initialLength = this._cache.sponsors.length;
     this._cache.sponsors = this._cache.sponsors.filter((s) => s.id !== id);
     if (this._cache.sponsors.length < initialLength) {
-      // Track deleted IDs to prevent resurrection from Dropbox-reverted JSON or stale Firestore
+      // Track deleted IDs to prevent resurrection from Dropbox-reverted JSON, stale Firestore, or seed files
       if (!this._cache.deletedIds) this._cache.deletedIds = [];
       if (!this._cache.deletedIds.includes(id)) this._cache.deletedIds.push(id);
       await this._saveToDisk();
       await this._deleteFromFirestore(id);
+      await this._saveDeletedIdsToFirestore();
       return true;
     }
     return false;
