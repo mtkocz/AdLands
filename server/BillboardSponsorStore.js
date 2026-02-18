@@ -190,13 +190,12 @@ class BillboardSponsorStore {
   }
 
   /**
-   * Atomic write: write to .tmp then rename to prevent corruption.
+   * Save cache to disk. Writes directly to avoid Dropbox sync race conditions
+   * with tmp+rename pattern.
    */
   async _saveToDisk() {
     this._cache.lastModified = new Date().toISOString();
-    const tmp = this.filePath + ".tmp";
-    await fsp.writeFile(tmp, JSON.stringify(this._cache, null, 2), "utf8");
-    await fsp.rename(tmp, this.filePath);
+    await fsp.writeFile(this.filePath, JSON.stringify(this._cache, null, 2), "utf8");
   }
 
   /** Get all 18 billboard sponsor slots */
