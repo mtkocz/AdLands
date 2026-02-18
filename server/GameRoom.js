@@ -240,8 +240,22 @@ class GameRoom {
     // Load all Firestore profiles into cache (async, non-blocking)
     this._loadAllProfiles();
 
+    // Restore faction capture state from Firestore (unless RESET_TERRITORIES is set)
+    if (process.env.RESET_TERRITORIES === "true") {
+      console.log(`[Room ${this.roomId}] RESET_TERRITORIES=true — starting with fresh territory state`);
+    } else {
+      this.loadCaptureState();
+    }
+
     // Periodic auto-save: persist all active players every 60 seconds
     this._autoSaveInterval = setInterval(() => this._autoSaveAllPlayers(), 60000);
+
+    // Periodic capture state save: persist faction ownership every 60 seconds
+    this._captureSaveInterval = setInterval(() => {
+      this.saveCaptureState().catch(err => {
+        console.warn(`[Room ${this.roomId}] Capture state auto-save error:`, err.message);
+      });
+    }, 60000);
   }
 
   /**
@@ -1065,6 +1079,70 @@ class GameRoom {
       }
     }
     await Promise.allSettled(saves);
+  }
+
+  /**
+   * Save faction capture state to Firestore.
+   * Used for periodic auto-save and graceful shutdown.
+   * @returns {Promise<void>}
+   */
+  async saveCaptureState() {
+    try {
+      const { getFirestore } = require("./firebaseAdmin");
+      const db = getFirestore();
+      const clusters = {};
+      for (const [clusterId, state] of this.clusterCaptureState) {
+        const total = state.tics.rust + state.tics.cobalt + state.tics.viridian;
+        if (total > 0 || state.owner) {
+          clusters[clusterId] = {
+            tics: { ...state.tics },
+            owner: state.owner,
+          };
+        }
+      }
+      await db.collection("gameState").doc("captureState").set({
+        roomId: this.roomId,
+        savedAt: require("firebase-admin").firestore.FieldValue.serverTimestamp(),
+        clusters,
+      });
+      const count = Object.keys(clusters).length;
+      if (count > 0) {
+        console.log(`[Room ${this.roomId}] Saved capture state (${count} active clusters)`);
+      }
+    } catch (err) {
+      console.warn(`[Room ${this.roomId}] Failed to save capture state:`, err.message);
+    }
+  }
+
+  /**
+   * Load faction capture state from Firestore and apply to current cluster map.
+   * @returns {Promise<boolean>} true if state was loaded
+   */
+  async loadCaptureState() {
+    try {
+      const { getFirestore } = require("./firebaseAdmin");
+      const db = getFirestore();
+      const doc = await db.collection("gameState").doc("captureState").get();
+      if (!doc.exists) return false;
+      const data = doc.data();
+      if (!data.clusters) return false;
+      let restored = 0;
+      for (const [clusterId, saved] of Object.entries(data.clusters)) {
+        const current = this.clusterCaptureState.get(Number(clusterId));
+        if (current && saved.tics) {
+          current.tics.rust = saved.tics.rust || 0;
+          current.tics.cobalt = saved.tics.cobalt || 0;
+          current.tics.viridian = saved.tics.viridian || 0;
+          current.owner = saved.owner || null;
+          restored++;
+        }
+      }
+      console.log(`[Room ${this.roomId}] Restored capture state (${restored} clusters from ${data.savedAt?.toDate?.() || "unknown"})`);
+      return true;
+    } catch (err) {
+      console.warn(`[Room ${this.roomId}] Failed to load capture state:`, err.message);
+      return false;
+    }
   }
 
   /** @private */

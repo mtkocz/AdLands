@@ -703,10 +703,13 @@ io.on("connection", (socket) => {
 // ---- Graceful Shutdown ----
 // Save all player profiles before the server exits (restart, Ctrl+C, deploy, etc.)
 async function gracefulShutdown(signal) {
-  console.log(`\n[Server] ${signal} received — saving all player profiles before exit...`);
+  console.log(`\n[Server] ${signal} received — saving all data before exit...`);
   try {
-    await mainRoom.saveAllPlayers();
-    console.log("[Server] All profiles saved. Shutting down.");
+    await Promise.allSettled([
+      mainRoom.saveAllPlayers(),
+      mainRoom.saveCaptureState(),
+    ]);
+    console.log("[Server] All profiles and capture state saved. Shutting down.");
   } catch (err) {
     console.warn("[Server] Error during shutdown save:", err.message);
   }
