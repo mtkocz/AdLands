@@ -12,6 +12,26 @@ const path = require("path");
 /** Fields to strip when a Firestore document exceeds the 1MB size limit */
 const IMAGE_FIELDS = ["patternImage", "logoImage", "pendingImage"];
 
+/** Timeout for Firestore operations during startup (ms) */
+const FIRESTORE_TIMEOUT = 15000;
+
+/** Race a promise against a timeout. Resolves to null on timeout. */
+function withTimeout(promise, ms) {
+  return Promise.race([
+    promise,
+    new Promise(resolve => setTimeout(() => resolve(null), ms)),
+  ]);
+}
+
+/** Strip undefined values from an object (Firestore rejects undefined). */
+function stripUndefined(obj) {
+  const clean = {};
+  for (const [k, v] of Object.entries(obj)) {
+    if (v !== undefined) clean[k] = v;
+  }
+  return clean;
+}
+
 class MoonSponsorStore {
   /**
    * @param {string} filePath - Path to moonSponsors.json
@@ -70,14 +90,23 @@ class MoonSponsorStore {
 
     try {
       const db = this._getFirestore();
-      const snap = await db.collection(this._firestoreCollection).get();
+      const snap = await withTimeout(
+        db.collection(this._firestoreCollection).get(),
+        FIRESTORE_TIMEOUT,
+      );
+
+      if (!snap) {
+        console.warn("[MoonSponsorStore] Firestore read timed out, using disk data");
+        this._seedFirestore();
+        return;
+      }
 
       if (snap.empty) {
-        // First run: seed Firestore from JSON data
+        // First run: seed Firestore from JSON data (background)
         const hasData = this._cache.moonSponsors.some(Boolean);
         if (hasData) {
           console.log("[MoonSponsorStore] Firestore empty — seeding from disk");
-          await this._seedFirestore();
+          this._seedFirestore();
         }
         return;
       }
@@ -106,19 +135,10 @@ class MoonSponsorStore {
   async _seedFirestore() {
     if (!this._getFirestore) return;
 
-    try {
-      const db = this._getFirestore();
-      const batch = db.batch();
-      for (let i = 0; i < 3; i++) {
-        const ref = db.collection(this._firestoreCollection).doc(String(i));
-        const data = this._cache.moonSponsors[i];
-        batch.set(ref, data || { empty: true });
-      }
-      await batch.commit();
-      console.log("[MoonSponsorStore] Seeded 3 slots to Firestore");
-    } catch (err) {
-      console.warn("[MoonSponsorStore] Firestore seed failed:", err.message);
+    for (let i = 0; i < 3; i++) {
+      await this._syncSlotToFirestore(i, this._cache.moonSponsors[i]);
     }
+    console.log("[MoonSponsorStore] Seeded 3 slots to Firestore");
   }
 
   /**
@@ -129,12 +149,13 @@ class MoonSponsorStore {
 
     try {
       const db = this._getFirestore();
-      await db.collection(this._firestoreCollection).doc(String(moonIndex)).set(data || { empty: true });
+      const payload = data ? stripUndefined(data) : { empty: true };
+      await db.collection(this._firestoreCollection).doc(String(moonIndex)).set(payload);
     } catch (err) {
       // Retry without images if too large
-      if (data && !data.empty && (err.code === 3 || (err.message && err.message.includes("exceeds the maximum")))) {
+      if (data && (err.code === 3 || (err.message && err.message.includes("exceeds the maximum")))) {
         try {
-          const stripped = { ...data };
+          const stripped = stripUndefined(data);
           for (const f of IMAGE_FIELDS) delete stripped[f];
           const db = this._getFirestore();
           await db.collection(this._firestoreCollection).doc(String(moonIndex)).set(stripped);

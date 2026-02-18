@@ -15,6 +15,26 @@ const SLOT_COUNT = 18;
 /** Fields to strip when a Firestore document exceeds the 1MB size limit */
 const IMAGE_FIELDS = ["patternImage", "logoImage", "pendingImage"];
 
+/** Timeout for Firestore operations during startup (ms) */
+const FIRESTORE_TIMEOUT = 15000;
+
+/** Race a promise against a timeout. Resolves to null on timeout. */
+function withTimeout(promise, ms) {
+  return Promise.race([
+    promise,
+    new Promise(resolve => setTimeout(() => resolve(null), ms)),
+  ]);
+}
+
+/** Strip undefined values from an object (Firestore rejects undefined). */
+function stripUndefined(obj) {
+  const clean = {};
+  for (const [k, v] of Object.entries(obj)) {
+    if (v !== undefined) clean[k] = v;
+  }
+  return clean;
+}
+
 class BillboardSponsorStore {
   /**
    * @param {string} filePath - Path to billboardSponsors.json
@@ -73,14 +93,23 @@ class BillboardSponsorStore {
 
     try {
       const db = this._getFirestore();
-      const snap = await db.collection(this._firestoreCollection).get();
+      const snap = await withTimeout(
+        db.collection(this._firestoreCollection).get(),
+        FIRESTORE_TIMEOUT,
+      );
+
+      if (!snap) {
+        console.warn("[BillboardSponsorStore] Firestore read timed out, using disk data");
+        this._seedFirestore();
+        return;
+      }
 
       if (snap.empty) {
-        // First run: seed Firestore from JSON data
+        // First run: seed Firestore from JSON data (background)
         const hasData = this._cache.billboardSponsors.some(Boolean);
         if (hasData) {
           console.log("[BillboardSponsorStore] Firestore empty — seeding from disk");
-          await this._seedFirestore();
+          this._seedFirestore();
         }
         return;
       }
@@ -109,19 +138,10 @@ class BillboardSponsorStore {
   async _seedFirestore() {
     if (!this._getFirestore) return;
 
-    try {
-      const db = this._getFirestore();
-      const batch = db.batch();
-      for (let i = 0; i < SLOT_COUNT; i++) {
-        const ref = db.collection(this._firestoreCollection).doc(String(i));
-        const data = this._cache.billboardSponsors[i];
-        batch.set(ref, data || { empty: true });
-      }
-      await batch.commit();
-      console.log(`[BillboardSponsorStore] Seeded ${SLOT_COUNT} slots to Firestore`);
-    } catch (err) {
-      console.warn("[BillboardSponsorStore] Firestore seed failed:", err.message);
+    for (let i = 0; i < SLOT_COUNT; i++) {
+      await this._syncSlotToFirestore(i, this._cache.billboardSponsors[i]);
     }
+    console.log(`[BillboardSponsorStore] Seeded ${SLOT_COUNT} slots to Firestore`);
   }
 
   /**
@@ -132,12 +152,13 @@ class BillboardSponsorStore {
 
     try {
       const db = this._getFirestore();
-      await db.collection(this._firestoreCollection).doc(String(billboardIndex)).set(data || { empty: true });
+      const payload = data ? stripUndefined(data) : { empty: true };
+      await db.collection(this._firestoreCollection).doc(String(billboardIndex)).set(payload);
     } catch (err) {
       // Retry without images if too large
-      if (data && !data.empty && (err.code === 3 || (err.message && err.message.includes("exceeds the maximum")))) {
+      if (data && (err.code === 3 || (err.message && err.message.includes("exceeds the maximum")))) {
         try {
-          const stripped = { ...data };
+          const stripped = stripUndefined(data);
           for (const f of IMAGE_FIELDS) delete stripped[f];
           const db = this._getFirestore();
           await db.collection(this._firestoreCollection).doc(String(billboardIndex)).set(stripped);

@@ -12,6 +12,26 @@ const path = require("path");
 /** Fields to strip when a Firestore document exceeds the 1MB size limit */
 const IMAGE_FIELDS = ["patternImage", "logoImage", "pendingImage"];
 
+/** Timeout for Firestore operations during startup (ms) */
+const FIRESTORE_TIMEOUT = 15000;
+
+/** Race a promise against a timeout. Resolves to null on timeout. */
+function withTimeout(promise, ms) {
+  return Promise.race([
+    promise,
+    new Promise(resolve => setTimeout(() => resolve(null), ms)),
+  ]);
+}
+
+/** Strip undefined values from an object (Firestore rejects undefined). */
+function stripUndefined(obj) {
+  const clean = {};
+  for (const [k, v] of Object.entries(obj)) {
+    if (v !== undefined) clean[k] = v;
+  }
+  return clean;
+}
+
 class SponsorStore {
   /**
    * @param {string} filePath - Path to sponsors.json
@@ -75,13 +95,23 @@ class SponsorStore {
 
     try {
       const db = this._getFirestore();
-      const snap = await db.collection(this._firestoreCollection).get();
+      const snap = await withTimeout(
+        db.collection(this._firestoreCollection).get(),
+        FIRESTORE_TIMEOUT,
+      );
+
+      if (!snap) {
+        console.warn("[SponsorStore] Firestore read timed out, using disk data");
+        // Seed in background so next restart has data
+        this._seedFirestore();
+        return;
+      }
 
       if (snap.empty) {
-        // First run: seed Firestore from JSON data
+        // First run: seed Firestore from JSON data (background, don't block startup)
         if (this._cache.sponsors.length > 0) {
-          console.log(`[SponsorStore] Firestore empty — seeding ${this._cache.sponsors.length} sponsors`);
-          await this._seedFirestore();
+          console.log(`[SponsorStore] Firestore empty — seeding ${this._cache.sponsors.length} sponsors in background`);
+          this._seedFirestore();
         }
         return;
       }
@@ -90,12 +120,6 @@ class SponsorStore {
       const firestoreSponsors = new Map();
       for (const doc of snap.docs) {
         firestoreSponsors.set(doc.id, doc.data());
-      }
-
-      // Build map of JSON sponsors by ID
-      const jsonById = new Map();
-      for (const s of this._cache.sponsors) {
-        jsonById.set(s.id, s);
       }
 
       // Merge: Firestore wins for matching IDs, new Firestore entries are added
@@ -130,40 +154,17 @@ class SponsorStore {
 
   /**
    * Seed Firestore with all current in-memory sponsors (first-run migration).
+   * Uses individual writes so large-image sponsors can fall back gracefully.
    */
   async _seedFirestore() {
     if (!this._getFirestore) return;
 
-    try {
-      const db = this._getFirestore();
-      let batch = db.batch();
-      let count = 0;
-      let batchCount = 0;
-
-      for (const sponsor of this._cache.sponsors) {
-        const ref = db.collection(this._firestoreCollection).doc(sponsor.id);
-        batch.set(ref, sponsor);
-        count++;
-        batchCount++;
-
-        // Firestore batches limited to 500 operations
-        if (batchCount === 500) {
-          await batch.commit();
-          batch = db.batch();
-          batchCount = 0;
-          console.log(`[SponsorStore] Seeded batch of 500 to Firestore...`);
-        }
-      }
-
-      // Commit any remaining
-      if (batchCount > 0) {
-        await batch.commit();
-      }
-
-      console.log(`[SponsorStore] Seeded ${count} sponsors to Firestore`);
-    } catch (err) {
-      console.warn("[SponsorStore] Firestore seed failed:", err.message);
+    let count = 0;
+    for (const sponsor of this._cache.sponsors) {
+      await this._syncToFirestore(sponsor);
+      count++;
     }
+    console.log(`[SponsorStore] Seeded ${count} sponsors to Firestore`);
   }
 
   /**
@@ -175,12 +176,13 @@ class SponsorStore {
 
     try {
       const db = this._getFirestore();
-      await db.collection(this._firestoreCollection).doc(sponsor.id).set(sponsor);
+      const clean = stripUndefined(sponsor);
+      await db.collection(this._firestoreCollection).doc(sponsor.id).set(clean);
     } catch (err) {
       // If document too large, retry without image data
       if (err.code === 3 || (err.message && err.message.includes("exceeds the maximum"))) {
         try {
-          const stripped = { ...sponsor };
+          const stripped = stripUndefined(sponsor);
           for (const f of IMAGE_FIELDS) delete stripped[f];
           const db = this._getFirestore();
           await db.collection(this._firestoreCollection).doc(sponsor.id).set(stripped);
