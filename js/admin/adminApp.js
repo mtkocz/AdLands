@@ -234,8 +234,9 @@
         } else if (e.target.closest(".add-cluster-btn")) {
           addClusterToGroup(group.dataset.name);
         } else if (!e.target.closest(".sponsor-card-actions")) {
-          // If already editing this group, just toggle collapse/expand
           if (editingGroup && editingGroup.groupKey === group.dataset.name) {
+            // Already editing this group — show sponsor info view and toggle collapse
+            showSponsorInfoView();
             group.classList.toggle("expanded");
           } else {
             // Load sponsor info into form panel and expand
@@ -1446,7 +1447,7 @@
 
     refreshSponsorsList();
     window.scrollTo({ top: 0, behavior: "smooth" });
-    showToast(`Editing "${sponsorName}" (${members.length} territories)`, "success");
+    showToast(`Editing "${editingGroup.name}" (${members.length} territories)`, "success");
   }
 
   /**
