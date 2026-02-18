@@ -7,6 +7,7 @@
  */
 
 const express = require("express");
+const compression = require("compression");
 const http = require("http");
 const path = require("path");
 const { Server } = require("socket.io");
@@ -36,6 +37,7 @@ initFirebaseAdmin();
 // ========================
 
 const app = express();
+app.use(compression());
 app.use(express.json({ limit: "50mb" }));
 const server = http.createServer(app);
 
@@ -135,10 +137,10 @@ const io = new Server(server, {
 // ========================
 
 // Serve the shared physics module so the client can use it too
-app.use("/shared", express.static(path.join(__dirname, "shared")));
+app.use("/shared", express.static(path.join(__dirname, "shared"), { maxAge: "1d" }));
 
 // Serve the main game directory (parent of server/)
-app.use(express.static(gameDir));
+app.use(express.static(gameDir, { maxAge: "1d" }));
 
 // Fallback: serve index.html for root
 app.get("/", (req, res) => {
@@ -572,11 +574,20 @@ io.on("connection", (socket) => {
       const allSponsors = sponsorStore.getAll();
       const match = allSponsors.find(s => s._territoryId === territoryId || s.id === territoryId);
       if (match) {
+        // Preserve/restore ownerEmail if missing
+        let matchEmail = match.ownerEmail || socket.email || null;
+        if (!matchEmail) {
+          try {
+            const accDoc = await db.collection("accounts").doc(socket.uid).get();
+            if (accDoc.exists) matchEmail = accDoc.data().email || null;
+          } catch (_) {}
+        }
         const updateResult = await sponsorStore.update(match.id, {
           pendingImage,
           pendingImageAt: new Date().toISOString(),
           submissionStatus: "pending",
           ownerUid: socket.uid,
+          ownerEmail: matchEmail,
           patternAdjustment: patternAdjustment || match.patternAdjustment || {},
         });
         if (updateResult.errors) {
@@ -603,6 +614,7 @@ io.on("connection", (socket) => {
           tierName: firestoreData.tierName || "outpost",
           submissionStatus: "pending",
           ownerUid: socket.uid,
+          ownerEmail: ownerEmail || null,
           createdAt: firestoreData.purchasedAt?.toDate?.()?.toISOString() || new Date().toISOString(),
         });
         if (createResult.errors) {

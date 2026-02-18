@@ -11,6 +11,10 @@
         <link rel="dns-prefetch" href="https://www.gstatic.com" />
         <link rel="dns-prefetch" href="https://cdn.jsdelivr.net" />
 
+        <!-- Preload fonts so loading screen text appears immediately -->
+        <link rel="preload" href="assets/fonts/spleen-16x32.otf" as="font" type="font/otf" crossorigin />
+        <link rel="preload" href="assets/fonts/ark-pixel-12px-monospaced-latin.otf" as="font" type="font/otf" crossorigin />
+
         <!-- Game Styles -->
         <link rel="stylesheet" href="css/main.css" />
         <link rel="stylesheet" href="css/auth-screen.css" />
@@ -500,119 +504,119 @@
         </div>
 
         <!-- Firebase SDK (compat builds for vanilla JS) -->
-        <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
-        <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-auth-compat.js"></script>
-        <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore-compat.js"></script>
+        <script defer src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
+        <script defer src="https://www.gstatic.com/firebasejs/10.12.0/firebase-auth-compat.js"></script>
+        <script defer src="https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore-compat.js"></script>
 
         <!-- Firebase Config (must load after Firebase SDK) -->
-        <script src="js/core/FirebaseConfig.js"></script>
-        <script src="js/core/AuthManager.js"></script>
-        <script src="js/core/FirestoreSync.js"></script>
-        <script src="js/core/ProfileManager.js"></script>
+        <script defer src="js/core/FirebaseConfig.js"></script>
+        <script defer src="js/core/AuthManager.js"></script>
+        <script defer src="js/core/FirestoreSync.js"></script>
+        <script defer src="js/core/ProfileManager.js"></script>
 
         <!-- External Dependencies -->
-        <script src="https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js"></script>
-        <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/build/three.min.js"></script>
-        <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/postprocessing/Pass.js"></script>
-        <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/shaders/CopyShader.js"></script>
-        <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/shaders/LuminosityHighPassShader.js"></script>
-        <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/postprocessing/ShaderPass.js"></script>
-        <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/postprocessing/EffectComposer.js"></script>
-        <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/postprocessing/RenderPass.js"></script>
-        <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/postprocessing/UnrealBloomPass.js"></script>
-        <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/GLTFLoader.js"></script>
-        <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/DRACOLoader.js"></script>
-        <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/lines/LineSegmentsGeometry.js"></script>
-        <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/lines/LineMaterial.js"></script>
-        <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/lines/LineSegments2.js"></script>
-        <script src="hexasphere.js"></script>
+        <script defer src="https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js"></script>
+        <script defer src="https://cdn.jsdelivr.net/npm/three@0.128.0/build/three.min.js"></script>
+        <script defer src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/postprocessing/Pass.js"></script>
+        <script defer src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/shaders/CopyShader.js"></script>
+        <script defer src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/shaders/LuminosityHighPassShader.js"></script>
+        <script defer src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/postprocessing/ShaderPass.js"></script>
+        <script defer src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/postprocessing/EffectComposer.js"></script>
+        <script defer src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/postprocessing/RenderPass.js"></script>
+        <script defer src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/postprocessing/UnrealBloomPass.js"></script>
+        <script defer src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/GLTFLoader.js"></script>
+        <script defer src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/DRACOLoader.js"></script>
+        <script defer src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/lines/LineSegmentsGeometry.js"></script>
+        <script defer src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/lines/LineMaterial.js"></script>
+        <script defer src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/lines/LineSegments2.js"></script>
+        <script defer src="hexasphere.js"></script>
 
         <!-- Utilities -->
-        <script src="js/utils/mathUtils.js"></script>
-        <script src="js/utils/factionColors.js"></script>
+        <script defer src="js/utils/mathUtils.js"></script>
+        <script defer src="js/utils/factionColors.js"></script>
 
         <!-- Core -->
-        <script src="js/core/Planet.js"></script>
-        <script src="js/core/TerrainElevation.js"></script>
-        <script src="js/core/AsteroidBelt.js"></script>
-        <script src="js/core/environment.js"></script>
-        <script src="js/core/camera.js"></script>
+        <script defer src="js/core/Planet.js"></script>
+        <script defer src="js/core/TerrainElevation.js"></script>
+        <script defer src="js/core/AsteroidBelt.js"></script>
+        <script defer src="js/core/environment.js"></script>
+        <script defer src="js/core/camera.js"></script>
 
         <!-- Effects -->
-        <script src="js/effects/shaders/LensDirtShader.js"></script>
-        <script src="js/effects/shaders/VignetteShader.js"></script>
-        <script src="js/effects/shaders/ChromaticAberrationShader.js"></script>
-        <script src="js/effects/shaders/DamageEffectsShader.js"></script>
-        <script src="js/effects/VisualEffectsManager.js"></script>
-        <script src="js/effects/DustShockwave.js"></script>
-        <script src="js/effects/CapturePulse.js"></script>
-        <script src="js/effects/TreadDust.js"></script>
-        <script src="js/effects/TreadTracks.js"></script>
-        <script src="js/effects/TankHeadlights.js"></script>
+        <script defer src="js/effects/shaders/LensDirtShader.js"></script>
+        <script defer src="js/effects/shaders/VignetteShader.js"></script>
+        <script defer src="js/effects/shaders/ChromaticAberrationShader.js"></script>
+        <script defer src="js/effects/shaders/DamageEffectsShader.js"></script>
+        <script defer src="js/effects/VisualEffectsManager.js"></script>
+        <script defer src="js/effects/DustShockwave.js"></script>
+        <script defer src="js/effects/CapturePulse.js"></script>
+        <script defer src="js/effects/TreadDust.js"></script>
+        <script defer src="js/effects/TreadTracks.js"></script>
+        <script defer src="js/effects/TankHeadlights.js"></script>
 
         <!-- Tank -->
-        <script src="js/tank/Tank.js"></script>
-        <script src="js/tank/BotPathfinder.js"></script>
-        <script src="js/tank/BotTanks.js"></script>
-        <script src="js/tank/TankCollision.js"></script>
-        <script src="js/tank/TankDamageEffects.js"></script>
+        <script defer src="js/tank/Tank.js"></script>
+        <script defer src="js/tank/BotPathfinder.js"></script>
+        <script defer src="js/tank/BotTanks.js"></script>
+        <script defer src="js/tank/TankCollision.js"></script>
+        <script defer src="js/tank/TankDamageEffects.js"></script>
 
         <!-- Combat -->
-        <script src="js/combat/ObjectPools.js"></script>
-        <script src="js/combat/CannonSystem.js"></script>
-        <script src="js/combat/WeaponSlotSystem.js"></script>
+        <script defer src="js/combat/ObjectPools.js"></script>
+        <script defer src="js/combat/CannonSystem.js"></script>
+        <script defer src="js/combat/WeaponSlotSystem.js"></script>
 
         <!-- Progression -->
-        <script src="js/progression/CryptoSystem.js"></script>
-        <script src="js/progression/CryptoVisuals.js"></script>
-        <script src="js/progression/BadgeSystem.js"></script>
-        <script src="js/progression/TitleSystem.js"></script>
+        <script defer src="js/progression/CryptoSystem.js"></script>
+        <script defer src="js/progression/CryptoVisuals.js"></script>
+        <script defer src="js/progression/BadgeSystem.js"></script>
+        <script defer src="js/progression/TitleSystem.js"></script>
 
         <!-- UI -->
-        <script src="js/ui/PlayerTags.js"></script>
-        <script src="js/ui/ProximityChat.js"></script>
-        <script src="js/ui/ProfileCard.js"></script>
-        <script src="js/ui/ScreenshotSystem.js"></script>
-        <script src="js/ui/Dashboard.js"></script>
-        <script src="js/ui/CosmeticsShop.js"></script>
-        <script src="js/ui/OnboardingScreen.js"></script>
-        <script src="js/ui/AuthScreen.js"></script>
+        <script defer src="js/ui/PlayerTags.js"></script>
+        <script defer src="js/ui/ProximityChat.js"></script>
+        <script defer src="js/ui/ProfileCard.js"></script>
+        <script defer src="js/ui/ScreenshotSystem.js"></script>
+        <script defer src="js/ui/Dashboard.js"></script>
+        <script defer src="js/ui/CosmeticsShop.js"></script>
+        <script defer src="js/ui/OnboardingScreen.js"></script>
+        <script defer src="js/ui/AuthScreen.js"></script>
 
         <!-- Travel -->
-        <script src="js/travel/SkyBeams.js"></script>
-        <script src="js/travel/FastTravel.js"></script>
+        <script defer src="js/travel/SkyBeams.js"></script>
+        <script defer src="js/travel/FastTravel.js"></script>
 
         <!-- Misc -->
-        <script src="js/misc/SettingsManager.js"></script>
-        <script src="js/misc/PresenceTracker.js"></script>
-        <script src="js/misc/TuskCommentary.js"></script>
-        <script src="js/misc/TankLODInteraction.js"></script>
+        <script defer src="js/misc/SettingsManager.js"></script>
+        <script defer src="js/misc/PresenceTracker.js"></script>
+        <script defer src="js/misc/TuskCommentary.js"></script>
+        <script defer src="js/misc/TankLODInteraction.js"></script>
 
         <!-- Commander System -->
-        <script src="js/commander/CommanderSystem.js"></script>
-        <script src="js/commander/CommanderSkin.js"></script>
-        <script src="js/commander/CommanderBodyguards.js"></script>
-        <script src="js/commander/CommanderDrawing.js"></script>
-        <script src="js/commander/CommanderTipSystem.js"></script>
-        <script src="js/commander/PingMarkerSystem.js"></script>
+        <script defer src="js/commander/CommanderSystem.js"></script>
+        <script defer src="js/commander/CommanderSkin.js"></script>
+        <script defer src="js/commander/CommanderBodyguards.js"></script>
+        <script defer src="js/commander/CommanderDrawing.js"></script>
+        <script defer src="js/commander/CommanderTipSystem.js"></script>
+        <script defer src="js/commander/PingMarkerSystem.js"></script>
 
         <!-- Sponsor Storage (shared with admin portal) -->
-        <script src="js/admin/sponsorStorage.js"></script>
+        <script defer src="js/admin/sponsorStorage.js"></script>
 
         <!-- Hex Tier System (pricing tiers and discounts, shared with admin portal) -->
-        <script src="js/admin/hexTierSystem.js"></script>
+        <script defer src="js/admin/hexTierSystem.js"></script>
 
         <!-- Multiplayer -->
-        <script src="/socket.io/socket.io.js" onerror="console.log('[Multiplayer] Socket.IO not available, offline mode')"></script>
-        <script src="server/shared/physics.js"></script>
-        <script src="js/tank/RemoteTank.js"></script>
-        <script src="js/tank/RemoteBodyguard.js"></script>
-        <script src="js/core/NetworkManager.js"></script>
+        <script defer src="/socket.io/socket.io.js" onerror="console.log('[Multiplayer] Socket.IO not available, offline mode')"></script>
+        <script defer src="server/shared/physics.js"></script>
+        <script defer src="js/tank/RemoteTank.js"></script>
+        <script defer src="js/tank/RemoteBodyguard.js"></script>
+        <script defer src="js/core/NetworkManager.js"></script>
 
         <!-- Main Entry Point -->
-        <script src="js/core/main.js"></script>
+        <script defer src="js/core/main.js"></script>
 
         <!-- Multiplayer Client (hooks into main.js globals) -->
-        <script src="js/core/MultiplayerClient.js"></script>
+        <script defer src="js/core/MultiplayerClient.js"></script>
     </body>
 </html>

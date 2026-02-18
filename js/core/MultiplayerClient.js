@@ -1469,7 +1469,7 @@
       if (!data) return;
       const dashboard = window.dashboard;
       if (!dashboard) return;
-      dashboard._onAdminDeleteTerritory(data.territoryId, data.sponsorStorageId);
+      dashboard._onAdminDeleteTerritory(data.territoryId, data.sponsorStorageId, data.reason);
     };
 
     // Personal review result for the territory owner (approve or reject all fields)

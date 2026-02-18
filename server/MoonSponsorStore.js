@@ -9,7 +9,7 @@ const fs = require("fs");
 const fsp = require("fs").promises;
 const path = require("path");
 
-/** Fields to strip when a Firestore document exceeds the 1MB size limit */
+/** Image fields always stripped before writing to Firestore (metadata-only). */
 const IMAGE_FIELDS = ["patternImage", "logoImage", "pendingImage"];
 
 /** Timeout for Firestore operations during startup (ms) */
@@ -121,14 +121,27 @@ class MoonSponsorStore {
         return;
       }
 
-      // Override slots from Firestore
+      // Override slots from Firestore, preserving local image data
       let loaded = 0;
       for (const doc of snap.docs) {
         const idx = parseInt(doc.id, 10);
         if (idx >= 0 && idx < 3) {
           const data = doc.data();
-          this._cache.moonSponsors[idx] = data.empty ? null : data;
-          if (!data.empty) loaded++;
+          if (data.empty) {
+            this._cache.moonSponsors[idx] = null;
+          } else {
+            // Preserve local image fields that Firestore doesn't store
+            const local = this._cache.moonSponsors[idx];
+            if (local) {
+              for (const f of IMAGE_FIELDS) {
+                if (local[f] && !data[f]) {
+                  data[f] = local[f];
+                }
+              }
+            }
+            this._cache.moonSponsors[idx] = data;
+            loaded++;
+          }
         }
       }
 
@@ -159,23 +172,17 @@ class MoonSponsorStore {
 
     try {
       const db = this._getFirestore();
-      const payload = data ? stripUndefined(data) : { empty: true };
+      let payload;
+      if (data) {
+        payload = stripUndefined(data);
+        // Always strip image fields — Firestore is metadata-only; images live in local JSON
+        for (const f of IMAGE_FIELDS) delete payload[f];
+      } else {
+        payload = { empty: true };
+      }
       await db.collection(this._firestoreCollection).doc(String(moonIndex)).set(payload);
     } catch (err) {
-      // Retry without images if too large
-      if (data && (err.code === 3 || (err.message && err.message.includes("exceeds the maximum")))) {
-        try {
-          const stripped = stripUndefined(data);
-          for (const f of IMAGE_FIELDS) delete stripped[f];
-          const db = this._getFirestore();
-          await db.collection(this._firestoreCollection).doc(String(moonIndex)).set(stripped);
-          console.warn(`[MoonSponsorStore] Slot ${moonIndex} too large — saved without images`);
-        } catch (retryErr) {
-          console.warn(`[MoonSponsorStore] Firestore sync failed for slot ${moonIndex}:`, retryErr.message);
-        }
-      } else {
-        console.warn(`[MoonSponsorStore] Firestore sync failed for slot ${moonIndex}:`, err.message);
-      }
+      console.warn(`[MoonSponsorStore] Firestore sync failed for slot ${moonIndex}:`, err.message);
     }
   }
 

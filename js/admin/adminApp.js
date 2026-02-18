@@ -235,10 +235,13 @@
           addClusterToGroup(group.dataset.name);
         } else if (!e.target.closest(".sponsor-card-actions")) {
           if (editingGroup && editingGroup.groupKey === group.dataset.name) {
-            // Already editing this group — switch to sponsor info view
-            showSponsorInfoView();
+            // Already editing this group — toggle collapse
+            group.classList.toggle("expanded");
+          } else if (group.classList.contains("expanded")) {
+            // Expanded but not editing — collapse it
+            group.classList.remove("expanded");
           } else {
-            // Immediately expand and load sponsor info into form panel
+            // Collapsed — expand and load sponsor info into form panel
             group.classList.add("expanded");
             editGroup(group.dataset.name, null).catch(err => {
               console.error("[AdminApp] editGroup failed:", err);
@@ -1960,14 +1963,23 @@
     if (!sponsor) return;
 
     const isInEditingGroup = editingGroup && editingGroup.ids.includes(id);
-    const label = isInEditingGroup
-      ? `Delete territory from "${sponsor.name}"?`
-      : `Are you sure you want to delete "${sponsor.name}"?`;
-    if (!confirm(label)) return;
+    const isPlayerOwned = sponsor.ownerType === "player";
+
+    // For player-owned territories, prompt for a deletion reason (sent to the player)
+    let reason = "";
+    if (isPlayerOwned) {
+      reason = prompt("Deletion reason (sent to player):") || "";
+      if (reason === "" && !confirm("No reason provided. Delete anyway?")) return;
+    } else {
+      const label = isInEditingGroup
+        ? `Delete territory from "${sponsor.name}"?`
+        : `Are you sure you want to delete "${sponsor.name}"?`;
+      if (!confirm(label)) return;
+    }
 
     busy = true;
     try {
-      await SponsorStorage.delete(id);
+      await SponsorStorage.delete(id, isPlayerOwned ? reason : undefined);
       showToast(`Deleted "${sponsor.name}" territory`, "success");
 
       // Check if this sponsor name still exists — if not, clear its moon and billboard assignments
@@ -2022,15 +2034,24 @@
     if (members.length === 0) return;
 
     const displayName = members[0].ownerEmail || members[0].name || groupKey;
-    const label = members.length === 1
-      ? `Are you sure you want to delete "${displayName}"?`
-      : `Delete "${displayName}" and all ${members.length} territories?`;
-    if (!confirm(label)) return;
+    const isPlayerOwned = members.some((s) => s.ownerType === "player");
+
+    // For player-owned territories, prompt for a deletion reason (sent to the player)
+    let reason = "";
+    if (isPlayerOwned) {
+      reason = prompt("Deletion reason (sent to player):") || "";
+      if (reason === "" && !confirm("No reason provided. Delete anyway?")) return;
+    } else {
+      const label = members.length === 1
+        ? `Are you sure you want to delete "${displayName}"?`
+        : `Delete "${displayName}" and all ${members.length} territories?`;
+      if (!confirm(label)) return;
+    }
 
     busy = true;
     try {
       for (const s of members) {
-        await SponsorStorage.delete(s.id);
+        await SponsorStorage.delete(s.id, isPlayerOwned ? reason : undefined);
       }
       // Clear moon/billboard assignments
       const sponsorName = members[0].name || "";

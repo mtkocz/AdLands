@@ -9,7 +9,7 @@ const fs = require("fs");
 const fsp = require("fs").promises;
 const path = require("path");
 
-/** Fields to strip when a Firestore document exceeds the 1MB size limit */
+/** Image fields always stripped before writing to Firestore (metadata-only). */
 const IMAGE_FIELDS = ["patternImage", "logoImage", "pendingImage"];
 
 /** Timeout for Firestore operations during startup (ms) */
@@ -134,12 +134,27 @@ class SponsorStore {
         firestoreSponsors.set(doc.id, doc.data());
       }
 
+      // Build lookup of local sponsors for image preservation
+      const localById = new Map();
+      for (const s of this._cache.sponsors) {
+        if (s.id) localById.set(s.id, s);
+      }
+
       // Merge: Firestore wins for matching IDs, new Firestore entries are added
       const merged = [];
       const seen = new Set();
 
-      // First pass: all Firestore sponsors (source of truth)
+      // First pass: all Firestore sponsors (source of truth for metadata)
       for (const [id, fsData] of firestoreSponsors) {
+        // Preserve local image fields that Firestore doesn't store
+        const local = localById.get(id);
+        if (local) {
+          for (const f of IMAGE_FIELDS) {
+            if (local[f] && !fsData[f]) {
+              fsData[f] = local[f];
+            }
+          }
+        }
         merged.push(fsData);
         seen.add(id);
       }
@@ -189,22 +204,11 @@ class SponsorStore {
     try {
       const db = this._getFirestore();
       const clean = stripUndefined(sponsor);
+      // Always strip image fields — Firestore is metadata-only; images live in local JSON
+      for (const f of IMAGE_FIELDS) delete clean[f];
       await db.collection(this._firestoreCollection).doc(sponsor.id).set(clean);
     } catch (err) {
-      // If document too large, retry without image data
-      if (err.code === 3 || (err.message && err.message.includes("exceeds the maximum"))) {
-        try {
-          const stripped = stripUndefined(sponsor);
-          for (const f of IMAGE_FIELDS) delete stripped[f];
-          const db = this._getFirestore();
-          await db.collection(this._firestoreCollection).doc(sponsor.id).set(stripped);
-          console.warn(`[SponsorStore] Sponsor ${sponsor.id} too large for Firestore — saved without images`);
-        } catch (retryErr) {
-          console.warn(`[SponsorStore] Firestore sync failed for ${sponsor.id}:`, retryErr.message);
-        }
-      } else {
-        console.warn(`[SponsorStore] Firestore sync failed for ${sponsor.id}:`, err.message);
-      }
+      console.warn(`[SponsorStore] Firestore sync failed for ${sponsor.id}:`, err.message);
     }
   }
 

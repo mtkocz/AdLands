@@ -369,14 +369,17 @@ const SponsorStorage = {
    * @param {string} id
    * @returns {Promise<boolean>} True if deleted, false if not found
    */
-  async delete(id) {
+  async delete(id, reason) {
     // Capture sponsor data before deletion for broadcast
     const sponsor = this._cache?.sponsors?.find((s) => s.id === id);
 
     if (this._useAPI) {
-      const res = await fetch(`${this._apiBase}/${encodeURIComponent(id)}`, {
-        method: "DELETE",
-      });
+      const opts = { method: "DELETE" };
+      if (reason) {
+        opts.headers = { "Content-Type": "application/json" };
+        opts.body = JSON.stringify({ reason });
+      }
+      const res = await fetch(`${this._apiBase}/${encodeURIComponent(id)}`, opts);
       if (!res.ok) {
         const err = await res.json();
         throw new Error(err.errors?.join(". ") || "Failed to delete sponsor");

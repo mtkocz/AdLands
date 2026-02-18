@@ -12,7 +12,7 @@ const path = require("path");
 
 const SLOT_COUNT = 18;
 
-/** Fields to strip when a Firestore document exceeds the 1MB size limit */
+/** Image fields always stripped before writing to Firestore (metadata-only). */
 const IMAGE_FIELDS = ["patternImage", "logoImage", "pendingImage"];
 
 /** Timeout for Firestore operations during startup (ms) */
@@ -124,14 +124,27 @@ class BillboardSponsorStore {
         return;
       }
 
-      // Override slots from Firestore
+      // Override slots from Firestore, preserving local image data
       let loaded = 0;
       for (const doc of snap.docs) {
         const idx = parseInt(doc.id, 10);
         if (idx >= 0 && idx < SLOT_COUNT) {
           const data = doc.data();
-          this._cache.billboardSponsors[idx] = data.empty ? null : data;
-          if (!data.empty) loaded++;
+          if (data.empty) {
+            this._cache.billboardSponsors[idx] = null;
+          } else {
+            // Preserve local image fields that Firestore doesn't store
+            const local = this._cache.billboardSponsors[idx];
+            if (local) {
+              for (const f of IMAGE_FIELDS) {
+                if (local[f] && !data[f]) {
+                  data[f] = local[f];
+                }
+              }
+            }
+            this._cache.billboardSponsors[idx] = data;
+            loaded++;
+          }
         }
       }
 
@@ -162,23 +175,17 @@ class BillboardSponsorStore {
 
     try {
       const db = this._getFirestore();
-      const payload = data ? stripUndefined(data) : { empty: true };
+      let payload;
+      if (data) {
+        payload = stripUndefined(data);
+        // Always strip image fields — Firestore is metadata-only; images live in local JSON
+        for (const f of IMAGE_FIELDS) delete payload[f];
+      } else {
+        payload = { empty: true };
+      }
       await db.collection(this._firestoreCollection).doc(String(billboardIndex)).set(payload);
     } catch (err) {
-      // Retry without images if too large
-      if (data && (err.code === 3 || (err.message && err.message.includes("exceeds the maximum")))) {
-        try {
-          const stripped = stripUndefined(data);
-          for (const f of IMAGE_FIELDS) delete stripped[f];
-          const db = this._getFirestore();
-          await db.collection(this._firestoreCollection).doc(String(billboardIndex)).set(stripped);
-          console.warn(`[BillboardSponsorStore] Slot ${billboardIndex} too large — saved without images`);
-        } catch (retryErr) {
-          console.warn(`[BillboardSponsorStore] Firestore sync failed for slot ${billboardIndex}:`, retryErr.message);
-        }
-      } else {
-        console.warn(`[BillboardSponsorStore] Firestore sync failed for slot ${billboardIndex}:`, err.message);
-      }
+      console.warn(`[BillboardSponsorStore] Firestore sync failed for slot ${billboardIndex}:`, err.message);
     }
   }
 

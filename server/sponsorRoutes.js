@@ -165,7 +165,11 @@ function createSponsorRoutes(sponsorStore, gameRoom, { imageUrls, gameDir } = {}
       }
       for (const s of playerSponsors) {
         const email = emailMap.get(s.ownerUid);
-        if (email) s.ownerEmail = email;
+        if (email) {
+          s.ownerEmail = email;
+          // Persist back to store so future requests don't need the lookup
+          sponsorStore.update(s.id, { ownerEmail: email }).catch(() => {});
+        }
       }
     }
 
@@ -245,6 +249,7 @@ function createSponsorRoutes(sponsorStore, gameRoom, { imageUrls, gameDir } = {}
   // DELETE /api/sponsors/:id — delete sponsor
   router.delete("/:id", async (req, res) => {
     const deletedId = req.params.id;
+    const { reason } = req.body || {};
 
     // Capture sponsor data before deleting so we can notify the owner
     const sponsor = sponsorStore.getById(deletedId);
@@ -266,12 +271,16 @@ function createSponsorRoutes(sponsorStore, gameRoom, { imageUrls, gameDir } = {}
         console.warn(`[sponsorRoutes] Firestore territory cleanup failed for ${territoryId}:`, e.message);
       }
 
-      // Notify the owning player via socket
+      // Notify the owning player via socket (include deletion reason if provided)
       if (sponsor.ownerUid && gameRoom) {
         const sockets = await gameRoom.io.in(gameRoom.roomId).fetchSockets();
         for (const s of sockets) {
           if (s.uid === sponsor.ownerUid) {
-            s.emit("territory-deleted", { territoryId, sponsorStorageId: deletedId });
+            s.emit("territory-deleted", {
+              territoryId,
+              sponsorStorageId: deletedId,
+              reason: reason || "Territory removed by admin",
+            });
           }
         }
       }

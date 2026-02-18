@@ -2143,7 +2143,7 @@ class Dashboard {
     }
   }
 
-  _onAdminDeleteTerritory(territoryId, sponsorStorageId) {
+  _onAdminDeleteTerritory(territoryId, sponsorStorageId, reason) {
     // Find matching territory by original ID, SponsorStorage ID, or direct ID match
     const idx = this._playerTerritories.findIndex(
       (t) => t.id === territoryId ||
@@ -2159,8 +2159,15 @@ class Dashboard {
       this._territoryPlanet.removeSponsorCluster(territory.id);
     }
 
-    // Remove from local array
-    this._playerTerritories.splice(idx, 1);
+    // Keep as a rejected stub so the player can see the deletion reason
+    territory.submissionStatus = "rejected";
+    territory.rejectionReason = reason || "Territory removed by admin";
+    territory.tileIndices = [];
+    territory.pendingTitle = null;
+    territory.pendingTagline = null;
+    territory.pendingWebsiteUrl = null;
+    territory.pendingImage = null;
+
     this._savePlayerTerritories();
     this._renderTerritoryList();
 
@@ -2841,6 +2848,9 @@ class Dashboard {
     const newImage = this._editUploadedImage || null;
     const patternAdjustment = territory.patternAdjustment;
 
+    // Close the popup immediately
+    this._hideEditPopup();
+
     // Update pending text fields on territory record
     territory.pendingTitle = pendingTitle;
     territory.pendingTagline = pendingTagline;
@@ -2896,7 +2906,6 @@ class Dashboard {
     await this._updatePlayerTerritory(territoryId, changes);
     this._savePlayerTerritories();
 
-    this._hideEditPopup();
     this._renderTerritoryList();
   }
 

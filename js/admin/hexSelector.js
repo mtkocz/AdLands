@@ -88,6 +88,9 @@ class HexSelector {
     this.transitionTarget = { theta: 0, phi: 0, distance: 0 };
     this.lastFrameTime = performance.now();
 
+    // Generation counter for assigned texture loads (prevents stale async callbacks)
+    this._assignedGeneration = 0;
+
     // Raycaster for click detection
     this.raycaster = new THREE.Raycaster();
     this.mouse = new THREE.Vector2();
@@ -2194,6 +2197,9 @@ class HexSelector {
    * @param {Map<number, Object>|null} tileMap - Optional: tileIndex → { sponsorId, patternImage, patternAdjustment }
    */
   setAssignedTiles(tileIndices, tileMap = null) {
+    // Invalidate any pending async texture loads from a previous call
+    this._assignedGeneration++;
+
     // Reset previously assigned tiles
     for (const tileIndex of this.assignedTiles) {
       const mesh = this.tileIndexToMesh.get(tileIndex);
@@ -2243,7 +2249,7 @@ class HexSelector {
 
     // Apply faint sponsor patterns if tile map provided
     if (tileMap && tileMap.size > 0) {
-      this._applyAssignedPatterns(tileMap);
+      this._applyAssignedPatterns(tileMap, this._assignedGeneration);
     }
     this._needsRender = true;
   }
@@ -2251,8 +2257,9 @@ class HexSelector {
   /**
    * Apply faint sponsor patterns to assigned tiles
    * @param {Map<number, Object>} tileMap - tileIndex → { sponsorId, patternImage, patternAdjustment }
+   * @param {number} generation - Generation counter to detect stale callbacks
    */
-  _applyAssignedPatterns(tileMap) {
+  _applyAssignedPatterns(tileMap, generation) {
     // Group tiles by sponsor
     const sponsorGroups = new Map(); // sponsorId → { info, tileIndices[] }
     for (const [tileIndex, info] of tileMap) {
@@ -2269,6 +2276,8 @@ class HexSelector {
 
       // Load texture (cache per sponsor to avoid duplicates)
       this._loadAssignedTexture(sponsorId, info.patternImage, (texture) => {
+        // Skip if setAssignedTiles was called again while loading
+        if (this._assignedGeneration !== generation) return;
         this._applyPatternToAssignedGroup(
           tileIndices,
           texture,
