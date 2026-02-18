@@ -547,43 +547,70 @@ class CannonSystem {
 
   setPlanet(planet) {
     this.planet = planet;
-    this._computePolarClipThreshold();
+    this._computePolarClipData();
   }
 
   /**
-   * Compute the cosine threshold for polar hole clipping from actual hex boundary vertices.
-   * Uses the outermost boundary vertex (minimum cos) so clipping fully covers the hole.
+   * Build polar hole polygon data for GPU-side clipping.
+   * Converts Planet's boundary polygons into vec2 arrays for GLSL ray-casting.
    */
-  _computePolarClipThreshold() {
-    this.polarClipCos = Math.cos((10 * Math.PI) / 180); // fallback
+  _computePolarClipData() {
+    this._polarClip = null;
     if (!this.planet) return;
-    const r = this.planet.radius;
-    const polygons = [this.planet._northPolePolygon, this.planet._southPolePolygon];
-    let minCos = 1.0;
-    for (const poly of polygons) {
-      if (!poly) continue;
-      for (const v of poly) {
-        // Reconstruct y from sphere surface: x² + y² + z² = r²
-        const y = Math.sqrt(Math.max(0, r * r - v.x * v.x - v.z * v.z));
-        const cosAngle = y / r;
-        if (cosAngle < minCos) minCos = cosAngle;
+
+    const north = this.planet._northPolePolygon;
+    const south = this.planet._southPolePolygon;
+    if (!north && !south) return;
+
+    // Convert {x, z} polygon arrays to THREE.Vector2 arrays for uniform vec2[]
+    const toVec2Array = (poly) => {
+      if (!poly) return [];
+      return poly.map((v) => new THREE.Vector2(v.x, v.z));
+    };
+
+    // Pad arrays to fixed length (48) with zeros for GLSL uniform array
+    const MAX_VERTS = 48;
+    const pad = (arr) => {
+      const padded = new Array(MAX_VERTS);
+      for (let i = 0; i < MAX_VERTS; i++) {
+        padded[i] = i < arr.length ? arr[i] : new THREE.Vector2(0, 0);
       }
-    }
-    if (minCos < 1.0) this.polarClipCos = minCos;
+      return padded;
+    };
+
+    const northVerts = toVec2Array(north);
+    const southVerts = toVec2Array(south);
+
+    // Quick-rejection Y threshold: cos(20°) * radius (matches Planet.isInsidePolarHole)
+    const yThreshold = this.planet.radius * 0.9397;
+
+    this._polarClip = {
+      northPoly: pad(northVerts),
+      northCount: northVerts.length,
+      southPoly: pad(southVerts),
+      southCount: southVerts.length,
+      yThreshold,
+    };
   }
 
   /**
    * Inject polar hole clipping into a material's shader.
-   * Discards fragments whose hexGroup-local position falls inside a pole hole.
+   * Uses ray-casting point-in-polygon test in GLSL to precisely clip
+   * fragments at the hex boundary edges of pole holes.
    * @param {THREE.Material} material
    * @param {THREE.Mesh} mesh - must have updateMatrix() called first
    */
   _applyPolarClipping(material, mesh) {
-    const polarClipCos = this.polarClipCos;
-    if (!polarClipCos) return;
+    const clip = this._polarClip;
+    if (!clip) return;
+
     material.onBeforeCompile = (shader) => {
       shader.uniforms.u_meshMatrix = { value: mesh.matrix };
-      shader.uniforms.u_polarClipCos = { value: polarClipCos };
+      shader.uniforms.u_northPoly = { value: clip.northPoly };
+      shader.uniforms.u_northPolyCount = { value: clip.northCount };
+      shader.uniforms.u_southPoly = { value: clip.southPoly };
+      shader.uniforms.u_southPolyCount = { value: clip.southCount };
+      shader.uniforms.u_yThreshold = { value: clip.yThreshold };
 
       shader.vertexShader = shader.vertexShader.replace(
         'void main() {',
@@ -595,11 +622,51 @@ void main() {
 
       shader.fragmentShader = shader.fragmentShader.replace(
         'void main() {',
-        `uniform float u_polarClipCos;
+        `uniform vec2 u_northPoly[48];
+uniform int u_northPolyCount;
+uniform vec2 u_southPoly[48];
+uniform int u_southPolyCount;
+uniform float u_yThreshold;
 varying vec3 vHexLocalPos;
 void main() {
-  vec3 poleDir = normalize(vHexLocalPos);
-  if (abs(poleDir.y) > u_polarClipCos) discard;`
+  float absY = abs(vHexLocalPos.y);
+  if (absY > u_yThreshold) {
+    float px = vHexLocalPos.x;
+    float pz = vHexLocalPos.z;
+    bool inside = false;
+    if (vHexLocalPos.y > 0.0 && u_northPolyCount > 0) {
+      int j = u_northPolyCount - 1;
+      for (int i = 0; i < 48; i++) {
+        if (i >= u_northPolyCount) break;
+        float zi = u_northPoly[i].y;
+        float zj = u_northPoly[j].y;
+        if ((zi > pz) != (zj > pz)) {
+          float xi = u_northPoly[i].x;
+          float xj = u_northPoly[j].x;
+          if (px < (xj - xi) * (pz - zi) / (zj - zi) + xi) {
+            inside = !inside;
+          }
+        }
+        j = i;
+      }
+    } else if (vHexLocalPos.y < 0.0 && u_southPolyCount > 0) {
+      int j = u_southPolyCount - 1;
+      for (int i = 0; i < 48; i++) {
+        if (i >= u_southPolyCount) break;
+        float zi = u_southPoly[i].y;
+        float zj = u_southPoly[j].y;
+        if ((zi > pz) != (zj > pz)) {
+          float xi = u_southPoly[i].x;
+          float xj = u_southPoly[j].x;
+          if (px < (xj - xi) * (pz - zi) / (zj - zi) + xi) {
+            inside = !inside;
+          }
+        }
+        j = i;
+      }
+    }
+    if (inside) discard;
+  }`
       );
     };
   }

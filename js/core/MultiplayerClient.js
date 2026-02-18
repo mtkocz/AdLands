@@ -179,7 +179,8 @@
         if (data.world.sponsors && data.world.sponsors.length > 0) {
           if (mp.setSponsorLoadProgress) mp.setSponsorLoadProgress(0);
           planet.preloadSponsorTextures(data.world.sponsors, (p) => {
-            if (mp.setSponsorLoadProgress) mp.setSponsorLoadProgress(p);
+            // Cap at 0.9 — remaining 0.1 covers applySponsorVisuals + deElevateSponsorTiles
+            if (mp.setSponsorLoadProgress) mp.setSponsorLoadProgress(p * 0.9);
           }).then(() => {
             planet.applySponsorVisuals(data.world.sponsors);
             planet.deElevateSponsorTiles();

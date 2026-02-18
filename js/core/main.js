@@ -3617,10 +3617,8 @@
   const loadingPercent = loadingScreen?.querySelector(".loading-percent");
   let loadingProgress = 0;
 
-  // Wait for fonts to load before showing loading screen content
-  document.fonts.ready.then(() => {
-    loadingContent?.classList.add("fonts-ready");
-  });
+  // Font visibility handled via CSS (opacity: 1 by default) + font-display: swap.
+  // The fonts-ready class is added by an inline script in index.html.
   let warmupFrames = 0;
   const WARMUP_FRAMES_MIN = 30; // Minimum frames before considering ready
   const WARMUP_FRAMES_MAX = 120; // Hard cap (~2s) - force-show on slow hardware
@@ -3939,8 +3937,10 @@
 
       // Update loading text based on progress
       if (loadingText) {
-        if (!sponsorTexturesReady) {
+        if (!sponsorTexturesReady && sponsorLoadProgress < 0.9) {
           loadingText.textContent = "loading sponsors...";
+        } else if (!sponsorTexturesReady) {
+          loadingText.textContent = "finalizing...";
         } else if (loadingProgress < 30) {
           loadingText.textContent = "initializing...";
         } else if (loadingProgress < 60) {

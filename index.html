@@ -123,6 +123,13 @@
                 <div class="loading-text">initializing...</div>
             </div>
         </div>
+        <!-- Add fonts-ready class as early as possible (before defer scripts) -->
+        <script>
+          document.fonts.ready.then(function() {
+            var el = document.querySelector('.loading-content');
+            if (el) el.classList.add('fonts-ready');
+          });
+        </script>
 
         <div id="debug-bar">
             <span id="fps-counter">-- FPS</span>
