@@ -240,7 +240,10 @@
           } else {
             // Immediately expand and load sponsor info into form panel
             group.classList.add("expanded");
-            editGroup(group.dataset.name, null);
+            editGroup(group.dataset.name, null).catch(err => {
+              console.error("[AdminApp] editGroup failed:", err);
+              showToast("Failed to load sponsor: " + (err.message || err), "error");
+            });
           }
         }
         return;
@@ -278,7 +281,10 @@
             }
             showTerritoryView();
           } else {
-            editGroup(group.dataset.name, id);
+            editGroup(group.dataset.name, id).catch(err => {
+              console.error("[AdminApp] editGroup failed:", err);
+              showToast("Failed to load sponsor: " + (err.message || err), "error");
+            });
           }
         }
         return;
@@ -302,7 +308,10 @@
           handleClearForm();
           refreshSponsorsList();
         } else {
-          editSponsor(id);
+          editSponsor(id).catch(err => {
+            console.error("[AdminApp] editSponsor failed:", err);
+            showToast("Failed to load sponsor: " + (err.message || err), "error");
+          });
         }
       }
     });
@@ -502,7 +511,7 @@
 
     // Update group header aggregated stats if editing a group
     if (editingGroup && editingId) {
-      const groupEl = sponsorsListEl.querySelector(`.sponsor-group[data-name="${escapeHtml(editingGroup.groupKey)}"]`);
+      const groupEl = sponsorsListEl.querySelector(`.sponsor-group[data-name="${CSS.escape(editingGroup.groupKey)}"]`);
       if (groupEl) {
         let groupTiles = 0;
         let groupRev = 0;
@@ -1331,34 +1340,39 @@
   }
 
   async function editSponsor(id) {
-    // Fetch full data (including base64 images) from server
-    const sponsor = await SponsorStorage.fetchFull(id);
-    if (!sponsor) {
-      showToast("Sponsor not found", "error");
-      return;
+    try {
+      // Fetch full data (including base64 images) from server
+      const sponsor = await SponsorStorage.fetchFull(id);
+      if (!sponsor) {
+        showToast("Sponsor not found", "error");
+        return;
+      }
+
+      // Clear any active group editing
+      editingGroup = null;
+
+      // Update assigned tiles to exclude current sponsor's tiles
+      updateAssignedTiles(id);
+
+      // Load into form
+      sponsorForm.loadSponsor(sponsor);
+
+      // Auto-select the territory's selection in hex selector
+      loadTerritorySelection(sponsor);
+
+      // Load rewards
+      if (sponsor.rewards) {
+        rewardConfig.loadRewards(sponsor.rewards);
+      }
+
+      showSponsorInfoView();
+      refreshSponsorsList();
+      window.scrollTo({ top: 0, behavior: "smooth" });
+      showToast(`Editing "${sponsor.name}"`, "success");
+    } catch (err) {
+      console.error("[AdminApp] editSponsor error:", err);
+      showToast("Failed to load sponsor: " + (err.message || err), "error");
     }
-
-    // Clear any active group editing
-    editingGroup = null;
-
-    // Update assigned tiles to exclude current sponsor's tiles
-    updateAssignedTiles(id);
-
-    // Load into form
-    sponsorForm.loadSponsor(sponsor);
-
-    // Auto-select the territory's selection in hex selector
-    loadTerritorySelection(sponsor);
-
-    // Load rewards
-    if (sponsor.rewards) {
-      rewardConfig.loadRewards(sponsor.rewards);
-    }
-
-    showSponsorInfoView();
-    refreshSponsorsList();
-    window.scrollTo({ top: 0, behavior: "smooth" });
-    showToast(`Editing "${sponsor.name}"`, "success");
   }
 
   /**
@@ -1408,51 +1422,61 @@
 
     // If only one member and not a player territory, edit it directly as a flat card
     if (members.length === 1 && !members[0].isPlayerTerritory) {
-      editSponsor(members[0].id);
+      editSponsor(members[0].id).catch(err => {
+        console.error("[AdminApp] editSponsor (from group) failed:", err);
+        showToast("Failed to load sponsor: " + (err.message || err), "error");
+      });
       return;
     }
 
-    // Determine starting index
-    let activeIndex = 0;
-    if (startAtId) {
-      const idx = members.findIndex((s) => s.id === startAtId);
-      if (idx !== -1) activeIndex = idx;
+    try {
+      // Determine starting index
+      let activeIndex = 0;
+      if (startAtId) {
+        const idx = members.findIndex((s) => s.id === startAtId);
+        if (idx !== -1) activeIndex = idx;
+      }
+
+      // Initialize group editing state immediately (before async fetch)
+      editingGroup = {
+        groupKey: groupKey,
+        name: members[0].name || groupKey,
+        ids: members.map((s) => s.id),
+        activeIndex: activeIndex,
+        clusterStates: new Map(),
+      };
+
+      // Immediately load form from lite-cached data so the user sees it right away
+      sponsorForm.loadSponsor(members[0]);
+
+      // Show the correct view immediately
+      if (startAtId) {
+        showTerritoryView();
+      } else {
+        showSponsorInfoView();
+      }
+
+      refreshSponsorsList();
+
+      // Fetch full data (including base64 images) in background
+      await Promise.all(members.map((s) => SponsorStorage.fetchFull(s.id)));
+
+      // Reload form with full data (now includes base64 images)
+      const first = SponsorStorage.getById(editingGroup.ids[0]);
+      if (first) {
+        sponsorForm.loadSponsor(first);
+      }
+
+      // Load active cluster's data into hex selector
+      loadClusterAtIndex(activeIndex);
+
+      refreshSponsorsList();
+      window.scrollTo({ top: 0, behavior: "smooth" });
+      showToast(`Editing "${editingGroup.name}" (${members.length} territories)`, "success");
+    } catch (err) {
+      console.error("[AdminApp] editGroup error:", err);
+      showToast("Failed to load sponsor group: " + (err.message || err), "error");
     }
-
-    // Initialize group editing state immediately (before async fetch)
-    editingGroup = {
-      groupKey: groupKey,
-      name: members[0].name || groupKey,
-      ids: members.map((s) => s.id),
-      activeIndex: activeIndex,
-      clusterStates: new Map(),
-    };
-
-    // Immediately load form from lite-cached data so the user sees it right away
-    sponsorForm.loadSponsor(members[0]);
-
-    // Show the correct view immediately
-    if (startAtId) {
-      showTerritoryView();
-    } else {
-      showSponsorInfoView();
-    }
-
-    refreshSponsorsList();
-
-    // Fetch full data (including base64 images) in background
-    await Promise.all(members.map((s) => SponsorStorage.fetchFull(s.id)));
-
-    // Reload form with full data (now includes base64 images)
-    const first = SponsorStorage.getById(editingGroup.ids[0]);
-    sponsorForm.loadSponsor(first);
-
-    // Load active cluster's data into hex selector
-    loadClusterAtIndex(activeIndex);
-
-    refreshSponsorsList();
-    window.scrollTo({ top: 0, behavior: "smooth" });
-    showToast(`Editing "${editingGroup.name}" (${members.length} territories)`, "success");
   }
 
   /**
@@ -1960,6 +1984,7 @@
   }
 
   function updateAssignedTiles(excludeSponsorId = null) {
+    if (!hexSelector) return;
     const assignedTiles = SponsorStorage.getAssignedTiles(excludeSponsorId);
     const assignedTileMap = SponsorStorage.getAssignedTileMap(excludeSponsorId);
     hexSelector.setAssignedTiles(assignedTiles, assignedTileMap);
