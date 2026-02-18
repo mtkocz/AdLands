@@ -91,7 +91,7 @@ class Planet {
     // Territory transition animations
     this._overlayAnimations = []; // Active overlay animations
 
-    // Weak territories (about to be recaptured) - flickering effect
+    // Weak territories (under heavy attack) - opacity flicker effect (owner color only)
     this._weakTerritories = new Map(); // clusterId → attacking faction name
 
     // Border glow meshes for faction territories (replaces color overlay)
@@ -5363,7 +5363,8 @@ class Planet {
   }
 
   /**
-   * Apply flickering effect to weak territories - flickers between owner and attacker colors
+   * Apply flickering effect to weak territories - dims/flashes owner color to indicate instability.
+   * Does NOT show the attacker's color; territory stays in the owner's color until officially captured.
    */
   _updateWeakTerritoryFlicker(now) {
     for (const [clusterId, attackingFaction] of this._weakTerritories) {
@@ -5387,8 +5388,7 @@ class Planet {
       }
 
       const ownerColor = FACTION_COLORS[state.owner]?.threeLight;
-      const attackerColor = FACTION_COLORS[attackingFaction]?.threeLight;
-      if (!ownerColor || !attackerColor) continue;
+      if (!ownerColor) continue;
 
       const material = overlay.material;
       const t = now / 1000;
@@ -5398,36 +5398,20 @@ class Planet {
       const fastWave = Math.sin(t * 12);
       const veryFast = Math.sin(t * 47);
 
-      // Combine waves for irregular color blend factor (0 = owner, 1 = attacker)
-      const baseBlend =
-        (slowWave * 0.4 + fastWave * 0.3 + veryFast * 0.3) * 0.5 + 0.5;
-
-      // Random "stutter" moments - sudden jumps to attacker color
-      const stutterChance = Math.sin(t * 7.3) * Math.sin(t * 11.1);
-      const stutter = stutterChance > 0.7 ? 0.4 : 0;
-
       // Occasional near-blackout flicker
       const blackoutChance = Math.sin(t * 2.1) * Math.sin(t * 3.7);
       const dimAmount = blackoutChance > 0.85 ? 0.15 : 0;
 
-      // Final blend factor clamped
-      const blend = Math.max(0, Math.min(1, baseBlend + stutter));
+      // Keep the owner's color — no blending toward attacker
+      this._copyOverlayColor(material, ownerColor);
 
-      // Interpolate between owner and attacker colors
-      this._setOverlayColor(
-        material,
-        ownerColor.r + (attackerColor.r - ownerColor.r) * blend,
-        ownerColor.g + (attackerColor.g - ownerColor.g) * blend,
-        ownerColor.b + (attackerColor.b - ownerColor.b) * blend,
-      );
-
-      // Opacity flicker
+      // Opacity flicker — "dying bulb" dimming effect
       const baseOpacity = CLUSTER_OVERLAY_OPACITY;
-      const opacityFlicker = slowWave * 0.1 + fastWave * 0.05 - dimAmount;
+      const opacityFlicker = slowWave * 0.1 + fastWave * 0.05 + veryFast * 0.03 - dimAmount;
       this._setOverlayOpacity(
         material,
         Math.max(
-          CLUSTER_OVERLAY_OPACITY * 0.4,
+          CLUSTER_OVERLAY_OPACITY * 0.3,
           baseOpacity + opacityFlicker * CLUSTER_OVERLAY_OPACITY,
         ),
       );
