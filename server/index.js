@@ -7,7 +7,8 @@
  */
 
 const express = require("express");
-const compression = require("compression");
+let compression;
+try { compression = require("compression"); } catch (_) {}
 const http = require("http");
 const path = require("path");
 const { Server } = require("socket.io");
@@ -37,7 +38,7 @@ initFirebaseAdmin();
 // ========================
 
 const app = express();
-app.use(compression());
+if (compression) app.use(compression());
 app.use(express.json({ limit: "50mb" }));
 const server = http.createServer(app);
 
