@@ -235,11 +235,11 @@
           addClusterToGroup(group.dataset.name);
         } else if (!e.target.closest(".sponsor-card-actions")) {
           if (editingGroup && editingGroup.groupKey === group.dataset.name) {
-            // Already editing this group — show sponsor info view and toggle collapse
+            // Already editing this group — switch to sponsor info view
             showSponsorInfoView();
-            group.classList.toggle("expanded");
           } else {
-            // Load sponsor info into form panel and expand
+            // Immediately expand and load sponsor info into form panel
+            group.classList.add("expanded");
             editGroup(group.dataset.name, null);
           }
         }
@@ -1412,9 +1412,6 @@
       return;
     }
 
-    // Fetch full data for all group members
-    await Promise.all(members.map((s) => SponsorStorage.fetchFull(s.id)));
-
     // Determine starting index
     let activeIndex = 0;
     if (startAtId) {
@@ -1422,7 +1419,7 @@
       if (idx !== -1) activeIndex = idx;
     }
 
-    // Initialize group editing state
+    // Initialize group editing state immediately (before async fetch)
     editingGroup = {
       groupKey: groupKey,
       name: members[0].name || groupKey,
@@ -1431,19 +1428,27 @@
       clusterStates: new Map(),
     };
 
-    // Load shared fields from first member (re-fetch from cache since fetchFull replaces entries)
-    const first = SponsorStorage.getById(editingGroup.ids[0]);
-    sponsorForm.loadSponsor(first);
+    // Immediately load form from lite-cached data so the user sees it right away
+    sponsorForm.loadSponsor(members[0]);
 
-    // Load active cluster's data into hex selector
-    loadClusterAtIndex(activeIndex);
-
-    // Route: territory view if clicking a specific territory row, info view for header click
+    // Show the correct view immediately
     if (startAtId) {
       showTerritoryView();
     } else {
       showSponsorInfoView();
     }
+
+    refreshSponsorsList();
+
+    // Fetch full data (including base64 images) in background
+    await Promise.all(members.map((s) => SponsorStorage.fetchFull(s.id)));
+
+    // Reload form with full data (now includes base64 images)
+    const first = SponsorStorage.getById(editingGroup.ids[0]);
+    sponsorForm.loadSponsor(first);
+
+    // Load active cluster's data into hex selector
+    loadClusterAtIndex(activeIndex);
 
     refreshSponsorsList();
     window.scrollTo({ top: 0, behavior: "smooth" });
