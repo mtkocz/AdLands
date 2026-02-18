@@ -65,9 +65,19 @@ class BillboardSponsorStore {
     }
 
     if (!fs.existsSync(this.filePath)) {
-      this._cache = { version: 1, billboardSponsors: new Array(SLOT_COUNT).fill(null), lastModified: "" };
-      this._saveToDisk();
-      console.log(`[BillboardSponsorStore] Created empty ${this.filePath}`);
+      // Bootstrap from seed file on fresh deploy
+      const seedPath = this.filePath.replace('.json', '.seed.json');
+      if (fs.existsSync(seedPath)) {
+        const raw = fs.readFileSync(seedPath, 'utf8');
+        this._cache = JSON.parse(raw);
+        while (this._cache.billboardSponsors.length < SLOT_COUNT) this._cache.billboardSponsors.push(null);
+        this._saveToDisk();
+        console.log(`[BillboardSponsorStore] Bootstrapped from seed file`);
+      } else {
+        this._cache = { version: 1, billboardSponsors: new Array(SLOT_COUNT).fill(null), lastModified: "" };
+        this._saveToDisk();
+        console.log(`[BillboardSponsorStore] Created empty ${this.filePath}`);
+      }
       return;
     }
 

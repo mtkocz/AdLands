@@ -199,7 +199,7 @@
         if (action === "create" || action === "delete" || action === "update") {
           SponsorStorage.reload().then(() => {
             // Auto-switch to "User Territories" tab when a player territory arrives
-            if (action === "create" && e.data.sponsor?.isPlayerTerritory) {
+            if (action === "create" && e.data.sponsor?.ownerType === "player") {
               sponsorListFilter = "players";
               document.querySelectorAll(".sponsor-tab").forEach((t) => {
                 t.classList.toggle("active", t.dataset.filter === "players");
@@ -976,7 +976,7 @@
 
   /** Get the grouping key for a sponsor/territory entry */
   function getGroupKey(s) {
-    if (s.isPlayerTerritory) {
+    if (s.ownerType === "player") {
       return "player:" + (s.ownerEmail || s.ownerUid || s.name || "");
     }
     return (s.name || "").toLowerCase();
@@ -988,7 +988,7 @@
     if (groupKey.startsWith("player:")) {
       const identifier = groupKey.slice(7);
       return sponsors.filter(
-        (s) => s.isPlayerTerritory && (s.ownerEmail === identifier || s.ownerUid === identifier)
+        (s) => s.ownerType === "player" && (s.ownerEmail === identifier || s.ownerUid === identifier)
       );
     }
     return sponsors.filter(
@@ -1002,16 +1002,16 @@
     // Apply tab filter
     let sponsors;
     if (sponsorListFilter === "players") {
-      sponsors = allSponsors.filter((s) => !!s.isPlayerTerritory);
+      sponsors = allSponsors.filter((s) => s.ownerType === "player");
     } else if (sponsorListFilter === "sponsors") {
-      sponsors = allSponsors.filter((s) => !s.isPlayerTerritory);
+      sponsors = allSponsors.filter((s) => s.ownerType !== "player");
     } else {
       sponsors = allSponsors;
     }
 
     // Update tab counts
-    const playerCount = allSponsors.filter((s) => !!s.isPlayerTerritory).length;
-    const pendingCount = allSponsors.filter((s) => s.isPlayerTerritory && (s.submissionStatus === "pending" || s.imageStatus === "pending")).length;
+    const playerCount = allSponsors.filter((s) => s.ownerType === "player").length;
+    const pendingCount = allSponsors.filter((s) => s.ownerType === "player" && (s.submissionStatus === "pending" || s.imageStatus === "pending")).length;
     const sponsorCount = allSponsors.length - playerCount;
     const tabEls = document.querySelectorAll(".sponsor-tab");
     tabEls.forEach((tab) => {
@@ -1112,7 +1112,7 @@
     const currentEditingId = sponsorForm ? sponsorForm.getEditingSponsorId() : null;
 
     for (const [, members] of groups) {
-      const hasPlayerTerritory = members.some((s) => !!s.isPlayerTerritory);
+      const hasPlayerTerritory = members.some((s) => s.ownerType === "player");
       if (members.length === 1 && !hasPlayerTerritory) {
         // Single sponsor — render as flat card
         const sponsor = members[0];
@@ -1210,7 +1210,7 @@
           const isActive = s.id === activeEditId;
 
           // Player territories: compact row with thumbnail, info, and actions
-          if (s.isPlayerTerritory) {
+          if (s.ownerType === "player") {
             const textureSrc = s.pendingImage || s.patternImage || s.patternUrl;
             const thumbHtml = textureSrc
               ? `<img src="${textureSrc}" alt="" class="territory-thumb-img">`
@@ -1421,7 +1421,7 @@
     }
 
     // If only one member and not a player territory, edit it directly as a flat card
-    if (members.length === 1 && !members[0].isPlayerTerritory) {
+    if (members.length === 1 && members[0].ownerType !== "player") {
       editSponsor(members[0].id).catch(err => {
         console.error("[AdminApp] editSponsor (from group) failed:", err);
         showToast("Failed to load sponsor: " + (err.message || err), "error");
@@ -1671,8 +1671,8 @@
         rewards: [],
       };
       // Preserve player territory ownership so new entry stays in the same group
-      if (first.isPlayerTerritory) {
-        createData.isPlayerTerritory = true;
+      if (first.ownerType === "player") {
+        createData.ownerType = "player";
         if (first.ownerUid) createData.ownerUid = first.ownerUid;
         if (first.ownerEmail) createData.ownerEmail = first.ownerEmail;
       }

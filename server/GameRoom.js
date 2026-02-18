@@ -3211,8 +3211,9 @@ class GameRoom {
         clusterId: this.sponsorClusterMap.get(s.id),
       };
       // Include player territory metadata so clients can reconcile local state
-      if (s.isPlayerTerritory) {
-        entry.isPlayerTerritory = true;
+      if (s.ownerType === "player" || s.isPlayerTerritory) {
+        entry.ownerType = "player";
+        entry.isPlayerTerritory = true; // backward compat for cached clients
         entry.ownerUid = s.ownerUid || null;
         entry.imageStatus = s.imageStatus || null;
         entry.tierName = s.tierName || null;

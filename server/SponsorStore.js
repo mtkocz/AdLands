@@ -57,6 +57,9 @@ class SponsorStore {
 
     // 3. Clean up duplicate player territory entries (same _territoryId)
     this._deduplicatePlayerTerritories();
+
+    // 4. Migrate isPlayerTerritory → ownerType
+    this._migrateOwnerType();
   }
 
   /**
@@ -69,9 +72,18 @@ class SponsorStore {
     }
 
     if (!fs.existsSync(this.filePath)) {
-      this._cache = { version: 1, sponsors: [], lastModified: "" };
-      this._saveToDisk();
-      console.log(`[SponsorStore] Created empty ${this.filePath}`);
+      // Bootstrap from seed file on fresh deploy
+      const seedPath = this.filePath.replace('.json', '.seed.json');
+      if (fs.existsSync(seedPath)) {
+        const raw = fs.readFileSync(seedPath, 'utf8');
+        this._cache = JSON.parse(raw);
+        this._saveToDisk();
+        console.log(`[SponsorStore] Bootstrapped ${this._cache.sponsors.length} sponsors from seed file`);
+      } else {
+        this._cache = { version: 1, sponsors: [], lastModified: "" };
+        this._saveToDisk();
+        console.log(`[SponsorStore] Created empty ${this.filePath}`);
+      }
       return;
     }
 
@@ -217,7 +229,8 @@ class SponsorStore {
   _deduplicatePlayerTerritories() {
     const byTerritory = new Map();
     for (const s of this._cache.sponsors) {
-      if (!s.isPlayerTerritory || !s._territoryId) continue;
+      if (s.ownerType !== "player" && !s.isPlayerTerritory) continue;
+      if (!s._territoryId) continue;
       const existing = byTerritory.get(s._territoryId);
       if (!existing) {
         byTerritory.set(s._territoryId, s);
@@ -231,12 +244,30 @@ class SponsorStore {
     const keepIds = new Set([...byTerritory.values()].map(s => s.id));
     const before = this._cache.sponsors.length;
     this._cache.sponsors = this._cache.sponsors.filter(s => {
-      if (!s.isPlayerTerritory || !s._territoryId) return true;
+      if (s.ownerType !== "player" && !s.isPlayerTerritory) return true;
+      if (!s._territoryId) return true;
       return keepIds.has(s.id);
     });
     const removed = before - this._cache.sponsors.length;
     if (removed > 0) {
       console.log(`[SponsorStore] Cleaned up ${removed} duplicate player territory entries`);
+      this._saveToDisk();
+    }
+  }
+
+  /**
+   * Migrate legacy isPlayerTerritory boolean to ownerType string.
+   * Sets ownerType: "player" or "admin" on entries that lack it.
+   */
+  _migrateOwnerType() {
+    let migrated = 0;
+    for (const s of this._cache.sponsors) {
+      if (s.ownerType) continue;
+      s.ownerType = s.isPlayerTerritory ? "player" : "admin";
+      migrated++;
+    }
+    if (migrated > 0) {
+      console.log(`[SponsorStore] Migrated ${migrated} sponsors to ownerType field`);
       this._saveToDisk();
     }
   }
@@ -273,7 +304,7 @@ class SponsorStore {
    */
   async create(sponsor) {
     // Dedup: prevent duplicate player territory entries for the same _territoryId
-    if (sponsor.isPlayerTerritory && sponsor._territoryId) {
+    if (sponsor.ownerType === "player" && sponsor._territoryId) {
       const existing = this.getAll().find(s => s._territoryId === sponsor._territoryId);
       if (existing) {
         return { sponsor: existing };
@@ -287,7 +318,7 @@ class SponsorStore {
 
     // Skip tile conflict check for player territories — they coexist with admin sponsors
     const tiles = sponsor.cluster?.tileIndices || [];
-    if (tiles.length > 0 && !sponsor.isPlayerTerritory) {
+    if (tiles.length > 0 && sponsor.ownerType !== "player") {
       const tileCheck = this.areTilesUsed(tiles, null);
       if (tileCheck.isUsed) {
         return { errors: [`Tiles conflict with sponsor "${tileCheck.sponsorName}"`] };
@@ -320,7 +351,7 @@ class SponsorStore {
     if (!valid) return { errors };
 
     // Skip tile conflict check for player territories
-    if (merged.cluster && merged.cluster.tileIndices && !merged.isPlayerTerritory) {
+    if (merged.cluster && merged.cluster.tileIndices && merged.ownerType !== "player") {
       const tileCheck = this.areTilesUsed(merged.cluster.tileIndices, id);
       if (tileCheck.isUsed) {
         return { errors: [`Tiles conflict with sponsor "${tileCheck.sponsorName}"`] };

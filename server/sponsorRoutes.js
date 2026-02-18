@@ -151,7 +151,7 @@ function createSponsorRoutes(sponsorStore, gameRoom, { imageUrls, gameDir } = {}
     const out = full ? sponsors : sponsors.map(toLite);
 
     // Enrich player territories with ownerEmail from Firestore accounts
-    const playerSponsors = out.filter(s => s.isPlayerTerritory && s.ownerUid && !s.ownerEmail);
+    const playerSponsors = out.filter(s => s.ownerType === "player" && s.ownerUid && !s.ownerEmail);
     if (playerSponsors.length > 0) {
       const uids = [...new Set(playerSponsors.map(s => s.ownerUid))];
       const emailMap = new Map();
@@ -194,7 +194,7 @@ function createSponsorRoutes(sponsorStore, gameRoom, { imageUrls, gameDir } = {}
   // POST /api/sponsors — create new sponsor
   router.post("/", async (req, res) => {
     // Override name with account email for player territories
-    if (req.body.isPlayerTerritory && req.body.ownerUid) {
+    if (req.body.ownerType === "player" && req.body.ownerUid) {
       try {
         const acc = await getFirestore().collection("accounts").doc(req.body.ownerUid).get();
         if (acc.exists && acc.data().email) {
@@ -244,7 +244,7 @@ function createSponsorRoutes(sponsorStore, gameRoom, { imageUrls, gameDir } = {}
     await cleanupSponsorImages(deletedId);
 
     // Clean up player territory: notify owner and remove Firestore document
-    if (sponsor && sponsor.isPlayerTerritory) {
+    if (sponsor && sponsor.ownerType === "player") {
       const territoryId = sponsor._territoryId || sponsor.id;
 
       // Remove the territory document from Firestore
@@ -278,7 +278,7 @@ function createSponsorRoutes(sponsorStore, gameRoom, { imageUrls, gameDir } = {}
     }
 
     const sponsor = sponsorStore.getById(req.params.id);
-    if (!sponsor || !sponsor.isPlayerTerritory) {
+    if (!sponsor || sponsor.ownerType !== "player") {
       return res.status(404).json({ errors: ["Player territory not found"] });
     }
     // Check for any pending content (image or text fields)
@@ -299,7 +299,7 @@ function createSponsorRoutes(sponsorStore, gameRoom, { imageUrls, gameDir } = {}
 
         // Move all pending fields to active in SponsorStore
         await sponsorStore.update(req.params.id, {
-          name: sponsor.isPlayerTerritory ? sponsor.name : (approvedTitle || sponsor.name),
+          name: sponsor.ownerType === "player" ? sponsor.name : (approvedTitle || sponsor.name),
           title: approvedTitle,
           tagline: approvedTagline,
           websiteUrl: approvedUrl,

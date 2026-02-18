@@ -62,9 +62,19 @@ class MoonSponsorStore {
     }
 
     if (!fs.existsSync(this.filePath)) {
-      this._cache = { version: 1, moonSponsors: [null, null, null], lastModified: "" };
-      this._saveToDisk();
-      console.log(`[MoonSponsorStore] Created empty ${this.filePath}`);
+      // Bootstrap from seed file on fresh deploy
+      const seedPath = this.filePath.replace('.json', '.seed.json');
+      if (fs.existsSync(seedPath)) {
+        const raw = fs.readFileSync(seedPath, 'utf8');
+        this._cache = JSON.parse(raw);
+        while (this._cache.moonSponsors.length < 3) this._cache.moonSponsors.push(null);
+        this._saveToDisk();
+        console.log(`[MoonSponsorStore] Bootstrapped from seed file`);
+      } else {
+        this._cache = { version: 1, moonSponsors: [null, null, null], lastModified: "" };
+        this._saveToDisk();
+        console.log(`[MoonSponsorStore] Created empty ${this.filePath}`);
+      }
       return;
     }
 

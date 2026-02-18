@@ -2237,7 +2237,7 @@ class Dashboard {
     if (typeof BroadcastChannel !== "undefined") {
       this._sponsorSyncChannel = new BroadcastChannel("adlands_sponsor_sync");
       this._sponsorSyncChannel.onmessage = (e) => {
-        if (e.data.action === "delete" && e.data.sponsor?.isPlayerTerritory) {
+        if (e.data.action === "delete" && e.data.sponsor?.ownerType === "player") {
           const territoryId = e.data.sponsor._territoryId || e.data.id;
           this._onAdminDeleteTerritory(territoryId, e.data.id);
         }
@@ -2292,7 +2292,7 @@ class Dashboard {
     // Build lookup of this player's territories from server data
     const serverMap = new Map();
     for (const s of serverSponsors) {
-      if (s.isPlayerTerritory && s.ownerUid === uid) {
+      if ((s.ownerType === "player" || s.isPlayerTerritory) && s.ownerUid === uid) {
         const territoryId = s._territoryId || s.id;
         serverMap.set(territoryId, s);
       }
@@ -2317,7 +2317,7 @@ class Dashboard {
     // Remove territories no longer present on server (admin deleted them)
     // Only prune if the server payload actually includes player territory data
     // (avoids wiping on legacy payloads without territory metadata)
-    const hasAnyPlayerTerritoryData = serverSponsors.some(s => s.isPlayerTerritory);
+    const hasAnyPlayerTerritoryData = serverSponsors.some(s => s.ownerType === "player" || s.isPlayerTerritory);
     const before = this._playerTerritories.length;
     this._playerTerritories = this._playerTerritories.filter((t) => {
       return serverMap.has(t.id) || !hasAnyPlayerTerritoryData;
@@ -3177,7 +3177,7 @@ class Dashboard {
           cluster: { tileIndices: territory.tileIndices },
           patternImage: territory.patternImage,
           patternAdjustment: territory.patternAdjustment,
-          isPlayerTerritory: true,
+          ownerType: "player",
           playerFaction: this.playerFaction,
           tierName: territory.tierName,
           createdAt: new Date().toISOString(),
@@ -3280,7 +3280,7 @@ class Dashboard {
     if (typeof SponsorStorage !== "undefined" && SponsorStorage._cache) {
       try {
         const allSponsors = SponsorStorage.getAll();
-        territories = allSponsors.filter((s) => s.isPlayerTerritory);
+        territories = allSponsors.filter((s) => s.ownerType === "player" || s.isPlayerTerritory);
         loadedFromStorage = true;
       } catch (e) {
         console.warn("[Dashboard] SponsorStorage load failed:", e);
