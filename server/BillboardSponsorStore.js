@@ -256,7 +256,7 @@ class BillboardSponsorStore {
     if (this._cache.billboardSponsors[billboardIndex] === null) return false;
     this._cache.billboardSponsors[billboardIndex] = null;
     await this._saveToDisk();
-    this._syncSlotToFirestore(billboardIndex, null);
+    await this._syncSlotToFirestore(billboardIndex, null);
     return true;
   }
 

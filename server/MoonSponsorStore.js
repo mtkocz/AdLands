@@ -253,7 +253,7 @@ class MoonSponsorStore {
     if (this._cache.moonSponsors[moonIndex] === null) return false;
     this._cache.moonSponsors[moonIndex] = null;
     await this._saveToDisk();
-    this._syncSlotToFirestore(moonIndex, null);
+    await this._syncSlotToFirestore(moonIndex, null);
     return true;
   }
 

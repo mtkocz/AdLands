@@ -1100,10 +1100,23 @@ class GameRoom {
           };
         }
       }
+      // Sponsor hold timers: sponsorId → { owner, capturedAt, holdDuration }
+      const sponsorTimers = {};
+      for (const [sponsorId, timer] of this.sponsorHoldTimers) {
+        if (timer.owner) {
+          sponsorTimers[sponsorId] = {
+            owner: timer.owner,
+            capturedAt: timer.capturedAt || null,
+            holdDuration: timer.holdDuration || 0,
+          };
+        }
+      }
+
       await db.collection("gameState").doc("captureState").set({
         roomId: this.roomId,
         savedAt: require("firebase-admin").firestore.FieldValue.serverTimestamp(),
         clusters,
+        sponsorTimers,
       });
       const count = Object.keys(clusters).length;
       if (count > 0) {
@@ -1137,7 +1150,20 @@ class GameRoom {
           restored++;
         }
       }
-      console.log(`[Room ${this.roomId}] Restored capture state (${restored} clusters from ${data.savedAt?.toDate?.() || "unknown"})`);
+      // Restore sponsor hold timers
+      let timersRestored = 0;
+      if (data.sponsorTimers) {
+        for (const [sponsorId, saved] of Object.entries(data.sponsorTimers)) {
+          const timer = this.sponsorHoldTimers.get(sponsorId);
+          if (timer && saved.owner) {
+            timer.owner = saved.owner;
+            timer.capturedAt = saved.capturedAt || null;
+            timer.holdDuration = saved.holdDuration || 0;
+            timersRestored++;
+          }
+        }
+      }
+      console.log(`[Room ${this.roomId}] Restored capture state (${restored} clusters, ${timersRestored} sponsor timers from ${data.savedAt?.toDate?.() || "unknown"})`);
       return true;
     } catch (err) {
       console.warn(`[Room ${this.roomId}] Failed to load capture state:`, err.message);

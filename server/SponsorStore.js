@@ -143,9 +143,15 @@ class SponsorStore {
       // Merge: Firestore wins for matching IDs, new Firestore entries are added
       const merged = [];
       const seen = new Set();
+      const deletedSet = new Set(this._cache.deletedIds || []);
 
       // First pass: all Firestore sponsors (source of truth for metadata)
       for (const [id, fsData] of firestoreSponsors) {
+        // Skip sponsors that were intentionally deleted
+        if (deletedSet.has(id)) {
+          this._deleteFromFirestore(id); // clean up stale Firestore entry
+          continue;
+        }
         // Preserve local image fields that Firestore doesn't store
         const local = localById.get(id);
         if (local) {
@@ -163,6 +169,7 @@ class SponsorStore {
       let synced = 0;
       for (const s of this._cache.sponsors) {
         if (!seen.has(s.id)) {
+          if (deletedSet.has(s.id)) continue; // skip deleted sponsors (e.g. Dropbox-reverted JSON)
           merged.push(s);
           this._syncToFirestore(s); // fire-and-forget
           synced++;
@@ -375,8 +382,11 @@ class SponsorStore {
     const initialLength = this._cache.sponsors.length;
     this._cache.sponsors = this._cache.sponsors.filter((s) => s.id !== id);
     if (this._cache.sponsors.length < initialLength) {
+      // Track deleted IDs to prevent resurrection from Dropbox-reverted JSON or stale Firestore
+      if (!this._cache.deletedIds) this._cache.deletedIds = [];
+      if (!this._cache.deletedIds.includes(id)) this._cache.deletedIds.push(id);
       await this._saveToDisk();
-      this._deleteFromFirestore(id);
+      await this._deleteFromFirestore(id);
       return true;
     }
     return false;
