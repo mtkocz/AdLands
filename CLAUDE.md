@@ -83,6 +83,8 @@ node wipePlayerData.js  # Wipe all player data from Firestore
 - **Auth:** Firebase Auth on client, ID tokens verified server-side via Admin SDK
 - **Data:** Firestore collections — `accounts`, `profiles` (subcollection), `territories`, `cosmetics`, `leaderboards`
 - **CORS:** Open (`*`) for development
+- **Dropbox:** The project lives in a Dropbox-synced folder. Never use tmp-file + rename (atomic write) patterns — Dropbox deletes the `.tmp` file before the rename completes, crashing the server. Write directly to the target file instead.
+- **Static assets:** Express serves with `compression` (gzip) middleware and `maxAge: '1d'` cache headers. All `<script>` tags in `index.html` use `defer`.
 
 ## Key Files
 

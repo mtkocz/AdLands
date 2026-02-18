@@ -11,7 +11,21 @@ const path = require("path");
 const { getFirestore } = require("./firebaseAdmin");
 
 /**
+ * Find an existing file on disk matching a prefix (e.g. "sponsor_123." or "sponsor_123_logo.").
+ * Returns the filename if found, null otherwise.
+ */
+function findExistingFile(texDir, prefix) {
+  try {
+    const files = fs.readdirSync(texDir);
+    return files.find(f => f.startsWith(prefix)) || null;
+  } catch (e) {
+    return null;
+  }
+}
+
+/**
  * Extract a single sponsor's base64 images to static PNG files on disk.
+ * Falls back to existing files on disk when base64 data is missing.
  * @returns {{ patternUrl?: string, logoUrl?: string }}
  */
 async function extractSponsorImage(sponsor, texDir) {
@@ -24,6 +38,12 @@ async function extractSponsorImage(sponsor, texDir) {
       await fsp.writeFile(filePath, Buffer.from(match[2], "base64"));
       urls.patternUrl = `/sponsor-textures/${sponsor.id}.${ext}`;
     }
+  } else {
+    // No base64 data — check for previously extracted file on disk
+    const existing = findExistingFile(texDir, sponsor.id + ".");
+    if (existing && !existing.includes("_logo")) {
+      urls.patternUrl = `/sponsor-textures/${existing}`;
+    }
   }
   if (sponsor.logoImage) {
     const match = sponsor.logoImage.match(/^data:image\/(\w+);base64,(.+)$/);
@@ -32,6 +52,12 @@ async function extractSponsorImage(sponsor, texDir) {
       const filePath = path.join(texDir, `${sponsor.id}_logo.${ext}`);
       await fsp.writeFile(filePath, Buffer.from(match[2], "base64"));
       urls.logoUrl = `/sponsor-textures/${sponsor.id}_logo.${ext}`;
+    }
+  } else {
+    // No base64 data — check for previously extracted logo file on disk
+    const existing = findExistingFile(texDir, sponsor.id + "_logo.");
+    if (existing) {
+      urls.logoUrl = `/sponsor-textures/${existing}`;
     }
   }
   return urls;
