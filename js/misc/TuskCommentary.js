@@ -1062,6 +1062,11 @@ class TuskGlobalChat {
         "{faction} now controls {percent}% of the planet. {loser1}, {loser2} — are you even trying?",
         "{faction} takes the lead with {percent}%. The other factions are invited to cope.",
         "New standings: {faction} at {percent}%. Corporate is watching.",
+        "MARKET REPORT: {faction} stock is UP. {loser1} and {loser2} stock is... well, I wouldn't invest.",
+        "{faction} at {percent}%. That's called market dominance. {loser1} and {loser2}, that's called getting acquired.",
+        "If {faction} were a company, I'd buy shares. If {loser1} or {loser2} were companies, I'd short them into the ground.",
+        "{faction} is running this planet at {percent}%. {loser1} and {loser2} are just renting space at this point. From {faction}.",
+        "BREAKING: {faction} controls {percent}% of the map. I'm starting to think {loser1} and {loser2} are here for the vibes, not the victory.",
       ],
       factionStruggle: [
         "{faction} controls just {percent}% of the planet. Should I start writing their eulogy?",
@@ -1069,6 +1074,11 @@ class TuskGlobalChat {
         "Thoughts and prayers for {faction}. {percent}% and sinking.",
         "{faction} is at {percent}%. At this point they're paying rent on someone else's land.",
         "Someone check {faction}'s pulse. {percent}% territory isn't a strategy, it's a cry for help.",
+        "INVESTOR ALERT: {faction} is at {percent}%. I'm pulling their funding. Effective immediately. I'm kidding. They never had funding.",
+        "{faction} at {percent}%. I've seen startups fail more gracefully than this.",
+        "If {faction} were a stock it'd be delisted. {percent}% territory is not even a rounding error.",
+        "{faction} holds {percent}% of the planet. That's less than my personal bathroom. And I would know — it's massive.",
+        "BREAKING: {faction} territory has dropped to {percent}%. At this rate they'll be a Wikipedia article by tomorrow.",
       ],
       playerMilestone: [
         "@{player} just hit {count} kills this session. Somebody's gunning for Employee of the Month.",
