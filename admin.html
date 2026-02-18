@@ -64,33 +64,36 @@
                     <!-- VIEW: Sponsor Info -->
                     <div id="view-sponsor-info" class="form-view active">
                         <div id="sponsor-info-section">
-                            <div class="form-group">
-                                <label for="sponsor-name">Name *</label>
-                                <input
-                                    type="text"
-                                    id="sponsor-name"
-                                    name="name"
-                                    required
-                                    placeholder="e.g., Acme Corp"
-                                />
-                            </div>
-                            <div class="form-group">
-                                <label for="sponsor-tagline">Tagline</label>
-                                <input
-                                    type="text"
-                                    id="sponsor-tagline"
-                                    name="tagline"
-                                    placeholder="e.g., Building Tomorrow"
-                                />
-                            </div>
-                            <div class="form-group">
-                                <label for="sponsor-website">Website URL</label>
-                                <input
-                                    type="url"
-                                    id="sponsor-website"
-                                    name="websiteUrl"
-                                    placeholder="https://example.com"
-                                />
+                            <!-- Name/Tagline/URL group (hidden for player territories) -->
+                            <div id="sponsor-shared-fields">
+                                <div class="form-group">
+                                    <label for="sponsor-name">Name *</label>
+                                    <input
+                                        type="text"
+                                        id="sponsor-name"
+                                        name="name"
+                                        required
+                                        placeholder="e.g., Acme Corp"
+                                    />
+                                </div>
+                                <div class="form-group">
+                                    <label for="sponsor-tagline">Tagline</label>
+                                    <input
+                                        type="text"
+                                        id="sponsor-tagline"
+                                        name="tagline"
+                                        placeholder="e.g., Building Tomorrow"
+                                    />
+                                </div>
+                                <div class="form-group">
+                                    <label for="sponsor-website">Website URL</label>
+                                    <input
+                                        type="url"
+                                        id="sponsor-website"
+                                        name="websiteUrl"
+                                        placeholder="https://example.com"
+                                    />
+                                </div>
                             </div>
                             <div class="form-group">
                                 <label>Logo Image (PNG, recommended 256x256)</label>
@@ -111,6 +114,15 @@
                                 </div>
                             </div>
                         </div>
+                        <!-- Notes field (shown only for player territories) -->
+                        <div id="notes-field-group" class="form-group" style="display:none">
+                            <label for="sponsor-notes">Notes</label>
+                            <textarea
+                                id="sponsor-notes"
+                                rows="3"
+                                placeholder="Admin notes about this account..."
+                            ></textarea>
+                        </div>
                         <div class="form-view-actions">
                             <button type="button" id="save-sponsor-info-btn" class="btn btn-primary">
                                 Save Sponsor
@@ -124,6 +136,33 @@
                     <!-- VIEW: Territories -->
                     <div id="view-territories" class="form-view">
                         <div id="cluster-section">
+                            <!-- Per-territory info fields (shown only for player territories) -->
+                            <div id="territory-info-fields" style="display:none">
+                                <div class="form-group">
+                                    <label for="territory-name">Territory Name *</label>
+                                    <input
+                                        type="text"
+                                        id="territory-name"
+                                        placeholder="e.g., ROBOTA Corp"
+                                    />
+                                </div>
+                                <div class="form-group">
+                                    <label for="territory-tagline">Tagline</label>
+                                    <input
+                                        type="text"
+                                        id="territory-tagline"
+                                        placeholder="e.g., Obey!"
+                                    />
+                                </div>
+                                <div class="form-group">
+                                    <label for="territory-website">Website URL</label>
+                                    <input
+                                        type="url"
+                                        id="territory-website"
+                                        placeholder="https://example.com"
+                                    />
+                                </div>
+                            </div>
                             <div class="form-group">
                                 <label>Pattern Image (PNG, recommended 256x256)</label>
                                 <div class="file-input-group">

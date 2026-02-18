@@ -2032,3 +2032,29 @@ textarea.review-comment {
     gap: 4px;
 }
 
+/* Territory info fields in Territory view (player territories) */
+#territory-info-fields {
+    padding-bottom: var(--space-md);
+    margin-bottom: var(--space-md);
+    border-bottom: var(--border-width) solid var(--border-dark);
+}
+
+/* Notes textarea styling */
+.form-group textarea {
+    width: 100%;
+    background: rgba(255, 255, 255, 0.1);
+    border: var(--border-width) solid var(--border-dark);
+    border-radius: 0;
+    clip-path: var(--clip-rounded-4);
+    color: var(--text-primary);
+    padding: var(--space-sm) var(--space-md);
+    font-family: var(--font-body);
+    font-size: var(--font-size-body);
+    resize: vertical;
+}
+
+.form-group textarea:focus {
+    outline: none;
+    border-color: var(--accent-gold);
+}
+

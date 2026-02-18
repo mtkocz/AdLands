@@ -15,6 +15,16 @@ class SponsorForm {
         this.logoPreview = document.getElementById('logo-preview');
         this.patternPreview = document.getElementById('pattern-preview');
 
+        // Territory-specific info fields (per-territory for player groups)
+        this.territoryInfoFields = document.getElementById('territory-info-fields');
+        this.territoryNameInput = document.getElementById('territory-name');
+        this.territoryTaglineInput = document.getElementById('territory-tagline');
+        this.territoryWebsiteInput = document.getElementById('territory-website');
+
+        // Notes field (player territory groups only)
+        this.notesFieldGroup = document.getElementById('notes-field-group');
+        this.notesInput = document.getElementById('sponsor-notes');
+
         // Pattern adjustment elements
         this.patternAdjustGroup = document.getElementById('pattern-adjust-group');
         this.patternScaleSlider = document.getElementById('pattern-scale');
@@ -447,6 +457,38 @@ class SponsorForm {
     }
 
     /**
+     * Get territory-specific info data (for player territory groups)
+     * @returns {{ title: string, tagline: string, websiteUrl: string }}
+     */
+    getTerritoryInfoData() {
+        return {
+            title: this.territoryNameInput.value.trim(),
+            tagline: this.territoryTaglineInput.value.trim(),
+            websiteUrl: this.territoryWebsiteInput.value.trim(),
+        };
+    }
+
+    /**
+     * Populate the territory-specific info fields
+     * @param {Object} sponsor
+     */
+    loadTerritoryInfo(sponsor) {
+        this.territoryNameInput.value = sponsor.pendingTitle || sponsor.title || "";
+        this.territoryTaglineInput.value = sponsor.pendingTagline || sponsor.tagline || "";
+        this.territoryWebsiteInput.value = sponsor.pendingWebsiteUrl || sponsor.websiteUrl || "";
+    }
+
+    /** @returns {string} */
+    getNotes() {
+        return this.notesInput.value.trim();
+    }
+
+    /** @param {string} value */
+    setNotes(value) {
+        this.notesInput.value = value || "";
+    }
+
+    /**
      * Validate the form
      * @returns {{ valid: boolean, errors: string[] }}
      */
@@ -548,6 +590,14 @@ class SponsorForm {
         this.patternInput.value = '';
         this.logoImageData = null;
         this.patternImageData = null;
+
+        // Reset territory-specific fields
+        this.territoryNameInput.value = '';
+        this.territoryTaglineInput.value = '';
+        this.territoryWebsiteInput.value = '';
+        this.notesInput.value = '';
+        this.territoryInfoFields.style.display = 'none';
+        this.notesFieldGroup.style.display = 'none';
 
         // Reset pattern adjustment
         this.patternScale = 1.0;

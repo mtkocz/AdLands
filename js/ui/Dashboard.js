@@ -78,6 +78,9 @@ class Dashboard {
     this._playerTerritories = []; // { id, tierName, tileIndices, patternImage, timestamp }
     this._selectedTerritoryTier = null;
     this._territoryPreview = null; // { centerTile, rawCount, tileIndices, pricing }
+    this._editUploadedImage = null;
+    this._editingTerritoryId = null;
+    this._editUVTimer = null;
 
     // DOM references
     this.container = null;
@@ -993,16 +996,11 @@ class Dashboard {
         this._cancelTerritoryPreview();
       }
 
-      // Image upload button on owned territory
-      const uploadBtn = e.target.closest(".territory-item-upload");
-      if (uploadBtn) {
-        const territoryId = uploadBtn.dataset.territoryId;
-        console.log(`[Dashboard] Upload button clicked for territory ${territoryId}`);
-        const input = document.createElement("input");
-        input.type = "file";
-        input.accept = "image/*";
-        input.onchange = () => this._handleTerritoryUpload(input, territoryId);
-        input.click();
+      // Edit Territory button → open edit popup
+      const editBtn = e.target.closest(".territory-item-edit");
+      if (editBtn) {
+        const territoryId = editBtn.dataset.territoryId;
+        this._showEditPopup(territoryId);
       }
 
       // Cancel subscription button
@@ -1022,106 +1020,6 @@ class Dashboard {
           this._savePlayerTerritories();
           this._renderTerritoryList();
         }
-      }
-    });
-
-    // Territory adjustment sliders (scale, offsetX, offsetY)
-    // "input" → lightweight UV-only update (fast, no material recreation)
-    // "change" → full texture + storage save (on slider release)
-    this._territoryUVTimer = null;
-    this.container.addEventListener("input", (e) => {
-      const slider = e.target;
-      if (!slider.classList.contains("territory-scale-slider") &&
-          !slider.classList.contains("territory-offsetx-slider") &&
-          !slider.classList.contains("territory-offsety-slider")) return;
-
-      const territoryId = slider.dataset.territoryId;
-      const value = parseFloat(slider.value);
-
-      // Update displayed value
-      const valueSpan = slider.nextElementSibling;
-      if (valueSpan) {
-        valueSpan.textContent = slider.classList.contains("territory-scale-slider")
-          ? value.toFixed(1) : value.toFixed(2);
-      }
-
-      let key;
-      if (slider.classList.contains("territory-scale-slider")) key = "scale";
-      else if (slider.classList.contains("territory-offsetx-slider")) key = "offsetX";
-      else key = "offsetY";
-
-      // Update local state immediately (no storage write)
-      const territory = this._playerTerritories.find((t) => t.id === territoryId);
-      if (!territory) return;
-      if (!territory.patternAdjustment) {
-        territory.patternAdjustment = {
-          scale: 1.0, offsetX: 0, offsetY: 0,
-          saturation: 0.7, inputBlack: 30, inputGamma: 1.0,
-          inputWhite: 225, outputBlack: 40, outputWhite: 215,
-        };
-      }
-      territory.patternAdjustment[key] = value;
-
-      // Lightweight UV-only update (no material/texture recreation)
-      clearTimeout(this._territoryUVTimer);
-      this._territoryUVTimer = setTimeout(() => {
-        if (this._territoryPlanet) {
-          this._territoryPlanet._updateSponsorTileUVs(
-            territory.tileIndices,
-            territory.patternAdjustment,
-          );
-        }
-      }, 16); // ~60fps cap
-    });
-
-    // On slider release, persist to storage
-    this.container.addEventListener("change", (e) => {
-      const slider = e.target;
-      if (!slider.classList.contains("territory-scale-slider") &&
-          !slider.classList.contains("territory-offsetx-slider") &&
-          !slider.classList.contains("territory-offsety-slider")) return;
-
-      const territoryId = slider.dataset.territoryId;
-      const territory = this._playerTerritories.find((t) => t.id === territoryId);
-      if (!territory) return;
-
-      this._updatePlayerTerritory(territoryId, {
-        patternAdjustment: territory.patternAdjustment,
-      });
-
-      // Territory info text inputs (title, tagline, URL) — submit as pending for admin review
-      const infoInput = e.target.closest(".territory-info-edit");
-      if (infoInput) {
-        const tid = infoInput.dataset.territoryId;
-        const t = this._playerTerritories.find((t) => t.id === tid);
-        if (!t) return;
-        const field = infoInput.dataset.field; // "title", "tagline", or "websiteUrl"
-        let val = (infoInput.value || "").trim();
-        if (field === "websiteUrl") val = this._sanitizeTerritoryUrl(val);
-
-        // Store as pending (active fields unchanged until admin approves)
-        const pendingField = "pending" + field.charAt(0).toUpperCase() + field.slice(1);
-        t[pendingField] = val;
-        t.submissionStatus = "pending";
-
-        // Persist pending fields to Firestore + SponsorStorage
-        const changes = {};
-        changes[pendingField] = val;
-        changes.submissionStatus = "pending";
-        this._updatePlayerTerritory(tid, changes);
-
-        // Submit to server as pending (NOT broadcast to other players)
-        if (window._mp?.net?.socket) {
-          window._mp.net.socket.emit("update-territory-info", {
-            territoryId: tid,
-            title: t.pendingTitle ?? t.title ?? "",
-            tagline: t.pendingTagline ?? t.tagline ?? "",
-            websiteUrl: t.pendingWebsiteUrl ?? t.websiteUrl ?? "",
-          });
-        }
-
-        this._savePlayerTerritories();
-        this._renderTerritoryList();
       }
     });
 
@@ -2583,6 +2481,50 @@ class Dashboard {
     confirmBtn.addEventListener("click", this._rentalConfirmHandler);
     uploadArea.addEventListener("click", this._rentalUploadClickHandler);
     fileInput.addEventListener("change", this._rentalFileChangeHandler);
+
+    // Reset slider values
+    document.getElementById("rental-scale-slider").value = "1.0";
+    document.getElementById("rental-offsetx-slider").value = "0";
+    document.getElementById("rental-offsety-slider").value = "0";
+    document.getElementById("rental-scale-value").textContent = "1.0";
+    document.getElementById("rental-offsetx-value").textContent = "0.00";
+    document.getElementById("rental-offsety-value").textContent = "0.00";
+    this._rentalPatternAdjustment = {
+      scale: 1.0, offsetX: 0, offsetY: 0,
+      saturation: 0.7, inputBlack: 30, inputGamma: 1.0,
+      inputWhite: 225, outputBlack: 40, outputWhite: 215,
+    };
+
+    // Slider live preview for rental popup
+    this._rentalSliderInputHandler = (e) => {
+      const slider = e.target;
+      const isScale = slider.id === "rental-scale-slider";
+      const isX = slider.id === "rental-offsetx-slider";
+      const isY = slider.id === "rental-offsety-slider";
+      if (!isScale && !isX && !isY) return;
+
+      const value = parseFloat(slider.value);
+      const spanId = isScale ? "rental-scale-value" : isX ? "rental-offsetx-value" : "rental-offsety-value";
+      const span = document.getElementById(spanId);
+      if (span) span.textContent = isScale ? value.toFixed(1) : value.toFixed(2);
+
+      const key = isScale ? "scale" : isX ? "offsetX" : "offsetY";
+      this._rentalPatternAdjustment[key] = value;
+
+      // Live preview: update UV on the currently previewed tiles
+      clearTimeout(this._rentalUVTimer);
+      this._rentalUVTimer = setTimeout(() => {
+        const preview = this._territoryPreview;
+        if (this._territoryPlanet && preview?.tileIndices?.length) {
+          this._territoryPlanet._updateSponsorTileUVs(
+            preview.tileIndices,
+            this._rentalPatternAdjustment,
+          );
+        }
+      }, 16);
+    };
+
+    popup.addEventListener("input", this._rentalSliderInputHandler);
   }
 
   _hideRentalPopup() {
@@ -2604,6 +2546,9 @@ class Dashboard {
     if (this._rentalConfirmHandler) confirmBtn?.removeEventListener("click", this._rentalConfirmHandler);
     if (this._rentalUploadClickHandler) uploadArea?.removeEventListener("click", this._rentalUploadClickHandler);
     if (this._rentalFileChangeHandler) fileInput?.removeEventListener("change", this._rentalFileChangeHandler);
+    if (this._rentalSliderInputHandler) {
+      document.getElementById("territory-rental-popup")?.removeEventListener("input", this._rentalSliderInputHandler);
+    }
   }
 
   _handleRentalImageSelect(inputEl) {
@@ -2657,16 +2602,10 @@ class Dashboard {
         tileIndices: preview.tileIndices,
       },
       patternImage: placeholderImage,
-      patternAdjustment: {
-        scale: 1.0,
-        offsetX: 0,
-        offsetY: 0,
-        saturation: 0.7,
-        inputBlack: 30,
-        inputGamma: 1.0,
-        inputWhite: 225,
-        outputBlack: 40,
-        outputWhite: 215,
+      patternAdjustment: this._rentalPatternAdjustment || {
+        scale: 1.0, offsetX: 0, offsetY: 0,
+        saturation: 0.7, inputBlack: 30, inputGamma: 1.0,
+        inputWhite: 225, outputBlack: 40, outputWhite: 215,
       },
     };
 
@@ -2744,6 +2683,221 @@ class Dashboard {
       "achievement",
       "territory",
     );
+  }
+
+  _showEditPopup(territoryId) {
+    const popup = document.getElementById("territory-edit-popup");
+    if (!popup) return;
+
+    const territory = this._playerTerritories.find((t) => t.id === territoryId);
+    if (!territory) return;
+
+    this._editingTerritoryId = territoryId;
+    this._editUploadedImage = null;
+
+    // Populate fields with current pending or approved values
+    document.getElementById("edit-name").value = territory.pendingTitle ?? territory.title ?? "";
+    document.getElementById("edit-tagline").value = territory.pendingTagline ?? territory.tagline ?? "";
+    document.getElementById("edit-url").value = territory.pendingWebsiteUrl ?? territory.websiteUrl ?? "";
+
+    // Sliders
+    const adj = territory.patternAdjustment || { scale: 1.0, offsetX: 0, offsetY: 0 };
+    document.getElementById("edit-scale-slider").value = adj.scale;
+    document.getElementById("edit-offsetx-slider").value = adj.offsetX;
+    document.getElementById("edit-offsety-slider").value = adj.offsetY;
+    document.getElementById("edit-scale-value").textContent = adj.scale.toFixed(1);
+    document.getElementById("edit-offsetx-value").textContent = adj.offsetX.toFixed(2);
+    document.getElementById("edit-offsety-value").textContent = adj.offsetY.toFixed(2);
+
+    // Image preview: show existing image if available
+    const previewEl = document.getElementById("edit-upload-preview");
+    if (previewEl) {
+      if (territory.patternImage) {
+        previewEl.innerHTML = "";
+        const img = document.createElement("img");
+        img.src = territory.patternImage;
+        previewEl.appendChild(img);
+      } else {
+        previewEl.innerHTML = '<span class="rental-upload-hint">Click to replace image (optional)</span>';
+      }
+    }
+
+    popup.classList.add("visible");
+    window._modalOpen = true;
+
+    this._cleanupEditPopup();
+
+    const closeBtn = document.getElementById("edit-popup-close");
+    const cancelBtn = document.getElementById("edit-cancel-btn");
+    const confirmBtn = document.getElementById("edit-confirm-btn");
+    const uploadArea = document.getElementById("edit-upload-area");
+    const fileInput = document.getElementById("edit-image-input");
+
+    this._editCloseHandler = () => this._hideEditPopup();
+    this._editCancelHandler = () => this._hideEditPopup();
+    this._editConfirmHandler = () => this._confirmEditTerritory();
+    this._editUploadClickHandler = () => fileInput.click();
+    this._editFileChangeHandler = () => this._handleEditImageSelect(fileInput);
+
+    // Slider live UV preview handlers
+    this._editSliderInputHandler = (e) => {
+      const slider = e.target;
+      const isScale = slider.id === "edit-scale-slider";
+      const isX = slider.id === "edit-offsetx-slider";
+      const isY = slider.id === "edit-offsety-slider";
+      if (!isScale && !isX && !isY) return;
+
+      const value = parseFloat(slider.value);
+      const valueSpanId = isScale ? "edit-scale-value" : isX ? "edit-offsetx-value" : "edit-offsety-value";
+      const valueSpan = document.getElementById(valueSpanId);
+      if (valueSpan) valueSpan.textContent = isScale ? value.toFixed(1) : value.toFixed(2);
+
+      const key = isScale ? "scale" : isX ? "offsetX" : "offsetY";
+      const t = this._playerTerritories.find((t) => t.id === territoryId);
+      if (!t) return;
+      if (!t.patternAdjustment) {
+        t.patternAdjustment = {
+          scale: 1.0, offsetX: 0, offsetY: 0,
+          saturation: 0.7, inputBlack: 30, inputGamma: 1.0,
+          inputWhite: 225, outputBlack: 40, outputWhite: 215,
+        };
+      }
+      t.patternAdjustment[key] = value;
+
+      // Live UV-only update (debounced, ~60fps)
+      clearTimeout(this._editUVTimer);
+      this._editUVTimer = setTimeout(() => {
+        if (this._territoryPlanet) {
+          this._territoryPlanet._updateSponsorTileUVs(
+            t.tileIndices,
+            t.patternAdjustment,
+          );
+        }
+      }, 16);
+    };
+
+    closeBtn.addEventListener("click", this._editCloseHandler);
+    cancelBtn.addEventListener("click", this._editCancelHandler);
+    confirmBtn.addEventListener("click", this._editConfirmHandler);
+    uploadArea.addEventListener("click", this._editUploadClickHandler);
+    fileInput.addEventListener("change", this._editFileChangeHandler);
+    popup.addEventListener("input", this._editSliderInputHandler);
+  }
+
+  _hideEditPopup() {
+    const popup = document.getElementById("territory-edit-popup");
+    if (popup) popup.classList.remove("visible");
+    window._modalOpen = false;
+    this._editingTerritoryId = null;
+    this._cleanupEditPopup();
+  }
+
+  _cleanupEditPopup() {
+    const popup = document.getElementById("territory-edit-popup");
+    const closeBtn = document.getElementById("edit-popup-close");
+    const cancelBtn = document.getElementById("edit-cancel-btn");
+    const confirmBtn = document.getElementById("edit-confirm-btn");
+    const uploadArea = document.getElementById("edit-upload-area");
+    const fileInput = document.getElementById("edit-image-input");
+
+    if (this._editCloseHandler) closeBtn?.removeEventListener("click", this._editCloseHandler);
+    if (this._editCancelHandler) cancelBtn?.removeEventListener("click", this._editCancelHandler);
+    if (this._editConfirmHandler) confirmBtn?.removeEventListener("click", this._editConfirmHandler);
+    if (this._editUploadClickHandler) uploadArea?.removeEventListener("click", this._editUploadClickHandler);
+    if (this._editFileChangeHandler) fileInput?.removeEventListener("change", this._editFileChangeHandler);
+    if (this._editSliderInputHandler) popup?.removeEventListener("input", this._editSliderInputHandler);
+  }
+
+  _handleEditImageSelect(inputEl) {
+    const file = inputEl.files[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      this._editUploadedImage = e.target.result;
+      const previewEl = document.getElementById("edit-upload-preview");
+      if (previewEl) {
+        previewEl.innerHTML = "";
+        const img = document.createElement("img");
+        img.src = this._editUploadedImage;
+        previewEl.appendChild(img);
+      }
+    };
+    reader.readAsDataURL(file);
+  }
+
+  async _confirmEditTerritory() {
+    const territoryId = this._editingTerritoryId;
+    if (!territoryId) return;
+
+    const territory = this._playerTerritories.find((t) => t.id === territoryId);
+    if (!territory) return;
+
+    const pendingTitle = (document.getElementById("edit-name")?.value || "").trim();
+    const pendingTagline = (document.getElementById("edit-tagline")?.value || "").trim();
+    const pendingWebsiteUrl = this._sanitizeTerritoryUrl(
+      (document.getElementById("edit-url")?.value || "").trim(),
+    );
+    const newImage = this._editUploadedImage || null;
+    const patternAdjustment = territory.patternAdjustment;
+
+    // Update pending text fields on territory record
+    territory.pendingTitle = pendingTitle;
+    territory.pendingTagline = pendingTagline;
+    territory.pendingWebsiteUrl = pendingWebsiteUrl;
+    territory.submissionStatus = "pending";
+
+    const changes = {
+      pendingTitle,
+      pendingTagline,
+      pendingWebsiteUrl,
+      submissionStatus: "pending",
+      patternAdjustment,
+    };
+
+    // If a new image was uploaded, submit through the existing upload path
+    if (newImage) {
+      territory.patternImage = newImage;
+      territory.imageStatus = "pending";
+      changes.pendingImage = newImage;
+      changes.imageStatus = "pending";
+
+      // Apply texture locally for immediate feedback
+      if (this._territoryPlanet) {
+        const sponsor = {
+          id: territoryId,
+          patternImage: newImage,
+          patternAdjustment,
+        };
+        this._territoryPlanet._applySponsorTexture(sponsor, territory.tileIndices);
+      }
+
+      // Submit image to server via the existing socket event
+      if (window._mp?.net?.socket) {
+        window._mp.net.socket.emit("submit-territory-image", {
+          territoryId,
+          pendingImage: newImage,
+          patternAdjustment,
+        });
+      }
+    }
+
+    // Submit text fields to server as pending
+    if (window._mp?.net?.socket) {
+      window._mp.net.socket.emit("update-territory-info", {
+        territoryId,
+        title: pendingTitle,
+        tagline: pendingTagline,
+        websiteUrl: pendingWebsiteUrl,
+      });
+    }
+
+    // Persist to Firestore + SponsorStorage
+    await this._updatePlayerTerritory(territoryId, changes);
+    this._savePlayerTerritories();
+
+    this._hideEditPopup();
+    this._renderTerritoryList();
   }
 
   _cancelTerritoryPreview() {
@@ -3060,11 +3214,6 @@ class Dashboard {
         }
 
         const age = this._formatTimeAgo(t.timestamp);
-        const adj = t.patternAdjustment || { scale: 1.0, offsetX: 0, offsetY: 0 };
-        // Show pending values in edit fields (fall back to approved values)
-        const escTitle = (t.pendingTitle ?? t.title ?? "").replace(/"/g, "&quot;");
-        const escTagline = (t.pendingTagline ?? t.tagline ?? "").replace(/"/g, "&quot;");
-        const escUrl = (t.pendingWebsiteUrl ?? t.websiteUrl ?? "").replace(/"/g, "&quot;");
         return `
           <div class="territory-owned-item" data-territory-id="${t.id}">
               <div class="territory-item-header">
@@ -3073,30 +3222,8 @@ class Dashboard {
                   ${status === "pending" ? '<span class="territory-status-badge pending">Pending Review</span>' : ""}
                   ${status === "approved" ? '<span class="territory-status-badge approved">Approved</span>' : ""}
               </div>
-              <div class="territory-info-edit-group">
-                  <input type="text" class="territory-info-edit" data-territory-id="${t.id}" data-field="title" value="${escTitle}" placeholder="Title" maxlength="40">
-                  <input type="text" class="territory-info-edit" data-territory-id="${t.id}" data-field="tagline" value="${escTagline}" placeholder="Tagline" maxlength="80">
-                  <input type="url" class="territory-info-edit" data-territory-id="${t.id}" data-field="websiteUrl" value="${escUrl}" placeholder="https://yoursite.com" maxlength="200">
-              </div>
-              <div class="territory-controls" data-territory-id="${t.id}">
-                  <div class="territory-control-row">
-                      <label>Scale</label>
-                      <input type="range" min="0.5" max="2.0" step="0.1" value="${adj.scale}" class="territory-scale-slider" data-territory-id="${t.id}">
-                      <span class="territory-control-value">${adj.scale.toFixed(1)}</span>
-                  </div>
-                  <div class="territory-control-row">
-                      <label>X</label>
-                      <input type="range" min="-1" max="1" step="0.05" value="${adj.offsetX}" class="territory-offsetx-slider" data-territory-id="${t.id}">
-                      <span class="territory-control-value">${adj.offsetX.toFixed(2)}</span>
-                  </div>
-                  <div class="territory-control-row">
-                      <label>Y</label>
-                      <input type="range" min="-1" max="1" step="0.05" value="${adj.offsetY}" class="territory-offsety-slider" data-territory-id="${t.id}">
-                      <span class="territory-control-value">${adj.offsetY.toFixed(2)}</span>
-                  </div>
-              </div>
               <div class="territory-item-actions">
-                  <button class="territory-item-upload" data-territory-id="${t.id}">Replace Image</button>
+                  <button class="territory-item-edit" data-territory-id="${t.id}">Edit Territory</button>
                   <button class="territory-item-cancel" data-territory-id="${t.id}">Cancel</button>
               </div>
           </div>

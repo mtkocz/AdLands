@@ -159,7 +159,9 @@ function createSponsorRoutes(sponsorStore, gameRoom, { imageUrls, gameDir } = {}
         try {
           const acc = await getFirestore().collection("accounts").doc(uid).get();
           if (acc.exists && acc.data().email) emailMap.set(uid, acc.data().email);
-        } catch (_) {}
+        } catch (e) {
+          console.warn(`[SponsorRoutes] Failed to look up email for uid ${uid}:`, e.message || e);
+        }
       }
       for (const s of playerSponsors) {
         const email = emailMap.get(s.ownerUid);
@@ -185,9 +187,18 @@ function createSponsorRoutes(sponsorStore, gameRoom, { imageUrls, gameDir } = {}
   });
 
   // GET /api/sponsors/:id — get one sponsor
-  router.get("/:id", (req, res) => {
+  router.get("/:id", async (req, res) => {
     const sponsor = sponsorStore.getById(req.params.id);
     if (!sponsor) return res.status(404).json({ errors: ["Sponsor not found"] });
+    // Enrich player territory with ownerEmail if missing
+    if (sponsor.ownerType === "player" && sponsor.ownerUid && !sponsor.ownerEmail) {
+      try {
+        const acc = await getFirestore().collection("accounts").doc(sponsor.ownerUid).get();
+        if (acc.exists && acc.data().email) sponsor.ownerEmail = acc.data().email;
+      } catch (e) {
+        console.warn(`[SponsorRoutes] Failed to look up email for uid ${sponsor.ownerUid}:`, e.message || e);
+      }
+    }
     res.json(sponsor);
   });
 

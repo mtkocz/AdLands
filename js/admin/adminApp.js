@@ -347,6 +347,32 @@
   // VIEW SWITCHING (driven by sponsor list clicks)
   // ========================
 
+  // DOM references for field visibility toggling
+  const sponsorSharedFields = document.getElementById("sponsor-shared-fields");
+  const territoryInfoFields = document.getElementById("territory-info-fields");
+  const notesFieldGroup = document.getElementById("notes-field-group");
+
+  /**
+   * Check if the current editing group is a player territory group
+   */
+  function isEditingPlayerGroup() {
+    if (!editingGroup) return false;
+    const first = SponsorStorage.getById(editingGroup.ids[0]);
+    return first && first.ownerType === "player";
+  }
+
+  /**
+   * Update field visibility based on whether we're editing a player territory group
+   */
+  function updateFieldVisibility() {
+    const isPlayer = isEditingPlayerGroup();
+    // Info view: hide name/tagline/URL for player groups, show notes
+    sponsorSharedFields.style.display = isPlayer ? "none" : "";
+    notesFieldGroup.style.display = isPlayer ? "" : "none";
+    // Territory view: show territory name/tagline/URL for player groups
+    territoryInfoFields.style.display = isPlayer ? "" : "none";
+  }
+
   /**
    * Show the sponsor info view in the form panel
    */
@@ -354,7 +380,8 @@
     activeView = "info";
     viewSponsorInfo.classList.add("active");
     viewTerritories.classList.remove("active");
-    formPanelTitle.textContent = "Sponsor Information";
+    updateFieldVisibility();
+    formPanelTitle.textContent = isEditingPlayerGroup() ? "Account Information" : "Sponsor Information";
   }
 
   /**
@@ -364,6 +391,7 @@
     activeView = "territories";
     viewSponsorInfo.classList.remove("active");
     viewTerritories.classList.add("active");
+    updateFieldVisibility();
     formPanelTitle.textContent = "Territory Settings";
   }
 
@@ -621,31 +649,51 @@
     try {
       const formData = sponsorForm.getFormData();
 
-      // Validate shared fields always
-      const formValidation = sponsorForm.validate();
-      if (!formValidation.valid) {
-        showToast(formValidation.errors.join(". "), "error");
-        return;
+      // Validate: skip name validation for player territory groups (name field is hidden)
+      if (!isEditingPlayerGroup()) {
+        const formValidation = sponsorForm.validate();
+        if (!formValidation.valid) {
+          showToast(formValidation.errors.join(". "), "error");
+          return;
+        }
       }
 
       if (activeView === "info" && editingGroup) {
         // === GROUP INFO-ONLY SAVE ===
-        // Save only shared fields, propagate to all territories in group
-        const sharedFields = {
-          name: formData.name,
-          tagline: formData.tagline,
-          websiteUrl: formData.websiteUrl,
-          logoImage: formData.logoImage,
-        };
+        const isPlayer = isEditingPlayerGroup();
 
-        try {
-          for (const id of editingGroup.ids) {
-            await SponsorStorage.update(id, sharedFields);
+        if (isPlayer) {
+          // Player territory groups: save only logo + notes (name/tagline/URL are per-territory)
+          const sharedFields = {
+            logoImage: formData.logoImage,
+            notes: sponsorForm.getNotes(),
+          };
+          try {
+            for (const id of editingGroup.ids) {
+              await SponsorStorage.update(id, sharedFields);
+            }
+            showToast(`Account info updated (${editingGroup.ids.length} territories)`, "success");
+          } catch (e) {
+            showToast(e.message || "Failed to save account info", "error");
+            return;
           }
-          showToast(`Sponsor "${formData.name}" info updated (${editingGroup.ids.length} territories)`, "success");
-        } catch (e) {
-          showToast(e.message || "Failed to save sponsor info", "error");
-          return;
+        } else {
+          // Sponsor groups: save shared fields (name/tagline/URL/logo) to all territories
+          const sharedFields = {
+            name: formData.name,
+            tagline: formData.tagline,
+            websiteUrl: formData.websiteUrl,
+            logoImage: formData.logoImage,
+          };
+          try {
+            for (const id of editingGroup.ids) {
+              await SponsorStorage.update(id, sharedFields);
+            }
+            showToast(`Sponsor "${formData.name}" info updated (${editingGroup.ids.length} territories)`, "success");
+          } catch (e) {
+            showToast(e.message || "Failed to save sponsor info", "error");
+            return;
+          }
         }
 
         refreshSponsorsList();
@@ -688,12 +736,7 @@
           }
         }
 
-        const sharedFields = {
-          name: formData.name,
-          tagline: formData.tagline,
-          websiteUrl: formData.websiteUrl,
-          logoImage: formData.logoImage,
-        };
+        const isPlayerSave = isEditingPlayerGroup();
 
         // Detect territory type from selection
         let territoryType = null;
@@ -706,21 +749,42 @@
         const prevGroupType = prevGroupSponsor?.territoryType || null;
 
         try {
-          await SponsorStorage.update(activeId, {
-            ...sharedFields,
-            cluster: { tileIndices: selectedTiles },
-            territoryType: territoryType,
-            patternImage: formData.patternImage,
-            patternAdjustment: formData.patternAdjustment,
-            rewards: rewards,
-          });
-
-          for (const id of editingGroup.ids) {
-            if (id === activeId) continue;
-            await SponsorStorage.update(id, sharedFields);
+          if (isPlayerSave) {
+            // Player territory: save territory-specific title/tagline/URL on active only
+            const territoryInfo = sponsorForm.getTerritoryInfoData();
+            await SponsorStorage.update(activeId, {
+              title: territoryInfo.title,
+              tagline: territoryInfo.tagline,
+              websiteUrl: territoryInfo.websiteUrl,
+              cluster: { tileIndices: selectedTiles },
+              territoryType: territoryType,
+              patternImage: formData.patternImage,
+              patternAdjustment: formData.patternAdjustment,
+              rewards: rewards,
+            });
+            showToast(`Territory "${territoryInfo.title || "Untitled"}" saved`, "success");
+          } else {
+            // Sponsor territory: save shared fields to active + propagate to siblings
+            const sharedFields = {
+              name: formData.name,
+              tagline: formData.tagline,
+              websiteUrl: formData.websiteUrl,
+              logoImage: formData.logoImage,
+            };
+            await SponsorStorage.update(activeId, {
+              ...sharedFields,
+              cluster: { tileIndices: selectedTiles },
+              territoryType: territoryType,
+              patternImage: formData.patternImage,
+              patternAdjustment: formData.patternAdjustment,
+              rewards: rewards,
+            });
+            for (const id of editingGroup.ids) {
+              if (id === activeId) continue;
+              await SponsorStorage.update(id, sharedFields);
+            }
+            showToast(`"${formData.name}" saved (${editingGroup.ids.length} territories)`, "success");
           }
-
-          showToast(`"${formData.name}" saved (${editingGroup.ids.length} territories)`, "success");
         } catch (e) {
           showToast(e.message || "Failed to save group", "error");
           return;
@@ -1298,7 +1362,7 @@
                         }
                     </div>
                     <div class="sponsor-card-info">
-                        <div class="sponsor-card-name">${escapeHtml(hasPlayerTerritory ? (first.ownerEmail || first.name) : first.name)}${isGroupPaused ? ' <span class="paused-badge">PAUSED</span>' : ""}${hasPendingImage ? ' <span class="pending-status-badge">PENDING</span>' : ""}${isNewTerritory && !hasPendingImage ? ' <span class="new-status-badge">NEW</span>' : ""}</div>
+                        <div class="sponsor-card-name">${escapeHtml(hasPlayerTerritory ? (first.ownerEmail || first.ownerUid || "Unknown") : first.name)}${isGroupPaused ? ' <span class="paused-badge">PAUSED</span>' : ""}${hasPendingImage ? ' <span class="pending-status-badge">PENDING</span>' : ""}${isNewTerritory && !hasPendingImage ? ' <span class="new-status-badge">NEW</span>' : ""}</div>
                         <span class="sponsor-group-badge">${members.length} territories</span>
                         <div class="sponsor-card-stats">
                             ${totalTiles} tiles${groupMoonCount > 0 ? ", " + groupMoonCount + " moons" : ""}${groupBbCount > 0 ? ", " + groupBbCount + " billboards" : ""}, ${totalRewards} rewards
@@ -1447,7 +1511,15 @@
       };
 
       // Immediately load form from lite-cached data so the user sees it right away
+      const isPlayer = members[0].ownerType === "player";
       sponsorForm.loadSponsor(members[0]);
+
+      // For player groups: load territory info and notes
+      if (isPlayer) {
+        const startMember = members[activeIndex] || members[0];
+        sponsorForm.loadTerritoryInfo(startMember);
+        sponsorForm.setNotes(members[0].notes || "");
+      }
 
       // Show the correct view immediately
       if (startAtId) {
@@ -1465,6 +1537,12 @@
       const first = SponsorStorage.getById(editingGroup.ids[0]);
       if (first) {
         sponsorForm.loadSponsor(first);
+        // Re-load player-specific fields with full data
+        if (isPlayer) {
+          const activeMember = SponsorStorage.getById(editingGroup.ids[activeIndex]) || first;
+          sponsorForm.loadTerritoryInfo(activeMember);
+          sponsorForm.setNotes(first.notes || "");
+        }
       }
 
       // Load active cluster's data into hex selector
@@ -1472,7 +1550,8 @@
 
       refreshSponsorsList();
       window.scrollTo({ top: 0, behavior: "smooth" });
-      showToast(`Editing "${editingGroup.name}" (${members.length} territories)`, "success");
+      const toastLabel = isPlayer ? (first?.ownerEmail || editingGroup.name) : editingGroup.name;
+      showToast(`Editing "${toastLabel}" (${members.length} territories)`, "success");
     } catch (err) {
       console.error("[AdminApp] editGroup error:", err);
       showToast("Failed to load sponsor group: " + (err.message || err), "error");
@@ -1504,16 +1583,24 @@
     try {
       // === STEP 1: Load form data ===
       const currentFormData = sponsorForm.getFormData();
+      const isPlayer = isEditingPlayerGroup();
       const patternData = {
         id: id,
-        name: currentFormData.name,
-        tagline: currentFormData.tagline,
-        websiteUrl: currentFormData.websiteUrl,
+        // For player groups, keep shared name from form (not relevant for display)
+        // For sponsor groups, carry over shared name/tagline/URL
+        name: isPlayer ? (sponsor.name || "") : currentFormData.name,
+        tagline: isPlayer ? "" : currentFormData.tagline,
+        websiteUrl: isPlayer ? "" : currentFormData.websiteUrl,
         logoImage: currentFormData.logoImage || sponsor.logoImage || null,
         patternImage: sponsor.patternImage || null,
         patternAdjustment: sponsor.patternAdjustment || null,
       };
       sponsorForm.loadSponsor(patternData);
+
+      // For player groups, load per-territory title/tagline/URL into territory fields
+      if (isPlayer) {
+        sponsorForm.loadTerritoryInfo(sponsor);
+      }
 
       // === STEP 2: Load rewards ===
       if (sponsor.rewards) {
@@ -1589,13 +1676,23 @@
     else if (selectedMoonsCS.length > 0) csType = 'moon';
     else if (selectedBillboardsCS.length > 0) csType = 'billboard';
 
-    await SponsorStorage.update(id, {
+    const updateData = {
       cluster: { tileIndices: selectedTiles },
       territoryType: csType,
       patternImage: formData.patternImage,
       patternAdjustment: formData.patternAdjustment,
       rewards: rewards,
-    });
+    };
+
+    // For player territory groups, also save per-territory title/tagline/URL
+    if (isEditingPlayerGroup()) {
+      const territoryInfo = sponsorForm.getTerritoryInfoData();
+      updateData.title = territoryInfo.title;
+      updateData.tagline = territoryInfo.tagline;
+      updateData.websiteUrl = territoryInfo.websiteUrl;
+    }
+
+    await SponsorStorage.update(id, updateData);
 
     // Also persist moon/billboard assignments
     if (moonManager && csType === 'moon') {
@@ -1662,19 +1759,25 @@
       const first = members[0];
       await SponsorStorage.fetchFull(first.id);
       const firstFull = SponsorStorage.getById(first.id) || first;
+      const isPlayer = first.ownerType === "player";
       const createData = {
         name: firstFull.name || first.name,
-        tagline: firstFull.tagline || first.tagline || "",
-        websiteUrl: firstFull.websiteUrl || first.websiteUrl || "",
+        // For player territories, new territory gets blank title/tagline/URL (per-territory)
+        tagline: isPlayer ? "" : (firstFull.tagline || first.tagline || ""),
+        websiteUrl: isPlayer ? "" : (firstFull.websiteUrl || first.websiteUrl || ""),
         logoImage: firstFull.logoImage || first.logoImage || null,
         cluster: { tileIndices: [] },
         rewards: [],
       };
+      if (isPlayer) {
+        createData.title = "";
+      }
       // Preserve player territory ownership so new entry stays in the same group
-      if (first.ownerType === "player") {
+      if (isPlayer) {
         createData.ownerType = "player";
         if (first.ownerUid) createData.ownerUid = first.ownerUid;
         if (first.ownerEmail) createData.ownerEmail = first.ownerEmail;
+        if (first.notes) createData.notes = first.notes;
       }
       const newSponsor = await SponsorStorage.create(createData);
 

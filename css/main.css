@@ -3678,6 +3678,52 @@ body.tip-dragging .chat-mention.tip-highlight {
     flex: 1;
 }
 
+/* Rental / Edit popup slider rows (image mapping) */
+.rental-slider-group {
+    margin-top: 2px;
+}
+
+.rental-control-row {
+    display: flex;
+    align-items: center;
+    gap: var(--space-xs);
+    margin-bottom: 2px;
+}
+
+.rental-control-label {
+    font-family: var(--font-small);
+    font-size: var(--font-size-small);
+    color: var(--text-muted);
+    min-width: 28px;
+}
+
+.rental-control-row input[type="range"] {
+    flex: 1;
+    height: 4px;
+    -webkit-appearance: none;
+    appearance: none;
+    background: var(--border-dark);
+    outline: none;
+    cursor: pointer;
+}
+
+.rental-control-row input[type="range"]::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    width: 10px;
+    height: 10px;
+    background: var(--accent-cyan);
+    border-radius: 0;
+    cursor: pointer;
+}
+
+.rental-control-value {
+    font-family: var(--font-small);
+    font-size: var(--font-size-small);
+    color: var(--text-secondary);
+    min-width: 28px;
+    text-align: right;
+}
+
 /* Social Panel */
 .social-section {
     margin-bottom: var(--space-sm); /* 4px - 1 grid unit */
@@ -4121,7 +4167,7 @@ body.tip-dragging .chat-mention.tip-highlight {
     gap: var(--space-xs);
 }
 
-.territory-item-upload,
+.territory-item-edit,
 .territory-item-cancel {
     flex: 1;
     font-family: var(--font-small);
@@ -4134,7 +4180,7 @@ body.tip-dragging .chat-mention.tip-highlight {
     text-align: center;
 }
 
-.territory-item-upload:hover {
+.territory-item-edit:hover {
     border-color: var(--accent-cyan);
     color: var(--accent-cyan);
 }

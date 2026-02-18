@@ -351,9 +351,86 @@
                             </div>
                         </div>
                     </div>
+                    <div class="rental-field">
+                        <label class="rental-label">Image Mapping</label>
+                        <div class="rental-slider-group">
+                            <div class="rental-control-row">
+                                <label class="rental-control-label">Scale</label>
+                                <input type="range" id="rental-scale-slider" min="0.5" max="2.0" step="0.1" value="1.0">
+                                <span class="rental-control-value" id="rental-scale-value">1.0</span>
+                            </div>
+                            <div class="rental-control-row">
+                                <label class="rental-control-label">X</label>
+                                <input type="range" id="rental-offsetx-slider" min="-1" max="1" step="0.05" value="0">
+                                <span class="rental-control-value" id="rental-offsetx-value">0.00</span>
+                            </div>
+                            <div class="rental-control-row">
+                                <label class="rental-control-label">Y</label>
+                                <input type="range" id="rental-offsety-slider" min="-1" max="1" step="0.05" value="0">
+                                <span class="rental-control-value" id="rental-offsety-value">0.00</span>
+                            </div>
+                        </div>
+                    </div>
                     <div class="rental-actions">
                         <button class="territory-btn territory-btn-claim" id="rental-confirm-btn">Claim Territory</button>
                         <button class="territory-btn territory-btn-cancel" id="rental-cancel-btn">Cancel</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Territory Edit Popup -->
+        <div id="territory-edit-popup" class="modal-overlay">
+            <div class="modal-container territory-rental-modal">
+                <div class="modal-header">
+                    <span class="modal-title">Edit Territory</span>
+                    <button class="modal-close" id="edit-popup-close">&times;</button>
+                </div>
+                <div class="modal-body">
+                    <div class="rental-field">
+                        <label class="rental-label" for="edit-name">Territory Name</label>
+                        <input type="text" id="edit-name" class="rental-input" placeholder="Name your territory" maxlength="40">
+                    </div>
+                    <div class="rental-field">
+                        <label class="rental-label" for="edit-tagline">Tagline</label>
+                        <input type="text" id="edit-tagline" class="rental-input" placeholder="A short description" maxlength="80">
+                    </div>
+                    <div class="rental-field">
+                        <label class="rental-label" for="edit-url">Website URL</label>
+                        <input type="url" id="edit-url" class="rental-input" placeholder="https://yoursite.com" maxlength="200">
+                    </div>
+                    <div class="rental-field">
+                        <label class="rental-label">Territory Image</label>
+                        <div class="rental-upload-area" id="edit-upload-area">
+                            <input type="file" id="edit-image-input" accept="image/*" style="display:none">
+                            <div class="rental-upload-preview" id="edit-upload-preview">
+                                <span class="rental-upload-hint">Click to replace image (optional)</span>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="rental-field">
+                        <label class="rental-label">Image Mapping</label>
+                        <div class="rental-slider-group">
+                            <div class="rental-control-row">
+                                <label class="rental-control-label">Scale</label>
+                                <input type="range" id="edit-scale-slider" min="0.5" max="2.0" step="0.1" value="1.0">
+                                <span class="rental-control-value" id="edit-scale-value">1.0</span>
+                            </div>
+                            <div class="rental-control-row">
+                                <label class="rental-control-label">X</label>
+                                <input type="range" id="edit-offsetx-slider" min="-1" max="1" step="0.05" value="0">
+                                <span class="rental-control-value" id="edit-offsetx-value">0.00</span>
+                            </div>
+                            <div class="rental-control-row">
+                                <label class="rental-control-label">Y</label>
+                                <input type="range" id="edit-offsety-slider" min="-1" max="1" step="0.05" value="0">
+                                <span class="rental-control-value" id="edit-offsety-value">0.00</span>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="rental-actions">
+                        <button class="territory-btn territory-btn-claim" id="edit-confirm-btn">Save Changes</button>
+                        <button class="territory-btn territory-btn-cancel" id="edit-cancel-btn">Cancel</button>
                     </div>
                 </div>
             </div>
