@@ -261,14 +261,19 @@ function createSponsorRoutes(sponsorStore, gameRoom, { imageUrls, gameDir } = {}
 
     // Clean up player territory: notify owner and remove Firestore document
     if (sponsor && sponsor.ownerType === "player") {
-      const territoryId = sponsor._territoryId || sponsor.id;
+      const territoryId = sponsor._territoryId;
 
-      // Remove the territory document from Firestore
-      try {
-        const db = getFirestore();
-        await db.collection("territories").doc(territoryId).delete();
-      } catch (e) {
-        console.warn(`[sponsorRoutes] Firestore territory cleanup failed for ${territoryId}:`, e.message);
+      if (!territoryId) {
+        console.warn(`[sponsorRoutes] Player territory ${deletedId} missing _territoryId — cannot clean up Firestore`);
+      } else {
+        // Deactivate first so reconcilePlayerTerritories() won't recreate it even if delete fails
+        try {
+          const db = getFirestore();
+          await db.collection("territories").doc(territoryId).update({ active: false });
+          await db.collection("territories").doc(territoryId).delete();
+        } catch (e) {
+          console.warn(`[sponsorRoutes] Firestore territory cleanup failed for ${territoryId}:`, e.message);
+        }
       }
 
       // Notify the owning player via socket (include deletion reason if provided)
@@ -403,12 +408,15 @@ function createSponsorRoutes(sponsorStore, gameRoom, { imageUrls, gameDir } = {}
         await sponsorStore.delete(req.params.id);
         await cleanupSponsorImages(req.params.id);
 
-        // Delete from Firestore
-        try {
-          const db = getFirestore();
-          await db.collection("territories").doc(territoryId).delete();
-        } catch (e) {
-          console.warn("[Territory] Firestore reject delete failed:", e.message);
+        // Deactivate then delete from Firestore (deactivate first so reconciliation won't recreate)
+        if (territoryId && territoryId !== sponsor.id) {
+          try {
+            const db = getFirestore();
+            await db.collection("territories").doc(territoryId).update({ active: false });
+            await db.collection("territories").doc(territoryId).delete();
+          } catch (e) {
+            console.warn("[Territory] Firestore reject delete failed:", e.message);
+          }
         }
 
         // Notify the owning player with rejection reason
