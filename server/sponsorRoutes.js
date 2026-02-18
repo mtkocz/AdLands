@@ -253,26 +253,39 @@ function createSponsorRoutes(sponsorStore, gameRoom, { imageUrls, gameDir } = {}
 
     // Capture sponsor data before deleting so we can notify the owner
     const sponsor = sponsorStore.getById(deletedId);
+    if (!sponsor) return res.status(404).json({ errors: ["Sponsor not found"] });
+
+    // Deactivate in Firestore FIRST — prevents reconcilePlayerTerritories() from
+    // re-creating the territory even if the server crashes before SponsorStore delete
+    if (sponsor.ownerType === "player") {
+      const territoryId = sponsor._territoryId;
+
+      if (!territoryId) {
+        console.warn(`[sponsorRoutes] Player territory ${deletedId} missing _territoryId — cannot clean up Firestore`);
+      } else {
+        try {
+          const db = getFirestore();
+          await db.collection("territories").doc(territoryId).update({ active: false });
+        } catch (e) {
+          console.warn(`[sponsorRoutes] Firestore deactivation failed for ${territoryId}:`, e.message);
+        }
+      }
+    }
 
     const deleted = await sponsorStore.delete(deletedId);
     if (!deleted) return res.status(404).json({ errors: ["Sponsor not found"] });
     // Remove orphaned image files for deleted sponsor
     await cleanupSponsorImages(deletedId);
 
-    // Clean up player territory: notify owner and remove Firestore document
-    if (sponsor && sponsor.ownerType === "player") {
+    // Delete Firestore document (already deactivated above as safety net)
+    if (sponsor.ownerType === "player") {
       const territoryId = sponsor._territoryId;
-
-      if (!territoryId) {
-        console.warn(`[sponsorRoutes] Player territory ${deletedId} missing _territoryId — cannot clean up Firestore`);
-      } else {
-        // Deactivate first so reconcilePlayerTerritories() won't recreate it even if delete fails
+      if (territoryId) {
         try {
           const db = getFirestore();
-          await db.collection("territories").doc(territoryId).update({ active: false });
           await db.collection("territories").doc(territoryId).delete();
         } catch (e) {
-          console.warn(`[sponsorRoutes] Firestore territory cleanup failed for ${territoryId}:`, e.message);
+          console.warn(`[sponsorRoutes] Firestore territory delete failed for ${territoryId}:`, e.message);
         }
       }
 
@@ -404,15 +417,24 @@ function createSponsorRoutes(sponsorStore, gameRoom, { imageUrls, gameDir } = {}
         // Reject: delete the territory entirely and notify the player
         const reason = rejectionReason || "Submission rejected by admin";
 
-        // Delete from SponsorStore
-        await sponsorStore.delete(req.params.id);
-        await cleanupSponsorImages(req.params.id);
-
-        // Deactivate then delete from Firestore (deactivate first so reconciliation won't recreate)
+        // Deactivate in Firestore FIRST — prevents reconciliation from re-creating
         if (territoryId && territoryId !== sponsor.id) {
           try {
             const db = getFirestore();
             await db.collection("territories").doc(territoryId).update({ active: false });
+          } catch (e) {
+            console.warn("[Territory] Firestore deactivation failed:", e.message);
+          }
+        }
+
+        // Delete from SponsorStore
+        await sponsorStore.delete(req.params.id);
+        await cleanupSponsorImages(req.params.id);
+
+        // Delete Firestore document (already deactivated above as safety net)
+        if (territoryId && territoryId !== sponsor.id) {
+          try {
+            const db = getFirestore();
             await db.collection("territories").doc(territoryId).delete();
           } catch (e) {
             console.warn("[Territory] Firestore reject delete failed:", e.message);
