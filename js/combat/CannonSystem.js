@@ -218,11 +218,17 @@ class CannonSystem {
       return;
     }
 
-    // Skip decals near pole holes (within 10° of either pole)
     const normal = position.clone().normalize();
-    const phi = Math.acos(normal.y);
-    const polarThreshold = (10 * Math.PI) / 180;
-    if (phi < polarThreshold || phi > Math.PI - polarThreshold) {
+
+    // Project position onto sphere surface (not at explosion height)
+    const surfacePosition = normal.clone().multiplyScalar(this.sphereRadius + 0.1);
+
+    // Convert to planet's local space for parenting
+    const localPosition = surfacePosition.clone();
+    this.planet.hexGroup.worldToLocal(localPosition);
+
+    // Skip decals centered inside the pole hole
+    if (this.planet.isInsidePolarHole(localPosition)) {
       return;
     }
 
@@ -243,13 +249,6 @@ class CannonSystem {
 
     const mesh = new THREE.Mesh(this.impactDecalGeometry, material);
 
-    // Project position onto sphere surface (not at explosion height)
-    const surfacePosition = normal.multiplyScalar(this.sphereRadius + 0.1);
-
-    // Convert to planet's local space for parenting
-    const localPosition = surfacePosition.clone();
-    this.planet.hexGroup.worldToLocal(localPosition);
-
     // Position at surface (in local space)
     mesh.position.copy(localPosition);
 
@@ -268,6 +267,12 @@ class CannonSystem {
     const randomSizeScale = 0.6 + Math.random() * 0.4;
     const size = cfg.size * sizeScale * randomSizeScale;
     mesh.scale.set(size * flipX, size * flipY, 1);
+
+    // Ensure matrix is up-to-date for polar clipping shader
+    mesh.updateMatrix();
+
+    // Clip decal fragments that extend over pole holes
+    this._applyPolarClipping(material, mesh);
 
     // Set to default layer (layer 0) for visibility
     mesh.layers.set(0);
@@ -412,6 +417,13 @@ class CannonSystem {
     const localPosition = surfacePosition.clone();
     this.planet.hexGroup.worldToLocal(localPosition);
 
+    // Skip oil puddles centered inside the pole hole
+    if (this.planet.isInsidePolarHole(localPosition)) {
+      geometry.dispose();
+      material.dispose();
+      return;
+    }
+
     mesh.position.copy(localPosition);
 
     // Orient flat on surface (circle's default normal is +Z)
@@ -420,6 +432,10 @@ class CannonSystem {
 
     // Start at small size, will grow during spread phase
     mesh.scale.set(0.1, 0.1, 1);
+
+    // Clip oil puddle fragments that extend over pole holes
+    mesh.updateMatrix();
+    this._applyPolarClipping(material, mesh);
 
     // Parent to planet
     this.planet.hexGroup.add(mesh);
@@ -531,6 +547,61 @@ class CannonSystem {
 
   setPlanet(planet) {
     this.planet = planet;
+    this._computePolarClipThreshold();
+  }
+
+  /**
+   * Compute the cosine threshold for polar hole clipping from actual hex boundary vertices.
+   * Uses the outermost boundary vertex (minimum cos) so clipping fully covers the hole.
+   */
+  _computePolarClipThreshold() {
+    this.polarClipCos = Math.cos((10 * Math.PI) / 180); // fallback
+    if (!this.planet) return;
+    const r = this.planet.radius;
+    const polygons = [this.planet._northPolePolygon, this.planet._southPolePolygon];
+    let minCos = 1.0;
+    for (const poly of polygons) {
+      if (!poly) continue;
+      for (const v of poly) {
+        // Reconstruct y from sphere surface: x² + y² + z² = r²
+        const y = Math.sqrt(Math.max(0, r * r - v.x * v.x - v.z * v.z));
+        const cosAngle = y / r;
+        if (cosAngle < minCos) minCos = cosAngle;
+      }
+    }
+    if (minCos < 1.0) this.polarClipCos = minCos;
+  }
+
+  /**
+   * Inject polar hole clipping into a material's shader.
+   * Discards fragments whose hexGroup-local position falls inside a pole hole.
+   * @param {THREE.Material} material
+   * @param {THREE.Mesh} mesh - must have updateMatrix() called first
+   */
+  _applyPolarClipping(material, mesh) {
+    const polarClipCos = this.polarClipCos;
+    if (!polarClipCos) return;
+    material.onBeforeCompile = (shader) => {
+      shader.uniforms.u_meshMatrix = { value: mesh.matrix };
+      shader.uniforms.u_polarClipCos = { value: polarClipCos };
+
+      shader.vertexShader = shader.vertexShader.replace(
+        'void main() {',
+        `uniform mat4 u_meshMatrix;
+varying vec3 vHexLocalPos;
+void main() {
+  vHexLocalPos = (u_meshMatrix * vec4(position, 1.0)).xyz;`
+      );
+
+      shader.fragmentShader = shader.fragmentShader.replace(
+        'void main() {',
+        `uniform float u_polarClipCos;
+varying vec3 vHexLocalPos;
+void main() {
+  vec3 poleDir = normalize(vHexLocalPos);
+  if (abs(poleDir.y) > u_polarClipCos) discard;`
+      );
+    };
   }
 
   setCryptoSystem(cryptoSystem) {
