@@ -1194,55 +1194,61 @@
 
           const isActive = s.id === activeEditId;
 
-          // Territory texture thumbnail + info fields + review UI for player territories
-          let textureHtml = "";
-          let infoFieldsHtml = "";
-          let reviewHtml = "";
+          // Player territories: compact row with thumbnail, info, and actions
           if (s.isPlayerTerritory) {
-            // Pick the best image to display: pending upload > approved pattern > extracted URL
             const textureSrc = s.pendingImage || s.patternImage || s.patternUrl;
-            if (textureSrc) {
-              textureHtml = `<div class="territory-row-texture"><img src="${textureSrc}" alt="Texture" class="territory-texture-thumb"></div>`;
-            }
+            const thumbHtml = textureSrc
+              ? `<img src="${textureSrc}" alt="" class="territory-thumb-img">`
+              : '<span class="territory-thumb-empty"></span>';
 
-            // Show title/tagline/URL (pending values take priority over approved)
             const infoTitle = s.pendingTitle || s.title || s.name || "";
             const infoTagline = s.pendingTagline || s.tagline || "";
             const infoUrl = s.pendingWebsiteUrl || s.websiteUrl || "";
-            infoFieldsHtml = `<div class="territory-row-info">`;
-            if (infoTitle) infoFieldsHtml += `<div class="territory-row-info-field"><span class="territory-info-label">Title:</span> <span class="territory-info-value">${escapeHtml(infoTitle)}</span></div>`;
-            if (infoTagline) infoFieldsHtml += `<div class="territory-row-info-field"><span class="territory-info-label">Tagline:</span> <span class="territory-info-value">${escapeHtml(infoTagline)}</span></div>`;
-            if (infoUrl) infoFieldsHtml += `<div class="territory-row-info-field"><span class="territory-info-label">URL:</span> <span class="territory-info-value"><a href="${escapeHtml(infoUrl)}" target="_blank" rel="noopener">${escapeHtml(infoUrl)}</a></span></div>`;
-            if (!infoTitle && !infoTagline && !infoUrl) infoFieldsHtml += `<div class="territory-row-info-field territory-info-empty">No info submitted</div>`;
-            infoFieldsHtml += `</div>`;
 
+            const titleLine = infoTitle
+              ? `<strong>${escapeHtml(infoTitle)}</strong>`
+              : `<em style="color:#555">Untitled</em>`;
+            const taglinePart = infoTagline ? ` &middot; ${escapeHtml(infoTagline)}` : "";
+            const revPart = rowRev > 0 ? ` &middot; <span class="territory-row-rev">$${fmtUSD(rowRev)}/mo</span>` : "";
+            const metaLine = `${tileCount} tiles &middot; <span class="sponsor-cluster-row-type ${typeClass}">${typeLabel}</span>${revPart}`;
+            const urlLine = infoUrl
+              ? `<div class="territory-row-url"><a href="${escapeHtml(infoUrl)}" target="_blank" rel="noopener">${escapeHtml(infoUrl)}</a></div>`
+              : "";
+
+            // Review actions
             const subStatus = s.submissionStatus || s.imageStatus;
+            let actionsHtml = `<button class="icon-btn delete-sponsor-btn" title="Delete territory">&times;</button>`;
             if (subStatus === "pending") {
-              reviewHtml = `
-                <div class="territory-review-section">
-                  <div class="territory-review-label">Pending Review</div>
-                  <div class="territory-review-actions">
-                    <button class="btn-approve approve-submission-btn" data-id="${s.id}">Approve</button>
-                    <button class="btn-reject reject-submission-btn" data-id="${s.id}">Reject</button>
-                  </div>
-                </div>`;
-            } else if (subStatus === "rejected") {
-              reviewHtml = `<div class="territory-review-status rejected">Rejected</div>`;
+              actionsHtml += `
+                <button class="btn-approve approve-submission-btn" data-id="${s.id}">Approve</button>
+                <button class="btn-reject reject-submission-btn" data-id="${s.id}">Reject</button>`;
             } else if (subStatus === "approved") {
-              reviewHtml = `<div class="territory-review-status approved">Approved</div>`;
+              actionsHtml += `<span class="territory-review-status approved">Approved</span>`;
+            } else if (subStatus === "rejected") {
+              actionsHtml += `<span class="territory-review-status rejected">Rejected</span>`;
             }
+
+            return `
+              <div class="sponsor-cluster-row territory-compact-row${isActive ? " active-territory" : ""}" data-id="${s.id}">
+                <div class="territory-row-thumb">${thumbHtml}</div>
+                <div class="territory-row-main">
+                  <div class="territory-row-title">${titleLine}${taglinePart}</div>
+                  <div class="territory-row-meta">${metaLine}</div>
+                  ${urlLine}
+                </div>
+                <div class="territory-row-actions">${actionsHtml}</div>
+              </div>
+            `;
           }
 
+          // Sponsor territories: simple row
           return `
             <div class="sponsor-cluster-row${isActive ? " active-territory" : ""}" data-id="${s.id}">
-                <span class="sponsor-cluster-row-label">${escapeHtml(s.pendingTitle || s.title || s.name || ("Territory " + (i + 1)))}</span>
+                <span class="sponsor-cluster-row-label">${escapeHtml(s.name || ("Territory " + (i + 1)))}</span>
                 <span class="sponsor-cluster-row-type ${typeClass}">${typeLabel}</span>
                 <span class="sponsor-cluster-row-stats">${tileCount} tiles, ${s.rewards?.length || 0} rewards</span>
-                ${revSpan}
+                ${rowRev > 0 ? `<span class="sponsor-cluster-row-revenue">$${fmtUSD(rowRev)}/mo</span>` : ""}
                 <button class="icon-btn delete-sponsor-btn" title="Delete territory">&times;</button>
-                ${textureHtml}
-                ${infoFieldsHtml}
-                ${reviewHtml}
             </div>
           `;
         }).join("");
