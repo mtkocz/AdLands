@@ -294,8 +294,19 @@ class GameRoom {
           socketId: null,
         };
 
-        this.factionProfileCache[data.faction].push(entry);
-        this.profileCacheIndex.set(cacheKey, entry);
+        if (!this.profileCacheIndex.has(cacheKey)) {
+          this.factionProfileCache[data.faction].push(entry);
+          this.profileCacheIndex.set(cacheKey, entry);
+        } else {
+          // Update existing entry instead of creating a duplicate
+          const existing = this.profileCacheIndex.get(cacheKey);
+          existing.name = entry.name;
+          existing.level = entry.level;
+          existing.totalCrypto = entry.totalCrypto;
+          existing.territoryCaptured = entry.territoryCaptured;
+          existing.lastPlayedAt = entry.lastPlayedAt;
+          existing.avatarColor = entry.avatarColor;
+        }
       }
 
       this.profileCacheReady = true;
@@ -1304,9 +1315,9 @@ class GameRoom {
       const newCacheKey = `${player.uid}:${newProfileIndex}`;
       let newEntry = this.profileCacheIndex.get(newCacheKey);
       if (newEntry) {
-        // If faction changed, move between arrays
-        if (oldFaction !== player.faction) {
-          const oldArr = this.factionProfileCache[oldFaction];
+        // If the new profile's cached faction differs from the player's current faction, move it
+        if (newEntry.faction !== player.faction) {
+          const oldArr = this.factionProfileCache[newEntry.faction];
           const idx = oldArr.indexOf(newEntry);
           if (idx !== -1) oldArr.splice(idx, 1);
           this.factionProfileCache[player.faction].push(newEntry);
@@ -2882,11 +2893,13 @@ class GameRoom {
             // Exclude players who haven't deployed yet (still choosing portal)
             const player = this.players.get(entry.socketId);
             if (player && player.waitingForPortal) continue;
-            // Exclude resigned players
+            // Mark resigned players (still ranked, but skipped for commander)
             const resignedUntil = this.resignedPlayers.get(entry.socketId);
-            if (resignedUntil) {
-              if (now < resignedUntil) continue;
-              this.resignedPlayers.delete(entry.socketId);
+            if (resignedUntil && now < resignedUntil) {
+              entry.resigned = true;
+            } else {
+              entry.resigned = false;
+              if (resignedUntil) this.resignedPlayers.delete(entry.socketId);
             }
           }
           allMembers.push(entry);
@@ -2896,9 +2909,11 @@ class GameRoom {
         for (const [id, p] of this.players) {
           if (p.faction !== faction || p.uid) continue;
           if (p.waitingForPortal) continue; // Not yet deployed
+          let resigned = false;
           const resignedUntil = this.resignedPlayers.get(id);
-          if (resignedUntil) {
-            if (now < resignedUntil) continue;
+          if (resignedUntil && now < resignedUntil) {
+            resigned = true;
+          } else if (resignedUntil) {
             this.resignedPlayers.delete(id);
           }
           allMembers.push({
@@ -2910,6 +2925,7 @@ class GameRoom {
             territoryCaptured: p.territoryCaptured || 0,
             avatarColor: p.avatarColor || null,
             isOnline: true,
+            resigned,
           });
         }
       } else {
@@ -2917,9 +2933,11 @@ class GameRoom {
         for (const [id, p] of this.players) {
           if (p.faction !== faction) continue;
           if (p.waitingForPortal) continue; // Not yet deployed
+          let resigned = false;
           const resignedUntil = this.resignedPlayers.get(id);
-          if (resignedUntil) {
-            if (now < resignedUntil) continue;
+          if (resignedUntil && now < resignedUntil) {
+            resigned = true;
+          } else if (resignedUntil) {
             this.resignedPlayers.delete(id);
           }
           allMembers.push({
@@ -2931,7 +2949,48 @@ class GameRoom {
             territoryCaptured: p.territoryCaptured || 0,
             avatarColor: p.avatarColor || null,
             isOnline: true,
+            resigned,
           });
+        }
+      }
+
+      // ---- Deduplicate by uid: keep only the best profile per account ----
+      // Guest players (uid=null) are unique per socket, no dedup needed.
+      {
+        const bestByUid = new Map(); // uid → index in allMembers
+        const toRemove = [];
+
+        for (let i = 0; i < allMembers.length; i++) {
+          const m = allMembers[i];
+          if (!m.uid) continue; // Guest — always keep
+
+          const prevIdx = bestByUid.get(m.uid);
+          if (prevIdx === undefined) {
+            bestByUid.set(m.uid, i);
+            continue;
+          }
+
+          // Prefer online > higher level > higher crypto
+          const prev = allMembers[prevIdx];
+          const mBetter =
+            (m.isOnline && !prev.isOnline) ||
+            (m.isOnline === prev.isOnline && (m.level || 1) > (prev.level || 1)) ||
+            (m.isOnline === prev.isOnline && (m.level || 1) === (prev.level || 1) && (m.totalCrypto || 0) > (prev.totalCrypto || 0));
+
+          if (mBetter) {
+            toRemove.push(prevIdx);
+            bestByUid.set(m.uid, i);
+          } else {
+            toRemove.push(i);
+          }
+        }
+
+        // Remove duplicates (reverse order to preserve indices)
+        if (toRemove.length > 0) {
+          toRemove.sort((a, b) => b - a);
+          for (const idx of toRemove) {
+            allMembers.splice(idx, 1);
+          }
         }
       }
 
@@ -2973,8 +3032,8 @@ class GameRoom {
         }
       }
 
-      // True Commander = rank #1 overall (override or top-ranked)
-      const trueCommander = overrideEntry || allMembers[0] || null;
+      // True Commander = rank #1 overall (override or top-ranked non-resigned)
+      const trueCommander = overrideEntry || allMembers.find(m => !m.resigned) || null;
 
       // Determine active commander (who actually gets perks right now)
       let activeCommander = null;
@@ -2987,9 +3046,9 @@ class GameRoom {
         activeCommander = trueCommander;
         isActing = false;
       } else {
-        // True commander is offline — highest-ranked online player is Acting Commander
+        // True commander is offline — highest-ranked online non-resigned player is Acting Commander
         isActing = true;
-        activeCommander = allMembers.find(m => m.isOnline && m.socketId) || null;
+        activeCommander = allMembers.find(m => m.isOnline && m.socketId && !m.resigned) || null;
       }
 
       const current = this.commanders[faction];
