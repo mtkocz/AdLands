@@ -149,6 +149,28 @@
     // Done — fade out loading overlay
     setLoadingProgress(100, "Ready");
     hideLoading();
+
+    // Handle ?import= parameter from sponsor portal
+    const urlParams = new URLSearchParams(window.location.search);
+    const importParam = urlParams.get("import");
+    if (importParam) {
+      try {
+        const data = JSON.parse(atob(importParam));
+        if (data.tiles && data.tiles.length > 0) {
+          hexSelector.setSelectedTiles(data.tiles);
+        } else if (data.moons && data.moons.length > 0) {
+          hexSelector.setSelectedMoons(data.moons);
+        } else if (data.billboards && data.billboards.length > 0) {
+          hexSelector.setSelectedBillboards(data.billboards);
+        }
+        // Clean URL
+        window.history.replaceState({}, "", window.location.pathname);
+        showToast("Sponsor selection imported successfully", "success");
+      } catch (e) {
+        console.error("[Admin] Failed to import sponsor selection:", e);
+        showToast("Failed to import sponsor selection", "error");
+      }
+    }
   }
 
   function setupEventListeners() {

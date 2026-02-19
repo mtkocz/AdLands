@@ -6,6 +6,7 @@
  * Or for development: npm run dev (auto-restarts on file changes)
  */
 
+require("dotenv").config();
 const express = require("express");
 let compression;
 try { compression = require("compression"); } catch (_) {}
@@ -189,6 +190,10 @@ let mainRoom;
     imageUrls: billboardSponsorImageUrls,
     gameDir,
   }));
+
+  // Mount sponsor inquiry routes (public contact form)
+  const { createInquiryRoutes } = require('./inquiryRoutes');
+  app.use('/api/sponsor-inquiry', createInquiryRoutes());
 
   console.log("[Server] Sponsor images extracted, routes mounted");
 

@@ -3,6 +3,7 @@ node_modules/
 *.log
 sponsor-textures/
 server/serviceAccountKey.json
+server/.env
 
 # Runtime sponsor data (modified at runtime by player actions)
 # Seed files (*.seed.json) are git-tracked for fresh deploys

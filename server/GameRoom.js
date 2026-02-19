@@ -2847,8 +2847,11 @@ class GameRoom {
         }
 
         for (const entry of this.factionProfileCache[faction]) {
-          // Exclude resigned players (only applies to online players)
           if (entry.socketId) {
+            // Exclude players who haven't deployed yet (still choosing portal)
+            const player = this.players.get(entry.socketId);
+            if (player && player.waitingForPortal) continue;
+            // Exclude resigned players
             const resignedUntil = this.resignedPlayers.get(entry.socketId);
             if (resignedUntil) {
               if (now < resignedUntil) continue;
@@ -2861,6 +2864,7 @@ class GameRoom {
         // Include guest players (no uid) who aren't in the profile cache
         for (const [id, p] of this.players) {
           if (p.faction !== faction || p.uid) continue;
+          if (p.waitingForPortal) continue; // Not yet deployed
           const resignedUntil = this.resignedPlayers.get(id);
           if (resignedUntil) {
             if (now < resignedUntil) continue;
@@ -2881,6 +2885,7 @@ class GameRoom {
         // ---- Fallback: connected players only (original behavior) ----
         for (const [id, p] of this.players) {
           if (p.faction !== faction) continue;
+          if (p.waitingForPortal) continue; // Not yet deployed
           const resignedUntil = this.resignedPlayers.get(id);
           if (resignedUntil) {
             if (now < resignedUntil) continue;

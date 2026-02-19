@@ -102,8 +102,8 @@
   let sponsorTexturesReady = typeof io === "undefined";
 
   // Granular sponsor loading progress (0-1) for the loading bar.
-  // Starts at 1 (complete) — set to 0 when sponsor loading begins.
-  let sponsorLoadProgress = 1;
+  // In multiplayer, starts at 0 (waiting for server). In singleplayer/offline, starts at 1 (no sponsors to wait for).
+  let sponsorLoadProgress = typeof io === "undefined" ? 1 : 0;
   let sponsorLoadActive = false;
 
   async function loadAndApplySponsors(planet) {
@@ -1957,36 +1957,56 @@
         ctx.fillStyle = pieColors[faction];
         ctx.fill();
 
-        // Draw percentage labels on slices (if slice is large enough)
-        if (pcts[faction] > 5) {
-          const labelAngle = startAngle + sliceAngle / 2;
-          const labelRadius = (radius + innerRadius) / 2; // Center of donut ring
-          const labelX = cx + Math.cos(labelAngle) * labelRadius;
-          const labelY = cy + Math.sin(labelAngle) * labelRadius;
+        // Draw percentage labels on all slices
+        const labelAngle = startAngle + sliceAngle / 2;
+        const isSmallSlice = pcts[faction] <= 5;
+        // Small slices: label outside donut; large slices: center of donut ring
+        const labelRadius = isSmallSlice
+          ? radius + 40
+          : (radius + innerRadius) / 2;
+        const labelX = cx + Math.cos(labelAngle) * labelRadius;
+        const labelY = cy + Math.sin(labelAngle) * labelRadius;
 
-          // Pixel-perfect text with 1px outline (no AA)
-          ctx.font = '32px "Spleen 16x32"';
-          ctx.textAlign = "center";
-          ctx.textBaseline = "middle";
-          ctx.imageSmoothingEnabled = false;
+        // Pixel-perfect text with 1px outline (no AA)
+        ctx.font = isSmallSlice ? '24px "Spleen 16x32"' : '32px "Spleen 16x32"';
+        ctx.textAlign = "center";
+        ctx.textBaseline = "middle";
+        ctx.imageSmoothingEnabled = false;
 
-          const text = pcts[faction].toFixed(1) + "%";
+        const text = pcts[faction].toFixed(1) + "%";
 
-          // Draw 1px black outline (8 directions for no-AA look)
-          ctx.fillStyle = "#000000";
-          ctx.fillText(text, labelX - 1, labelY - 1);
-          ctx.fillText(text, labelX, labelY - 1);
-          ctx.fillText(text, labelX + 1, labelY - 1);
-          ctx.fillText(text, labelX - 1, labelY);
-          ctx.fillText(text, labelX + 1, labelY);
-          ctx.fillText(text, labelX - 1, labelY + 1);
-          ctx.fillText(text, labelX, labelY + 1);
-          ctx.fillText(text, labelX + 1, labelY + 1);
-
-          // Draw white text on top
-          ctx.fillStyle = "#ffffff";
-          ctx.fillText(text, labelX, labelY);
+        // For small slices, draw a leader line from slice to label
+        if (isSmallSlice) {
+          const lineStartR = radius + 4;
+          const lineEndR = radius + 28;
+          ctx.beginPath();
+          ctx.moveTo(
+            cx + Math.cos(labelAngle) * lineStartR,
+            cy + Math.sin(labelAngle) * lineStartR,
+          );
+          ctx.lineTo(
+            cx + Math.cos(labelAngle) * lineEndR,
+            cy + Math.sin(labelAngle) * lineEndR,
+          );
+          ctx.strokeStyle = pieColors[faction];
+          ctx.lineWidth = 2;
+          ctx.stroke();
         }
+
+        // Draw 1px black outline (8 directions for no-AA look)
+        ctx.fillStyle = "#000000";
+        ctx.fillText(text, labelX - 1, labelY - 1);
+        ctx.fillText(text, labelX, labelY - 1);
+        ctx.fillText(text, labelX + 1, labelY - 1);
+        ctx.fillText(text, labelX - 1, labelY);
+        ctx.fillText(text, labelX + 1, labelY);
+        ctx.fillText(text, labelX - 1, labelY + 1);
+        ctx.fillText(text, labelX, labelY + 1);
+        ctx.fillText(text, labelX + 1, labelY + 1);
+
+        // Draw white text on top
+        ctx.fillStyle = "#ffffff";
+        ctx.fillText(text, labelX, labelY);
 
         startAngle += sliceAngle;
       }

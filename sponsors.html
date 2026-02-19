@@ -1,0 +1,195 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>AdLands - Sponsor Portal</title>
+    <meta name="description" content="Sponsor territories on the AdLands planet. Your brand becomes the battlefield." />
+
+    <link rel="stylesheet" href="css/sponsors.css" />
+
+    <!-- Preconnect to CDN -->
+    <link rel="preconnect" href="https://cdnjs.cloudflare.com" crossorigin />
+    <link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin />
+
+    <!-- Preload fonts -->
+    <link rel="preload" href="assets/fonts/spleen-16x32.otf" as="font" type="font/otf" crossorigin />
+    <link rel="preload" href="assets/fonts/AtariST8x16SystemFont.otf" as="font" type="font/otf" crossorigin />
+    <link rel="preload" href="assets/fonts/ark-pixel-12px-monospaced-latin.otf" as="font" type="font/otf" crossorigin />
+</head>
+<body>
+
+<!-- ========================
+     LOADING OVERLAY
+     ======================== -->
+<div id="sponsor-loading">
+    <div class="loading-title">AdLands</div>
+    <div class="loading-bar"><div class="loading-bar-fill"></div></div>
+    <div class="loading-status">Loading...</div>
+</div>
+
+<!-- ========================
+     3D CANVAS CONTAINER
+     ======================== -->
+<div id="sponsor-canvas"></div>
+
+<!-- ========================
+     LEFT PANEL (branding + contact)
+     ======================== -->
+<div id="sponsor-panel">
+
+    <!-- Header -->
+    <div class="sp-header">
+        <h1 class="sp-logo">AdLands <span class="sp-logo-sub">Sponsor Portal</span></h1>
+    </div>
+
+    <!-- Elevator Pitch -->
+    <div class="sp-pitch">
+        <p>
+            <strong>AdLands</strong> is a multiplayer territorial warfare game on an artificial planet.
+            Three factions fight for control of hexagonal territories &mdash;
+            and every hex is real estate for your brand.
+        </p>
+        <p>
+            Your logo becomes the battlefield. Players capture your territories,
+            engage with your brand, and earn your rewards.
+            Unlike static ads, your sponsorship lives inside the gameplay.
+        </p>
+        <p>
+            <strong>Select territories on the planet to build your package.</strong>
+        </p>
+    </div>
+
+    <!-- Contact Section -->
+    <div class="sp-contact">
+        <div class="sp-section-title">Contact Us</div>
+        <form id="contact-form">
+            <div class="form-group">
+                <label>Name <span class="required">*</span></label>
+                <input type="text" name="contact-name" required />
+            </div>
+            <div class="form-group">
+                <label>Email <span class="required">*</span></label>
+                <input type="email" name="contact-email" required />
+            </div>
+            <div class="form-group">
+                <label>Message</label>
+                <textarea name="contact-message" rows="3" placeholder="Tell us about your brand..."></textarea>
+            </div>
+            <div id="contact-message" class="form-message"></div>
+            <button type="submit" class="btn-inquire" style="margin-top: 8px;">Send Message</button>
+        </form>
+        <div class="sp-contact-email">
+            Or email us directly: <a href="mailto:matt@mattmatters.com">matt@mattmatters.com</a>
+        </div>
+    </div>
+
+</div>
+
+<!-- ========================
+     RIGHT PANEL (territory selection + pricing)
+     ======================== -->
+<div id="territory-panel">
+
+    <!-- Pricing Tiers Legend -->
+    <div class="sp-tiers">
+        <div class="sp-section-title">Pricing</div>
+        <div id="tier-legend"></div>
+    </div>
+
+    <!-- Selection Info -->
+    <div class="sp-selection-type" id="selection-info" style="display: none;"></div>
+
+    <!-- Pricing Summary -->
+    <div class="sp-pricing">
+        <div class="sp-section-title">Your Selection</div>
+        <div id="pricing-summary">
+            <div class="pricing-empty-state">
+                Click hexes, moons, or billboards on the planet to build your sponsorship package.
+            </div>
+        </div>
+
+        <!-- Discount Schedule -->
+        <button class="discount-toggle-btn" id="discount-toggle">&#x25b8; Cluster Bonus Schedule</button>
+        <div id="discount-table" style="display: none;"></div>
+    </div>
+
+    <!-- Action Buttons -->
+    <div class="sp-actions">
+        <button class="btn-inquire" id="inquire-btn" disabled>Inquire Now</button>
+        <button class="btn-clear" id="clear-btn">Clear Selection</button>
+    </div>
+
+</div>
+
+<!-- ========================
+     INQUIRY MODAL
+     ======================== -->
+<div id="inquiry-modal" class="modal-overlay hidden">
+    <div class="modal-content">
+        <div class="modal-header">
+            <h2>Sponsorship Inquiry</h2>
+            <button class="modal-close" data-close-modal>&times;</button>
+        </div>
+        <div class="modal-body">
+            <img class="modal-screenshot" id="screenshot-preview" alt="Selection preview" style="display: none;" />
+
+            <div class="modal-pricing-summary" id="modal-pricing-summary"></div>
+
+            <div id="form-message" class="form-message"></div>
+
+            <form id="inquiry-form">
+                <div class="form-group">
+                    <label>Name <span class="required">*</span></label>
+                    <input type="text" name="name" required />
+                </div>
+                <div class="form-group">
+                    <label>Email <span class="required">*</span></label>
+                    <input type="email" name="email" required />
+                </div>
+                <div class="form-group">
+                    <label>Company</label>
+                    <input type="text" name="company" />
+                </div>
+                <div class="form-group">
+                    <label>Message</label>
+                    <textarea name="message" rows="4" placeholder="Tell us about your brand and what you're looking for..."></textarea>
+                </div>
+
+                <div class="modal-footer" style="padding: 0; border: none;">
+                    <button type="button" class="btn-cancel" data-close-modal>Cancel</button>
+                    <button type="submit" class="btn-submit" id="submit-inquiry-btn">Send Inquiry</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<!-- ========================
+     SCRIPTS
+     ======================== -->
+
+<!-- Three.js core -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+
+<!-- Three.js post-processing (for bloom) -->
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/postprocessing/Pass.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/shaders/CopyShader.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/shaders/LuminosityHighPassShader.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/postprocessing/ShaderPass.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/postprocessing/EffectComposer.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/postprocessing/RenderPass.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/postprocessing/UnrealBloomPass.js"></script>
+
+<!-- Hexasphere geometry -->
+<script src="hexasphere.js"></script>
+
+<!-- Shared tier system (reused as-is) -->
+<script src="js/admin/hexTierSystem.js"></script>
+
+<!-- Sponsor portal modules -->
+<script src="js/sponsors/SponsorScene.js"></script>
+<script src="js/sponsors/SponsorApp.js"></script>
+
+</body>
+</html>
