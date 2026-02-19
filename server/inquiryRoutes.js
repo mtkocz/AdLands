@@ -1,11 +1,49 @@
 /**
  * AdLands - Sponsor Inquiry API Routes
  * Handles contact form submissions from the sponsor portal.
- * Sends email via nodemailer to matt@mattmatters.com.
+ * Sends email via Resend HTTP API to matt@mattmatters.com.
  */
 
 const { Router } = require("express");
-const nodemailer = require("nodemailer");
+const https = require("https");
+
+/**
+ * Send email via Resend REST API (HTTPS port 443, never blocked by hosting providers)
+ */
+function sendViaResend(apiKey, emailData) {
+  return new Promise((resolve, reject) => {
+    const payload = JSON.stringify(emailData);
+    const options = {
+      hostname: "api.resend.com",
+      port: 443,
+      path: "/emails",
+      method: "POST",
+      headers: {
+        "Authorization": `Bearer ${apiKey}`,
+        "Content-Type": "application/json",
+        "Content-Length": Buffer.byteLength(payload),
+      },
+    };
+
+    const req = https.request(options, (res) => {
+      let body = "";
+      res.on("data", (chunk) => body += chunk);
+      res.on("end", () => {
+        if (res.statusCode >= 200 && res.statusCode < 300) {
+          try { resolve(JSON.parse(body)); } catch (_) { resolve(body); }
+        } else {
+          let msg = `Resend API error ${res.statusCode}`;
+          try { msg = JSON.parse(body).message || msg; } catch (_) {}
+          reject(new Error(msg));
+        }
+      });
+    });
+
+    req.on("error", reject);
+    req.write(payload);
+    req.end();
+  });
+}
 
 function createInquiryRoutes() {
   const router = Router();
@@ -14,22 +52,14 @@ function createInquiryRoutes() {
   const lastInquiryByIP = new Map();
   const RATE_LIMIT_MS = 60000; // 1 minute
 
-  // Configure SMTP transporter
-  let transporter = null;
-  if (process.env.SMTP_USER) {
-    const port = parseInt(process.env.SMTP_PORT) || 465;
-    transporter = nodemailer.createTransport({
-      host: process.env.SMTP_HOST || "smtp.resend.com",
-      port,
-      secure: port === 465,
-      auth: {
-        user: process.env.SMTP_USER,
-        pass: process.env.SMTP_PASS,
-      },
-    });
-    console.log("[Inquiry] SMTP configured, emails will be sent");
+  // Resend API key (same key used for both SMTP and HTTP API)
+  const resendApiKey = process.env.SMTP_PASS || null;
+  const fromAddress = process.env.SMTP_FROM || "AdLands Sponsor Portal <noreply@adlands.gg>";
+
+  if (resendApiKey) {
+    console.log("[Inquiry] Resend API configured, emails will be sent via HTTPS");
   } else {
-    console.log("[Inquiry] No SMTP_USER set, emails will be logged to console only");
+    console.log("[Inquiry] No SMTP_PASS set, emails will be logged to console only");
   }
 
   router.post("/", async (req, res) => {
@@ -60,21 +90,20 @@ function createInquiryRoutes() {
       ? `${protocol}://${host}/admin.html?import=${importPayload}`
       : null;
 
-    // Build email HTML
+    // Build email HTML (screenshot as attachment, not inline CID)
     const html = buildInquiryEmail({
       name, email, company, message,
       pricing, selectedTiles, selectedMoons, selectedBillboards,
       adminImportUrl,
     });
 
-    // Build attachments
+    // Build attachments for Resend API
     const attachments = [];
     if (screenshot) {
       const base64Data = screenshot.replace(/^data:image\/png;base64,/, "");
       attachments.push({
         filename: "selection-preview.png",
-        content: Buffer.from(base64Data, "base64"),
-        cid: "selection-preview",
+        content: base64Data,
       });
     }
 
@@ -88,15 +117,18 @@ function createInquiryRoutes() {
       : `Contact: ${company || name}`;
 
     try {
-      if (transporter) {
-        await transporter.sendMail({
-          from: process.env.SMTP_FROM || `"AdLands Sponsor Portal" <${process.env.SMTP_USER}>`,
-          replyTo: email,
-          to: "matt@mattmatters.com",
+      if (resendApiKey) {
+        const emailData = {
+          from: fromAddress,
+          to: ["matt@mattmatters.com"],
+          reply_to: email,
           subject,
           html,
-          attachments,
-        });
+        };
+        if (attachments.length > 0) {
+          emailData.attachments = attachments;
+        }
+        await sendViaResend(resendApiKey, emailData);
         console.log(`[Inquiry] Email sent: ${subject}`);
       } else {
         console.log("[Inquiry] --- EMAIL WOULD BE SENT ---");
@@ -179,12 +211,9 @@ function buildInquiryEmail({
         <div style="white-space: pre-wrap; color: #333333;">${escapeHtml(message)}</div>
       </div>
       ` : ""}
-  `;
 
-  // Screenshot
-  html += `
-      <div style="margin-bottom: 16px;">
-        <img src="cid:selection-preview" alt="Selection Preview" style="width: 100%; border: 1px solid #dddddd;" />
+      <div style="background: #f0f0f0; padding: 8px 12px; margin-bottom: 16px; color: #666666; font-size: 12px; font-style: italic;">
+        Selection screenshot attached as selection-preview.png
       </div>
   `;
 

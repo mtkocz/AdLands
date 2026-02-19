@@ -2613,12 +2613,12 @@
     ctx.save();
     ctx.textAlign = "center";
     ctx.textBaseline = "middle";
-    ctx.font = 'bold 18px monospace';
+    ctx.font = '16px "Atari ST 8x16", monospace';
 
     for (const faction of ["rust", "cobalt", "viridian"]) {
       const pos = labelPositions[faction];
       if (pos && pos.percentage > 0) {
-        const label = `${Math.round(pos.percentage)}%`;
+        const label = pos.percentage.toFixed(1) + "%";
         // Draw directly on the ring midpoint
         ctx.lineWidth = 4;
         ctx.strokeStyle = "#000000";

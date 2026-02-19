@@ -861,8 +861,8 @@ canvas {
 #global-control-stats .slice-label {
     position: absolute;
     transform: translate(-50%, -50%);
-    font-family: var(--font-header);
-    font-size: var(--font-size-header); /* 24px */
+    font-family: var(--font-body);
+    font-size: var(--font-size-body); /* 16px */
     color: #ffffff;
     text-shadow:
         -1px -1px 0 #000,
