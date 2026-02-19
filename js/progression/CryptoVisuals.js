@@ -196,6 +196,7 @@ class CryptoVisuals {
       this._spawnDashboardFloatingNumber(amount);
       if (window.dashboard) {
         window.dashboard.flashCryptoBar?.(amount, true);
+        window.dashboard.incrementCrypto?.(amount);
       }
       return;
     }

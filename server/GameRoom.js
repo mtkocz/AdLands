@@ -1561,21 +1561,29 @@ class GameRoom {
         .filter(b => typeof b === "string")
         .slice(0, 50);
     }
-    if (typeof profileData.totalCrypto === "number" && isFinite(profileData.totalCrypto)) {
-      player.totalCrypto = Math.max(0, Math.floor(profileData.totalCrypto));
-    }
-    if (typeof profileData.level === "number" && isFinite(profileData.level)) {
-      player.level = Math.max(1, Math.floor(profileData.level));
+    // Guests are independent — don't accept totalCrypto, level, or profile images
+    // from the client (prevents stale data leaking from a previous account session)
+    if (!player.isGuest) {
+      if (typeof profileData.totalCrypto === "number" && isFinite(profileData.totalCrypto)) {
+        player.totalCrypto = Math.max(0, Math.floor(profileData.totalCrypto));
+      }
+      if (typeof profileData.level === "number" && isFinite(profileData.level)) {
+        player.level = Math.max(1, Math.floor(profileData.level));
+      }
     }
     // NOTE: crypto is server-authoritative — do NOT accept from client profile data
     if (typeof profileData.title === "string") {
       player.title = profileData.title.substring(0, 50);
     }
     if (typeof profileData.avatarColor === "string") {
-      // Accept client avatar only if server doesn't already have a Firestore profile picture,
-      // or if the client is sending an actual image (data: URL)
       const clientAvatar = profileData.avatarColor.substring(0, 200_000);
-      if (!player.profilePicture || clientAvatar.startsWith("data:")) {
+      // Guests only get random HSL colors — reject data: URLs that may be stale
+      // from a previous account session
+      if (player.isGuest) {
+        if (!clientAvatar.startsWith("data:")) {
+          player.avatarColor = clientAvatar;
+        }
+      } else if (!player.profilePicture || clientAvatar.startsWith("data:")) {
         player.avatarColor = clientAvatar;
       }
     }
@@ -2841,11 +2849,15 @@ class GameRoom {
    * Recompute faction ranks for all factions and update commanders.
    * When profileCacheReady, ranks include ALL profiles (online + offline).
    * Falls back to connected-only ranking if Firestore cache isn't loaded.
-   * Sorted by: level DESC → totalCrypto DESC → territoryCaptured DESC.
+   * Sorted by: level DESC → live crypto DESC.
    * Commander = rank #1 overall. If offline, highest-ranked online player
    * becomes Acting Commander with full privileges.
    */
   _recomputeRanks() {
+    if (!this._rankLogOnce) {
+      this._rankLogOnce = true;
+      console.log(`[Ranks] Real-time ranking active: level DESC → live crypto DESC`);
+    }
     const now = Date.now();
     for (const faction of FACTIONS) {
       const allMembers = [];
@@ -2923,11 +2935,17 @@ class GameRoom {
         }
       }
 
-      // Sort: level DESC → crypto DESC (totalCrypto holds live balance for online players)
+      // Sort: level DESC → live crypto DESC
+      // Look up player.crypto directly from players map (bypasses stale cache)
+      const playersMap = this.players;
       allMembers.sort((a, b) => {
         const aLevel = a.level || 1, bLevel = b.level || 1;
         if (bLevel !== aLevel) return bLevel - aLevel;
-        return (b.totalCrypto || 0) - (a.totalCrypto || 0);
+        const aP = a.socketId ? playersMap.get(a.socketId) : null;
+        const bP = b.socketId ? playersMap.get(b.socketId) : null;
+        const aCrypto = aP ? aP.crypto : (a.totalCrypto || 0);
+        const bCrypto = bP ? bP.crypto : (b.totalCrypto || 0);
+        return bCrypto - aCrypto;
       });
 
       // Assign ranks (1-based)

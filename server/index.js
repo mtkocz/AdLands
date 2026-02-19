@@ -275,9 +275,19 @@ io.use(async (socket, next) => {
     return next();
   }
 
-  socket.uid = decoded.uid;
   socket.email = decoded.email || null;
   socket.isGuest = decoded.firebase?.sign_in_provider === "anonymous";
+
+  // Guests are totally independent — no Firestore profile, no reconnect, no persistence.
+  // Null UID so downstream code (savePlayerProfile, reconnectPlayer) skips them.
+  if (socket.isGuest) {
+    socket.uid = null;
+    socket.profileData = null;
+    socket.profileIndex = 0;
+    return next();
+  }
+
+  socket.uid = decoded.uid;
 
   // Load active profile from Firestore
   try {
@@ -450,7 +460,32 @@ io.on("connection", (socket) => {
   socket.on("refresh-token", async (token) => {
     const decoded = await verifyToken(token);
     if (decoded) {
-      socket.uid = decoded.uid;
+      const isAnonymous = decoded.firebase?.sign_in_provider === "anonymous";
+      if (isAnonymous) {
+        // Switched to guest mid-session — null UID so player becomes independent
+        socket.uid = null;
+        socket.isGuest = true;
+        socket.profileData = null;
+        socket.profileIndex = 0;
+        // Reset player state so stale data from previous account is cleared
+        const player = mainRoom.players.get(socket.id);
+        if (player) {
+          player.uid = null;
+          player.isGuest = true;
+          player.isAuthenticated = false;
+          player.profilePicture = null;
+          player.avatarColor = null;
+          player.totalCrypto = 0;
+          player.crypto = 0;
+          player.level = 1;
+          player.badges = [];
+          player.loadout = {};
+          player.profileIndex = 0;
+        }
+      } else {
+        socket.uid = decoded.uid;
+        socket.isGuest = false;
+      }
     } else {
       console.warn(`[Auth] Token refresh failed for ${socket.id}`);
     }

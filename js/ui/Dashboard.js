@@ -440,12 +440,84 @@ class Dashboard {
     // Clear stale roster from old faction
     this._lastRosterData = null;
     this._prevRosterRanks = null;
+    this._rosterElements = null;
     const countEl = document.getElementById("faction-roster-count");
     if (countEl) countEl.textContent = "Loading...";
     const listEl = document.getElementById("faction-roster-list");
     if (listEl) {
       listEl.innerHTML = '<div class="empty-state" style="padding:12px;opacity:0.5;font-family:var(--font-small);font-size:var(--font-size-small);">Waiting for roster data...</div>';
     }
+  }
+
+  /** Create a new roster-member DOM element for a player */
+  _createRosterMemberEl(member, faction) {
+    const playerId = member.isSelf ? "player_self" : member.id;
+    const div = document.createElement("div");
+    div.className = "roster-member";
+    if (playerId) div.setAttribute("data-player-id", playerId);
+
+    const avatarStyle = member.avatarColor && member.avatarColor.startsWith("data:")
+      ? `background-image: url(${member.avatarColor}); background-size: cover; background-position: center;`
+      : `background: ${member.avatarColor || "#555"};`;
+
+    const cryptoHtml = member.crypto !== undefined
+      ? `<span class="roster-crypto">\u00a2${Number(member.crypto).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>`
+      : "";
+
+    div.innerHTML =
+      `<span class="roster-rank">#${member.rank}</span>` +
+      `<span class="roster-dot ${member.online ? "online" : "offline"}"></span>` +
+      `<span class="roster-avatar" style="${avatarStyle}"></span>` +
+      `<span class="roster-name">${member.name}</span>` +
+      cryptoHtml +
+      `<span class="roster-level">Lv${member.level}</span>`;
+
+    return div;
+  }
+
+  /** Update an existing roster-member DOM element in-place (only touches changed values) */
+  _updateRosterMemberEl(el, member) {
+    // Update rank text
+    const rankSpan = el.querySelector(".roster-rank");
+    const newRank = `#${member.rank}`;
+    if (rankSpan && rankSpan.textContent !== newRank) rankSpan.textContent = newRank;
+
+    // Update online/offline dot
+    const dot = el.querySelector(".roster-dot");
+    if (dot) dot.className = `roster-dot ${member.online ? "online" : "offline"}`;
+
+    // Update avatar
+    const avatar = el.querySelector(".roster-avatar");
+    if (avatar) {
+      const newStyle = member.avatarColor && member.avatarColor.startsWith("data:")
+        ? `background-image: url(${member.avatarColor}); background-size: cover; background-position: center;`
+        : `background: ${member.avatarColor || "#555"};`;
+      if (avatar.getAttribute("style") !== newStyle) avatar.setAttribute("style", newStyle);
+    }
+
+    // Update name
+    const nameSpan = el.querySelector(".roster-name");
+    if (nameSpan && nameSpan.textContent !== member.name) nameSpan.textContent = member.name;
+
+    // Update crypto
+    const cryptoSpan = el.querySelector(".roster-crypto");
+    if (member.crypto !== undefined) {
+      const val = `\u00a2${Number(member.crypto).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+      if (cryptoSpan) {
+        if (cryptoSpan.textContent !== val) cryptoSpan.textContent = val;
+      } else {
+        const newCrypto = document.createElement("span");
+        newCrypto.className = "roster-crypto";
+        newCrypto.textContent = val;
+        const nameEl = el.querySelector(".roster-name");
+        if (nameEl) nameEl.after(newCrypto);
+      }
+    }
+
+    // Update level
+    const lvlSpan = el.querySelector(".roster-level");
+    const newLvl = `Lv${member.level}`;
+    if (lvlSpan && lvlSpan.textContent !== newLvl) lvlSpan.textContent = newLvl;
   }
 
   updateFactionRoster(data) {
@@ -462,56 +534,61 @@ class Dashboard {
     const listEl = document.getElementById("faction-roster-list");
     if (!listEl) return;
 
-    // Determine who the active commander is
-    const cmdrSystem = window.commanderSystem;
-    const myFaction = cmdrSystem?.humanPlayerFaction;
-    const factionCmdr = myFaction ? cmdrSystem?.commanders[myFaction] : null;
-    const cmdrPlayerId = factionCmdr?.playerId || null;
-    const isActingCmdr = myFaction ? (cmdrSystem?.actingCommanders[myFaction] || false) : false;
+    if (!this._rosterElements) this._rosterElements = new Map();
 
-    // --- FLIP animation: record old positions ---
-    const oldRects = new Map();
-    const oldRanks = this._prevRosterRanks || new Map();
-    for (const el of listEl.querySelectorAll(".roster-member[data-player-id]")) {
-      const pid = el.getAttribute("data-player-id");
-      oldRects.set(pid, el.getBoundingClientRect());
-    }
-
-    let html = "";
     const faction = data.faction || this.playerFaction;
+    const oldRanks = this._prevRosterRanks || new Map();
     const newRanks = new Map();
 
+    // Handle empty roster
+    if (data.members.length === 0) {
+      listEl.innerHTML = '<div class="empty-state" style="padding:12px;opacity:0.5;font-family:var(--font-small);font-size:var(--font-size-small);">No faction members</div>';
+      this._rosterElements.clear();
+      this._prevRosterRanks = new Map();
+      return;
+    }
+
+    // --- FIRST: Record old positions of all existing roster elements ---
+    const oldRects = new Map();
+    for (const [pid, el] of this._rosterElements) {
+      oldRects.set(pid, el.getBoundingClientRect());
+    }
+    const savedScroll = listEl.scrollTop;
+
+    // --- RECONCILE: Create/update elements, reorder via appendChild ---
+    const newIds = new Set();
+    const newElements = [];
+
     for (const member of data.members) {
-      const onlineClass = member.online ? "roster-online" : "roster-offline";
-      const selfClass = member.isSelf ? "roster-self" : "";
-      const statusDot = member.online
-        ? '<span class="roster-dot online"></span>'
-        : '<span class="roster-dot offline"></span>';
+      const playerId = member.isSelf ? "player_self" : member.id;
+      if (!playerId) continue;
+
+      newIds.add(playerId);
+      newRanks.set(playerId, member.rank);
 
       const cmdrRowClass = member.rank === 1 ? "roster-commander" : "";
+      const onlineClass = member.online ? "roster-online" : "roster-offline";
+      const selfClass = member.isSelf ? "roster-self" : "";
 
-      // Use "player_self" for self, server-provided id for everyone else
-      const playerId = member.isSelf ? "player_self" : member.id;
-      const playerIdAttr = playerId ? `data-player-id="${playerId}"` : "";
+      let el = this._rosterElements.get(playerId);
+      if (el) {
+        // Update existing element in-place
+        this._updateRosterMemberEl(el, member);
+        el.className = `roster-member ${cmdrRowClass} ${onlineClass} ${selfClass}`.trim();
+      } else {
+        // Create new element
+        el = this._createRosterMemberEl(member, faction);
+        el.className = `roster-member ${cmdrRowClass} ${onlineClass} ${selfClass}`.trim();
+        this._rosterElements.set(playerId, el);
+        // Mark for fade-in
+        el.style.opacity = "0";
+        newElements.push(el);
+      }
 
-      if (playerId) newRanks.set(playerId, member.rank);
+      // appendChild moves existing nodes to end, building correct order
+      listEl.appendChild(el);
 
-      const cryptoDisplay = member.crypto !== undefined ? `<span class="roster-crypto">¢${Number(member.crypto).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>` : '';
-
-      const avatarStyle = member.avatarColor && member.avatarColor.startsWith("data:")
-        ? `background-image: url(${member.avatarColor}); background-size: cover; background-position: center;`
-        : `background: ${member.avatarColor || "#555"};`;
-
-      html += `<div class="roster-member ${cmdrRowClass} ${onlineClass} ${selfClass}" ${playerIdAttr}>
-                <span class="roster-rank">#${member.rank}</span>
-                ${statusDot}
-                <span class="roster-avatar" style="${avatarStyle}"></span>
-                <span class="roster-name">${member.name}</span>
-                ${cryptoDisplay}
-                <span class="roster-level">Lv${member.level}</span>
-            </div>`;
-
-      // Register offline/unknown roster members with ProfileCard so right-click works
+      // Register with ProfileCard cache for right-click profiles
       if (!member.isSelf && playerId && window.profileCard) {
         if (!window.profileCard.playerCache.has(playerId)) {
           window.profileCard.playerCache.set(playerId, {
@@ -528,29 +605,35 @@ class Dashboard {
             title: member.rank === 1 ? "Commander" : "Contractor",
           });
         } else {
-          // Update crypto in existing cache entry
           const cached = window.profileCard.playerCache.get(playerId);
           if (member.crypto !== undefined) cached.crypto = member.crypto;
         }
       }
     }
 
-    if (data.members.length === 0) {
-      html = '<div class="empty-state" style="padding:12px;opacity:0.5;font-family:var(--font-small);font-size:var(--font-size-small);">No faction members</div>';
+    // Remove elements for players no longer in the roster
+    for (const [pid, el] of this._rosterElements) {
+      if (!newIds.has(pid)) {
+        el.remove();
+        this._rosterElements.delete(pid);
+      }
     }
 
-    listEl.innerHTML = html;
+    // Remove any leftover empty-state placeholder
+    const emptyState = listEl.querySelector(".empty-state");
+    if (emptyState) emptyState.remove();
 
-    // --- FLIP animation: animate from old positions to new ---
-    const hasOldPositions = oldRects.size > 0;
-    for (const el of listEl.querySelectorAll(".roster-member[data-player-id]")) {
-      const pid = el.getAttribute("data-player-id");
-      if (!pid) continue;
+    // Restore scroll position to prevent drift between measurements
+    listEl.scrollTop = savedScroll;
 
+    // --- LAST + INVERT: Calculate deltas and apply inverted transforms ---
+    const flipTargets = [];
+    for (const [pid, el] of this._rosterElements) {
       // Rank-change glow effect
       const prevRank = oldRanks.get(pid);
       const currRank = newRanks.get(pid);
       if (prevRank !== undefined && currRank !== undefined && prevRank !== currRank) {
+        el.classList.remove("roster-rank-up", "roster-rank-down");
         el.classList.add(currRank < prevRank ? "roster-rank-up" : "roster-rank-down");
         el.addEventListener("animationend", () => {
           el.classList.remove("roster-rank-up", "roster-rank-down");
@@ -558,26 +641,36 @@ class Dashboard {
       }
 
       // FLIP positional slide
-      if (hasOldPositions && oldRects.has(pid)) {
+      if (oldRects.has(pid)) {
         const oldRect = oldRects.get(pid);
         const newRect = el.getBoundingClientRect();
         const deltaY = oldRect.top - newRect.top;
         if (Math.abs(deltaY) > 1) {
           el.style.transition = "none";
           el.style.transform = `translateY(${deltaY}px)`;
-          // Force reflow so the browser registers the starting position
-          el.offsetHeight;
-          el.style.transition = "";
-          el.style.transform = "";
+          flipTargets.push(el);
         }
+      }
+    }
+
+    // --- PLAY: Force reflow then clear transforms to trigger CSS transition ---
+    if (flipTargets.length > 0 || newElements.length > 0) {
+      listEl.offsetHeight; // Force single reflow to commit inverted positions
+
+      for (const el of flipTargets) {
+        el.style.transition = "";
+        el.style.transform = "";
+      }
+      for (const el of newElements) {
+        el.style.opacity = "";
       }
     }
 
     this._prevRosterRanks = newRanks;
 
-    // Auto-scroll to the current player's row so they can find themselves
-    const selfRow = listEl.querySelector(".roster-self");
-    if (selfRow) selfRow.scrollIntoView({ block: "nearest" });
+    // Auto-scroll to the current player's row
+    const selfEl = this._rosterElements.get("player_self");
+    if (selfEl) selfEl.scrollIntoView({ block: "nearest" });
   }
 
   _buildLoadoutContent() {
@@ -1492,10 +1585,6 @@ class Dashboard {
       this._initRoller(formatted);
     } else {
       this._updateRoller(formatted, oldCrypto, amount);
-      // Flash red when balance decreases (spending)
-      if (oldCrypto !== null && amount < oldCrypto) {
-        this.flashCryptoBar(oldCrypto - amount, true);
-      }
     }
   }
 
