@@ -91,11 +91,9 @@ body {
 }
 
 .banner-sub {
-    font-family: var(--font-small);
-    font-size: var(--font-size-small);
-    color: var(--text-muted);
-    letter-spacing: 3px;
-    text-transform: uppercase;
+    font-family: var(--font-body);
+    font-size: var(--font-size-body);
+    color: var(--text-secondary);
     margin-top: var(--space-xs);
 }
 
