@@ -1358,6 +1358,23 @@ body {
     color: var(--text-primary);
 }
 
+/* Territory drag-and-drop */
+.sponsor-cluster-row[draggable="true"] {
+    cursor: grab;
+}
+.sponsor-cluster-row.dragging {
+    opacity: 0.35;
+}
+.sponsor-group.drop-candidate > .sponsor-group-header {
+    outline: 1px dashed rgba(0, 200, 200, 0.25);
+    outline-offset: -1px;
+}
+.sponsor-group.drag-over > .sponsor-group-header {
+    outline: 2px solid var(--accent-cyan);
+    outline-offset: -1px;
+    background: rgba(0, 200, 200, 0.08);
+}
+
 /* Paused sponsor styling */
 .sponsor-card.paused,
 .sponsor-group.paused > .sponsor-group-header {

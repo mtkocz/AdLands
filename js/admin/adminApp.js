@@ -361,6 +361,63 @@
         console.warn("[Admin] Adjustment save failed:", err),
       );
     });
+
+    // ---- Territory drag-and-drop between groups ----
+    let dragTerritoryId = null;
+
+    sponsorsListEl.addEventListener("dragstart", (e) => {
+      const row = e.target.closest(".sponsor-cluster-row");
+      if (!row) return;
+      dragTerritoryId = row.dataset.id;
+      e.dataTransfer.effectAllowed = "move";
+      e.dataTransfer.setData("text/plain", row.dataset.id);
+      row.classList.add("dragging");
+      // Highlight all droppable groups after a tick (so the dragged row's own group gets styled too)
+      requestAnimationFrame(() => {
+        sponsorsListEl.querySelectorAll(".sponsor-group").forEach((g) => {
+          g.classList.add("drop-candidate");
+        });
+      });
+    });
+
+    sponsorsListEl.addEventListener("dragend", (e) => {
+      dragTerritoryId = null;
+      sponsorsListEl.querySelectorAll(".dragging").forEach((el) => el.classList.remove("dragging"));
+      sponsorsListEl.querySelectorAll(".drag-over").forEach((el) => el.classList.remove("drag-over"));
+      sponsorsListEl.querySelectorAll(".drop-candidate").forEach((el) => el.classList.remove("drop-candidate"));
+    });
+
+    sponsorsListEl.addEventListener("dragover", (e) => {
+      if (!dragTerritoryId) return;
+      const group = e.target.closest(".sponsor-group");
+      if (!group) return;
+      e.preventDefault();
+      e.dataTransfer.dropEffect = "move";
+      // Highlight the target group
+      sponsorsListEl.querySelectorAll(".drag-over").forEach((el) => {
+        if (el !== group) el.classList.remove("drag-over");
+      });
+      group.classList.add("drag-over");
+    });
+
+    sponsorsListEl.addEventListener("dragleave", (e) => {
+      const group = e.target.closest(".sponsor-group");
+      if (!group) return;
+      // Only remove if we actually left the group (not just moved between children)
+      if (!group.contains(e.relatedTarget)) {
+        group.classList.remove("drag-over");
+      }
+    });
+
+    sponsorsListEl.addEventListener("drop", (e) => {
+      e.preventDefault();
+      const territoryId = e.dataTransfer.getData("text/plain");
+      if (!territoryId) return;
+      const group = e.target.closest(".sponsor-group");
+      if (!group) return;
+      const targetGroupKey = group.dataset.name;
+      moveTerritoryToGroup(territoryId, targetGroupKey);
+    });
   }
 
   // ========================
@@ -1291,7 +1348,7 @@
             }
 
             return `
-              <div class="sponsor-cluster-row territory-compact-row${isActive ? " active-territory" : ""}" data-id="${s.id}">
+              <div class="sponsor-cluster-row territory-compact-row${isActive ? " active-territory" : ""}" data-id="${s.id}" draggable="true">
                 <div class="territory-row-thumb">${thumbHtml}</div>
                 <div class="territory-row-main">
                   <div class="territory-row-title">${titleLine}${taglinePart}</div>
@@ -1305,7 +1362,7 @@
 
           // Sponsor territories: simple row
           return `
-            <div class="sponsor-cluster-row${isActive ? " active-territory" : ""}" data-id="${s.id}">
+            <div class="sponsor-cluster-row${isActive ? " active-territory" : ""}" data-id="${s.id}" draggable="true">
                 <span class="sponsor-cluster-row-label">${escapeHtml(s.name || ("Territory " + (i + 1)))}</span>
                 <span class="sponsor-cluster-row-type ${typeClass}">${typeLabel}</span>
                 <span class="sponsor-cluster-row-stats">${tileCount} tiles, ${s.rewards?.length || 0} rewards</span>
@@ -1794,6 +1851,62 @@
 
 
 
+
+  /**
+   * Move a territory entry from its current group to a different group.
+   * Updates the sponsor's name (or owner fields for players) so it
+   * belongs to the target group on next refresh.
+   */
+  async function moveTerritoryToGroup(territoryId, targetGroupKey) {
+    const sponsor = SponsorStorage.getById(territoryId);
+    if (!sponsor) return;
+
+    const sourceGroupKey = getGroupKey(sponsor);
+    if (sourceGroupKey === targetGroupKey) return; // same group — no-op
+
+    // Resolve target group to get the fields we need to copy
+    const targetMembers = getGroupMembers(targetGroupKey);
+    if (targetMembers.length === 0) return;
+    const target = targetMembers[0];
+
+    // Don't allow cross-type moves (sponsor ↔ player)
+    const sourceIsPlayer = sponsor.ownerType === "player";
+    const targetIsPlayer = target.ownerType === "player";
+    if (sourceIsPlayer !== targetIsPlayer) {
+      showToast("Cannot move between sponsor and player groups", "error");
+      return;
+    }
+
+    const updates = {};
+    if (sourceIsPlayer) {
+      // Player territories: adopt target's owner identity
+      updates.ownerUid = target.ownerUid || "";
+      updates.ownerEmail = target.ownerEmail || "";
+    } else {
+      // Sponsor territories: adopt target's shared fields
+      updates.name = target.name;
+      updates.tagline = target.tagline || "";
+      updates.websiteUrl = target.websiteUrl || "";
+      updates.logoImage = target.logoImage || null;
+    }
+
+    try {
+      await SponsorStorage.update(territoryId, updates);
+
+      // If we were editing either group, clear the form to avoid stale state
+      if (editingGroup && (editingGroup.groupKey === sourceGroupKey || editingGroup.groupKey === targetGroupKey)) {
+        handleClearForm();
+      }
+      refreshSponsorsList();
+
+      const label = sourceIsPlayer
+        ? (target.ownerEmail || targetGroupKey)
+        : target.name;
+      showToast(`Territory moved to "${label}"`, "success");
+    } catch (e) {
+      showToast(e.message || "Failed to move territory", "error");
+    }
+  }
 
   /**
    * Update assigned tiles for group editing — excludes all group members,
