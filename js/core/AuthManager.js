@@ -160,22 +160,26 @@ class AuthManager {
   // ========================
 
   /**
-   * Temporarily intercept window.open to paint the auth popup dark,
-   * preventing the bright white flash before the provider page loads.
+   * Pre-open a dark popup, then hijack window.open so Firebase
+   * reuses it instead of opening a fresh white one.
    * @private
    */
   _withDarkPopup(fn) {
-    const origOpen = window.open;
-    window.open = function (url, name, features) {
-      const w = origOpen.call(window, url, name, features);
+    // Open popup NOW (on the user click) so it's allowed by the browser
+    const popup = window.open("about:blank", "firebaseAuthPopup",
+      "width=500,height=600,left=" + (screen.width / 2 - 250) +
+      ",top=" + (screen.height / 2 - 300));
+    if (popup) {
       try {
-        if (w && w.document && w.document.documentElement) {
-          w.document.documentElement.style.background = "#1a1a2e";
-        }
-      } catch (e) {
-        // Cross-origin — popup already navigated, nothing to do
-      }
-      return w;
+        popup.document.documentElement.style.background = "#1a1a2e";
+        popup.document.body.style.background = "#1a1a2e";
+      } catch (e) {}
+    }
+
+    // When Firebase calls window.open, return our already-dark popup
+    const origOpen = window.open;
+    window.open = function () {
+      return popup;
     };
     return fn().finally(() => {
       window.open = origOpen;
