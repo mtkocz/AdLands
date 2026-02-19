@@ -2610,28 +2610,31 @@
     ctx.globalAlpha = prevAlpha;
 
     // Draw ownership percentages (always show, even for small slices)
+    // Place labels outside the ring for readability
+    ctx.save();
     ctx.textAlign = "center";
     ctx.textBaseline = "middle";
+    ctx.font = 'bold 18px monospace';
 
     for (const faction of ["rust", "cobalt", "viridian"]) {
       const pos = labelPositions[faction];
       if (pos && pos.percentage > 0) {
         const label = `${Math.round(pos.percentage)}%`;
-        // Always place label outside the ring so it's readable at any size
-        const labelR = outerRadius + 24;
+        const labelR = outerRadius + 20;
         const ang = Math.atan2(pos.y - centerY, pos.x - centerX);
         const lx = centerX + Math.cos(ang) * labelR;
         const ly = centerY + Math.sin(ang) * labelR;
 
-        ctx.font = '32px "Spleen 16x32"';
-        ctx.strokeStyle = "rgba(0, 0, 0, 0.8)";
-        ctx.lineWidth = 3;
+        // Black outline
+        ctx.lineWidth = 4;
+        ctx.strokeStyle = "#000000";
         ctx.strokeText(label, lx, ly);
+        // White fill
         ctx.fillStyle = "#ffffff";
-        ctx.lineWidth = 1;
         ctx.fillText(label, lx, ly);
       }
     }
+    ctx.restore();
 
     ctx.globalAlpha = 1.0;
   }
