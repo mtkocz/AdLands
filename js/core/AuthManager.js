@@ -23,6 +23,13 @@ class AuthManager {
     this._refreshInterval = null;
     this._REFRESH_MS = 45 * 60 * 1000;
 
+    // Handle redirect result (Google/Apple/etc sign-in returning from redirect)
+    firebaseAuth.getRedirectResult().catch((err) => {
+      if (err.code !== "auth/redirect-cancelled-by-user") {
+        console.error("[AuthManager] Redirect sign-in error:", err);
+      }
+    });
+
     // Listen for Firebase auth state changes
     firebaseAuth.onAuthStateChanged((user) => {
       this.user = user;
@@ -81,39 +88,39 @@ class AuthManager {
   }
 
   /**
-   * Sign in with Google popup.
-   * @returns {Promise<firebase.auth.UserCredential>}
+   * Sign in with Google via redirect (no popup flash).
+   * @returns {Promise<void>}
    */
   async signInWithGoogle() {
     const provider = new firebase.auth.GoogleAuthProvider();
-    return this._signInWithDarkPopup(provider);
+    return firebaseAuth.signInWithRedirect(provider);
   }
 
   /**
-   * Sign in with Apple popup.
-   * @returns {Promise<firebase.auth.UserCredential>}
+   * Sign in with Apple via redirect.
+   * @returns {Promise<void>}
    */
   async signInWithApple() {
     const provider = new firebase.auth.OAuthProvider("apple.com");
-    return this._signInWithDarkPopup(provider);
+    return firebaseAuth.signInWithRedirect(provider);
   }
 
   /**
-   * Sign in with GitHub popup.
-   * @returns {Promise<firebase.auth.UserCredential>}
+   * Sign in with GitHub via redirect.
+   * @returns {Promise<void>}
    */
   async signInWithGitHub() {
     const provider = new firebase.auth.GithubAuthProvider();
-    return this._signInWithDarkPopup(provider);
+    return firebaseAuth.signInWithRedirect(provider);
   }
 
   /**
-   * Sign in with Twitter/X popup.
-   * @returns {Promise<firebase.auth.UserCredential>}
+   * Sign in with Twitter/X via redirect.
+   * @returns {Promise<void>}
    */
   async signInWithTwitter() {
     const provider = new firebase.auth.TwitterAuthProvider();
-    return this._signInWithDarkPopup(provider);
+    return firebaseAuth.signInWithRedirect(provider);
   }
 
   /**
@@ -152,48 +159,7 @@ class AuthManager {
   async linkWithGoogle() {
     if (!this.user) throw new Error("No user signed in");
     const provider = new firebase.auth.GoogleAuthProvider();
-    return this._linkWithDarkPopup(provider);
-  }
-
-  // ========================
-  // DARK POPUP HELPERS
-  // ========================
-
-  /**
-   * Pre-open a dark popup, then hijack window.open so Firebase
-   * reuses it instead of opening a fresh white one.
-   * @private
-   */
-  _withDarkPopup(fn) {
-    // Open popup NOW (on the user click) so it's allowed by the browser
-    const popup = window.open("about:blank", "firebaseAuthPopup",
-      "width=500,height=600,left=" + (screen.width / 2 - 250) +
-      ",top=" + (screen.height / 2 - 300));
-    if (popup) {
-      try {
-        popup.document.documentElement.style.background = "#1a1a2e";
-        popup.document.body.style.background = "#1a1a2e";
-      } catch (e) {}
-    }
-
-    // When Firebase calls window.open, return our already-dark popup
-    const origOpen = window.open;
-    window.open = function () {
-      return popup;
-    };
-    return fn().finally(() => {
-      window.open = origOpen;
-    });
-  }
-
-  /** @private */
-  _signInWithDarkPopup(provider) {
-    return this._withDarkPopup(() => firebaseAuth.signInWithPopup(provider));
-  }
-
-  /** @private */
-  _linkWithDarkPopup(provider) {
-    return this._withDarkPopup(() => this.user.linkWithPopup(provider));
+    return this.user.linkWithRedirect(provider);
   }
 
   // ========================

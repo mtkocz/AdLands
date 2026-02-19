@@ -727,6 +727,7 @@ class AuthScreen {
       if (btn) btn.innerHTML = originalHTML;
       if (err.code === "auth/popup-closed-by-user") return;
       if (err.code === "auth/cancelled-popup-request") return;
+      if (err.code === "auth/redirect-cancelled-by-user") return;
       console.error("[AuthScreen] Sign-in error:", err);
       this._showError("auth-error", this._friendlyError(err));
     }
