@@ -34,16 +34,14 @@
 <div id="sponsor-canvas"></div>
 
 <!-- ========================
-     LEFT PANEL (branding + contact)
+     LEFT PANEL (summary + contact)
      ======================== -->
-<div id="sponsor-panel">
+<div id="sponsor-panel" class="floating-panel">
 
-    <!-- Header -->
     <div class="sp-header">
         <h1 class="sp-logo">AdLands <span class="sp-logo-sub">Sponsor Portal</span></h1>
     </div>
 
-    <!-- Elevator Pitch -->
     <div class="sp-pitch">
         <p>
             <strong>AdLands</strong> is a multiplayer territorial warfare game on an artificial planet.
@@ -60,7 +58,6 @@
         </p>
     </div>
 
-    <!-- Contact Section -->
     <div class="sp-contact">
         <div class="sp-section-title">Contact Us</div>
         <form id="contact-form">
@@ -87,14 +84,10 @@
 </div>
 
 <!-- ========================
-     RIGHT PANEL (selection summary + actions)
+     RIGHT PANEL (your selection + actions)
      ======================== -->
-<div id="territory-panel">
+<div id="territory-panel" class="floating-panel">
 
-    <!-- Selection Info -->
-    <div class="sp-selection-type" id="selection-info" style="display: none;"></div>
-
-    <!-- Pricing Summary -->
     <div class="sp-pricing">
         <div class="sp-section-title">Your Selection</div>
         <div id="pricing-summary">
@@ -102,13 +95,8 @@
                 Click hexes, moons, or billboards on the planet to build your sponsorship package.
             </div>
         </div>
-
-        <!-- Discount Schedule -->
-        <button class="discount-toggle-btn" id="discount-toggle">&#x25b8; Cluster Bonus Schedule</button>
-        <div id="discount-table" style="display: none;"></div>
     </div>
 
-    <!-- Action Buttons -->
     <div class="sp-actions">
         <button class="btn-inquire" id="inquire-btn" disabled>Inquire Now</button>
         <button class="btn-clear" id="clear-btn">Clear Selection</button>
@@ -117,10 +105,14 @@
 </div>
 
 <!-- ========================
-     BOTTOM PANEL (pricing tiers)
+     BOTTOM PANEL (pricing tiers + cluster bonus)
      ======================== -->
-<div id="pricing-panel">
+<div id="pricing-panel" class="floating-panel">
     <div id="tier-legend"></div>
+    <div class="pricing-panel-footer">
+        <button class="discount-toggle-btn" id="discount-toggle">&#x25b8; Cluster Bonus Schedule</button>
+        <div id="discount-table" style="display: none;"></div>
+    </div>
 </div>
 
 <!-- ========================

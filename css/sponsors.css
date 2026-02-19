@@ -68,45 +68,40 @@ body {
 }
 
 /* ========================
-   LEFT PANEL (branding + contact)
+   FLOATING PANELS (shared)
    ======================== */
 
-#sponsor-panel {
+.floating-panel {
     position: fixed;
-    top: 0;
-    left: 0;
-    width: 340px;
-    height: 100vh;
-    background: rgba(10, 10, 10, 0.88);
-    backdrop-filter: blur(8px);
-    -webkit-backdrop-filter: blur(8px);
-    border-right: var(--border-width) solid var(--border-dark);
     z-index: 10;
+    background: rgba(10, 10, 10, 0.82);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    border: var(--border-width) solid var(--border-dark);
     overflow-y: auto;
     overflow-x: hidden;
-    display: flex;
-    flex-direction: column;
 }
 
 /* ========================
-   RIGHT PANEL (territory + pricing)
+   LEFT PANEL (summary + contact)
+   ======================== */
+
+#sponsor-panel {
+    top: var(--space-xl);
+    left: var(--space-xl);
+    width: 320px;
+    max-height: calc(100vh - var(--space-xl) * 2);
+}
+
+/* ========================
+   RIGHT PANEL (selection + actions)
    ======================== */
 
 #territory-panel {
-    position: fixed;
-    top: 0;
-    right: 0;
-    width: 340px;
-    height: 100vh;
-    background: rgba(10, 10, 10, 0.88);
-    backdrop-filter: blur(8px);
-    -webkit-backdrop-filter: blur(8px);
-    border-left: var(--border-width) solid var(--border-dark);
-    z-index: 10;
-    overflow-y: auto;
-    overflow-x: hidden;
-    display: flex;
-    flex-direction: column;
+    top: var(--space-xl);
+    right: var(--space-xl);
+    width: 300px;
+    max-height: calc(100vh - var(--space-xl) * 2);
 }
 
 /* ========================
@@ -114,9 +109,7 @@ body {
    ======================== */
 
 .sp-header {
-    padding: var(--space-xl) var(--space-xl) var(--space-lg);
-    border-bottom: var(--border-width) solid var(--border-dark);
-    flex-shrink: 0;
+    padding: var(--space-lg) var(--space-xl) var(--space-sm);
 }
 
 .sp-logo {
@@ -142,9 +135,7 @@ body {
    ======================== */
 
 .sp-pitch {
-    padding: var(--space-lg) var(--space-xl);
-    border-bottom: var(--border-width) solid var(--border-dark);
-    flex-shrink: 0;
+    padding: var(--space-sm) var(--space-xl) var(--space-lg);
 }
 
 .sp-pitch p {
@@ -178,16 +169,17 @@ body {
    ======================== */
 
 #pricing-panel {
-    position: fixed;
-    bottom: 0;
-    left: 340px;
-    right: 340px;
-    z-index: 10;
-    background: rgba(10, 10, 10, 0.88);
-    backdrop-filter: blur(8px);
-    -webkit-backdrop-filter: blur(8px);
-    border-top: var(--border-width) solid var(--border-dark);
+    bottom: var(--space-xl);
+    left: 50%;
+    transform: translateX(-50%);
     padding: var(--space-md) var(--space-xl);
+}
+
+.pricing-panel-footer {
+    border-top: var(--border-width) solid var(--border-dark);
+    margin-top: var(--space-sm);
+    padding-top: var(--space-sm);
+    text-align: center;
 }
 
 #tier-legend {
@@ -440,16 +432,14 @@ body {
    ======================== */
 
 .discount-toggle-btn {
-    width: 100%;
     background: none;
-    border: 1px solid var(--border-dark);
+    border: none;
     color: var(--text-muted);
     font-family: var(--font-small);
     font-size: var(--font-size-small);
-    padding: var(--space-sm);
+    padding: 0;
     cursor: pointer;
-    text-align: left;
-    margin-top: var(--space-sm);
+    text-align: center;
 }
 
 .discount-toggle-btn:hover {
@@ -459,7 +449,7 @@ body {
 
 .discount-grid {
     display: grid;
-    grid-template-columns: repeat(4, 1fr);
+    grid-template-columns: repeat(7, 1fr);
     gap: var(--space-xs);
     padding: var(--space-sm) 0;
 }
@@ -504,9 +494,7 @@ body {
    ======================== */
 
 .sp-actions {
-    padding: var(--space-lg) var(--space-xl);
-    border-top: var(--border-width) solid var(--border-dark);
-    flex-shrink: 0;
+    padding: var(--space-sm) var(--space-xl) var(--space-lg);
     display: flex;
     flex-direction: column;
     gap: var(--space-sm);
@@ -560,7 +548,6 @@ body {
 .sp-contact {
     padding: var(--space-lg) var(--space-xl);
     border-top: var(--border-width) solid var(--border-dark);
-    flex-shrink: 0;
 }
 
 .sp-contact a {
@@ -863,26 +850,17 @@ body {
     }
 
     #territory-panel {
-        width: 100%;
-        height: auto;
-        max-height: 50vh;
         top: auto;
         bottom: 0;
-        right: auto;
-        border-left: none;
-        border-top: var(--border-width) solid var(--border-dark);
+        right: 0;
+        left: 0;
+        width: 100%;
+        max-height: 50vh;
+        transform: none;
     }
 
     #pricing-panel {
         display: none;
-    }
-
-    .sp-pricing {
-        padding: var(--space-sm) var(--space-lg);
-    }
-
-    .sp-actions {
-        padding: var(--space-sm) var(--space-lg);
     }
 
     .modal-content {
