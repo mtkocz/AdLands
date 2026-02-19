@@ -124,7 +124,7 @@ body {
     bottom: var(--space-sm);
     display: grid;
     grid-template-columns:
-        var(--col1, 340px) var(--col2, 375px) var(--col3, 1fr);
+        var(--col1, 1fr) var(--col2, 1fr) var(--col3, 2fr);
     grid-template-rows: 1fr;
     gap: var(--space-sm);
 }
