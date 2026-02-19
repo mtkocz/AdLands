@@ -64,7 +64,7 @@ class TuskGlobalChat {
         "@{player} has died {count} times in {minutes} minutes. Inspirational persistence or tragic incompetence?",
         "@{player} is speedrunning the respawn screen. {count} deaths and counting.",
         "Someone check on @{player}. {count} deaths suggests a cry for help.",
-        "@{player}, at this rate your clone bill is going to exceed your salary.",
+        "@{player}, don't worry — we offer very attractive financing options for cloning.",
         "@{player}, have you considered... not dying? Just a thought.",
         "I'm not saying @{player} is bad, but their K/D ratio just filed for bankruptcy.",
       ],
