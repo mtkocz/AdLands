@@ -1957,58 +1957,21 @@
         ctx.fillStyle = pieColors[faction];
         ctx.fill();
 
-        // Draw percentage labels on all slices
-        const labelAngle = startAngle + sliceAngle / 2;
-        const isSmallSlice = pcts[faction] <= 5;
-        // Small slices: label outside donut; large slices: center of donut ring
-        const labelRadius = isSmallSlice
-          ? radius + 40
-          : (radius + innerRadius) / 2;
-        const labelX = cx + Math.cos(labelAngle) * labelRadius;
-        const labelY = cy + Math.sin(labelAngle) * labelRadius;
-
-        // Pixel-perfect text with 1px outline (no AA)
-        ctx.font = isSmallSlice ? '24px "Spleen 16x32"' : '32px "Spleen 16x32"';
-        ctx.textAlign = "center";
-        ctx.textBaseline = "middle";
-        ctx.imageSmoothingEnabled = false;
-
-        const text = pcts[faction].toFixed(1) + "%";
-
-        // For small slices, draw a leader line from slice to label
-        if (isSmallSlice) {
-          const lineStartR = radius + 4;
-          const lineEndR = radius + 28;
-          ctx.beginPath();
-          ctx.moveTo(
-            cx + Math.cos(labelAngle) * lineStartR,
-            cy + Math.sin(labelAngle) * lineStartR,
-          );
-          ctx.lineTo(
-            cx + Math.cos(labelAngle) * lineEndR,
-            cy + Math.sin(labelAngle) * lineEndR,
-          );
-          ctx.strokeStyle = pieColors[faction];
-          ctx.lineWidth = 2;
-          ctx.stroke();
-        }
-
-        // Draw 1px black outline (8 directions for no-AA look)
-        ctx.fillStyle = "#000000";
-        ctx.fillText(text, labelX - 1, labelY - 1);
-        ctx.fillText(text, labelX, labelY - 1);
-        ctx.fillText(text, labelX + 1, labelY - 1);
-        ctx.fillText(text, labelX - 1, labelY);
-        ctx.fillText(text, labelX + 1, labelY);
-        ctx.fillText(text, labelX - 1, labelY + 1);
-        ctx.fillText(text, labelX, labelY + 1);
-        ctx.fillText(text, labelX + 1, labelY + 1);
-
-        // Draw white text on top
-        ctx.fillStyle = "#ffffff";
-        ctx.fillText(text, labelX, labelY);
-
         startAngle += sliceAngle;
+      }
+    }
+
+    // Populate stats div with faction percentages (DOM text, always visible)
+    const statsEl = document.getElementById("global-control-stats");
+    statsEl.innerHTML = "";
+    for (const faction of order) {
+      if (pcts[faction] > 0) {
+        const item = document.createElement("div");
+        item.className = "stat-item " + faction;
+        item.innerHTML =
+          '<div class="stat-label">' + faction + '</div>' +
+          '<div class="stat-value">' + pcts[faction].toFixed(1) + '%</div>';
+        statsEl.appendChild(item);
       }
     }
   }

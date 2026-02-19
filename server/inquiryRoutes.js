@@ -114,7 +114,7 @@ function createInquiryRoutes() {
       res.json({ success: true });
     } catch (err) {
       console.error("[Inquiry] Email send failed:", err.message);
-      res.status(500).json({ error: "Failed to send inquiry. Please try again." });
+      res.status(500).json({ error: "Failed to send inquiry: " + err.message });
     }
   });
 
@@ -149,32 +149,34 @@ function buildInquiryEmail({
   }
 
   let html = `
-    <div style="font-family: monospace; background: #0a0a0a; color: #ffffff; padding: 24px; max-width: 600px; margin: 0 auto;">
-      <h1 style="color: #00ffff; font-size: 24px; margin: 0 0 16px 0; border-bottom: 2px solid #333; padding-bottom: 12px;">
-        AdLands Sponsor Inquiry
-      </h1>
+    <div style="font-family: Arial, Helvetica, sans-serif; background: #ffffff; color: #222222; padding: 24px; max-width: 600px; margin: 0 auto;">
+      <div style="background: #111111; padding: 16px 20px; margin: -24px -24px 20px -24px;">
+        <h1 style="color: #00cccc; font-size: 22px; margin: 0; font-family: monospace;">
+          AdLands <span style="color: #999999; font-size: 14px;">Sponsor Inquiry</span>
+        </h1>
+      </div>
 
       <table style="width: 100%; border-collapse: collapse; margin-bottom: 16px;">
         <tr>
-          <td style="color: #666; padding: 4px 8px 4px 0; vertical-align: top;">Name:</td>
-          <td style="padding: 4px 0;">${escapeHtml(name)}</td>
+          <td style="color: #888888; padding: 4px 8px 4px 0; vertical-align: top; font-size: 13px;">Name:</td>
+          <td style="color: #222222; padding: 4px 0; font-size: 13px;">${escapeHtml(name)}</td>
         </tr>
         <tr>
-          <td style="color: #666; padding: 4px 8px 4px 0; vertical-align: top;">Email:</td>
-          <td style="padding: 4px 0;"><a href="mailto:${escapeHtml(email)}" style="color: #00ffff;">${escapeHtml(email)}</a></td>
+          <td style="color: #888888; padding: 4px 8px 4px 0; vertical-align: top; font-size: 13px;">Email:</td>
+          <td style="padding: 4px 0; font-size: 13px;"><a href="mailto:${escapeHtml(email)}" style="color: #0077cc;">${escapeHtml(email)}</a></td>
         </tr>
         ${company ? `
         <tr>
-          <td style="color: #666; padding: 4px 8px 4px 0; vertical-align: top;">Company:</td>
-          <td style="padding: 4px 0;">${escapeHtml(company)}</td>
+          <td style="color: #888888; padding: 4px 8px 4px 0; vertical-align: top; font-size: 13px;">Company:</td>
+          <td style="color: #222222; padding: 4px 0; font-size: 13px;">${escapeHtml(company)}</td>
         </tr>
         ` : ""}
       </table>
 
       ${message ? `
-      <div style="background: #1a1a1a; border: 1px solid #333; padding: 12px; margin-bottom: 16px;">
-        <div style="color: #666; font-size: 11px; margin-bottom: 4px;">Message</div>
-        <div style="white-space: pre-wrap;">${escapeHtml(message)}</div>
+      <div style="background: #f5f5f5; border: 1px solid #dddddd; padding: 12px; margin-bottom: 16px;">
+        <div style="color: #888888; font-size: 11px; margin-bottom: 4px; text-transform: uppercase;">Message</div>
+        <div style="white-space: pre-wrap; color: #333333;">${escapeHtml(message)}</div>
       </div>
       ` : ""}
   `;
@@ -182,61 +184,61 @@ function buildInquiryEmail({
   // Screenshot
   html += `
       <div style="margin-bottom: 16px;">
-        <img src="cid:selection-preview" alt="Selection Preview" style="width: 100%; border: 1px solid #333;" />
+        <img src="cid:selection-preview" alt="Selection Preview" style="width: 100%; border: 1px solid #dddddd;" />
       </div>
   `;
 
   // Pricing breakdown
   if (hasSelection && pricing) {
     html += `
-      <div style="background: #1a1a1a; border: 1px solid #333; padding: 12px; margin-bottom: 16px;">
-        <div style="color: #666; font-size: 11px; margin-bottom: 8px;">Pricing Breakdown</div>
+      <div style="background: #f5f5f5; border: 1px solid #dddddd; padding: 12px; margin-bottom: 16px;">
+        <div style="color: #888888; font-size: 11px; margin-bottom: 8px; text-transform: uppercase;">Pricing Breakdown</div>
     `;
 
     // Hex tiers
     if (hasTiles && pricing.byTier) {
-      html += `<div style="margin-bottom: 8px;">${selectedTiles.length} hex${selectedTiles.length !== 1 ? "es" : ""} selected</div>`;
+      html += `<div style="margin-bottom: 8px; color: #333333; font-weight: bold;">${selectedTiles.length} hex${selectedTiles.length !== 1 ? "es" : ""} selected</div>`;
       for (const [tierId, count] of Object.entries(pricing.byTier)) {
         const tierPrices = { HOTZONE: 15, PRIME: 7, FRONTIER: 3 };
         const price = tierPrices[tierId] || 0;
-        html += `<div style="display: flex; justify-content: space-between; padding: 2px 0;">
-          <span style="color: #aaa;">${tierId} x ${count}</span>
-          <span style="color: #aaa;">$${(price * count).toFixed(2)}</span>
-        </div>`;
+        html += `<table style="width: 100%; border-collapse: collapse;"><tr>
+          <td style="color: #555555; padding: 2px 0;">${tierId} x ${count}</td>
+          <td style="color: #555555; padding: 2px 0; text-align: right;">$${(price * count).toFixed(2)}</td>
+        </tr></table>`;
       }
       if (pricing.discount > 0) {
-        html += `<div style="color: #22c55e; padding: 4px 0;">Cluster Discount: -${pricing.discount}% (-$${pricing.discountAmount.toFixed(2)})</div>`;
+        html += `<div style="color: #16a34a; padding: 4px 0;">Cluster Discount: -${pricing.discount}% (-$${pricing.discountAmount.toFixed(2)})</div>`;
       }
     }
 
     // Moons
     if (hasMoons && pricing.moons) {
-      html += `<div style="margin-top: 8px; padding-top: 8px; border-top: 1px solid #333;">${selectedMoons.length} moon${selectedMoons.length !== 1 ? "s" : ""}</div>`;
+      html += `<div style="margin-top: 8px; padding-top: 8px; border-top: 1px solid #dddddd; color: #333333; font-weight: bold;">${selectedMoons.length} moon${selectedMoons.length !== 1 ? "s" : ""}</div>`;
       for (const moon of pricing.moons) {
-        html += `<div style="display: flex; justify-content: space-between; padding: 2px 0;">
-          <span style="color: #aaa;">${moon.label}</span>
-          <span style="color: #aaa;">$${moon.price.toFixed(2)}</span>
-        </div>`;
+        html += `<table style="width: 100%; border-collapse: collapse;"><tr>
+          <td style="color: #555555; padding: 2px 0;">${moon.label}</td>
+          <td style="color: #555555; padding: 2px 0; text-align: right;">$${moon.price.toFixed(2)}</td>
+        </tr></table>`;
       }
     }
 
     // Billboards
     if (hasBillboards && pricing.billboards) {
-      html += `<div style="margin-top: 8px; padding-top: 8px; border-top: 1px solid #333;">${selectedBillboards.length} billboard${selectedBillboards.length !== 1 ? "s" : ""}</div>`;
+      html += `<div style="margin-top: 8px; padding-top: 8px; border-top: 1px solid #dddddd; color: #333333; font-weight: bold;">${selectedBillboards.length} billboard${selectedBillboards.length !== 1 ? "s" : ""}</div>`;
       for (const bb of pricing.billboards) {
-        html += `<div style="display: flex; justify-content: space-between; padding: 2px 0;">
-          <span style="color: #aaa;">${bb.label}</span>
-          <span style="color: #aaa;">$${bb.price.toFixed(2)}</span>
-        </div>`;
+        html += `<table style="width: 100%; border-collapse: collapse;"><tr>
+          <td style="color: #555555; padding: 2px 0;">${bb.label}</td>
+          <td style="color: #555555; padding: 2px 0; text-align: right;">$${bb.price.toFixed(2)}</td>
+        </tr></table>`;
       }
     }
 
     // Total
     html += `
-        <div style="margin-top: 8px; padding-top: 8px; border-top: 2px solid #00ffff; display: flex; justify-content: space-between;">
-          <span style="color: #ffffff;">Monthly Total</span>
-          <span style="color: #00ffff; font-size: 18px;">$${grandTotal.toFixed(2)}/mo</span>
-        </div>
+        <table style="width: 100%; border-collapse: collapse; margin-top: 8px; padding-top: 8px; border-top: 2px solid #0099aa;"><tr>
+          <td style="color: #222222; padding: 4px 0; font-weight: bold;">Monthly Total</td>
+          <td style="color: #0099aa; font-size: 18px; padding: 4px 0; text-align: right; font-weight: bold;">$${grandTotal.toFixed(2)}/mo</td>
+        </tr></table>
       </div>
     `;
   }
@@ -244,17 +246,17 @@ function buildInquiryEmail({
   // Territory indices
   if (hasSelection) {
     html += `
-      <div style="background: #1a1a1a; border: 1px solid #333; padding: 12px; margin-bottom: 16px;">
-        <div style="color: #666; font-size: 11px; margin-bottom: 4px;">Territory Details</div>
+      <div style="background: #f5f5f5; border: 1px solid #dddddd; padding: 12px; margin-bottom: 16px;">
+        <div style="color: #888888; font-size: 11px; margin-bottom: 4px; text-transform: uppercase;">Territory Details</div>
     `;
     if (hasTiles) {
-      html += `<div style="margin-bottom: 4px; color: #aaa;">Hex indices: ${selectedTiles.join(", ")}</div>`;
+      html += `<div style="margin-bottom: 4px; color: #555555; font-size: 13px;">Hex indices: ${selectedTiles.join(", ")}</div>`;
     }
     if (hasMoons) {
-      html += `<div style="margin-bottom: 4px; color: #aaa;">Moon indices: ${selectedMoons.join(", ")}</div>`;
+      html += `<div style="margin-bottom: 4px; color: #555555; font-size: 13px;">Moon indices: ${selectedMoons.join(", ")}</div>`;
     }
     if (hasBillboards) {
-      html += `<div style="color: #aaa;">Billboard indices: ${selectedBillboards.join(", ")}</div>`;
+      html += `<div style="color: #555555; font-size: 13px;">Billboard indices: ${selectedBillboards.join(", ")}</div>`;
     }
     html += `</div>`;
   }
@@ -263,7 +265,7 @@ function buildInquiryEmail({
   if (adminImportUrl) {
     html += `
       <div style="margin-bottom: 16px;">
-        <a href="${adminImportUrl}" style="display: inline-block; background: #00ffff; color: #000; padding: 10px 20px; text-decoration: none; font-family: monospace; font-size: 14px;">
+        <a href="${adminImportUrl}" style="display: inline-block; background: #0099aa; color: #ffffff; padding: 10px 20px; text-decoration: none; font-family: monospace; font-size: 14px;">
           Import Selection into Admin Portal
         </a>
       </div>
@@ -271,7 +273,7 @@ function buildInquiryEmail({
   }
 
   html += `
-      <div style="color: #444; font-size: 11px; border-top: 1px solid #222; padding-top: 12px; margin-top: 16px;">
+      <div style="color: #aaaaaa; font-size: 11px; border-top: 1px solid #eeeeee; padding-top: 12px; margin-top: 16px;">
         Sent from the AdLands Sponsor Portal
       </div>
     </div>
