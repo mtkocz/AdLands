@@ -177,6 +177,8 @@ let mainRoom;
   app.use("/api/sponsors", createSponsorRoutes(sponsorStore, mainRoom, {
     imageUrls: sponsorImageUrls,
     gameDir,
+    moonSponsorStore,
+    billboardSponsorStore,
   }));
 
   // Mount moon sponsor API routes
@@ -193,7 +195,7 @@ let mainRoom;
 
   // Mount sponsor inquiry routes (public contact form)
   const { createInquiryRoutes } = require('./inquiryRoutes');
-  app.use('/api/sponsor-inquiry', createInquiryRoutes());
+  app.use('/api/sponsor-inquiry', createInquiryRoutes({ sponsorStore, mainRoom }));
 
   console.log("[Server] Sponsor images extracted, routes mounted");
 

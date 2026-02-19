@@ -73,6 +73,18 @@ node wipePlayerData.js  # Wipe all player data from Firestore
 - **Performance patterns:** Pre-allocated temp objects, typed arrays (`Float32Array`, `Uint8Array`), instance pooling, LOD systems
 - **Shared code:** `server/shared/` is served statically to the client at `/shared/`
 
+## Font Rules
+
+Only 3 font styles exist — no other fonts or font sizes allowed. All fonts are bitmap/pixel fonts on the same 4px grid.
+
+| Style | Font | CSS Variable | Size |
+|-------|------|-------------|------|
+| Header | Spleen 16x32 | `--font-header` | `--font-size-header: 32px` |
+| Body | Atari ST 8x16 | `--font-body` | `--font-size-body: 16px` |
+| Small | Ark Pixel 12px | `--font-small` | `--font-size-small: 12px` |
+
+All font tokens are defined in `css/shared-tokens.css`. Anti-aliasing is disabled globally for pixel-perfect rendering.
+
 ## Architecture
 
 - **Multiplayer:** Socket.IO with WebSocket-only transport (no HTTP long-polling). 10 tick/sec server game loop

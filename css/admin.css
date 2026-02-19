@@ -2058,3 +2058,91 @@ textarea.review-comment {
     border-color: var(--accent-gold);
 }
 
+/* ========================
+   INQUIRY SPONSOR STYLES
+   ======================== */
+
+/* Inquiry badge on sponsor cards/groups */
+.inquiry-badge {
+    font-family: var(--font-small);
+    font-size: var(--font-size-small);
+    color: #e8a317;
+    background: rgba(232, 163, 23, 0.18);
+    padding: 1px 6px;
+    margin-left: 4px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+/* Inquiry count badge on tab */
+.inquiry-count-badge {
+    font-family: var(--font-small);
+    font-size: 10px;
+    color: #e8a317;
+    background: rgba(232, 163, 23, 0.2);
+    padding: 1px 5px;
+    margin-left: 4px;
+    text-transform: uppercase;
+}
+
+/* Highlight inquiry-pending cards/groups */
+.sponsor-card.inquiry-pending,
+.sponsor-group.inquiry-pending {
+    border-left: 3px solid #e8a317;
+}
+
+/* Inquiry details panel (above the form) */
+.inquiry-details-panel {
+    background: rgba(232, 163, 23, 0.08);
+    border: 1px solid rgba(232, 163, 23, 0.25);
+    padding: var(--space-md);
+    margin-bottom: var(--space-md);
+}
+
+.inquiry-details-header {
+    font-family: var(--font-small);
+    font-size: 11px;
+    color: #e8a317;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    margin-bottom: var(--space-sm);
+    padding-bottom: var(--space-xs);
+    border-bottom: 1px solid rgba(232, 163, 23, 0.2);
+}
+
+.inquiry-detail-row {
+    display: flex;
+    gap: var(--space-sm);
+    margin-bottom: 4px;
+    font-size: var(--font-size-body);
+    line-height: 1.4;
+}
+
+.inquiry-detail-label {
+    color: var(--text-dim);
+    font-family: var(--font-small);
+    font-size: var(--font-size-small);
+    min-width: 70px;
+    flex-shrink: 0;
+}
+
+.inquiry-detail-value {
+    color: var(--text-primary);
+    word-break: break-word;
+}
+
+.inquiry-detail-value a {
+    color: var(--accent-cyan, #4dd0e1);
+    text-decoration: none;
+}
+
+.inquiry-detail-value a:hover {
+    text-decoration: underline;
+}
+
+.inquiry-message {
+    white-space: pre-wrap;
+    font-style: italic;
+    color: var(--text-secondary);
+}
+

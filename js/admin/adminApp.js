@@ -274,6 +274,18 @@
         return;
       }
 
+      // Handle inquiry activate/reject buttons
+      const activateInqBtn = e.target.closest(".activate-inquiry-btn");
+      if (activateInqBtn) {
+        activateInquiryGroup(activateInqBtn.dataset.name);
+        return;
+      }
+      const rejectInqBtn = e.target.closest(".reject-inquiry-btn");
+      if (rejectInqBtn) {
+        rejectInquiryGroup(rejectInqBtn.dataset.name);
+        return;
+      }
+
       // Handle submission review buttons (approve/reject)
       const approveBtn = e.target.closest(".approve-submission-btn") || e.target.closest(".approve-image-btn");
       if (approveBtn) {
@@ -943,6 +955,7 @@
     updateAssignedMoons();
     updateAssignedBillboards();
     selectedTilesListEl.textContent = "";
+    showInquiryDetails(null);
     showSponsorInfoView();
   }
 
@@ -1101,11 +1114,14 @@
     // Update tab counts
     const playerCount = allSponsors.filter((s) => s.ownerType === "player").length;
     const pendingCount = allSponsors.filter((s) => s.ownerType === "player" && (s.submissionStatus === "pending" || s.imageStatus === "pending")).length;
+    const inquiryCount = allSponsors.filter((s) => s.ownerType === "inquiry").length;
     const sponsorCount = allSponsors.length - playerCount;
     const tabEls = document.querySelectorAll(".sponsor-tab");
     tabEls.forEach((tab) => {
       const filter = tab.dataset.filter;
-      if (filter === "sponsors") tab.textContent = `Sponsors (${sponsorCount})`;
+      if (filter === "sponsors") {
+        tab.innerHTML = `Sponsors (${sponsorCount})${inquiryCount > 0 ? ` <span class="inquiry-count-badge">${inquiryCount} pending</span>` : ""}`;
+      }
       else if (filter === "players") {
         tab.innerHTML = `User Territories (${playerCount})${pendingCount > 0 ? ` <span class="pending-badge">${pendingCount}</span>` : ""}`;
       }
@@ -1180,12 +1196,15 @@
       }
     }
 
-    // Sort sponsors alphabetically by name
-    const sortedSponsors = [...sponsors].sort((a, b) =>
-      (a.name || "").localeCompare(b.name || "", undefined, {
+    // Sort sponsors: inquiry-pending first, then alphabetically by name
+    const sortedSponsors = [...sponsors].sort((a, b) => {
+      const aInq = a.ownerType === "inquiry" ? 0 : 1;
+      const bInq = b.ownerType === "inquiry" ? 0 : 1;
+      if (aInq !== bInq) return aInq - bInq;
+      return (a.name || "").localeCompare(b.name || "", undefined, {
         sensitivity: "base",
-      }),
-    );
+      });
+    });
 
     // Group: player territories by ownerEmail, sponsors by name
     const groups = new Map();
@@ -1214,8 +1233,9 @@
         const isEditing = sponsor.id === currentEditingId;
         const logoSrc = sponsor.logoUrl || sponsor.logoImage;
         const isPaused = !!sponsor.paused;
+        const isInquiry = sponsor.ownerType === "inquiry";
         htmlParts.push(`
-            <div class="sponsor-card${isEditing ? " editing" : ""}${isPaused ? " paused" : ""}" data-id="${sponsor.id}" data-name="${escapeHtml(getGroupKey(sponsor))}">
+            <div class="sponsor-card${isEditing ? " editing" : ""}${isPaused ? " paused" : ""}${isInquiry ? " inquiry-pending" : ""}" data-id="${sponsor.id}" data-name="${escapeHtml(getGroupKey(sponsor))}">
                 <div class="sponsor-card-logo">
                     ${
                       logoSrc
@@ -1224,7 +1244,7 @@
                     }
                 </div>
                 <div class="sponsor-card-info">
-                    <div class="sponsor-card-name">${escapeHtml(sponsor.name)}${isPaused ? ' <span class="paused-badge">PAUSED</span>' : ""}</div>
+                    <div class="sponsor-card-name">${escapeHtml(sponsor.name)}${isPaused ? ' <span class="paused-badge">PAUSED</span>' : ""}${isInquiry ? ' <span class="inquiry-badge">INQUIRY</span>' : ""}</div>
                     <div class="sponsor-card-stats">
                         ${sponsor.cluster?.tileIndices?.length || 0} tiles${moonRev > 0 ? ", " + moonManager.getMoonsForSponsor(sponsor.name).length + " moons" : ""}${bbRev > 0 ? ", " + (billboardManager ? billboardManager.getBillboardsForSponsor(sponsor.name).length : 0) + " billboards" : ""},
                         ${sponsor.rewards?.length || 0} rewards
@@ -1232,9 +1252,14 @@
                     ${sponsorTotal > 0 ? `<div class="sponsor-card-revenue"><span class="sponsor-card-revenue-total">$${fmtUSD(sponsorTotal)}/mo</span></div>` : ""}
                 </div>
                 <div class="sponsor-card-actions">
+                    ${isInquiry ? `
+                    <button class="btn-approve activate-inquiry-btn" data-name="${escapeHtml(getGroupKey(sponsor))}">Activate</button>
+                    <button class="btn-reject reject-inquiry-btn" data-name="${escapeHtml(getGroupKey(sponsor))}">Reject</button>
+                    ` : `
                     <button class="icon-btn pause-sponsor-btn" title="${isPaused ? "Resume" : "Pause"}">&#x23F8;</button>
                     <button class="icon-btn duplicate-sponsor-btn" title="Duplicate">&#x29C9;</button>
                     <button class="icon-btn delete-entire-sponsor-btn" title="Delete">&times;</button>
+                    `}
                 </div>
             </div>
         `);
@@ -1372,9 +1397,33 @@
         const isGroupEditing = editingGroup && editingGroup.groupKey === groupKey;
         const groupLogoSrc = first.logoUrl || first.logoImage;
         const isGroupPaused = members.some((s) => !!s.paused);
+        const isGroupInquiry = members.some((s) => s.ownerType === "inquiry");
         const isNewTerritory = hasPlayerTerritory && members.some((s) => s.imageStatus === "placeholder" || !s.imageStatus);
         const hasPendingImage = hasPlayerTerritory && members.some((s) => s.imageStatus === "pending");
-        const groupHighlight = hasPendingImage ? " highlight-pending" : isNewTerritory ? " highlight-new" : "";
+        const groupHighlight = isGroupInquiry ? " inquiry-pending" : hasPendingImage ? " highlight-pending" : isNewTerritory ? " highlight-new" : "";
+
+        // Build group name badge
+        let groupBadgeHtml = "";
+        if (isGroupPaused) groupBadgeHtml += ' <span class="paused-badge">PAUSED</span>';
+        if (isGroupInquiry) groupBadgeHtml += ' <span class="inquiry-badge">INQUIRY</span>';
+        if (!isGroupInquiry && hasPendingImage) groupBadgeHtml += ' <span class="pending-status-badge">PENDING</span>';
+        if (!isGroupInquiry && isNewTerritory && !hasPendingImage) groupBadgeHtml += ' <span class="new-status-badge">NEW</span>';
+
+        // Build group actions
+        let groupActionsHtml;
+        if (isGroupInquiry) {
+          groupActionsHtml = `
+            <button class="btn-approve activate-inquiry-btn" data-name="${escapeHtml(groupKey)}">Activate</button>
+            <button class="btn-reject reject-inquiry-btn" data-name="${escapeHtml(groupKey)}">Reject</button>
+          `;
+        } else {
+          groupActionsHtml = `
+            <button class="icon-btn pause-sponsor-btn" title="${isGroupPaused ? "Resume" : "Pause"}">&#x23F8;</button>
+            <button class="icon-btn add-cluster-btn" title="Add territory">+</button>
+            <button class="icon-btn delete-entire-sponsor-btn" title="Delete sponsor">&times;</button>
+          `;
+        }
+
         htmlParts.push(`
             <div class="sponsor-group${isGroupEditing ? " editing expanded" : ""}${isGroupPaused ? " paused" : ""}${groupHighlight}" data-name="${escapeHtml(groupKey)}">
                 <div class="sponsor-group-header">
@@ -1387,7 +1436,7 @@
                         }
                     </div>
                     <div class="sponsor-card-info">
-                        <div class="sponsor-card-name">${escapeHtml(hasPlayerTerritory ? (first.ownerEmail || first.ownerUid || "Unknown") : first.name)}${isGroupPaused ? ' <span class="paused-badge">PAUSED</span>' : ""}${hasPendingImage ? ' <span class="pending-status-badge">PENDING</span>' : ""}${isNewTerritory && !hasPendingImage ? ' <span class="new-status-badge">NEW</span>' : ""}</div>
+                        <div class="sponsor-card-name">${escapeHtml(hasPlayerTerritory ? (first.ownerEmail || first.ownerUid || "Unknown") : first.name)}${groupBadgeHtml}</div>
                         <span class="sponsor-group-badge">${members.length} territories</span>
                         <div class="sponsor-card-stats">
                             ${totalTiles} tiles${groupMoonCount > 0 ? ", " + groupMoonCount + " moons" : ""}${groupBbCount > 0 ? ", " + groupBbCount + " billboards" : ""}, ${totalRewards} rewards
@@ -1395,9 +1444,7 @@
                         ${groupRevHtml}
                     </div>
                     <div class="sponsor-card-actions">
-                        <button class="icon-btn pause-sponsor-btn" title="${isGroupPaused ? "Resume" : "Pause"}">&#x23F8;</button>
-                        <button class="icon-btn add-cluster-btn" title="Add territory">+</button>
-                        <button class="icon-btn delete-entire-sponsor-btn" title="Delete sponsor">&times;</button>
+                        ${groupActionsHtml}
                     </div>
                 </div>
                 <div class="sponsor-group-clusters">
@@ -1445,6 +1492,9 @@
 
       // Load into form
       sponsorForm.loadSponsor(sponsor);
+
+      // Show inquiry details if this is an inquiry sponsor
+      showInquiryDetails(sponsor);
 
       // Auto-select the territory's selection in hex selector
       loadTerritorySelection(sponsor);
@@ -1568,6 +1618,8 @@
           sponsorForm.loadTerritoryInfo(activeMember);
           sponsorForm.setNotes(first.notes || "");
         }
+        // Show inquiry details if this is an inquiry group
+        showInquiryDetails(first);
       }
 
       // Load active cluster's data into hex selector
@@ -1921,6 +1973,158 @@
     } finally {
       busy = false;
     }
+  }
+
+  // ========================
+  // INQUIRY SPONSOR MANAGEMENT
+  // ========================
+
+  /**
+   * Activate all territories in a pending inquiry group.
+   * Calls the activate-inquiry endpoint for each member sequentially.
+   * Shows conflict dialog if any tiles overlap existing sponsors.
+   */
+  async function activateInquiryGroup(groupKey) {
+    if (busy) {
+      showToast("Please wait for the current operation to finish", "info");
+      return;
+    }
+
+    const members = getGroupMembers(groupKey).filter(s => s.ownerType === "inquiry");
+    if (members.length === 0) return;
+
+    if (!confirm(`Activate ${members.length} territory/territories for "${members[0].name}"?`)) return;
+
+    busy = true;
+    try {
+      let hasConflicts = false;
+      let allConflicts = [];
+
+      // First pass: try activating without force
+      for (const member of members) {
+        const res = await fetch(`/api/sponsors/${encodeURIComponent(member.id)}/activate-inquiry`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ force: false }),
+        });
+        const result = await res.json();
+
+        if (res.status === 409 && result.conflicts) {
+          hasConflicts = true;
+          allConflicts.push(...result.conflicts);
+        } else if (!result.success) {
+          showToast((result.errors || []).join(". ") || "Activation failed", "error");
+          busy = false;
+          return;
+        }
+      }
+
+      // If conflicts, ask admin to override
+      if (hasConflicts) {
+        const uniqueNames = [...new Set(allConflicts.map(c => c.sponsorName))];
+        const msg = `These territories conflict with existing sponsors:\n\n${uniqueNames.join(", ")}\n\nDelete the conflicting sponsors and override?`;
+        if (!confirm(msg)) {
+          busy = false;
+          return;
+        }
+
+        // Second pass: force activate (deletes conflicting sponsors)
+        for (const member of members) {
+          const res = await fetch(`/api/sponsors/${encodeURIComponent(member.id)}/activate-inquiry`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ force: true }),
+          });
+          const result = await res.json();
+          if (!result.success && res.status !== 200) {
+            showToast((result.errors || []).join(". ") || "Activation failed", "error");
+            busy = false;
+            await SponsorStorage.reload();
+            refreshSponsorsList();
+            return;
+          }
+        }
+      }
+
+      showToast(`Activated ${members.length} territories for "${members[0].name}"`, "success");
+      handleClearForm();
+      await SponsorStorage.reload();
+      refreshSponsorsList();
+    } catch (err) {
+      showToast("Activation failed: " + err.message, "error");
+    } finally {
+      busy = false;
+    }
+  }
+
+  /**
+   * Reject (delete) all territories in a pending inquiry group.
+   */
+  async function rejectInquiryGroup(groupKey) {
+    if (busy) {
+      showToast("Please wait for the current operation to finish", "info");
+      return;
+    }
+
+    const members = getGroupMembers(groupKey).filter(s => s.ownerType === "inquiry");
+    if (members.length === 0) return;
+
+    if (!confirm(`Reject and delete ${members.length} pending territory/territories for "${members[0].name}"?`)) return;
+
+    busy = true;
+    try {
+      for (const member of members) {
+        await fetch(`/api/sponsors/${encodeURIComponent(member.id)}/reject-inquiry`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+
+      showToast(`Rejected inquiry from "${members[0].name}"`, "success");
+      handleClearForm();
+      await SponsorStorage.reload();
+      refreshSponsorsList();
+    } catch (err) {
+      showToast("Rejection failed: " + err.message, "error");
+    } finally {
+      busy = false;
+    }
+  }
+
+  /**
+   * Show inquiry contact details in the form panel for inquiry sponsors.
+   * @param {Object} sponsor - The inquiry sponsor being edited
+   */
+  function showInquiryDetails(sponsor) {
+    const panel = document.getElementById("inquiry-details");
+    if (!panel) return;
+
+    if (!sponsor || sponsor.ownerType !== "inquiry" || !sponsor.inquiryData) {
+      panel.style.display = "none";
+      panel.innerHTML = "";
+      return;
+    }
+
+    const d = sponsor.inquiryData;
+    const submitted = d.submittedAt ? new Date(d.submittedAt).toLocaleString() : "Unknown";
+
+    let pricingHtml = "";
+    if (d.pricing) {
+      const p = d.pricing;
+      const total = (p.total || 0) + (p.moonTotal || 0) + (p.billboardTotal || 0);
+      pricingHtml = `<div class="inquiry-detail-row"><span class="inquiry-detail-label">Quoted Price:</span><span class="inquiry-detail-value">$${total.toFixed(2)}/mo</span></div>`;
+    }
+
+    panel.innerHTML = `
+      <div class="inquiry-details-header">Inquiry Details</div>
+      <div class="inquiry-detail-row"><span class="inquiry-detail-label">Contact:</span><span class="inquiry-detail-value">${escapeHtml(d.contactName || "")}</span></div>
+      <div class="inquiry-detail-row"><span class="inquiry-detail-label">Email:</span><span class="inquiry-detail-value"><a href="mailto:${escapeHtml(d.contactEmail || "")}">${escapeHtml(d.contactEmail || "")}</a></span></div>
+      ${d.company ? `<div class="inquiry-detail-row"><span class="inquiry-detail-label">Company:</span><span class="inquiry-detail-value">${escapeHtml(d.company)}</span></div>` : ""}
+      ${d.message ? `<div class="inquiry-detail-row"><span class="inquiry-detail-label">Message:</span><span class="inquiry-detail-value inquiry-message">${escapeHtml(d.message)}</span></div>` : ""}
+      ${pricingHtml}
+      <div class="inquiry-detail-row"><span class="inquiry-detail-label">Submitted:</span><span class="inquiry-detail-value">${submitted}</span></div>
+    `;
+    panel.style.display = "";
   }
 
   async function reviewTerritorySubmission(id, action) {

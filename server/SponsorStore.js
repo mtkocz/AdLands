@@ -370,7 +370,7 @@ class SponsorStore {
 
     // Skip tile conflict check for player territories — they coexist with admin sponsors
     const tiles = sponsor.cluster?.tileIndices || [];
-    if (tiles.length > 0 && sponsor.ownerType !== "player") {
+    if (tiles.length > 0 && sponsor.ownerType !== "player" && sponsor.ownerType !== "inquiry") {
       const tileCheck = this.areTilesUsed(tiles, null);
       if (tileCheck.isUsed) {
         return { errors: [`Tiles conflict with sponsor "${tileCheck.sponsorName}"`] };

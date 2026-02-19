@@ -106,7 +106,7 @@ async function cleanupSponsorImageFiles(sponsorId, texDir) {
   }
 }
 
-function createSponsorRoutes(sponsorStore, gameRoom, { imageUrls, gameDir } = {}) {
+function createSponsorRoutes(sponsorStore, gameRoom, { imageUrls, gameDir, moonSponsorStore, billboardSponsorStore } = {}) {
   const router = Router();
 
   // Resend email config (reuses SMTP_PASS as API key)
@@ -516,6 +516,109 @@ function createSponsorRoutes(sponsorStore, gameRoom, { imageUrls, gameDir } = {}
     } catch (err) {
       console.error("[Territory] Review failed:", err);
       res.status(500).json({ errors: ["Review failed: " + err.message] });
+    }
+  });
+
+  // POST /api/sponsors/:id/activate-inquiry — activate a pending inquiry territory
+  router.post("/:id/activate-inquiry", async (req, res) => {
+    const { force } = req.body || {};
+    const sponsor = sponsorStore.getById(req.params.id);
+    if (!sponsor || sponsor.ownerType !== "inquiry") {
+      return res.status(404).json({ errors: ["Pending inquiry territory not found"] });
+    }
+
+    try {
+      // Check tile conflicts for hex territories
+      const tiles = sponsor.cluster?.tileIndices || [];
+      if (tiles.length > 0 && !force) {
+        const conflict = sponsorStore.areTilesUsed(tiles, req.params.id);
+        if (conflict.isUsed) {
+          // Find all conflicting sponsors and their overlapping tiles
+          const conflicts = [];
+          const tileSet = new Set(tiles);
+          for (const s of sponsorStore.getAll()) {
+            if (s.id === req.params.id) continue;
+            if (!s.cluster?.tileIndices) continue;
+            const overlapping = s.cluster.tileIndices.filter(t => tileSet.has(t));
+            if (overlapping.length > 0) {
+              conflicts.push({ sponsorId: s.id, sponsorName: s.name, overlappingTiles: overlapping });
+            }
+          }
+          return res.status(409).json({ conflicts });
+        }
+      }
+
+      // Force mode: delete conflicting sponsors entirely
+      if (tiles.length > 0 && force) {
+        const tileSet = new Set(tiles);
+        const toDelete = [];
+        for (const s of sponsorStore.getAll()) {
+          if (s.id === req.params.id) continue;
+          if (!s.cluster?.tileIndices) continue;
+          const overlapping = s.cluster.tileIndices.filter(t => tileSet.has(t));
+          if (overlapping.length > 0) toDelete.push(s.id);
+        }
+        for (const id of toDelete) {
+          await sponsorStore.delete(id);
+          await cleanupSponsorImages(id);
+        }
+        if (toDelete.length > 0) {
+          console.log(`[Inquiry] Deleted ${toDelete.length} conflicting sponsors for activation`);
+        }
+      }
+
+      // Assign moon if this is a moon territory
+      if (sponsor.territoryType === "moon" && sponsor.inquiryData?.moonIndex != null && moonSponsorStore) {
+        await moonSponsorStore.assign(sponsor.inquiryData.moonIndex, {
+          name: sponsor.name,
+          tagline: sponsor.tagline || "",
+          websiteUrl: sponsor.websiteUrl || "",
+        });
+      }
+
+      // Assign billboard if this is a billboard territory
+      if (sponsor.territoryType === "billboard" && sponsor.inquiryData?.billboardIndex != null && billboardSponsorStore) {
+        await billboardSponsorStore.assign(sponsor.inquiryData.billboardIndex, {
+          name: sponsor.name,
+          tagline: sponsor.tagline || "",
+          websiteUrl: sponsor.websiteUrl || "",
+        });
+      }
+
+      // Activate: change ownerType to admin, set active
+      await sponsorStore.update(req.params.id, {
+        ownerType: "admin",
+        active: true,
+      });
+
+      await reExtractImages(req.params.id);
+      reloadIfLive();
+
+      console.log(`[Inquiry] Activated inquiry territory ${req.params.id} (${sponsor.name})`);
+      res.json({ success: true });
+    } catch (err) {
+      console.error("[Inquiry] Activation failed:", err);
+      res.status(500).json({ errors: ["Activation failed: " + err.message] });
+    }
+  });
+
+  // POST /api/sponsors/:id/reject-inquiry — reject and delete a pending inquiry territory
+  router.post("/:id/reject-inquiry", async (req, res) => {
+    const sponsor = sponsorStore.getById(req.params.id);
+    if (!sponsor || sponsor.ownerType !== "inquiry") {
+      return res.status(404).json({ errors: ["Pending inquiry territory not found"] });
+    }
+
+    try {
+      await sponsorStore.delete(req.params.id);
+      await cleanupSponsorImages(req.params.id);
+      reloadIfLive();
+
+      console.log(`[Inquiry] Rejected inquiry territory ${req.params.id} (${sponsor.name})`);
+      res.json({ success: true });
+    } catch (err) {
+      console.error("[Inquiry] Rejection failed:", err);
+      res.status(500).json({ errors: ["Rejection failed: " + err.message] });
     }
   });
 

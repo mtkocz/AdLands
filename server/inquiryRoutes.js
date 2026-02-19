@@ -2,6 +2,7 @@
  * AdLands - Sponsor Inquiry API Routes
  * Handles contact form submissions from the sponsor portal.
  * Sends email via Resend HTTP API to matt@mattmatters.com.
+ * Auto-creates pending sponsor entries in the admin portal.
  */
 
 const { Router } = require("express");
@@ -45,7 +46,48 @@ function sendViaResend(apiKey, emailData) {
   });
 }
 
-function createInquiryRoutes() {
+/**
+ * Split a flat array of tile indices into connected components using BFS.
+ * @param {number[]} tileIndices
+ * @param {Map<number, number[]>} adjacencyMap
+ * @returns {number[][]} Array of clusters
+ */
+function splitTilesIntoClusters(tileIndices, adjacencyMap) {
+  const tileSet = new Set(tileIndices);
+  const visited = new Set();
+  const clusters = [];
+
+  for (const startTile of tileSet) {
+    if (visited.has(startTile)) continue;
+
+    const cluster = [];
+    const queue = [startTile];
+    visited.add(startTile);
+
+    while (queue.length > 0) {
+      const current = queue.shift();
+      cluster.push(current);
+
+      const neighbors = adjacencyMap.get(current) || [];
+      for (const neighbor of neighbors) {
+        if (tileSet.has(neighbor) && !visited.has(neighbor)) {
+          visited.add(neighbor);
+          queue.push(neighbor);
+        }
+      }
+    }
+
+    clusters.push(cluster);
+  }
+
+  return clusters;
+}
+
+/**
+ * @param {{ sponsorStore: import('./SponsorStore'), mainRoom: import('./GameRoom') }} deps
+ */
+function createInquiryRoutes(deps = {}) {
+  const { sponsorStore, mainRoom } = deps;
   const router = Router();
 
   // Rate limiting: track last inquiry time per IP (in-memory)
@@ -74,7 +116,7 @@ function createInquiryRoutes() {
 
     const {
       name, email, company, message,
-      screenshot, importPayload, pricing,
+      screenshot, pricing,
       selectedTiles, selectedMoons, selectedBillboards,
     } = req.body;
 
@@ -83,18 +125,10 @@ function createInquiryRoutes() {
       return res.status(400).json({ error: "Name and email are required." });
     }
 
-    // Build admin import URL
-    const host = req.get("host");
-    const protocol = req.protocol;
-    const adminImportUrl = importPayload
-      ? `${protocol}://${host}/admin.html?import=${importPayload}`
-      : null;
-
     // Build email HTML (screenshot as attachment, not inline CID)
     const html = buildInquiryEmail({
       name, email, company, message,
       pricing, selectedTiles, selectedMoons, selectedBillboards,
-      adminImportUrl,
     });
 
     // Build attachments for Resend API
@@ -139,8 +173,74 @@ function createInquiryRoutes() {
         console.log(`  Tiles: ${selectedTiles ? selectedTiles.length : 0}`);
         console.log(`  Moons: ${selectedMoons ? selectedMoons.length : 0}`);
         console.log(`  Billboards: ${selectedBillboards ? selectedBillboards.length : 0}`);
-        if (adminImportUrl) console.log(`  Admin Import: ${adminImportUrl}`);
         console.log("[Inquiry] --- END ---");
+      }
+
+      // Auto-create pending sponsor entries
+      const sponsorName = (company || name).trim();
+      let created = 0;
+
+      if (sponsorStore && totalItems > 0) {
+        const inquiryBase = {
+          contactName: name,
+          contactEmail: email,
+          company: company || null,
+          message: message || null,
+          pricing: pricing || null,
+          submittedAt: new Date().toISOString(),
+        };
+
+        // Split hex tiles into connected clusters
+        if (selectedTiles && selectedTiles.length > 0 && mainRoom && mainRoom.worldGen) {
+          const adjacencyMap = mainRoom.worldGen.adjacencyMap;
+          const clusters = splitTilesIntoClusters(selectedTiles, adjacencyMap);
+
+          for (const clusterTiles of clusters) {
+            await sponsorStore.create({
+              name: sponsorName,
+              ownerType: "inquiry",
+              territoryType: "hex",
+              cluster: { tileIndices: clusterTiles },
+              active: false,
+              inquiryData: { ...inquiryBase },
+            });
+            created++;
+          }
+        }
+
+        // Create one entry per selected moon
+        if (selectedMoons && selectedMoons.length > 0) {
+          for (const moonIndex of selectedMoons) {
+            await sponsorStore.create({
+              name: sponsorName,
+              ownerType: "inquiry",
+              territoryType: "moon",
+              cluster: { tileIndices: [] },
+              active: false,
+              inquiryData: { ...inquiryBase, moonIndex },
+            });
+            created++;
+          }
+        }
+
+        // Create one entry per selected billboard
+        if (selectedBillboards && selectedBillboards.length > 0) {
+          for (const billboardIndex of selectedBillboards) {
+            await sponsorStore.create({
+              name: sponsorName,
+              ownerType: "inquiry",
+              territoryType: "billboard",
+              cluster: { tileIndices: [] },
+              active: false,
+              inquiryData: { ...inquiryBase, billboardIndex },
+            });
+            created++;
+          }
+        }
+
+        if (created > 0) {
+          console.log(`[Inquiry] Created ${created} pending sponsor entries for "${sponsorName}"`);
+        }
       }
 
       res.json({ success: true });
@@ -167,7 +267,6 @@ function createInquiryRoutes() {
 function buildInquiryEmail({
   name, email, company, message,
   pricing, selectedTiles, selectedMoons, selectedBillboards,
-  adminImportUrl,
 }) {
   const hasTiles = selectedTiles && selectedTiles.length > 0;
   const hasMoons = selectedMoons && selectedMoons.length > 0;
@@ -288,17 +387,6 @@ function buildInquiryEmail({
       html += `<div style="color: #555555; font-size: 13px;">Billboard indices: ${selectedBillboards.join(", ")}</div>`;
     }
     html += `</div>`;
-  }
-
-  // Admin import link
-  if (adminImportUrl) {
-    html += `
-      <div style="margin-bottom: 16px;">
-        <a href="${adminImportUrl}" style="display: inline-block; background: #0099aa; color: #ffffff; padding: 10px 20px; text-decoration: none; font-family: monospace; font-size: 14px;">
-          Import Selection into Admin Portal
-        </a>
-      </div>
-    `;
   }
 
   html += `
