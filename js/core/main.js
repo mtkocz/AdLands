@@ -2609,8 +2609,7 @@
     // Restore alpha after all dots
     ctx.globalAlpha = prevAlpha;
 
-    // Draw ownership percentages (always show, even for small slices)
-    // Place labels outside the ring for readability
+    // Draw ownership percentages on top of the ring (always show)
     ctx.save();
     ctx.textAlign = "center";
     ctx.textBaseline = "middle";
@@ -2620,18 +2619,12 @@
       const pos = labelPositions[faction];
       if (pos && pos.percentage > 0) {
         const label = `${Math.round(pos.percentage)}%`;
-        const labelR = outerRadius + 20;
-        const ang = Math.atan2(pos.y - centerY, pos.x - centerX);
-        const lx = centerX + Math.cos(ang) * labelR;
-        const ly = centerY + Math.sin(ang) * labelR;
-
-        // Black outline
+        // Draw directly on the ring midpoint
         ctx.lineWidth = 4;
         ctx.strokeStyle = "#000000";
-        ctx.strokeText(label, lx, ly);
-        // White fill
+        ctx.strokeText(label, pos.x, pos.y);
         ctx.fillStyle = "#ffffff";
-        ctx.fillText(label, lx, ly);
+        ctx.fillText(label, pos.x, pos.y);
       }
     }
     ctx.restore();
