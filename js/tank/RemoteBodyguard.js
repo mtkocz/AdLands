@@ -355,9 +355,9 @@ class RemoteBodyguard {
     const lerpSpeed = 10;
     const t = Math.min(1, lerpSpeed * deltaTime);
 
-    this.state.theta = this._lerpAngle2Pi(this.state.theta, this.targetState.theta, t);
+    this.state.theta = MathUtils.lerpAngle2Pi(this.state.theta, this.targetState.theta, t);
     this.state.phi = this.state.phi + (this.targetState.phi - this.state.phi) * t;
-    this.state.heading = this._lerpAnglePi(this.state.heading, this.targetState.heading, t);
+    this.state.heading = MathUtils.lerpAngle(this.state.heading, this.targetState.heading, t);
     this.state.speed = this.state.speed + (this.targetState.speed - this.state.speed) * t;
 
     // Wiggle phase
@@ -524,26 +524,6 @@ class RemoteBodyguard {
     }
   }
 
-  // ========================
-  // INTERPOLATION HELPERS
-  // ========================
-
-  _lerpAngle2Pi(a, b, t) {
-    let delta = b - a;
-    while (delta > Math.PI) delta -= Math.PI * 2;
-    while (delta < -Math.PI) delta += Math.PI * 2;
-    let result = a + delta * t;
-    while (result < 0) result += Math.PI * 2;
-    while (result >= Math.PI * 2) result -= Math.PI * 2;
-    return result;
-  }
-
-  _lerpAnglePi(a, b, t) {
-    let delta = b - a;
-    while (delta > Math.PI) delta -= Math.PI * 2;
-    while (delta < -Math.PI) delta += Math.PI * 2;
-    return a + delta * t;
-  }
 }
 
 // Static shared assets

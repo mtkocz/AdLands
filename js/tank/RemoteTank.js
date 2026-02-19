@@ -247,13 +247,13 @@ class RemoteTank {
     const t = Math.min(1, lerpSpeed * deltaTime);
 
     // Interpolate position
-    this.state.theta = this._lerpAngle2Pi(
+    this.state.theta = MathUtils.lerpAngle2Pi(
       this.state.theta,
       this.targetState.theta,
       t
     );
     this.state.phi = this.state.phi + (this.targetState.phi - this.state.phi) * t;
-    this.state.heading = this._lerpAnglePi(
+    this.state.heading = MathUtils.lerpAngle(
       this.state.heading,
       this.targetState.heading,
       t
@@ -262,7 +262,7 @@ class RemoteTank {
       this.state.speed + (this.targetState.speed - this.state.speed) * t;
 
     // Interpolate turret
-    this.state.turretAngle = this._lerpAnglePi(
+    this.state.turretAngle = MathUtils.lerpAngle(
       this.state.turretAngle,
       this.targetState.turretAngle,
       t
@@ -512,32 +512,6 @@ class RemoteTank {
     );
   }
 
-  // ========================
-  // INTERPOLATION HELPERS
-  // ========================
-
-  /**
-   * Lerp angles that wrap at 2π (theta, turret).
-   */
-  _lerpAngle2Pi(a, b, t) {
-    let delta = b - a;
-    while (delta > Math.PI) delta -= Math.PI * 2;
-    while (delta < -Math.PI) delta += Math.PI * 2;
-    let result = a + delta * t;
-    while (result < 0) result += Math.PI * 2;
-    while (result >= Math.PI * 2) result -= Math.PI * 2;
-    return result;
-  }
-
-  /**
-   * Lerp angles that wrap at ±π (heading).
-   */
-  _lerpAnglePi(a, b, t) {
-    let delta = b - a;
-    while (delta > Math.PI) delta -= Math.PI * 2;
-    while (delta < -Math.PI) delta += Math.PI * 2;
-    return a + delta * t;
-  }
 }
 
 // Preallocated temps to avoid GC

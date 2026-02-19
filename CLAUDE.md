@@ -7,7 +7,7 @@ Browser-based multiplayer territorial warfare game. Three mercenary factions (Ru
 - **Frontend:** Vanilla JavaScript (ES6 classes, no framework/bundler), Three.js v0.128 for 3D rendering
 - **Backend:** Node.js 18+, Express, Socket.IO 4
 - **Database:** Firebase Firestore + Firebase Authentication
-- **Deployment:** Docker (Node 20-slim)
+- **Deployment:** Railway.app via Docker (Node 20-slim)
 
 ## Project Structure
 
@@ -15,21 +15,30 @@ Browser-based multiplayer territorial warfare game. Three mercenary factions (Ru
 js/                  # Client-side JavaScript (68 files, feature-based)
   core/              # Planet, Camera, Environment, Auth, Multiplayer, main.js
   tank/              # Tank physics, collision, pathfinding, bots
-  combat/            # Weapons, projectiles
-  commander/         # Commander role, squad leadership
+  combat/            # Weapons, projectiles, object pools
+  commander/         # Commander role, squad leadership, bodyguards
   effects/           # Shaders, post-processing, visual effects
   ui/                # AuthScreen, Dashboard, CosmeticsShop, ProfileCard
-  progression/       # XP, leveling, badges, titles
-  admin/             # Admin portal logic
-  travel/            # Fast travel portals
-  utils/             # Helpers
+  progression/       # XP, leveling, badges, titles, crypto
+  admin/             # Admin portal logic (hex selector, sponsor forms)
+  travel/            # Fast travel portals, sky beams
+  sponsors/          # Sponsor scene (3D sponsor page)
+  misc/              # Settings, presence tracking, Tusk commentary
+  utils/             # MathUtils, factionColors
 server/              # Node.js backend
   index.js           # Entry point — Express + Socket.IO server
   GameRoom.js        # Core game loop and multiplayer state
   WorldGenerator.js  # Procedural planet generation
   firebaseAdmin.js   # Firebase Admin SDK init
-  *SponsorStore.js   # Sponsor data management (3 variants)
-  *sponsorRoutes.js  # Sponsor API endpoints (3 variants)
+  SponsorStore.js    # Main sponsor data (hex territories)
+  FixedSlotSponsorStore.js  # Shared base for slot-based sponsors
+  MoonSponsorStore.js       # Moon sponsors (3 slots, extends FixedSlot)
+  BillboardSponsorStore.js  # Billboard sponsors (18 slots, extends FixedSlot)
+  sponsorRoutes.js           # Main sponsor API endpoints
+  fixedSlotSponsorRoutes.js  # Shared route factory for slot-based sponsors
+  moonSponsorRoutes.js       # Moon sponsor API (wraps shared factory)
+  billboardSponsorRoutes.js  # Billboard sponsor API (wraps shared factory)
+  inquiryRoutes.js   # Sponsor inquiry/contact form API
   BodyguardManager.js
   TuskGlobalChat.js  # In-game Elon Tusk commentary
   wipePlayerData.js  # Firestore data reset utility
@@ -38,7 +47,7 @@ server/              # Node.js backend
     hexasphere.js    # Hex sphere geometry
     TerrainElevation.js
     Vec3.js
-css/                 # Stylesheets (main, auth, admin, shared-tokens)
+css/                 # Stylesheets (main, auth, admin, sponsors, shared-tokens)
 assets/              # 3D models, sprites, fonts, cursors
 sponsors/            # Sponsor logo images
 data/sponsors.json   # Sponsor config with base64 textures
@@ -72,6 +81,8 @@ node wipePlayerData.js  # Wipe all player data from Firestore
 - **Types:** JSDoc annotations (`/** @type {Type} */`) instead of TypeScript
 - **Performance patterns:** Pre-allocated temp objects, typed arrays (`Float32Array`, `Uint8Array`), instance pooling, LOD systems
 - **Shared code:** `server/shared/` is served statically to the client at `/shared/`
+- **CSS tokens:** All design tokens (colors, spacing, fonts) defined in `css/shared-tokens.css`. Use `var(--accent-gold)`, `var(--accent-cyan)`, `var(--text-primary)`, etc. — never hardcode colors
+- **Client math utilities:** `js/utils/mathUtils.js` provides `MathUtils.lerp()`, `MathUtils.lerpAngle()`, `MathUtils.lerpAngle2Pi()`, `MathUtils.clamp()`, `MathUtils.smoothstep()` — use these instead of duplicating
 
 ## Font Rules
 
@@ -110,4 +121,5 @@ All font tokens are defined in `css/shared-tokens.css`. Anti-aliasing is disable
 | `js/tank/Tank.js` | Tank mechanics and physics |
 | `index.html` | Game client — loads all 68 JS files via script tags |
 | `admin.html` | Admin portal for sponsor/territory management |
+| `sponsors.html` | Public sponsor showcase page (3D) |
 | `firestore.rules` | Firestore security rules |

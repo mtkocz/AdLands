@@ -300,7 +300,7 @@ class NetworkManager {
       if (this.onCommanderSync) this.onCommanderSync(data);
     });
 
-    // Server-authoritative faction roster (broadcast every 10 seconds)
+    // Server-authoritative faction roster (real-time, every rank recompute ~1s)
     this.socket.on("faction-roster", (data) => {
       if (this.onFactionRoster) this.onFactionRoster(data);
     });

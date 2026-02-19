@@ -251,13 +251,14 @@ function createInquiryRoutes(deps = {}) {
   });
 
   // Clean up rate limit map periodically (every 10 minutes)
-  setInterval(() => {
+  const cleanupInterval = setInterval(() => {
     const cutoff = Date.now() - RATE_LIMIT_MS * 2;
     for (const [ip, time] of lastInquiryByIP) {
       if (time < cutoff) lastInquiryByIP.delete(ip);
     }
   }, 600000);
 
+  router._cleanupInterval = cleanupInterval;
   return router;
 }
 

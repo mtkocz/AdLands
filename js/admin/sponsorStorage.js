@@ -42,7 +42,6 @@ const SponsorStorage = {
         const data = await res.json();
         this._cache = data;
         this._useAPI = true;
-        console.log("[SponsorStorage] Connected to server API");
         return;
       }
     } catch (e) {

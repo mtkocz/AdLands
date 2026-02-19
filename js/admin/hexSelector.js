@@ -193,10 +193,6 @@ class HexSelector {
         this.sphereRadius,
         this.adjacencyMap,
       );
-      console.log(
-        "[HexSelector] Tier map built:",
-        HexTierSystem.getTierStats(this.tierMap),
-      );
     }
 
     // Collect all edge vertices for a single merged outline object

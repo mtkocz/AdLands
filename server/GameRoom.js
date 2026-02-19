@@ -317,6 +317,13 @@ class GameRoom {
       clearInterval(this._autoSaveInterval);
       this._autoSaveInterval = null;
     }
+    if (this._captureSaveInterval) {
+      clearInterval(this._captureSaveInterval);
+      this._captureSaveInterval = null;
+    }
+    if (this.tuskChat && typeof this.tuskChat.destroy === "function") {
+      this.tuskChat.destroy();
+    }
     console.log(`[Room ${this.roomId}] Stopped`);
   }
 
@@ -1801,6 +1808,8 @@ class GameRoom {
       this.rankRecomputeCounter = 0;
       this._ranksDirty = false;
       this._recomputeRanks();
+      // Broadcast roster in real-time alongside every rank recompute
+      this._broadcastFactionRosters();
     }
 
     // 6. Broadcast crypto balances + commander state (every 5 seconds)
@@ -1808,11 +1817,6 @@ class GameRoom {
       this._broadcastCrypto();
       // Full commander state sync (reliable — catches any missed commander-update events)
       this.io.to(this.roomId).emit("commander-sync", this._getCommanderSnapshot());
-    }
-
-    // 6b. Broadcast faction rosters (every 10 seconds)
-    if (this.tick % (this.tickRate * 10) === 0) {
-      this._broadcastFactionRosters();
     }
 
     // 7. Award holding crypto (at the top of each wall-clock minute)
@@ -2919,13 +2923,21 @@ class GameRoom {
         }
       }
 
-      // Sort: level DESC → totalCrypto DESC → territoryCaptured DESC
+      // Compute live crypto for sorting (player.crypto for online, totalCrypto for offline)
+      for (const m of allMembers) {
+        if (m.socketId) {
+          const p = this.players.get(m.socketId);
+          m._sortCrypto = p ? p.crypto : (m.totalCrypto || 0);
+        } else {
+          m._sortCrypto = m.totalCrypto || 0;
+        }
+      }
+
+      // Sort: level DESC → live crypto DESC
       allMembers.sort((a, b) => {
         const aLevel = a.level || 1, bLevel = b.level || 1;
         if (bLevel !== aLevel) return bLevel - aLevel;
-        const aCrypto = a.totalCrypto || 0, bCrypto = b.totalCrypto || 0;
-        if (bCrypto !== aCrypto) return bCrypto - aCrypto;
-        return (b.territoryCaptured || 0) - (a.territoryCaptured || 0);
+        return (b._sortCrypto || 0) - (a._sortCrypto || 0);
       });
 
       // Assign ranks (1-based)

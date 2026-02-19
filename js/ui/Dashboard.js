@@ -1296,15 +1296,18 @@ class Dashboard {
    * Update stats panel with crypto system data
    */
   updateStats(stats) {
-    const els = {
-      kills: document.getElementById("dashboard-kills"),
-      deaths: document.getElementById("dashboard-deaths"),
-      kd: document.getElementById("dashboard-kd"),
-      damage: document.getElementById("dashboard-damage"),
-      tics: document.getElementById("dashboard-tics"),
-      hexes: document.getElementById("dashboard-hexes"),
-      clusters: document.getElementById("dashboard-clusters"),
-    };
+    if (!this._statsEls) {
+      this._statsEls = {
+        kills: document.getElementById("dashboard-kills"),
+        deaths: document.getElementById("dashboard-deaths"),
+        kd: document.getElementById("dashboard-kd"),
+        damage: document.getElementById("dashboard-damage"),
+        tics: document.getElementById("dashboard-tics"),
+        hexes: document.getElementById("dashboard-hexes"),
+        clusters: document.getElementById("dashboard-clusters"),
+      };
+    }
+    const els = this._statsEls;
     const c = this._cachedStats;
 
     if (els.kills && c.kills !== stats.kills) {
@@ -1352,10 +1355,18 @@ class Dashboard {
    * Update profile panel
    */
   updateProfile(data) {
-    const nameEl = document.getElementById("dashboard-player-name");
-    const titleEl = document.getElementById("dashboard-player-title");
-    const levelEl = document.getElementById("dashboard-level");
-    const cryptoCurrentEl = document.getElementById("dashboard-crypto-current");
+    if (!this._profileEls) {
+      this._profileEls = {
+        name: document.getElementById("dashboard-player-name"),
+        title: document.getElementById("dashboard-player-title"),
+        level: document.getElementById("dashboard-level"),
+        cryptoCurrent: document.getElementById("dashboard-crypto-current"),
+      };
+    }
+    const nameEl = this._profileEls.name;
+    const titleEl = this._profileEls.title;
+    const levelEl = this._profileEls.level;
+    const cryptoCurrentEl = this._profileEls.cryptoCurrent;
 
     if (nameEl && data.name) nameEl.textContent = data.name;
     if (titleEl && data.title) {
@@ -1949,21 +1960,24 @@ class Dashboard {
    * Shake only activates for 100+ crypto gains
    * @param {number} amount - Crypto amount gained
    */
-  flashCryptoBar(amount) {
+  flashCryptoBar(amount, spend) {
     const cryptoAmount = document.querySelector(".header-crypto-amount");
     if (!cryptoAmount) return;
 
+    const absAmount = Math.abs(amount);
+
     // Brief brightness flash scaled by amount
-    const intensity = Math.min(Math.log10(amount + 1) / 3, 1);
+    const intensity = Math.min(Math.log10(absAmount + 1) / 3, 1);
     const duration = 200 + 800 * intensity;
 
-    cryptoAmount.classList.remove("crypto-flash");
+    const flashClass = spend ? "crypto-flash-spend" : "crypto-flash";
+    cryptoAmount.classList.remove("crypto-flash", "crypto-flash-spend");
     void cryptoAmount.offsetWidth;
     cryptoAmount.style.setProperty("--flash-duration", `${duration}ms`);
-    cryptoAmount.classList.add("crypto-flash");
+    cryptoAmount.classList.add(flashClass);
 
     setTimeout(() => {
-      cryptoAmount.classList.remove("crypto-flash");
+      cryptoAmount.classList.remove(flashClass);
     }, duration);
   }
 
@@ -2984,15 +2998,12 @@ class Dashboard {
   }
 
   _handleTerritoryUpload(inputEl, territoryId) {
-    console.log(`[Dashboard] _handleTerritoryUpload called for territory ${territoryId}`);
     const file = inputEl.files[0];
-    if (!file) { console.warn("[Dashboard] No file selected"); return; }
-    console.log(`[Dashboard] File selected: ${file.name} (${(file.size / 1024).toFixed(1)}KB, ${file.type})`);
+    if (!file) return;
 
     const reader = new FileReader();
     reader.onload = (e) => {
       const dataUrl = e.target.result;
-      console.log(`[Dashboard] FileReader loaded, dataUrl length: ${dataUrl.length}`);
 
       const territory = this._playerTerritories.find((t) => t.id === territoryId);
       if (!territory) return;
@@ -3023,7 +3034,6 @@ class Dashboard {
       // Submit to server for admin review via socket
       let socketAckReceived = false;
       if (window._mp?.net?.socket) {
-        console.log("[Dashboard] Socket available, submitting image for review");
         // Listen for server acknowledgment
         const ackHandler = (ackData) => {
           if (ackData?.territoryId === territoryId) {
@@ -3032,14 +3042,12 @@ class Dashboard {
             if (ackData.status === "error") {
               console.warn("[Dashboard] Image submit error from server:", ackData.message);
             } else {
-              console.log("[Dashboard] Image submit acknowledged by server, status:", ackData.status);
               // Notify admin portal via BroadcastChannel
               if (typeof SponsorStorage !== "undefined") {
                 const storageId = territory._sponsorStorageId ||
                   (SponsorStorage._cache && SponsorStorage.getAll().find(s => s._territoryId === territoryId)?.id);
                 if (storageId) {
                   SponsorStorage._broadcast("update", { id: storageId });
-                  console.log("[Dashboard] BroadcastChannel update sent for", storageId);
                 }
               }
             }
@@ -3047,7 +3055,6 @@ class Dashboard {
         };
         window._mp.net.socket.on("territory-image-submitted", ackHandler);
 
-        console.log(`[Dashboard] Emitting submit-territory-image via socket (territoryId=${territoryId}, dataUrl=${dataUrl.length} chars)`);
         window._mp.net.socket.emit("submit-territory-image", {
           territoryId,
           pendingImage: dataUrl,
@@ -3077,7 +3084,6 @@ class Dashboard {
                   }),
                 });
                 if (res.ok) {
-                  console.log("[Dashboard] HTTP fallback image submit succeeded");
                   if (typeof SponsorStorage !== "undefined") {
                     SponsorStorage._broadcast("update", { id: storageId });
                   }

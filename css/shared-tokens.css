@@ -42,6 +42,12 @@ h6 {
 }
 
 /* Disable anti-aliasing globally for pixel-perfect bitmap fonts */
+*,
+*::before,
+*::after {
+    box-sizing: border-box;
+}
+
 * {
     -webkit-font-smoothing: none; /* Chrome, Safari, Edge */
     -moz-osx-font-smoothing: auto; /* Firefox on macOS - use native rendering */
@@ -49,6 +55,26 @@ h6 {
     /* Prevent mobile browsers from inflating font sizes */
     -webkit-text-size-adjust: 100%;
     text-size-adjust: 100%;
+    /* Global scrollbar styling */
+    scrollbar-color: #222 #0a0a0a;
+    scrollbar-width: thin;
+}
+
+*::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+}
+
+*::-webkit-scrollbar-track {
+    background: #0a0a0a;
+}
+
+*::-webkit-scrollbar-thumb {
+    background: #222;
+}
+
+*::-webkit-scrollbar-thumb:hover {
+    background: #333;
 }
 
 :root {

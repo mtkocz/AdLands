@@ -154,6 +154,7 @@ app.get("/", (req, res) => {
 // ========================
 
 let mainRoom;
+let inquiryRouter;
 
 (async () => {
   // Load sponsor stores (reads JSON from disk, then merges Firestore data)
@@ -195,7 +196,8 @@ let mainRoom;
 
   // Mount sponsor inquiry routes (public contact form)
   const { createInquiryRoutes, sendViaResend } = require('./inquiryRoutes');
-  app.use('/api/sponsor-inquiry', createInquiryRoutes({ sponsorStore, mainRoom }));
+  inquiryRouter = createInquiryRoutes({ sponsorStore, mainRoom });
+  app.use('/api/sponsor-inquiry', inquiryRouter);
 
   // Password reset via Firebase Admin SDK + Resend
   const admin = require("firebase-admin");
@@ -747,6 +749,10 @@ io.on("connection", (socket) => {
 async function gracefulShutdown(signal) {
   console.log(`\n[Server] ${signal} received — saving all data before exit...`);
   try {
+    if (mainRoom) mainRoom.stop();
+    if (inquiryRouter && inquiryRouter._cleanupInterval) {
+      clearInterval(inquiryRouter._cleanupInterval);
+    }
     await Promise.allSettled([
       mainRoom.saveAllPlayers(),
       mainRoom.saveCaptureState(),

@@ -1881,7 +1881,6 @@
         if (window.authManager.idToken && net.connected) {
           clearInterval(tokenPoll);
           net.sendRefreshToken(window.authManager.idToken);
-          console.log("[Multiplayer] Sent auth token after late resolve");
         }
       }, 200);
       // Stop polling after 10s to avoid leaking

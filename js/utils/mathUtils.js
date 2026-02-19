@@ -33,6 +33,23 @@ const MathUtils = {
     },
 
     /**
+     * Lerp angles that wrap at 2PI (theta, turret), normalizing result to [0, 2PI]
+     * @param {number} a - Start angle (radians)
+     * @param {number} b - End angle (radians)
+     * @param {number} t - Interpolation factor (0-1)
+     * @returns {number}
+     */
+    lerpAngle2Pi(a, b, t) {
+        let delta = b - a;
+        while (delta > Math.PI) delta -= Math.PI * 2;
+        while (delta < -Math.PI) delta += Math.PI * 2;
+        let result = a + delta * t;
+        while (result < 0) result += Math.PI * 2;
+        while (result >= Math.PI * 2) result -= Math.PI * 2;
+        return result;
+    },
+
+    /**
      * Septic ease-in-out for extra smooth acceleration/deceleration
      * Formula: -20t^7 + 70t^6 - 84t^5 + 35t^4
      * @param {number} t - Input value (0-1)
