@@ -96,7 +96,7 @@ function createInquiryRoutes(deps = {}) {
 
   // Resend API key (same key used for both SMTP and HTTP API)
   const resendApiKey = process.env.SMTP_PASS || null;
-  const fromAddress = process.env.SMTP_FROM || "AdLands Sponsor Portal <noreply@adlands.gg>";
+  const fromAddress = process.env.SMTP_FROM || "AdLands - A Limited Liability Company <noreply@adlands.gg>";
 
   if (resendApiKey) {
     console.log("[Inquiry] Resend API configured, emails will be sent via HTTPS");
@@ -391,7 +391,7 @@ function buildInquiryEmail({
 
   html += `
       <div style="color: #aaaaaa; font-size: 11px; border-top: 1px solid #eeeeee; padding-top: 12px; margin-top: 16px;">
-        Sent from the AdLands Sponsor Portal
+        Sent from AdLands - A Limited Liability Company
       </div>
     </div>
   `;
