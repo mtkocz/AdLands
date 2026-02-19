@@ -897,9 +897,9 @@
         }
 
         if (createdSponsor) {
-          // New sponsor — enter edit mode and show territory view
+          // New sponsor — enter group edit mode and show territory view
           refreshSponsorsList();
-          await editSponsor(createdSponsor.id);
+          await editGroup(getGroupKey(createdSponsor), createdSponsor.id);
           showTerritoryView();
         } else {
           handleClearForm();
@@ -1196,45 +1196,8 @@
     for (const [, members] of groups) {
       const hasPlayerTerritory = members.some((s) => s.ownerType === "player");
       const hasInquiryTerritory = members.some((s) => s.ownerType === "inquiry");
-      if (members.length === 1 && !hasPlayerTerritory && !hasInquiryTerritory) {
-        // Single sponsor — render as flat card
-        const sponsor = members[0];
-        const rev = calcRevenueForTiles(sponsor.cluster?.tileIndices, tierMap);
-        const moonRev = calcMoonRevenue(sponsor.name);
-        const bbRev = calcBillboardRevenue(sponsor.name);
-        const sponsorTotal = rev.total + moonRev + bbRev;
-        totalMonthly += sponsorTotal;
 
-        const isEditing = sponsor.id === currentEditingId;
-        const logoSrc = sponsor.logoUrl || sponsor.logoImage;
-        const isPaused = !!sponsor.paused;
-        const isInquiry = sponsor.ownerType === "inquiry";
-        htmlParts.push(`
-            <div class="sponsor-card${isEditing ? " editing" : ""}${isPaused ? " paused" : ""}${isInquiry ? " inquiry-pending" : ""}" data-id="${sponsor.id}" data-name="${escapeHtml(getGroupKey(sponsor))}">
-                <div class="sponsor-card-logo">
-                    ${
-                      logoSrc
-                        ? `<img src="${logoSrc}" alt="${escapeHtml(sponsor.name)}">`
-                        : '<span style="color:#666;font-family:var(--font-small);font-size:var(--font-size-small);">No logo</span>'
-                    }
-                </div>
-                <div class="sponsor-card-info">
-                    <div class="sponsor-card-name">${escapeHtml(sponsor.name)}${isPaused ? ' <span class="paused-badge">PAUSED</span>' : ""}${isInquiry ? ' <span class="inquiry-badge">INQUIRY</span>' : ""}</div>
-                    <div class="sponsor-card-stats">
-                        ${sponsor.cluster?.tileIndices?.length || 0} tiles${moonRev > 0 ? ", " + moonManager.getMoonsForSponsor(sponsor.name).length + " moons" : ""}${bbRev > 0 ? ", " + (billboardManager ? billboardManager.getBillboardsForSponsor(sponsor.name).length : 0) + " billboards" : ""},
-                        ${sponsor.rewards?.length || 0} rewards
-                    </div>
-                    ${sponsorTotal > 0 ? `<div class="sponsor-card-revenue"><span class="sponsor-card-revenue-total">$${fmtUSD(sponsorTotal)}/mo</span></div>` : ""}
-                </div>
-                <div class="sponsor-card-actions">
-                    <button class="icon-btn pause-sponsor-btn" title="${isPaused ? "Resume" : "Pause"}">&#x23F8;</button>
-                    <button class="icon-btn duplicate-sponsor-btn" title="Duplicate">&#x29C9;</button>
-                    <button class="icon-btn delete-entire-sponsor-btn" title="Delete">&times;</button>
-                </div>
-            </div>
-        `);
-      } else {
-        // Multi-entry group — render as accordion
+        // Always render as accordion group with nested territory rows
         const first = members[0];
         const totalTiles = members.reduce(
           (sum, s) => sum + (s.cluster?.tileIndices?.length || 0), 0
@@ -1392,7 +1355,7 @@
                     </div>
                     <div class="sponsor-card-info">
                         <div class="sponsor-card-name">${escapeHtml(hasPlayerTerritory ? (first.ownerEmail || first.ownerUid || "Unknown") : first.name)}${groupBadgeHtml}</div>
-                        <span class="sponsor-group-badge">${members.length} territories</span>
+                        <span class="sponsor-group-badge">${members.length} ${members.length === 1 ? "territory" : "territories"}</span>
                         <div class="sponsor-card-stats">
                             ${totalTiles} tiles${groupMoonCount > 0 ? ", " + groupMoonCount + " moons" : ""}${groupBbCount > 0 ? ", " + groupBbCount + " billboards" : ""}, ${totalRewards} rewards
                         </div>
@@ -1409,7 +1372,6 @@
                 </div>
             </div>
         `);
-      }
     }
 
     // Append revenue total summary
@@ -1521,15 +1483,6 @@
       return;
     }
 
-    // If only one member and not a player/inquiry territory, edit it directly as a flat card
-    if (members.length === 1 && members[0].ownerType !== "player" && members[0].ownerType !== "inquiry") {
-      editSponsor(members[0].id).catch(err => {
-        console.error("[AdminApp] editSponsor (from group) failed:", err);
-        showToast("Failed to load sponsor: " + (err.message || err), "error");
-      });
-      return;
-    }
-
     try {
       // Determine starting index
       let activeIndex = 0;
@@ -1590,7 +1543,7 @@
       refreshSponsorsList();
       window.scrollTo({ top: 0, behavior: "smooth" });
       const toastLabel = isPlayer ? (first?.ownerEmail || editingGroup.name) : editingGroup.name;
-      showToast(`Editing "${toastLabel}" (${members.length} territories)`, "success");
+      showToast(`Editing "${toastLabel}" (${members.length} ${members.length === 1 ? "territory" : "territories"})`, "success");
     } catch (err) {
       console.error("[AdminApp] editGroup error:", err);
       showToast("Failed to load sponsor group: " + (err.message || err), "error");
