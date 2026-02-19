@@ -75,34 +75,36 @@
     }).join("");
     html += "</div>";
 
-    // — Moons — (colors match hex tiers: Large=Hotzone, Small=Frontier, Medium=Prime)
+    // — Moons — sorted expensive to cheap (colors match hex tiers)
     const moonTierIds = ["HOTZONE", "FRONTIER", "PRIME"];
+    const moonsSorted = HexTierSystem.MOON_LABELS.map((label, i) => ({
+      label, price: HexTierSystem.MOON_PRICES[i], tier: HexTierSystem.TIERS[moonTierIds[i]],
+    })).sort((a, b) => b.price - a.price);
     html += '<div class="tier-group"><div class="tier-group-label">Moons</div>';
-    HexTierSystem.MOON_LABELS.forEach((label, i) => {
-      const price = HexTierSystem.MOON_PRICES[i];
-      const tier = HexTierSystem.TIERS[moonTierIds[i]];
+    for (const moon of moonsSorted) {
       html += `
         <div class="tier-item">
-          <div class="tier-color" style="background: ${tier.cssColor}; border-color: ${tier.stroke};">
-            <span style="color: ${tier.textColor}; font-size: 11px;">\u263d</span>
+          <div class="tier-color" style="background: ${moon.tier.cssColor}; border-color: ${moon.tier.stroke};">
+            <span style="color: ${moon.tier.textColor}; font-size: 11px;">\u263d</span>
           </div>
           <div class="tier-info">
             <div class="tier-header">
-              <span class="tier-name" style="color: ${tier.textColor}">${label}</span>
-              <span class="tier-price">$${price}<span class="tier-price-unit">/mo</span></span>
+              <span class="tier-name" style="color: ${moon.tier.textColor}">${moon.label}</span>
+              <span class="tier-price">$${moon.price}<span class="tier-price-unit">/mo</span></span>
             </div>
           </div>
         </div>
       `;
-    });
+    }
     html += "</div>";
 
-    // — Billboards — (LOW=Frontier, HIGH=Prime)
+    // — Billboards — sorted expensive to cheap (HIGH=Prime, LOW=Frontier)
     const bbTierMap = { LOW: "FRONTIER", HIGH: "PRIME" };
+    const bbSorted = Object.entries(HexTierSystem.BILLBOARD_ORBIT_TIERS)
+      .map(([key, def]) => ({ key, def, tier: HexTierSystem.TIERS[bbTierMap[key]] }))
+      .sort((a, b) => b.def.price - a.def.price);
     html += '<div class="tier-group"><div class="tier-group-label">Billboards</div>';
-    const bbTiers = HexTierSystem.BILLBOARD_ORBIT_TIERS;
-    for (const [key, def] of Object.entries(bbTiers)) {
-      const tier = HexTierSystem.TIERS[bbTierMap[key]];
+    for (const { def, tier } of bbSorted) {
       html += `
         <div class="tier-item">
           <div class="tier-color" style="background: ${tier.cssColor}; border-color: ${tier.stroke};">
@@ -238,7 +240,8 @@
       }
     }
 
-    // Moon pricing
+    // Moon pricing (colors match hex tiers: index 0=Hotzone, 1=Frontier, 2=Prime)
+    const moonTierIds = ["HOTZONE", "FRONTIER", "PRIME"];
     if (hasMoons) {
       html += `
         <div class="pricing-header" ${hasHexes ? 'style="margin-top: 8px; padding-top: 8px; border-top: 1px solid rgba(255,255,255,0.08);"' : ""}>
@@ -246,10 +249,12 @@
         </div>
       `;
       for (const moon of moons) {
+        const moonTier = HexTierSystem.TIERS[moonTierIds[moon.index]] || {};
+        const moonColor = moonTier.textColor || "#aaa";
         html += `
           <div class="pricing-row">
             <div class="pricing-row-left">
-              <span class="pricing-tier-icon" style="color: #aaa">\u263d</span>
+              <span class="pricing-tier-icon" style="color: ${moonColor}">\u263d</span>
               <span class="pricing-tier-name">${moon.label}</span>
             </div>
             <span class="pricing-tier-subtotal">$${fmtUSD(moon.price)}</span>
@@ -258,7 +263,8 @@
       }
     }
 
-    // Billboard pricing
+    // Billboard pricing (LOW=Frontier, HIGH=Prime)
+    const bbTierMap = { LOW: "FRONTIER", HIGH: "PRIME" };
     if (hasBillboards) {
       const { billboards } = pricing;
       html += `
@@ -267,10 +273,12 @@
         </div>
       `;
       for (const bb of billboards) {
+        const bbTier = HexTierSystem.TIERS[bbTierMap[bb.tier]] || {};
+        const bbColor = bbTier.textColor || "#7af";
         html += `
           <div class="pricing-row">
             <div class="pricing-row-left">
-              <span class="pricing-tier-icon" style="color: #7af">\u26ef</span>
+              <span class="pricing-tier-icon" style="color: ${bbColor}">\u26ef</span>
               <span class="pricing-tier-name">${bb.label}</span>
             </div>
             <span class="pricing-tier-subtotal">$${fmtUSD(bb.price)}</span>

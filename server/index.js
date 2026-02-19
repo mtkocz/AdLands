@@ -518,6 +518,8 @@ io.on("connection", (socket) => {
         console.warn(`[Territory] SponsorStore create failed for ${territoryId}:`, createResult.errors);
       } else {
         console.log(`[Territory] SponsorStore entry created: ${createResult.sponsor.id}`);
+        // Reload sponsors so the new territory becomes a capturable cluster immediately
+        mainRoom.reloadSponsors();
       }
 
       // Broadcast placeholder territory to all players (no player-submitted info yet)

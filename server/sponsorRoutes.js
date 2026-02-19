@@ -479,13 +479,18 @@ function createSponsorRoutes(sponsorStore, gameRoom, { imageUrls, gameDir } = {}
         await sponsorStore.delete(req.params.id);
         await cleanupSponsorImages(req.params.id);
 
-        // Delete Firestore document (already deactivated above as safety net)
+        // Update Firestore document with rejection status (keep doc so player sees reason on next login)
         if (territoryId && territoryId !== sponsor.id) {
           try {
             const db = getFirestore();
-            await db.collection("territories").doc(territoryId).delete();
+            await db.collection("territories").doc(territoryId).update({
+              active: false,
+              submissionStatus: "rejected",
+              rejectionReason: reason,
+              reviewedAt: require("firebase-admin").firestore.FieldValue.serverTimestamp(),
+            });
           } catch (e) {
-            console.warn("[Territory] Firestore reject delete failed:", e.message);
+            console.warn("[Territory] Firestore reject update failed:", e.message);
           }
         }
 

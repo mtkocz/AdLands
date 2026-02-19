@@ -1019,6 +1019,13 @@ class Dashboard {
           this._playerTerritories.splice(idx, 1);
           this._savePlayerTerritories();
           this._renderTerritoryList();
+
+          // Delete rejected territory from Firestore so it doesn't reappear
+          if (window.firestoreSync?.isActive && window.authManager?.uid) {
+            firebase.firestore().collection("territories").doc(territoryId).delete().catch((e) =>
+              console.warn("[Dashboard] Firestore rejected territory cleanup failed:", e),
+            );
+          }
         }
       }
     });
@@ -2225,6 +2232,8 @@ class Dashboard {
     const hasAnyPlayerTerritoryData = serverSponsors.some(s => s.ownerType === "player" || s.isPlayerTerritory);
     const before = this._playerTerritories.length;
     this._playerTerritories = this._playerTerritories.filter((t) => {
+      // Keep rejected stubs — they're not in SponsorStore but the player needs to see them
+      if (t.submissionStatus === "rejected") return true;
       return serverMap.has(t.id) || !hasAnyPlayerTerritoryData;
     });
     if (this._playerTerritories.length < before) changed = true;
@@ -3385,20 +3394,41 @@ class Dashboard {
   async _loadTerritoriesFromFirestore() {
     try {
       const db = firebase.firestore();
-      const snap = await db.collection("territories")
-        .where("ownerUid", "==", window.authManager.uid)
-        .where("active", "==", true)
-        .get();
+      const uid = window.authManager.uid;
 
-      if (snap.empty) {
+      // Load active territories and rejected territories in parallel
+      const [activeSnap, rejectedSnap] = await Promise.all([
+        db.collection("territories")
+          .where("ownerUid", "==", uid)
+          .where("active", "==", true)
+          .get(),
+        db.collection("territories")
+          .where("ownerUid", "==", uid)
+          .where("submissionStatus", "==", "rejected")
+          .get(),
+      ]);
+
+      if (activeSnap.empty && rejectedSnap.empty) {
         // Still try local as fallback
         this._loadTerritoriesFromLocal();
         return;
       }
 
       const territories = [];
-      snap.forEach((doc) => {
+      activeSnap.forEach((doc) => {
         territories.push({ id: doc.id, ...doc.data() });
+      });
+      rejectedSnap.forEach((doc) => {
+        // Avoid duplicates (an active doc shouldn't also be rejected, but guard anyway)
+        if (!territories.some(t => t.id === doc.id)) {
+          const data = doc.data();
+          territories.push({
+            id: doc.id,
+            ...data,
+            tileIndices: [],  // No tiles for rejected territories
+            rejectionReason: data.rejectionReason || "Submission rejected by admin",
+          });
+        }
       });
 
       this._applyLoadedTerritories(territories);
