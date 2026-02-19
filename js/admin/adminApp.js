@@ -10,7 +10,6 @@
   let hexSelector = null;
   let sponsorForm = null;
   let rewardConfig = null;
-  let pricingPanel = null;
   let moonManager = null;
   let billboardManager = null;
 
@@ -91,20 +90,8 @@
       onSelectionChange: handleSelectionChange,
     });
 
-    // Initialize pricing panel
-    setLoadingProgress(65, "Setting up panels...");
-    const pricingContainer = document.getElementById("pricing-panel");
-    pricingPanel = new PricingPanel(pricingContainer, {
-      onTierFilter: handleTierFilter,
-    });
-
-    // Update tier stats in pricing panel
-    const tierStats = hexSelector.getTierStats();
-    if (tierStats) {
-      pricingPanel.updateTierStats(tierStats);
-    }
-
     // Initialize sponsor form
+    setLoadingProgress(65, "Setting up panels...");
     sponsorForm = new SponsorForm({
       onFormChange: handleFormChange,
       onAdjustmentChange: handleAdjustmentChange,
@@ -271,18 +258,6 @@
             });
           }
         }
-        return;
-      }
-
-      // Handle inquiry activate/reject buttons
-      const activateInqBtn = e.target.closest(".activate-inquiry-btn");
-      if (activateInqBtn) {
-        activateInquiryGroup(activateInqBtn.dataset.name);
-        return;
-      }
-      const rejectInqBtn = e.target.closest(".reject-inquiry-btn");
-      if (rejectInqBtn) {
-        rejectInquiryGroup(rejectInqBtn.dataset.name);
         return;
       }
 
@@ -460,12 +435,6 @@
     }
     selectedTilesListEl.textContent = parts.join(" | ");
 
-    // Update pricing panel
-    if (pricingPanel) {
-      const pricing = hexSelector.getPricing();
-      pricingPanel.updatePricing(pricing);
-    }
-
     // Update pattern preview when selection changes (tiles, moons, or billboards)
     const formData = sponsorForm.getFormData();
     if (formData.patternImage && (selectedTiles.length > 0 || selectedMoons.length > 0 || selectedBillboards.length > 0)) {
@@ -623,16 +592,6 @@
     if (totalEl) {
       totalEl.textContent = `$${fmtUSD(totalMonthly)}/mo`;
     }
-  }
-
-  /**
-   * Handle tier filter from pricing panel
-   * @param {string|null} tierId - Tier to filter, or null to clear
-   */
-  function handleTierFilter(tierId) {
-    // TODO: Implement tier filtering in hex selector
-    // This would dim/hide tiles not matching the selected tier
-    console.log("[AdminApp] Tier filter:", tierId);
   }
 
   // Track the last pattern image data URL to avoid redundant texture reloads
@@ -1252,14 +1211,9 @@
                     ${sponsorTotal > 0 ? `<div class="sponsor-card-revenue"><span class="sponsor-card-revenue-total">$${fmtUSD(sponsorTotal)}/mo</span></div>` : ""}
                 </div>
                 <div class="sponsor-card-actions">
-                    ${isInquiry ? `
-                    <button class="btn-approve activate-inquiry-btn" data-name="${escapeHtml(getGroupKey(sponsor))}">Activate</button>
-                    <button class="btn-reject reject-inquiry-btn" data-name="${escapeHtml(getGroupKey(sponsor))}">Reject</button>
-                    ` : `
                     <button class="icon-btn pause-sponsor-btn" title="${isPaused ? "Resume" : "Pause"}">&#x23F8;</button>
                     <button class="icon-btn duplicate-sponsor-btn" title="Duplicate">&#x29C9;</button>
                     <button class="icon-btn delete-entire-sponsor-btn" title="Delete">&times;</button>
-                    `}
                 </div>
             </div>
         `);
@@ -1409,21 +1363,6 @@
         if (!isGroupInquiry && hasPendingImage) groupBadgeHtml += ' <span class="pending-status-badge">PENDING</span>';
         if (!isGroupInquiry && isNewTerritory && !hasPendingImage) groupBadgeHtml += ' <span class="new-status-badge">NEW</span>';
 
-        // Build group actions
-        let groupActionsHtml;
-        if (isGroupInquiry) {
-          groupActionsHtml = `
-            <button class="btn-approve activate-inquiry-btn" data-name="${escapeHtml(groupKey)}">Activate</button>
-            <button class="btn-reject reject-inquiry-btn" data-name="${escapeHtml(groupKey)}">Reject</button>
-          `;
-        } else {
-          groupActionsHtml = `
-            <button class="icon-btn pause-sponsor-btn" title="${isGroupPaused ? "Resume" : "Pause"}">&#x23F8;</button>
-            <button class="icon-btn add-cluster-btn" title="Add territory">+</button>
-            <button class="icon-btn delete-entire-sponsor-btn" title="Delete sponsor">&times;</button>
-          `;
-        }
-
         htmlParts.push(`
             <div class="sponsor-group${isGroupEditing ? " editing expanded" : ""}${isGroupPaused ? " paused" : ""}${groupHighlight}" data-name="${escapeHtml(groupKey)}">
                 <div class="sponsor-group-header">
@@ -1444,7 +1383,9 @@
                         ${groupRevHtml}
                     </div>
                     <div class="sponsor-card-actions">
-                        ${groupActionsHtml}
+                        <button class="icon-btn pause-sponsor-btn" title="${isGroupPaused ? "Resume" : "Pause"}">&#x23F8;</button>
+                        <button class="icon-btn add-cluster-btn" title="Add territory">+</button>
+                        <button class="icon-btn delete-entire-sponsor-btn" title="Delete sponsor">&times;</button>
                     </div>
                 </div>
                 <div class="sponsor-group-clusters">
@@ -1978,118 +1919,6 @@
   // ========================
   // INQUIRY SPONSOR MANAGEMENT
   // ========================
-
-  /**
-   * Activate all territories in a pending inquiry group.
-   * Calls the activate-inquiry endpoint for each member sequentially.
-   * Shows conflict dialog if any tiles overlap existing sponsors.
-   */
-  async function activateInquiryGroup(groupKey) {
-    if (busy) {
-      showToast("Please wait for the current operation to finish", "info");
-      return;
-    }
-
-    const members = getGroupMembers(groupKey).filter(s => s.ownerType === "inquiry");
-    if (members.length === 0) return;
-
-    if (!confirm(`Activate ${members.length} territory/territories for "${members[0].name}"?`)) return;
-
-    busy = true;
-    try {
-      let hasConflicts = false;
-      let allConflicts = [];
-
-      // First pass: try activating without force
-      for (const member of members) {
-        const res = await fetch(`/api/sponsors/${encodeURIComponent(member.id)}/activate-inquiry`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ force: false }),
-        });
-        const result = await res.json();
-
-        if (res.status === 409 && result.conflicts) {
-          hasConflicts = true;
-          allConflicts.push(...result.conflicts);
-        } else if (!result.success) {
-          showToast((result.errors || []).join(". ") || "Activation failed", "error");
-          busy = false;
-          return;
-        }
-      }
-
-      // If conflicts, ask admin to override
-      if (hasConflicts) {
-        const uniqueNames = [...new Set(allConflicts.map(c => c.sponsorName))];
-        const msg = `These territories conflict with existing sponsors:\n\n${uniqueNames.join(", ")}\n\nDelete the conflicting sponsors and override?`;
-        if (!confirm(msg)) {
-          busy = false;
-          return;
-        }
-
-        // Second pass: force activate (deletes conflicting sponsors)
-        for (const member of members) {
-          const res = await fetch(`/api/sponsors/${encodeURIComponent(member.id)}/activate-inquiry`, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ force: true }),
-          });
-          const result = await res.json();
-          if (!result.success && res.status !== 200) {
-            showToast((result.errors || []).join(". ") || "Activation failed", "error");
-            busy = false;
-            await SponsorStorage.reload();
-            refreshSponsorsList();
-            return;
-          }
-        }
-      }
-
-      showToast(`Activated ${members.length} territories for "${members[0].name}"`, "success");
-      handleClearForm();
-      await SponsorStorage.reload();
-      refreshSponsorsList();
-    } catch (err) {
-      showToast("Activation failed: " + err.message, "error");
-    } finally {
-      busy = false;
-    }
-  }
-
-  /**
-   * Reject (delete) all territories in a pending inquiry group.
-   */
-  async function rejectInquiryGroup(groupKey) {
-    if (busy) {
-      showToast("Please wait for the current operation to finish", "info");
-      return;
-    }
-
-    const members = getGroupMembers(groupKey).filter(s => s.ownerType === "inquiry");
-    if (members.length === 0) return;
-
-    if (!confirm(`Reject and delete ${members.length} pending territory/territories for "${members[0].name}"?`)) return;
-
-    busy = true;
-    try {
-      for (const member of members) {
-        await fetch(`/api/sponsors/${encodeURIComponent(member.id)}/reject-inquiry`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-        });
-      }
-
-      showToast(`Rejected inquiry from "${members[0].name}"`, "success");
-      handleClearForm();
-      await SponsorStorage.reload();
-      refreshSponsorsList();
-    } catch (err) {
-      showToast("Rejection failed: " + err.message, "error");
-    } finally {
-      busy = false;
-    }
-  }
 
   /**
    * Show inquiry contact details in the form panel for inquiry sponsors.
