@@ -42,6 +42,9 @@
   const saveTerritoryBtn = document.getElementById("save-territory-btn");
   const clearFormBtnInfo = document.getElementById("clear-form-btn-info");
   const clearFormBtnTerritory = document.getElementById("clear-form-btn-territory");
+  const conflictOverrideSection = document.getElementById("conflict-override-section");
+  const conflictOverrideInfo = document.getElementById("conflict-override-info");
+  const conflictOverrideBtn = document.getElementById("conflict-override-btn");
 
   // Currently active form view: 'info' or 'territories'
   let activeView = "info";
@@ -173,6 +176,11 @@
     clearSelectionBtn.addEventListener("click", () => {
       hexSelector.clearSelection();
     });
+
+    // Conflict override
+    if (conflictOverrideBtn) {
+      conflictOverrideBtn.addEventListener("click", handleConflictOverride);
+    }
 
     // Export JSON
     exportBtn.addEventListener("click", handleExport);
@@ -915,6 +923,13 @@
     updateAssignedBillboards();
     selectedTilesListEl.textContent = "";
     showInquiryDetails(null);
+    // Clear conflict highlights
+    if (hexSelector) {
+      hexSelector.setConflictTiles([]);
+      hexSelector.setConflictMoons([]);
+      hexSelector.setConflictBillboards([]);
+    }
+    if (conflictOverrideSection) conflictOverrideSection.style.display = "none";
     showSponsorInfoView();
   }
 
@@ -1449,6 +1464,11 @@
       refreshSponsorsList();
       window.scrollTo({ top: 0, behavior: "smooth" });
       showToast(`Editing "${sponsor.name}"`, "success");
+
+      // Check for inquiry conflicts (single sponsor case)
+      if (sponsor.ownerType === "inquiry") {
+        updateInquiryConflicts(sponsor);
+      }
     } catch (err) {
       console.error("[AdminApp] editSponsor error:", err);
       showToast("Failed to load sponsor: " + (err.message || err), "error");
@@ -1674,6 +1694,9 @@
     if (savedSelectionChange) {
       savedSelectionChange(hexSelector.getSelectedTiles());
     }
+
+    // Check for inquiry conflicts after loading
+    updateInquiryConflicts();
   }
 
   /**
@@ -1954,6 +1977,148 @@
       <div class="inquiry-detail-row"><span class="inquiry-detail-label">Submitted:</span><span class="inquiry-detail-value">${submitted}</span></div>
     `;
     panel.style.display = "";
+  }
+
+  /**
+   * Detect and highlight conflicts for the currently-edited inquiry sponsor group.
+   * Shows the Override button if any territories overlap existing sponsors.
+   */
+  function updateInquiryConflicts(singleSponsor) {
+    // Clear previous conflict highlights
+    if (hexSelector) {
+      hexSelector.setConflictTiles([]);
+      hexSelector.setConflictMoons([]);
+      hexSelector.setConflictBillboards([]);
+    }
+    if (conflictOverrideSection) conflictOverrideSection.style.display = "none";
+
+    // Determine which members to check
+    let members;
+    let groupIdSet;
+    if (editingGroup) {
+      members = editingGroup.ids.map(id => SponsorStorage.getById(id)).filter(Boolean);
+      groupIdSet = new Set(editingGroup.ids);
+    } else if (singleSponsor) {
+      members = [singleSponsor];
+      groupIdSet = new Set([singleSponsor.id]);
+    } else {
+      return;
+    }
+    if (!members.some(s => s.ownerType === "inquiry")) return;
+
+    const allSponsors = SponsorStorage.getAll();
+    const conflictTiles = [];
+    const conflictMoons = [];
+    const conflictBillboards = [];
+    const conflictNames = new Set();
+
+    // Check hex tile conflicts
+    for (const member of members) {
+      const tiles = member.cluster?.tileIndices || [];
+      if (tiles.length === 0) continue;
+      const tileSet = new Set(tiles);
+      for (const s of allSponsors) {
+        if (groupIdSet.has(s.id)) continue;
+        if (!s.cluster?.tileIndices) continue;
+        for (const t of s.cluster.tileIndices) {
+          if (tileSet.has(t)) {
+            conflictTiles.push(t);
+            conflictNames.add(s.name);
+          }
+        }
+      }
+    }
+
+    // Check moon conflicts
+    for (const member of members) {
+      if (member.territoryType !== "moon" || member.inquiryData?.moonIndex == null) continue;
+      const mi = member.inquiryData.moonIndex;
+      if (moonManager) {
+        const assignedMap = moonManager.getAssignedMoons();
+        if (assignedMap.has(mi)) {
+          conflictMoons.push(mi);
+          conflictNames.add(assignedMap.get(mi));
+        }
+      }
+    }
+
+    // Check billboard conflicts
+    for (const member of members) {
+      if (member.territoryType !== "billboard" || member.inquiryData?.billboardIndex == null) continue;
+      const bi = member.inquiryData.billboardIndex;
+      if (billboardManager) {
+        const assignedMap = billboardManager.getAssignedBillboards();
+        if (assignedMap.has(bi)) {
+          conflictBillboards.push(bi);
+          conflictNames.add(assignedMap.get(bi));
+        }
+      }
+    }
+
+    // Apply highlights
+    if (hexSelector) {
+      hexSelector.setConflictTiles(conflictTiles);
+      hexSelector.setConflictMoons(conflictMoons);
+      hexSelector.setConflictBillboards(conflictBillboards);
+    }
+
+    // Show/hide override section
+    const totalConflicts = conflictTiles.length + conflictMoons.length + conflictBillboards.length;
+    if (totalConflicts > 0 && conflictOverrideSection && conflictOverrideInfo) {
+      const parts = [];
+      if (conflictTiles.length > 0) parts.push(`${conflictTiles.length} hex${conflictTiles.length !== 1 ? "es" : ""}`);
+      if (conflictMoons.length > 0) parts.push(`${conflictMoons.length} moon${conflictMoons.length !== 1 ? "s" : ""}`);
+      if (conflictBillboards.length > 0) parts.push(`${conflictBillboards.length} billboard${conflictBillboards.length !== 1 ? "s" : ""}`);
+      const nameList = [...conflictNames].map(n => `"${n}"`).join(", ");
+      conflictOverrideInfo.textContent = `${parts.join(", ")} conflict with ${nameList}`;
+      conflictOverrideSection.style.display = "";
+    }
+  }
+
+  /**
+   * Override: delete conflicting sponsors and activate all inquiry territories in the group.
+   */
+  async function handleConflictOverride() {
+    if (busy) return;
+
+    let members;
+    if (editingGroup) {
+      members = editingGroup.ids.map(id => SponsorStorage.getById(id)).filter(s => s && s.ownerType === "inquiry");
+    } else {
+      // Single sponsor case
+      const singleId = sponsorForm.getEditingSponsorId();
+      if (!singleId) return;
+      const s = SponsorStorage.getById(singleId);
+      members = (s && s.ownerType === "inquiry") ? [s] : [];
+    }
+    if (members.length === 0) return;
+
+    if (!confirm("This will delete the conflicting sponsor territories and replace them. Continue?")) return;
+
+    busy = true;
+    try {
+      for (const member of members) {
+        const res = await fetch(`/api/sponsors/${encodeURIComponent(member.id)}/activate-inquiry`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ force: true }),
+        });
+        const result = await res.json();
+        if (!result.success && res.status !== 200) {
+          showToast((result.errors || []).join(". ") || "Override failed", "error");
+          break;
+        }
+      }
+
+      showToast(`Overridden conflicting territories for "${members[0].name}"`, "success");
+      handleClearForm();
+      await SponsorStorage.reload();
+      refreshSponsorsList();
+    } catch (err) {
+      showToast("Override failed: " + err.message, "error");
+    } finally {
+      busy = false;
+    }
   }
 
   async function reviewTerritorySubmission(id, action) {

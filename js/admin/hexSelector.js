@@ -2255,6 +2255,104 @@ class HexSelector {
   }
 
   /**
+   * Highlight tiles that conflict with existing sponsors (bright orange).
+   * These are tiles in the current selection that overlap with other sponsors.
+   * @param {Set<number>|number[]} conflictIndices - tile indices to highlight
+   */
+  setConflictTiles(conflictIndices) {
+    // Reset previous conflict tiles
+    if (this._conflictTiles) {
+      for (const tileIndex of this._conflictTiles) {
+        const mesh = this.tileIndexToMesh.get(tileIndex);
+        if (mesh && !mesh.userData.isExcluded) {
+          // Restore to assigned color or tier color
+          const baseColor = this.assignedTiles.has(tileIndex) ? 0x660000 : (mesh.userData.tierColor || 0x4a4a4a);
+          mesh.userData.originalColor = baseColor;
+          if (!this.selectedTiles.has(tileIndex)) {
+            mesh.material.color.setHex(baseColor);
+            if (mesh.material.emissive) mesh.material.emissive.setHex(0x000000);
+          }
+        }
+      }
+    }
+
+    this._conflictTiles = new Set(conflictIndices || []);
+
+    // Apply bright orange to conflict tiles
+    for (const tileIndex of this._conflictTiles) {
+      const mesh = this.tileIndexToMesh.get(tileIndex);
+      if (mesh && !mesh.userData.isExcluded) {
+        mesh.userData.originalColor = 0xff8800;
+        mesh.material.color.setHex(0xff8800);
+        if (mesh.material.emissive) mesh.material.emissive.setHex(0x442200);
+      }
+    }
+    this._needsRender = true;
+  }
+
+  /**
+   * Highlight moons that conflict with existing sponsors (bright orange).
+   * @param {Set<number>|number[]} conflictIndices - moon indices to highlight
+   */
+  setConflictMoons(conflictIndices) {
+    // Reset previous conflict moons
+    if (this._conflictMoons) {
+      for (const mi of this._conflictMoons) {
+        if (this.selectedMoons.has(mi)) continue;
+        const mesh = this.moonMeshes[mi];
+        if (mesh) {
+          const isAssigned = this.assignedMoons.has(mi);
+          mesh.material.color.setHex(isAssigned ? 0x664444 : 0x888888);
+          mesh.material.emissive.setHex(isAssigned ? 0x220000 : 0x111111);
+        }
+      }
+    }
+
+    this._conflictMoons = new Set(conflictIndices || []);
+
+    for (const mi of this._conflictMoons) {
+      const mesh = this.moonMeshes[mi];
+      if (mesh) {
+        mesh.material.color.setHex(0xff8800);
+        mesh.material.emissive.setHex(0x442200);
+      }
+    }
+    this._needsRender = true;
+  }
+
+  /**
+   * Highlight billboards that conflict with existing sponsors (bright orange).
+   * @param {Set<number>|number[]} conflictIndices - billboard indices to highlight
+   */
+  setConflictBillboards(conflictIndices) {
+    // Reset previous conflict billboards
+    if (this._conflictBillboards) {
+      for (const bi of this._conflictBillboards) {
+        if (this.selectedBillboards.has(bi)) continue;
+        const group = this.billboardGroups[bi];
+        const adPanel = group && group.children.find((c) => c.userData.isAdPanel);
+        if (adPanel) {
+          const isAssigned = this.assignedBillboards.has(bi);
+          adPanel.material.color.setHex(isAssigned ? 0x664444 : 0x888888);
+          adPanel.material.emissive.setHex(isAssigned ? 0x220000 : 0x111111);
+        }
+      }
+    }
+
+    this._conflictBillboards = new Set(conflictIndices || []);
+
+    for (const bi of this._conflictBillboards) {
+      const group = this.billboardGroups[bi];
+      const adPanel = group && group.children.find((c) => c.userData.isAdPanel);
+      if (adPanel) {
+        adPanel.material.color.setHex(0xff8800);
+        adPanel.material.emissive.setHex(0x442200);
+      }
+    }
+    this._needsRender = true;
+  }
+
+  /**
    * Apply faint sponsor patterns to assigned tiles
    * @param {Map<number, Object>} tileMap - tileIndex → { sponsorId, patternImage, patternAdjustment }
    * @param {number} generation - Generation counter to detect stale callbacks

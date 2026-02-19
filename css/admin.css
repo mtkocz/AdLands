@@ -1816,3 +1816,30 @@ textarea.review-comment {
     color: var(--text-secondary);
 }
 
+/* Conflict override section */
+.conflict-override-info {
+    font-family: var(--font-small);
+    font-size: var(--font-size-small);
+    color: #ff8800;
+    background: rgba(255, 136, 0, 0.1);
+    border: 1px solid rgba(255, 136, 0, 0.3);
+    padding: var(--space-sm) var(--space-md);
+    margin-bottom: var(--space-sm);
+    line-height: 1.4;
+}
+
+.btn-override {
+    background: rgba(255, 136, 0, 0.2);
+    border-color: #ff8800;
+    color: #ff8800;
+    filter: drop-shadow(2px 0 0 #ff8800) drop-shadow(-2px 0 0 #ff8800)
+        drop-shadow(0 2px 0 #ff8800) drop-shadow(0 -2px 0 #ff8800);
+}
+
+.btn-override:hover {
+    background: rgba(255, 136, 0, 0.4);
+    filter: drop-shadow(2px 0 0 #ff8800) drop-shadow(-2px 0 0 #ff8800)
+        drop-shadow(0 2px 0 #ff8800) drop-shadow(0 -2px 0 #ff8800)
+        drop-shadow(0 0 8px rgba(255, 136, 0, 0.5));
+}
+
