@@ -523,4 +523,59 @@ function createSponsorRoutes(sponsorStore, gameRoom, { imageUrls, gameDir } = {}
   return router;
 }
 
+/**
+ * Build HTML email for player territory claim notification
+ */
+function buildClaimNotificationEmail(sponsor) {
+  const tileIndices = sponsor.cluster?.tileIndices || [];
+  const tileCount = tileIndices.length;
+  const territoryId = sponsor._territoryId || sponsor.id;
+
+  return `
+    <div style="font-family: Arial, Helvetica, sans-serif; background: #ffffff; color: #222222; padding: 24px; max-width: 600px; margin: 0 auto;">
+      <div style="background: #111111; padding: 16px 20px; margin: -24px -24px 20px -24px;">
+        <h1 style="color: #00cccc; font-size: 22px; margin: 0; font-family: monospace;">
+          AdLands <span style="color: #999999; font-size: 14px;">Territory Claimed</span>
+        </h1>
+      </div>
+
+      <p style="color: #333333; margin: 0 0 16px 0;">A player has claimed territory and is pending your review.</p>
+
+      <table style="width: 100%; border-collapse: collapse; margin-bottom: 16px;">
+        <tr>
+          <td style="color: #888888; padding: 4px 8px 4px 0; font-size: 13px;">Player:</td>
+          <td style="color: #222222; padding: 4px 0; font-size: 13px;">${sponsor.ownerEmail || sponsor.name || "Unknown"}</td>
+        </tr>
+        <tr>
+          <td style="color: #888888; padding: 4px 8px 4px 0; font-size: 13px;">Territory ID:</td>
+          <td style="color: #222222; padding: 4px 0; font-size: 13px; font-family: monospace;">${territoryId}</td>
+        </tr>
+        <tr>
+          <td style="color: #888888; padding: 4px 8px 4px 0; font-size: 13px;">Hexes:</td>
+          <td style="color: #222222; padding: 4px 0; font-size: 13px;">${tileCount} hex${tileCount !== 1 ? "es" : ""}</td>
+        </tr>
+        <tr>
+          <td style="color: #888888; padding: 4px 8px 4px 0; font-size: 13px;">Status:</td>
+          <td style="padding: 4px 0; font-size: 13px;"><span style="color: #d97706; font-weight: bold;">Pending Review</span></td>
+        </tr>
+        <tr>
+          <td style="color: #888888; padding: 4px 8px 4px 0; font-size: 13px;">Time:</td>
+          <td style="color: #222222; padding: 4px 0; font-size: 13px;">${new Date().toUTCString()}</td>
+        </tr>
+      </table>
+
+      ${tileCount > 0 ? `
+      <div style="background: #f5f5f5; border: 1px solid #dddddd; padding: 12px; margin-bottom: 16px;">
+        <div style="color: #888888; font-size: 11px; margin-bottom: 4px; text-transform: uppercase;">Hex Indices</div>
+        <div style="color: #555555; font-size: 13px; font-family: monospace; word-break: break-all;">${tileIndices.join(", ")}</div>
+      </div>
+      ` : ""}
+
+      <div style="color: #aaaaaa; font-size: 11px; border-top: 1px solid #eeeeee; padding-top: 12px; margin-top: 16px;">
+        Open the Admin Portal to review this submission.
+      </div>
+    </div>
+  `;
+}
+
 module.exports = { createSponsorRoutes, extractSponsorImages };
