@@ -2860,7 +2860,7 @@ class GameRoom {
           if (entry) {
             entry.name = p.name;
             entry.level = p.level || 1;
-            entry.totalCrypto = p.totalCrypto || 0;
+            entry.totalCrypto = p.crypto || 0; // Live balance (not stale p.totalCrypto)
             entry.territoryCaptured = p.territoryCaptured || entry.territoryCaptured;
           }
         }
@@ -2894,7 +2894,7 @@ class GameRoom {
             socketId: id,
             name: p.name,
             level: p.level || 1,
-            totalCrypto: p.totalCrypto || 0,
+            totalCrypto: p.crypto || 0, // Live balance
             territoryCaptured: p.territoryCaptured || 0,
             avatarColor: p.avatarColor || null,
             isOnline: true,
@@ -2915,7 +2915,7 @@ class GameRoom {
             socketId: id,
             name: p.name,
             level: p.level || 1,
-            totalCrypto: p.totalCrypto || 0,
+            totalCrypto: p.crypto || 0, // Live balance
             territoryCaptured: p.territoryCaptured || 0,
             avatarColor: p.avatarColor || null,
             isOnline: true,
@@ -2923,21 +2923,11 @@ class GameRoom {
         }
       }
 
-      // Compute live crypto for sorting (player.crypto for online, totalCrypto for offline)
-      for (const m of allMembers) {
-        if (m.socketId) {
-          const p = this.players.get(m.socketId);
-          m._sortCrypto = p ? p.crypto : (m.totalCrypto || 0);
-        } else {
-          m._sortCrypto = m.totalCrypto || 0;
-        }
-      }
-
-      // Sort: level DESC → live crypto DESC
+      // Sort: level DESC → crypto DESC (totalCrypto holds live balance for online players)
       allMembers.sort((a, b) => {
         const aLevel = a.level || 1, bLevel = b.level || 1;
         if (bLevel !== aLevel) return bLevel - aLevel;
-        return (b._sortCrypto || 0) - (a._sortCrypto || 0);
+        return (b.totalCrypto || 0) - (a.totalCrypto || 0);
       });
 
       // Assign ranks (1-based)

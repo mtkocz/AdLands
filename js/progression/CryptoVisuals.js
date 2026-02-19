@@ -194,9 +194,6 @@ class CryptoVisuals {
     // Spend amounts spawn from the dashboard crypto counter instead of the tank
     if (isSpend) {
       this._spawnDashboardFloatingNumber(amount);
-      if (window.dashboard) {
-        window.dashboard.flashCryptoBar?.(amount, true);
-      }
       return;
     }
 

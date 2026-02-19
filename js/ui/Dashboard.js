@@ -1445,6 +1445,10 @@ class Dashboard {
       this._initRoller(formatted);
     } else {
       this._updateRoller(formatted, oldCrypto, amount);
+      // Flash red when balance decreases (spending)
+      if (oldCrypto !== null && amount < oldCrypto) {
+        this.flashCryptoBar(oldCrypto - amount, true);
+      }
     }
   }
 
