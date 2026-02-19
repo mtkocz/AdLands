@@ -335,18 +335,20 @@ class AuthScreen {
       setTimeout(() => target.classList.remove("auth-stage-enter"), 200);
     }
 
-    // Clear errors
+    // Clear errors and success messages
     this.overlay.querySelectorAll(".auth-error").forEach((el) => {
       el.classList.add("hidden");
+      el.classList.remove("auth-success");
       el.textContent = "";
     });
   }
 
-  _showError(errorId, message) {
+  _showError(errorId, message, isSuccess = false) {
     const el = this.overlay.querySelector(`#${errorId}`);
     if (el) {
       el.textContent = message;
       el.classList.remove("hidden");
+      el.classList.toggle("auth-success", isSuccess);
     }
   }
 
@@ -793,10 +795,16 @@ class AuthScreen {
       this._showError("auth-email-error", "Enter your email address first.");
       return;
     }
+    const resetBtn = this.overlay.querySelector("#auth-email-reset");
+    resetBtn.textContent = "Sending...";
+    resetBtn.disabled = true;
     try {
       await this.auth.sendPasswordReset(email);
-      this._showError("auth-email-error", "Password reset email sent. Check your inbox.");
+      this._showError("auth-email-error", "Password reset email sent! Check your inbox (and spam folder).", true);
+      resetBtn.textContent = "Email sent";
     } catch (err) {
+      resetBtn.textContent = "Forgot password?";
+      resetBtn.disabled = false;
       this._showError("auth-email-error", this._friendlyError(err));
     }
   }
@@ -1281,10 +1289,12 @@ class AuthScreen {
 
   _friendlyError(err) {
     const map = {
-      "auth/email-already-in-use": "This email is already in use. Use a different email, or sign out and sign in normally.",
+      "auth/email-already-in-use": "An account with this email already exists. Try signing in, or use Forgot Password to reset.",
       "auth/invalid-email": "Please enter a valid email address.",
       "auth/user-not-found": "No account found with this email.",
-      "auth/wrong-password": "Incorrect password.",
+      "auth/wrong-password": "Incorrect email or password.",
+      "auth/invalid-credential": "Incorrect email or password.",
+      "auth/invalid-login-credentials": "Incorrect email or password.",
       "auth/weak-password": "Password must be at least 6 characters.",
       "auth/too-many-requests": "Too many attempts. Please try again later.",
       "auth/network-request-failed": "Network error. Check your connection.",
@@ -1292,6 +1302,7 @@ class AuthScreen {
         "This account is already linked to a different user. Sign out and sign in directly instead.",
       "auth/account-exists-with-different-credential":
         "An account already exists with a different sign-in method.",
+      "auth/operation-not-allowed": "This sign-in method is not enabled. Contact admin.",
     };
     return map[err.code] || err.message || "An error occurred. Please try again.";
   }
