@@ -1245,7 +1245,8 @@
         }
 
         // Immediately refresh ring HUD if this change affects player's cluster
-        if (change.clusterId === playerCluster && mp.updateTugOfWarUI) {
+        const hasSpawned = mp.getHasSpawnedIn?.();
+        if (hasSpawned && change.clusterId === playerCluster && mp.updateTugOfWarUI) {
           const state = planet.clusterCaptureState.get(change.clusterId);
           if (state) {
             const counts = { rust: 0, cobalt: 0, viridian: 0 };
@@ -1343,7 +1344,8 @@
       }
 
       // Refresh ring HUD if this is the player's current cluster
-      const playerCluster = tank.getCurrentClusterId(planet);
+      const hasSpawned = mp.getHasSpawnedIn?.();
+      const playerCluster = hasSpawned ? tank.getCurrentClusterId(planet) : undefined;
       if (data.clusterId === playerCluster && mp.updateTugOfWarUI) {
         const counts = { rust: 0, cobalt: 0, viridian: 0 };
         if (!tank.isDead) counts[tank.faction]++;

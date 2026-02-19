@@ -1623,7 +1623,7 @@ class GameRoom {
 
   handleChoosePortal(socketId, portalTileIndex) {
     const player = this.players.get(socketId);
-    if (!player || player.isDead) return;
+    if (!player || player.isDead || !player.waitingForPortal) return;
 
     // Validate portal tile index
     if (!this.portalPositionsByTile.has(portalTileIndex)) {

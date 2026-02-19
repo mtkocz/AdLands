@@ -439,6 +439,7 @@ class Dashboard {
 
     // Clear stale roster from old faction
     this._lastRosterData = null;
+    this._prevRosterRanks = null;
     const countEl = document.getElementById("faction-roster-count");
     if (countEl) countEl.textContent = "Loading...";
     const listEl = document.getElementById("faction-roster-list");
@@ -468,8 +469,18 @@ class Dashboard {
     const cmdrPlayerId = factionCmdr?.playerId || null;
     const isActingCmdr = myFaction ? (cmdrSystem?.actingCommanders[myFaction] || false) : false;
 
+    // --- FLIP animation: record old positions ---
+    const oldRects = new Map();
+    const oldRanks = this._prevRosterRanks || new Map();
+    for (const el of listEl.querySelectorAll(".roster-member[data-player-id]")) {
+      const pid = el.getAttribute("data-player-id");
+      oldRects.set(pid, el.getBoundingClientRect());
+    }
+
     let html = "";
     const faction = data.faction || this.playerFaction;
+    const newRanks = new Map();
+
     for (const member of data.members) {
       const onlineClass = member.online ? "roster-online" : "roster-offline";
       const selfClass = member.isSelf ? "roster-self" : "";
@@ -482,6 +493,8 @@ class Dashboard {
       // Use "player_self" for self, server-provided id for everyone else
       const playerId = member.isSelf ? "player_self" : member.id;
       const playerIdAttr = playerId ? `data-player-id="${playerId}"` : "";
+
+      if (playerId) newRanks.set(playerId, member.rank);
 
       const cryptoDisplay = member.crypto !== undefined ? `<span class="roster-crypto">¢${Number(member.crypto).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>` : '';
 
@@ -527,6 +540,40 @@ class Dashboard {
     }
 
     listEl.innerHTML = html;
+
+    // --- FLIP animation: animate from old positions to new ---
+    const hasOldPositions = oldRects.size > 0;
+    for (const el of listEl.querySelectorAll(".roster-member[data-player-id]")) {
+      const pid = el.getAttribute("data-player-id");
+      if (!pid) continue;
+
+      // Rank-change glow effect
+      const prevRank = oldRanks.get(pid);
+      const currRank = newRanks.get(pid);
+      if (prevRank !== undefined && currRank !== undefined && prevRank !== currRank) {
+        el.classList.add(currRank < prevRank ? "roster-rank-up" : "roster-rank-down");
+        el.addEventListener("animationend", () => {
+          el.classList.remove("roster-rank-up", "roster-rank-down");
+        }, { once: true });
+      }
+
+      // FLIP positional slide
+      if (hasOldPositions && oldRects.has(pid)) {
+        const oldRect = oldRects.get(pid);
+        const newRect = el.getBoundingClientRect();
+        const deltaY = oldRect.top - newRect.top;
+        if (Math.abs(deltaY) > 1) {
+          el.style.transition = "none";
+          el.style.transform = `translateY(${deltaY}px)`;
+          // Force reflow so the browser registers the starting position
+          el.offsetHeight;
+          el.style.transition = "";
+          el.style.transform = "";
+        }
+      }
+    }
+
+    this._prevRosterRanks = newRanks;
 
     // Auto-scroll to the current player's row so they can find themselves
     const selfRow = listEl.querySelector(".roster-self");
@@ -1967,6 +2014,9 @@ class Dashboard {
   flashCryptoBar(amount, spend) {
     const cryptoAmount = document.querySelector(".header-crypto-amount");
     if (!cryptoAmount) return;
+
+    // Spend flash has priority — don't let gain flashes override it
+    if (!spend && cryptoAmount.classList.contains("crypto-flash-spend")) return;
 
     const absAmount = Math.abs(amount);
 

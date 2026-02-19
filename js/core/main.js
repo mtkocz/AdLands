@@ -2007,7 +2007,7 @@
     // Add player tank (skip if dead)
     const playerCluster = tank.getCurrentClusterId(planet);
 
-    if (playerCluster !== undefined && !tank.isDead) {
+    if (playerCluster !== undefined && !tank.isDead && hasSpawnedIn) {
       if (!clusterTankCounts.has(playerCluster)) {
         clusterTankCounts.set(playerCluster, {
           rust: 0,
