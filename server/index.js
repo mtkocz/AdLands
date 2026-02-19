@@ -194,8 +194,41 @@ let mainRoom;
   }));
 
   // Mount sponsor inquiry routes (public contact form)
-  const { createInquiryRoutes } = require('./inquiryRoutes');
+  const { createInquiryRoutes, sendViaResend } = require('./inquiryRoutes');
   app.use('/api/sponsor-inquiry', createInquiryRoutes({ sponsorStore, mainRoom }));
+
+  // Password reset via Firebase Admin SDK + Resend
+  const admin = require("firebase-admin");
+  const resendApiKey = process.env.SMTP_PASS || null;
+  const fromAddress = process.env.SMTP_FROM || "AdLands <noreply@adlands.gg>";
+
+  app.post("/api/auth/reset-password", async (req, res) => {
+    const { email } = req.body;
+    if (!email || typeof email !== "string") {
+      return res.status(400).json({ error: "Email is required." });
+    }
+
+    try {
+      const resetLink = await admin.auth().generatePasswordResetLink(email.trim());
+
+      if (resendApiKey) {
+        await sendViaResend(resendApiKey, {
+          from: fromAddress,
+          to: email.trim(),
+          subject: "Reset your AdLands password",
+          html: `<p>Click the link below to reset your AdLands password:</p>
+                 <p><a href="${resetLink}">${resetLink}</a></p>
+                 <p>If you didn't request this, you can ignore this email.</p>`,
+        });
+      }
+
+      res.json({ ok: true });
+    } catch (err) {
+      console.warn("[Auth] Password reset failed:", err.message);
+      // Don't reveal whether the email exists
+      res.json({ ok: true });
+    }
+  });
 
   console.log("[Server] Sponsor images extracted, routes mounted");
 
