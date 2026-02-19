@@ -1961,17 +1961,27 @@
       }
     }
 
-    // Populate stats div with faction percentages (DOM text, always visible)
+    // Position DOM percentage labels at the midpoint of each slice
     const statsEl = document.getElementById("global-control-stats");
     statsEl.innerHTML = "";
+    const labelRadius = (radius + innerRadius) / 2; // Center of donut ring
+    let labelAngle = -Math.PI / 2 - angles[playerFaction] / 2;
+
     for (const faction of order) {
-      if (pcts[faction] > 0) {
-        const item = document.createElement("div");
-        item.className = "stat-item " + faction;
-        item.innerHTML =
-          '<div class="stat-label">' + faction + '</div>' +
-          '<div class="stat-value">' + pcts[faction].toFixed(1) + '%</div>';
-        statsEl.appendChild(item);
+      const sliceAngle = angles[faction];
+      if (sliceAngle > 0 && pcts[faction] > 0) {
+        const midAngle = labelAngle + sliceAngle / 2;
+        const lx = cx + Math.cos(midAngle) * labelRadius;
+        const ly = cy + Math.sin(midAngle) * labelRadius;
+
+        const label = document.createElement("div");
+        label.className = "slice-label";
+        label.textContent = pcts[faction].toFixed(1) + "%";
+        label.style.left = lx + "px";
+        label.style.top = ly + "px";
+        statsEl.appendChild(label);
+
+        labelAngle += sliceAngle;
       }
     }
   }
@@ -2607,15 +2617,13 @@
       const pos = labelPositions[faction];
       if (pos && pos.percentage > 0) {
         const label = `${Math.round(pos.percentage)}%`;
-        // Small slices: place label outside the ring so it's readable
-        const isSmall = pos.percentage < 5;
-        const labelR = isSmall ? outerRadius + 24 : midRadius;
-        // Recalculate position using the stored angle (re-derive from pos)
+        // Always place label outside the ring so it's readable at any size
+        const labelR = outerRadius + 24;
         const ang = Math.atan2(pos.y - centerY, pos.x - centerX);
         const lx = centerX + Math.cos(ang) * labelR;
         const ly = centerY + Math.sin(ang) * labelR;
 
-        ctx.font = isSmall ? '24px "Spleen 16x32"' : '32px "Spleen 16x32"';
+        ctx.font = '32px "Spleen 16x32"';
         ctx.strokeStyle = "rgba(0, 0, 0, 0.8)";
         ctx.lineWidth = 3;
         ctx.strokeText(label, lx, ly);

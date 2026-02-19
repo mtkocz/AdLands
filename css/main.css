@@ -851,54 +851,25 @@ canvas {
 
 #global-control-stats {
     position: absolute;
-    bottom: calc(var(--grid) * 8); /* 32px */
-    left: 50%;
-    transform: translateX(-50%);
-    display: flex;
-    gap: var(--space-xl); /* 20px */
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    pointer-events: none;
+}
+
+#global-control-stats .slice-label {
+    position: absolute;
+    transform: translate(-50%, -50%);
     font-family: var(--font-header);
-    text-shadow: var(--header-text-shadow);
-    padding-top: var(--header-padding-top);
     font-size: var(--font-size-header); /* 24px */
-}
-
-#global-control-stats .stat-item {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    gap: var(--space-sm); /* 4px - 1 grid unit */
-}
-
-#global-control-stats .stat-label {
-    font-family: var(--font-body);
-    font-size: var(--font-size-body); /* 16px */
-    /* text-transform removed - preserve case */
-    letter-spacing: 2px;
-}
-
-#global-control-stats .stat-value {
-    font-size: var(--font-size-header); /* 24px */
-    font-weight: normal;
-}
-
-#global-control-stats .stat-item.rust .stat-label,
-#global-control-stats .stat-item.rust .stat-value {
-    color: var(--rust);
-}
-
-#global-control-stats .stat-item.cobalt .stat-label,
-#global-control-stats .stat-item.cobalt .stat-value {
-    color: var(--cobalt);
-}
-
-#global-control-stats .stat-item.viridian .stat-label,
-#global-control-stats .stat-item.viridian .stat-value {
-    color: var(--viridian);
-}
-
-#global-control-stats .stat-item.unclaimed .stat-label,
-#global-control-stats .stat-item.unclaimed .stat-value {
-    color: var(--unclaimed);
+    color: #ffffff;
+    text-shadow:
+        -1px -1px 0 #000,
+         1px -1px 0 #000,
+        -1px  1px 0 #000,
+         1px  1px 0 #000;
+    white-space: nowrap;
 }
 
 /* ========================
