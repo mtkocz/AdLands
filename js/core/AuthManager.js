@@ -86,7 +86,7 @@ class AuthManager {
    */
   async signInWithGoogle() {
     const provider = new firebase.auth.GoogleAuthProvider();
-    return firebaseAuth.signInWithPopup(provider);
+    return this._signInWithDarkPopup(provider);
   }
 
   /**
@@ -95,7 +95,7 @@ class AuthManager {
    */
   async signInWithApple() {
     const provider = new firebase.auth.OAuthProvider("apple.com");
-    return firebaseAuth.signInWithPopup(provider);
+    return this._signInWithDarkPopup(provider);
   }
 
   /**
@@ -104,7 +104,7 @@ class AuthManager {
    */
   async signInWithGitHub() {
     const provider = new firebase.auth.GithubAuthProvider();
-    return firebaseAuth.signInWithPopup(provider);
+    return this._signInWithDarkPopup(provider);
   }
 
   /**
@@ -113,7 +113,7 @@ class AuthManager {
    */
   async signInWithTwitter() {
     const provider = new firebase.auth.TwitterAuthProvider();
-    return firebaseAuth.signInWithPopup(provider);
+    return this._signInWithDarkPopup(provider);
   }
 
   /**
@@ -152,7 +152,44 @@ class AuthManager {
   async linkWithGoogle() {
     if (!this.user) throw new Error("No user signed in");
     const provider = new firebase.auth.GoogleAuthProvider();
-    return this.user.linkWithPopup(provider);
+    return this._linkWithDarkPopup(provider);
+  }
+
+  // ========================
+  // DARK POPUP HELPERS
+  // ========================
+
+  /**
+   * Temporarily intercept window.open to paint the auth popup dark,
+   * preventing the bright white flash before the provider page loads.
+   * @private
+   */
+  _withDarkPopup(fn) {
+    const origOpen = window.open;
+    window.open = function (url, name, features) {
+      const w = origOpen.call(window, url, name, features);
+      try {
+        if (w && w.document && w.document.documentElement) {
+          w.document.documentElement.style.background = "#1a1a2e";
+        }
+      } catch (e) {
+        // Cross-origin — popup already navigated, nothing to do
+      }
+      return w;
+    };
+    return fn().finally(() => {
+      window.open = origOpen;
+    });
+  }
+
+  /** @private */
+  _signInWithDarkPopup(provider) {
+    return this._withDarkPopup(() => firebaseAuth.signInWithPopup(provider));
+  }
+
+  /** @private */
+  _linkWithDarkPopup(provider) {
+    return this._withDarkPopup(() => this.user.linkWithPopup(provider));
   }
 
   // ========================
