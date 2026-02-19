@@ -95,7 +95,7 @@ class AuthScreen {
             Play as Guest
           </button>
 
-          <div class="auth-divider"><span>sponsors</span></div>
+          <div class="auth-divider"><span class="auth-divider-sponsor">sponsors</span></div>
           <a class="auth-btn auth-btn-sponsor" href="https://www.adlands.gg/sponsors.html" target="_blank" rel="noopener">
             <span class="auth-btn-icon">$</span>
             Rent Ad Space

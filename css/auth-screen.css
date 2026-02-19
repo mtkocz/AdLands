@@ -188,6 +188,12 @@
   color: var(--text-secondary);
 }
 
+.auth-divider-sponsor {
+  font-family: var(--font-body);
+  font-size: var(--font-size-body);
+  color: var(--text-secondary);
+}
+
 .auth-btn-sponsor {
   background: rgba(255, 200, 50, 0.06);
   border-style: solid;
