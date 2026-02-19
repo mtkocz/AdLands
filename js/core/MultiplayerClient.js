@@ -1377,6 +1377,14 @@
         });
       }
 
+      // Restore territory capture state (applyServerWorld clears it)
+      if (data.captureState && planet) {
+        for (const [clusterId, state] of Object.entries(data.captureState)) {
+          planet.applyTerritoryState(Number(clusterId), state.owner, state.tics);
+        }
+        planet.updateDirtyFactionOutlines?.();
+      }
+
       // Reconcile player territories with admin-authoritative server state
       const dashboard = window.dashboard;
       if (dashboard && data.world.sponsors) {

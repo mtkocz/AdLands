@@ -231,7 +231,15 @@ class GameRoom {
     this._factionRosters = {};           // faction → sorted member array (set by _recomputeRanks)
   }
 
-  start() {
+  async start() {
+    // Restore faction capture state from Firestore BEFORE accepting connections
+    // (must complete before tick loop or welcome messages reference this data)
+    if (process.env.RESET_TERRITORIES === "true") {
+      console.log(`[Room ${this.roomId}] RESET_TERRITORIES=true — starting with fresh territory state`);
+    } else {
+      await this.loadCaptureState();
+    }
+
     this._tickRunning = true;
     this._nextTickTime = Date.now();
     this._scheduleTick();
@@ -239,13 +247,6 @@ class GameRoom {
 
     // Load all Firestore profiles into cache (async, non-blocking)
     this._loadAllProfiles();
-
-    // Restore faction capture state from Firestore (unless RESET_TERRITORIES is set)
-    if (process.env.RESET_TERRITORIES === "true") {
-      console.log(`[Room ${this.roomId}] RESET_TERRITORIES=true — starting with fresh territory state`);
-    } else {
-      this.loadCaptureState();
-    }
 
     // Periodic auto-save: persist all active players every 60 seconds
     this._autoSaveInterval = setInterval(() => this._autoSaveAllPlayers(), 60000);
@@ -453,9 +454,23 @@ class GameRoom {
       }
     }
 
-    // 6. Broadcast full reload to all connected clients
+    // 6. Build capture state snapshot so clients can restore ownership after reload
+    const captureState = {};
+    for (const [clusterId, state] of this.clusterCaptureState) {
+      const total = state.tics.rust + state.tics.cobalt + state.tics.viridian;
+      if (total > 0 || state.owner) {
+        captureState[clusterId] = {
+          tics: { ...state.tics },
+          owner: state.owner,
+          capacity: state.capacity,
+        };
+      }
+    }
+
+    // 7. Broadcast full reload to all connected clients
     this.io.to(this.roomId).emit("sponsors-reloaded", {
       world: this._worldPayload,
+      captureState,
     });
 
     console.log(`[Room ${this.roomId}] Sponsors reloaded: ${this.sponsors.length} active, broadcast to clients`);

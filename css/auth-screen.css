@@ -188,6 +188,22 @@
   color: var(--text-secondary);
 }
 
+.auth-btn-sponsor {
+  background: rgba(255, 200, 50, 0.06);
+  border-style: solid;
+  border-color: rgba(255, 200, 50, 0.25);
+  color: var(--accent-gold);
+  font-family: var(--font-small);
+  font-size: var(--font-size-small);
+  text-decoration: none;
+}
+
+.auth-btn-sponsor:hover {
+  background: rgba(255, 200, 50, 0.12);
+  border-color: var(--accent-gold);
+  color: var(--accent-gold);
+}
+
 .auth-btn-primary {
   background: rgba(34, 197, 94, 0.15);
   border-color: var(--success);

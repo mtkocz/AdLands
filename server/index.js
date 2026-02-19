@@ -171,7 +171,7 @@ let mainRoom;
 
   // For now: one global room. Later you'd add matchmaking / multiple rooms.
   mainRoom = new GameRoom(io, "main", sponsorStore, sponsorImageUrls, moonSponsorStore, moonSponsorImageUrls, billboardSponsorStore, billboardSponsorImageUrls);
-  mainRoom.start();
+  await mainRoom.start();
 
   // Mount sponsor API routes (after GameRoom so live reload can broadcast)
   app.use("/api/sponsors", createSponsorRoutes(sponsorStore, mainRoom, {

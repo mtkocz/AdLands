@@ -3537,10 +3537,14 @@
   let tabHeld = false;
 
   // Completely override Tab key - prevent all browser/system behavior
+  // Exception: allow normal Tab navigation when focus is in a text field (e.g. territory claim/edit popups)
   document.addEventListener(
     "keydown",
     (e) => {
       if (e.key === "Tab") {
+        const tag = document.activeElement?.tagName;
+        if (tag === "INPUT" || tag === "TEXTAREA" || document.activeElement?.isContentEditable) return;
+
         e.preventDefault();
         e.stopPropagation();
         e.stopImmediatePropagation();
@@ -3559,6 +3563,9 @@
     "keyup",
     (e) => {
       if (e.key === "Tab") {
+        const tag = document.activeElement?.tagName;
+        if (tag === "INPUT" || tag === "TEXTAREA" || document.activeElement?.isContentEditable) return;
+
         e.preventDefault();
         e.stopPropagation();
         e.stopImmediatePropagation();

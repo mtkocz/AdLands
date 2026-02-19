@@ -68,6 +68,38 @@ body {
 }
 
 /* ========================
+   TOP BANNER
+   ======================== */
+
+#top-banner {
+    position: fixed;
+    top: var(--space-xl);
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 10;
+    text-align: center;
+    pointer-events: none;
+}
+
+.banner-headline {
+    font-family: var(--font-header);
+    font-size: 36px;
+    text-shadow: var(--header-text-shadow);
+    padding-top: var(--header-padding-top);
+    color: var(--accent-cyan);
+    letter-spacing: 2px;
+}
+
+.banner-sub {
+    font-family: var(--font-small);
+    font-size: var(--font-size-small);
+    color: var(--text-muted);
+    letter-spacing: 3px;
+    text-transform: uppercase;
+    margin-top: var(--space-xs);
+}
+
+/* ========================
    FLOATING PANELS (shared)
    ======================== */
 
@@ -845,6 +877,10 @@ body {
    ======================== */
 
 @media (max-width: 768px) {
+    #top-banner {
+        display: none;
+    }
+
     #sponsor-panel {
         display: none;
     }
