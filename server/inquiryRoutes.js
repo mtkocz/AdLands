@@ -324,4 +324,4 @@ function escapeHtml(str) {
     .replace(/'/g, "&#39;");
 }
 
-module.exports = { createInquiryRoutes };
+module.exports = { createInquiryRoutes, sendViaResend };

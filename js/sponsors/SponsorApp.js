@@ -54,7 +54,7 @@
     let html = "";
 
     // — Hexagons —
-    html += '<div class="tier-group-label">Hexagons</div>';
+    html += '<div class="tier-group"><div class="tier-group-label">Hexagons</div>';
     const tiers = HexTierSystem.TIER_ORDER;
     html += tiers.map((tierId) => {
       const tier = HexTierSystem.TIERS[tierId];
@@ -69,15 +69,15 @@
               <span class="tier-name" style="color: ${tier.textColor}">${tier.name}</span>
               ${isRentable ? `<span class="tier-price">$${tier.price}<span class="tier-price-unit">/hex/mo</span></span>` : ""}
             </div>
-            <div class="tier-description">${tier.description}</div>
           </div>
         </div>
       `;
     }).join("");
+    html += "</div>";
 
     // — Moons — (colors match hex tiers: Large=Hotzone, Small=Frontier, Medium=Prime)
     const moonTierIds = ["HOTZONE", "FRONTIER", "PRIME"];
-    html += '<div class="tier-group-label">Moons</div>';
+    html += '<div class="tier-group"><div class="tier-group-label">Moons</div>';
     HexTierSystem.MOON_LABELS.forEach((label, i) => {
       const price = HexTierSystem.MOON_PRICES[i];
       const tier = HexTierSystem.TIERS[moonTierIds[i]];
@@ -95,10 +95,11 @@
         </div>
       `;
     });
+    html += "</div>";
 
     // — Billboards — (LOW=Frontier, HIGH=Prime)
     const bbTierMap = { LOW: "FRONTIER", HIGH: "PRIME" };
-    html += '<div class="tier-group-label">Billboards</div>';
+    html += '<div class="tier-group"><div class="tier-group-label">Billboards</div>';
     const bbTiers = HexTierSystem.BILLBOARD_ORBIT_TIERS;
     for (const [key, def] of Object.entries(bbTiers)) {
       const tier = HexTierSystem.TIERS[bbTierMap[key]];
@@ -112,11 +113,12 @@
               <span class="tier-name" style="color: ${tier.textColor}">${def.label}</span>
               <span class="tier-price">$${def.price}<span class="tier-price-unit">/mo</span></span>
             </div>
-            <div class="tier-description">${def.count} slots available</div>
+            <div class="tier-description">${def.count} slots</div>
           </div>
         </div>
       `;
     }
+    html += "</div>";
 
     container.innerHTML = html;
   }

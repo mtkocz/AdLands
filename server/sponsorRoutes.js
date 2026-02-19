@@ -9,6 +9,7 @@ const fs = require("fs");
 const fsp = require("fs").promises;
 const path = require("path");
 const { getFirestore } = require("./firebaseAdmin");
+const { sendViaResend } = require("./inquiryRoutes");
 
 /**
  * Find an existing file on disk matching a prefix (e.g. "sponsor_123." or "sponsor_123_logo.").
@@ -107,6 +108,10 @@ async function cleanupSponsorImageFiles(sponsorId, texDir) {
 
 function createSponsorRoutes(sponsorStore, gameRoom, { imageUrls, gameDir } = {}) {
   const router = Router();
+
+  // Resend email config (reuses SMTP_PASS as API key)
+  const resendApiKey = process.env.SMTP_PASS || null;
+  const fromAddress = process.env.SMTP_FROM || "AdLands <noreply@adlands.gg>";
 
   // Mutable reference so we can update after re-extraction
   let _imageUrls = imageUrls || {};
@@ -248,6 +253,23 @@ function createSponsorRoutes(sponsorStore, gameRoom, { imageUrls, gameDir } = {}
     if (result.errors) return res.status(400).json({ errors: result.errors });
     await reExtractImages(result.sponsor.id);
     reloadIfLive();
+
+    // Fire-and-forget notification for player territory claims
+    if (result.sponsor.ownerType === "player" && resendApiKey) {
+      const s = result.sponsor;
+      const tileCount = s.cluster?.tileIndices?.length || 0;
+      sendViaResend(resendApiKey, {
+        from: fromAddress,
+        to: ["matt@mattmatters.com"],
+        subject: `Territory Claimed: ${s.ownerEmail || s.name || "Unknown"} (${tileCount} hex${tileCount !== 1 ? "es" : ""})`,
+        html: buildClaimNotificationEmail(s),
+      }).then(() => {
+        console.log(`[Sponsors] Claim notification sent for ${s.id}`);
+      }).catch((err) => {
+        console.error(`[Sponsors] Claim notification failed:`, err.message);
+      });
+    }
+
     res.status(201).json(result.sponsor);
   });
 
