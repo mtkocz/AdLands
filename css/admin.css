@@ -120,7 +120,7 @@ body {
     position: absolute;
     top: 60px;
     left: var(--space-sm);
-    right: var(--space-sm);
+    right: 0;
     bottom: var(--space-sm);
     display: grid;
     grid-template-columns:
@@ -300,6 +300,8 @@ body {
     grid-row: 1;
     display: flex;
     flex-direction: column;
+    clip-path: none;
+    filter: none;
 }
 
 #hex-canvas-container {
