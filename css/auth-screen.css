@@ -199,9 +199,10 @@
   border-style: solid;
   border-color: rgba(255, 200, 50, 0.25);
   color: var(--accent-gold);
-  font-family: var(--font-small);
-  font-size: var(--font-size-small);
+  font-family: var(--font-body);
+  font-size: var(--font-size-body);
   text-decoration: none;
+  box-sizing: border-box;
 }
 
 .auth-btn-sponsor:hover {
