@@ -2506,6 +2506,7 @@ class HexSelector {
 
     for (const tileIndex of tileIndices) {
       if (this.selectedTiles.has(tileIndex)) continue;
+      if (this._conflictTiles && this._conflictTiles.has(tileIndex)) continue;
       const mesh = this.tileIndexToMesh.get(tileIndex);
       if (!mesh || mesh.userData.isExcluded) continue;
 
