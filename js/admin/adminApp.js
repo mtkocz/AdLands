@@ -23,9 +23,6 @@
   // Sponsor list filter: "sponsors" | "players" | "all"
   let sponsorListFilter = "sponsors";
 
-  // Cached conflict state for inquiry sponsors (persists across cluster switches)
-  let _inquiryConflictState = null;
-
   // UI elements
   const selectionCountEl = document.getElementById("selection-count");
   const selectedTilesListEl = document.getElementById("selected-tiles-list");
@@ -926,9 +923,13 @@
     updateAssignedBillboards();
     selectedTilesListEl.textContent = "";
     showInquiryDetails(null);
-    // Clear cached conflict state and highlights
-    _inquiryConflictState = null;
-    applyConflictHighlights();
+    // Clear conflict highlights
+    if (hexSelector) {
+      hexSelector.setConflictTiles([]);
+      hexSelector.setConflictMoons([]);
+      hexSelector.setConflictBillboards([]);
+    }
+    if (conflictOverrideSection) conflictOverrideSection.style.display = "none";
     showSponsorInfoView();
   }
 
@@ -1694,8 +1695,8 @@
       savedSelectionChange(hexSelector.getSelectedTiles());
     }
 
-    // Re-apply cached conflict highlights (persists across cluster switches)
-    applyConflictHighlights();
+    // Check for inquiry conflicts after loading
+    updateInquiryConflicts();
   }
 
   /**
@@ -1979,10 +1980,18 @@
   }
 
   /**
-   * Detect conflicts for the currently-edited inquiry sponsor group.
-   * Caches the result so it persists across cluster switches.
+   * Detect and highlight conflicts for the currently-edited inquiry sponsor group.
+   * Shows the Override button if any territories overlap existing sponsors.
    */
   function updateInquiryConflicts(singleSponsor) {
+    // Clear previous conflict highlights
+    if (hexSelector) {
+      hexSelector.setConflictTiles([]);
+      hexSelector.setConflictMoons([]);
+      hexSelector.setConflictBillboards([]);
+    }
+    if (conflictOverrideSection) conflictOverrideSection.style.display = "none";
+
     // Determine which members to check
     let members;
     let groupIdSet;
@@ -1993,15 +2002,9 @@
       members = [singleSponsor];
       groupIdSet = new Set([singleSponsor.id]);
     } else {
-      _inquiryConflictState = null;
-      applyConflictHighlights();
       return;
     }
-    if (!members.some(s => s.ownerType === "inquiry")) {
-      _inquiryConflictState = null;
-      applyConflictHighlights();
-      return;
-    }
+    if (!members.some(s => s.ownerType === "inquiry")) return;
 
     const allSponsors = SponsorStorage.getAll();
     const conflictTiles = [];
@@ -2052,43 +2055,23 @@
       }
     }
 
-    // Cache conflict state
+    // Apply highlights
+    if (hexSelector) {
+      hexSelector.setConflictTiles(conflictTiles);
+      hexSelector.setConflictMoons(conflictMoons);
+      hexSelector.setConflictBillboards(conflictBillboards);
+    }
+
+    // Show/hide override section
     const totalConflicts = conflictTiles.length + conflictMoons.length + conflictBillboards.length;
-    if (totalConflicts > 0) {
+    if (totalConflicts > 0 && conflictOverrideSection && conflictOverrideInfo) {
       const parts = [];
       if (conflictTiles.length > 0) parts.push(`${conflictTiles.length} hex${conflictTiles.length !== 1 ? "es" : ""}`);
       if (conflictMoons.length > 0) parts.push(`${conflictMoons.length} moon${conflictMoons.length !== 1 ? "s" : ""}`);
       if (conflictBillboards.length > 0) parts.push(`${conflictBillboards.length} billboard${conflictBillboards.length !== 1 ? "s" : ""}`);
       const nameList = [...conflictNames].map(n => `"${n}"`).join(", ");
-      _inquiryConflictState = {
-        tiles: conflictTiles,
-        moons: conflictMoons,
-        billboards: conflictBillboards,
-        infoText: `${parts.join(", ")} conflict with ${nameList}`,
-      };
-    } else {
-      _inquiryConflictState = null;
-    }
-
-    applyConflictHighlights();
-  }
-
-  /**
-   * Apply cached conflict highlights to the hex selector and override section.
-   * Called after cluster switches to restore conflict visuals without re-detecting.
-   */
-  function applyConflictHighlights() {
-    if (hexSelector) {
-      hexSelector.setConflictTiles(_inquiryConflictState ? _inquiryConflictState.tiles : []);
-      hexSelector.setConflictMoons(_inquiryConflictState ? _inquiryConflictState.moons : []);
-      hexSelector.setConflictBillboards(_inquiryConflictState ? _inquiryConflictState.billboards : []);
-    }
-
-    if (_inquiryConflictState && conflictOverrideSection && conflictOverrideInfo) {
-      conflictOverrideInfo.textContent = _inquiryConflictState.infoText;
+      conflictOverrideInfo.textContent = `${parts.join(", ")} conflict with ${nameList}`;
       conflictOverrideSection.style.display = "";
-    } else if (conflictOverrideSection) {
-      conflictOverrideSection.style.display = "none";
     }
   }
 
