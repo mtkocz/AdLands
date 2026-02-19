@@ -2042,8 +2042,16 @@
       ${d.message ? `<div class="inquiry-detail-row"><span class="inquiry-detail-label">Message:</span><span class="inquiry-detail-value inquiry-message">${escapeHtml(d.message)}</span></div>` : ""}
       ${pricingHtml}
       <div class="inquiry-detail-row"><span class="inquiry-detail-label">Submitted:</span><span class="inquiry-detail-value">${submitted}</span></div>
+      <div class="inquiry-actions">
+        <button type="button" class="btn btn-accept-inquiry">Accept Inquiry</button>
+        <button type="button" class="btn btn-reject-inquiry">Reject</button>
+      </div>
     `;
     panel.style.display = "";
+
+    // Wire up accept/reject buttons
+    panel.querySelector(".btn-accept-inquiry")?.addEventListener("click", handleAcceptInquiry);
+    panel.querySelector(".btn-reject-inquiry")?.addEventListener("click", handleRejectInquiry);
   }
 
   /**
@@ -2183,6 +2191,120 @@
       refreshSponsorsList();
     } catch (err) {
       showToast("Override failed: " + err.message, "error");
+    } finally {
+      busy = false;
+    }
+  }
+
+  /**
+   * Accept an inquiry: activate all inquiry territories in the group/single sponsor.
+   * If conflicts exist, prompt the user to override.
+   */
+  async function handleAcceptInquiry() {
+    if (busy) return;
+
+    let members;
+    if (editingGroup) {
+      members = editingGroup.ids.map(id => SponsorStorage.getById(id)).filter(s => s && s.ownerType === "inquiry");
+    } else {
+      const singleId = sponsorForm.getEditingSponsorId();
+      if (!singleId) return;
+      const s = SponsorStorage.getById(singleId);
+      members = (s && s.ownerType === "inquiry") ? [s] : [];
+    }
+    if (members.length === 0) return;
+
+    busy = true;
+    try {
+      let hadConflicts = false;
+      for (const member of members) {
+        const res = await fetch(`/api/sponsors/${encodeURIComponent(member.id)}/activate-inquiry`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({}),
+        });
+
+        if (res.status === 409) {
+          // Conflicts detected — ask user to override
+          const data = await res.json();
+          const conflictNames = (data.conflicts || []).map(c => c.sponsorName).filter(Boolean);
+          const uniqueNames = [...new Set(conflictNames)];
+          const msg = `Conflicts with: ${uniqueNames.map(n => `"${n}"`).join(", ")}.\nOverride and replace conflicting territories?`;
+          if (confirm(msg)) {
+            const forceRes = await fetch(`/api/sponsors/${encodeURIComponent(member.id)}/activate-inquiry`, {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ force: true }),
+            });
+            const forceResult = await forceRes.json();
+            if (!forceResult.success) {
+              showToast((forceResult.errors || []).join(". ") || "Activation failed", "error");
+              return;
+            }
+          } else {
+            hadConflicts = true;
+            break;
+          }
+        } else {
+          const result = await res.json();
+          if (!result.success) {
+            showToast((result.errors || []).join(". ") || "Activation failed", "error");
+            return;
+          }
+        }
+      }
+
+      if (!hadConflicts) {
+        showToast(`Accepted inquiry "${members[0].name}" — ${members.length} ${members.length === 1 ? "territory" : "territories"} activated`, "success");
+        handleClearForm();
+        await SponsorStorage.reload();
+        refreshSponsorsList();
+      }
+    } catch (err) {
+      showToast("Accept failed: " + err.message, "error");
+    } finally {
+      busy = false;
+    }
+  }
+
+  /**
+   * Reject an inquiry: delete all inquiry territories in the group/single sponsor.
+   */
+  async function handleRejectInquiry() {
+    if (busy) return;
+
+    let members;
+    if (editingGroup) {
+      members = editingGroup.ids.map(id => SponsorStorage.getById(id)).filter(s => s && s.ownerType === "inquiry");
+    } else {
+      const singleId = sponsorForm.getEditingSponsorId();
+      if (!singleId) return;
+      const s = SponsorStorage.getById(singleId);
+      members = (s && s.ownerType === "inquiry") ? [s] : [];
+    }
+    if (members.length === 0) return;
+
+    if (!confirm(`Reject and delete ${members.length} inquiry ${members.length === 1 ? "territory" : "territories"} for "${members[0].name}"?`)) return;
+
+    busy = true;
+    try {
+      for (const member of members) {
+        const res = await fetch(`/api/sponsors/${encodeURIComponent(member.id)}/reject-inquiry`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+        });
+        const result = await res.json();
+        if (!result.success) {
+          showToast((result.errors || []).join(". ") || "Rejection failed", "error");
+          return;
+        }
+      }
+      showToast(`Rejected inquiry "${members[0].name}"`, "success");
+      handleClearForm();
+      await SponsorStorage.reload();
+      refreshSponsorsList();
+    } catch (err) {
+      showToast("Reject failed: " + err.message, "error");
     } finally {
       busy = false;
     }

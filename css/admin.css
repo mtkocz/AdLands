@@ -1835,6 +1835,45 @@ textarea.review-comment {
     color: var(--text-secondary);
 }
 
+.inquiry-actions {
+    display: flex;
+    gap: var(--space-sm);
+    margin-top: var(--space-md);
+    padding-top: var(--space-sm);
+    border-top: 1px solid rgba(232, 163, 23, 0.2);
+}
+
+.btn-accept-inquiry {
+    background: #16a34a;
+    border-color: #16a34a;
+    color: #fff;
+    font-family: var(--font-small);
+    font-size: var(--font-size-small);
+    padding: 6px 16px;
+    cursor: pointer;
+}
+
+.btn-accept-inquiry:hover {
+    background: #22c55e;
+    border-color: #22c55e;
+}
+
+.btn-reject-inquiry {
+    background: transparent;
+    border: 1px solid #666;
+    color: #999;
+    font-family: var(--font-small);
+    font-size: var(--font-size-small);
+    padding: 6px 16px;
+    cursor: pointer;
+}
+
+.btn-reject-inquiry:hover {
+    background: rgba(239, 68, 68, 0.15);
+    border-color: #ef4444;
+    color: #ef4444;
+}
+
 /* Conflict override section */
 .conflict-override-info {
     font-family: var(--font-small);
