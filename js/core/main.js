@@ -2636,21 +2636,29 @@
     // Restore alpha after all dots
     ctx.globalAlpha = prevAlpha;
 
-    // Draw ownership percentages
-    ctx.font = '32px "Spleen 16x32"';
+    // Draw ownership percentages (always show, even for small slices)
     ctx.textAlign = "center";
     ctx.textBaseline = "middle";
 
     for (const faction of ["rust", "cobalt", "viridian"]) {
       const pos = labelPositions[faction];
-      if (pos && pos.percentage >= 1) {
+      if (pos && pos.percentage > 0) {
         const label = `${Math.round(pos.percentage)}%`;
+        // Small slices: place label outside the ring so it's readable
+        const isSmall = pos.percentage < 5;
+        const labelR = isSmall ? outerRadius + 24 : midRadius;
+        // Recalculate position using the stored angle (re-derive from pos)
+        const ang = Math.atan2(pos.y - centerY, pos.x - centerX);
+        const lx = centerX + Math.cos(ang) * labelR;
+        const ly = centerY + Math.sin(ang) * labelR;
+
+        ctx.font = isSmall ? '24px "Spleen 16x32"' : '32px "Spleen 16x32"';
         ctx.strokeStyle = "rgba(0, 0, 0, 0.8)";
         ctx.lineWidth = 3;
-        ctx.strokeText(label, pos.x, pos.y);
+        ctx.strokeText(label, lx, ly);
         ctx.fillStyle = "#ffffff";
         ctx.lineWidth = 1;
-        ctx.fillText(label, pos.x, pos.y);
+        ctx.fillText(label, lx, ly);
       }
     }
 
