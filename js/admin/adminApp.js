@@ -2390,28 +2390,29 @@
     grid: null,
     gap: 8, // matches --space-sm
     minCol: 200,
-    cols: [340, 375, 0, 320], // index 2 = flex, computed at runtime
+    cols: [0, 0, 0], // computed at runtime from 25%/25%/50%
 
     init(gridEl) {
       this.grid = gridEl;
       this.gap = parseInt(getComputedStyle(gridEl).gap) || 8;
 
-      // Compute initial col3 from available space
+      // Compute initial column widths: 25% / 25% / 50%
       const gridLeft =
         parseInt(
           getComputedStyle(document.documentElement).getPropertyValue(
             "--space-sm",
           ),
         ) || 8;
-      const totalWidth = window.innerWidth - gridLeft * 2;
-      const fixedSum =
-        this.cols[0] + this.cols[1] + this.cols[3] + this.gap * 3;
-      this.cols[2] = Math.max(this.minCol, totalWidth - fixedSum);
+      const totalWidth = window.innerWidth - gridLeft;
+      const available = totalWidth - this.gap * 2;
+      this.cols[0] = Math.round(available * 0.25);
+      this.cols[1] = Math.round(available * 0.25);
+      this.cols[2] = Math.max(this.minCol, available - this.cols[0] - this.cols[1]);
 
       this._applyWidths();
 
-      // Create 3 handles (between cols 1-2, 2-3, 3-4)
-      for (let i = 0; i < 3; i++) {
+      // Create 2 handles (between cols 1-2, 2-3)
+      for (let i = 0; i < 2; i++) {
         const handle = document.createElement("div");
         handle.className = "col-resize-handle";
         handle.dataset.index = i;
@@ -2487,9 +2488,9 @@
             "--space-sm",
           ),
         ) || 8;
-      const totalWidth = window.innerWidth - gridLeft * 2;
+      const totalWidth = window.innerWidth - gridLeft;
       const fixedSum =
-        this.cols[0] + this.cols[1] + this.cols[3] + this.gap * 3;
+        this.cols[0] + this.cols[1] + this.gap * 2;
       this.cols[2] = Math.max(this.minCol, totalWidth - fixedSum);
     },
 
@@ -2498,13 +2499,12 @@
       s.setProperty("--col1", this.cols[0] + "px");
       s.setProperty("--col2", this.cols[1] + "px");
       s.setProperty("--col3", this.cols[2] + "px");
-      s.setProperty("--col4", this.cols[3] + "px");
     },
 
     _positionHandles() {
       const rect = this.grid.getBoundingClientRect();
       let x = rect.left;
-      for (let i = 0; i < 3; i++) {
+      for (let i = 0; i < 2; i++) {
         x += this.cols[i] + this.gap;
         this.handles[i].style.left = x - 5 + "px";
       }
