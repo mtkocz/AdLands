@@ -1195,7 +1195,8 @@
 
     for (const [, members] of groups) {
       const hasPlayerTerritory = members.some((s) => s.ownerType === "player");
-      if (members.length === 1 && !hasPlayerTerritory) {
+      const hasInquiryTerritory = members.some((s) => s.ownerType === "inquiry");
+      if (members.length === 1 && !hasPlayerTerritory && !hasInquiryTerritory) {
         // Single sponsor — render as flat card
         const sponsor = members[0];
         const rev = calcRevenueForTiles(sponsor.cluster?.tileIndices, tierMap);
@@ -1520,8 +1521,8 @@
       return;
     }
 
-    // If only one member and not a player territory, edit it directly as a flat card
-    if (members.length === 1 && members[0].ownerType !== "player") {
+    // If only one member and not a player/inquiry territory, edit it directly as a flat card
+    if (members.length === 1 && members[0].ownerType !== "player" && members[0].ownerType !== "inquiry") {
       editSponsor(members[0].id).catch(err => {
         console.error("[AdminApp] editSponsor (from group) failed:", err);
         showToast("Failed to load sponsor: " + (err.message || err), "error");
