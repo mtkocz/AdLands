@@ -23,13 +23,6 @@ class AuthManager {
     this._refreshInterval = null;
     this._REFRESH_MS = 45 * 60 * 1000;
 
-    // Handle redirect result (Google/Apple/etc sign-in returning from redirect)
-    firebaseAuth.getRedirectResult().catch((err) => {
-      if (err.code !== "auth/redirect-cancelled-by-user") {
-        console.error("[AuthManager] Redirect sign-in error:", err);
-      }
-    });
-
     // Listen for Firebase auth state changes
     firebaseAuth.onAuthStateChanged((user) => {
       this.user = user;
@@ -88,39 +81,39 @@ class AuthManager {
   }
 
   /**
-   * Sign in with Google via redirect (no popup flash).
-   * @returns {Promise<void>}
+   * Sign in with Google popup.
+   * @returns {Promise<firebase.auth.UserCredential>}
    */
   async signInWithGoogle() {
     const provider = new firebase.auth.GoogleAuthProvider();
-    return firebaseAuth.signInWithRedirect(provider);
+    return firebaseAuth.signInWithPopup(provider);
   }
 
   /**
-   * Sign in with Apple via redirect.
-   * @returns {Promise<void>}
+   * Sign in with Apple popup.
+   * @returns {Promise<firebase.auth.UserCredential>}
    */
   async signInWithApple() {
     const provider = new firebase.auth.OAuthProvider("apple.com");
-    return firebaseAuth.signInWithRedirect(provider);
+    return firebaseAuth.signInWithPopup(provider);
   }
 
   /**
-   * Sign in with GitHub via redirect.
-   * @returns {Promise<void>}
+   * Sign in with GitHub popup.
+   * @returns {Promise<firebase.auth.UserCredential>}
    */
   async signInWithGitHub() {
     const provider = new firebase.auth.GithubAuthProvider();
-    return firebaseAuth.signInWithRedirect(provider);
+    return firebaseAuth.signInWithPopup(provider);
   }
 
   /**
-   * Sign in with Twitter/X via redirect.
-   * @returns {Promise<void>}
+   * Sign in with Twitter/X popup.
+   * @returns {Promise<firebase.auth.UserCredential>}
    */
   async signInWithTwitter() {
     const provider = new firebase.auth.TwitterAuthProvider();
-    return firebaseAuth.signInWithRedirect(provider);
+    return firebaseAuth.signInWithPopup(provider);
   }
 
   /**
@@ -159,7 +152,7 @@ class AuthManager {
   async linkWithGoogle() {
     if (!this.user) throw new Error("No user signed in");
     const provider = new firebase.auth.GoogleAuthProvider();
-    return this.user.linkWithRedirect(provider);
+    return this.user.linkWithPopup(provider);
   }
 
   // ========================
