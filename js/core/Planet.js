@@ -1071,6 +1071,212 @@ class Planet {
     });
   }
 
+  /**
+   * Merge individual tile meshes per cluster into single geometries for rendering.
+   * Individual tile meshes are kept (invisible) for programmatic lookups.
+   * Call AFTER sponsors are applied so sponsored tiles can be excluded.
+   */
+  mergeClusterTiles() {
+    // Clean up any previous merge
+    this.unmergeClusterTiles();
+
+    this._mergedClusterMeshes = [];
+    this._mergedClusterCentroids = new Map(); // clusterId → Vector3 centroid
+
+    // Group individual tile meshes by cluster and material type
+    const clusterGroundTiles = new Map(); // clusterId → [mesh, ...]
+    const clusterElevatedTiles = new Map(); // clusterId → [mesh, ...]
+
+    this.hexGroup.children.forEach((mesh) => {
+      if (!mesh.isMesh) return;
+      if (mesh.userData?.tileIndex === undefined) return;
+
+      const tileIndex = mesh.userData.tileIndex;
+      const clusterId = mesh.userData.clusterId;
+
+      // Skip: portal tiles (custom ShaderMaterial), sponsored tiles, no-cluster (neutral)
+      if (this.portalCenterIndices.has(tileIndex)) return;
+      if (this.sponsorTileIndices.has(tileIndex)) return;
+      if (clusterId === undefined) return;
+
+      const isElevated = this.terrainElevation &&
+        this.terrainElevation.getElevationAtTileIndex(tileIndex) > 0;
+
+      const map = isElevated ? clusterElevatedTiles : clusterGroundTiles;
+      if (!map.has(clusterId)) map.set(clusterId, []);
+      map.get(clusterId).push(mesh);
+    });
+
+    // Merge each group into a single geometry + mesh
+    const mergeTileGroup = (tiles, clusterId, materialType) => {
+      if (tiles.length <= 1) return; // Not worth merging a single tile
+
+      // Collect geometry data
+      const allPositions = [];
+      const allUvs = [];
+      const allNormals = [];
+      const allColors = [];
+      const allIndices = [];
+      const faceToTile = []; // triangle index → tileIndex
+      let vertexOffset = 0;
+      const hasColors = tiles[0].geometry.attributes.color !== undefined;
+
+      for (const mesh of tiles) {
+        const geom = mesh.geometry;
+        const pos = geom.attributes.position.array;
+        const uv = geom.attributes.uv ? geom.attributes.uv.array : null;
+        const norm = geom.attributes.normal ? geom.attributes.normal.array : null;
+        const col = hasColors && geom.attributes.color ? geom.attributes.color.array : null;
+        const idx = geom.index ? geom.index.array : null;
+        const tileIndex = mesh.userData.tileIndex;
+        const vertCount = pos.length / 3;
+
+        // Copy vertex data
+        for (let i = 0; i < pos.length; i++) allPositions.push(pos[i]);
+        if (uv) for (let i = 0; i < uv.length; i++) allUvs.push(uv[i]);
+        if (norm) for (let i = 0; i < norm.length; i++) allNormals.push(norm[i]);
+        if (col) for (let i = 0; i < col.length; i++) allColors.push(col[i]);
+
+        // Copy indices with offset, and record face-to-tile mapping
+        if (idx) {
+          for (let i = 0; i < idx.length; i += 3) {
+            allIndices.push(idx[i] + vertexOffset, idx[i + 1] + vertexOffset, idx[i + 2] + vertexOffset);
+            faceToTile.push(tileIndex);
+          }
+        } else {
+          // Generate triangle fan indices
+          for (let i = 1; i < vertCount - 1; i++) {
+            allIndices.push(vertexOffset, vertexOffset + i, vertexOffset + i + 1);
+            faceToTile.push(tileIndex);
+          }
+        }
+
+        vertexOffset += vertCount;
+      }
+
+      // Build merged BufferGeometry
+      const mergedGeom = new THREE.BufferGeometry();
+      mergedGeom.setAttribute("position", new THREE.Float32BufferAttribute(allPositions, 3));
+      if (allUvs.length > 0) mergedGeom.setAttribute("uv", new THREE.Float32BufferAttribute(allUvs, 2));
+      if (allNormals.length > 0) mergedGeom.setAttribute("normal", new THREE.Float32BufferAttribute(allNormals, 3));
+      if (allColors.length > 0) mergedGeom.setAttribute("color", new THREE.Float32BufferAttribute(allColors, 3));
+      mergedGeom.setIndex(allIndices);
+
+      // Create material matching the tile group
+      let material;
+      if (materialType === "elevated") {
+        material = new THREE.MeshStandardMaterial({
+          map: this._rockWallTexture,
+          vertexColors: true,
+          flatShading: true,
+          roughness: 0.95,
+          metalness: 0.05,
+          side: THREE.FrontSide,
+        });
+      } else {
+        const pattern = this.clusterPatterns.get(clusterId);
+        if (!this.clusterTextures.has(clusterId)) {
+          this.clusterTextures.set(clusterId, this._createPatternTexture(pattern.type, pattern.grayValue));
+        }
+        material = new THREE.MeshStandardMaterial({
+          map: this.clusterTextures.get(clusterId),
+          flatShading: true,
+          roughness: pattern.roughness,
+          metalness: pattern.metalness,
+          side: THREE.FrontSide,
+        });
+      }
+
+      const mergedMesh = new THREE.Mesh(mergedGeom, material);
+      mergedMesh.receiveShadow = true;
+      mergedMesh.castShadow = true;
+      mergedMesh.userData = {
+        isMergedCluster: true,
+        clusterId,
+        materialType,
+        tileIndices: tiles.map((m) => m.userData.tileIndex),
+        faceToTile,
+      };
+
+      // Custom raycast: map face index to tileIndex
+      const originalRaycast = THREE.Mesh.prototype.raycast;
+      mergedMesh.raycast = function (raycaster, intersects) {
+        const before = intersects.length;
+        originalRaycast.call(this, raycaster, intersects);
+        // Annotate new hits with tileIndex
+        for (let i = before; i < intersects.length; i++) {
+          const hit = intersects[i];
+          if (hit.faceIndex !== undefined && this.userData.faceToTile) {
+            hit.tileIndex = this.userData.faceToTile[hit.faceIndex];
+          }
+        }
+      };
+
+      this.hexGroup.add(mergedMesh);
+      this._mergedClusterMeshes.push(mergedMesh);
+
+      // Hide individual tiles (they remain in hexGroup for programmatic lookups)
+      for (const mesh of tiles) {
+        mesh.visible = false;
+        mesh.userData._merged = true;
+      }
+    };
+
+    // Merge ground-level tiles per cluster
+    for (const [clusterId, tiles] of clusterGroundTiles) {
+      mergeTileGroup(tiles, clusterId, "ground");
+    }
+
+    // Merge elevated tiles per cluster
+    for (const [clusterId, tiles] of clusterElevatedTiles) {
+      mergeTileGroup(tiles, clusterId, "elevated");
+    }
+
+    // Precompute cluster centroids for visibility culling
+    for (const mesh of this._mergedClusterMeshes) {
+      const cid = mesh.userData.clusterId;
+      if (!this._mergedClusterCentroids.has(cid)) {
+        const cluster = this.clusterData[cid];
+        if (cluster && cluster.tiles.length > 0) {
+          const centroid = new THREE.Vector3();
+          let count = 0;
+          for (const ti of cluster.tiles) {
+            const td = this.tileCenters[ti];
+            if (td) { centroid.add(td.position); count++; }
+          }
+          if (count > 0) centroid.divideScalar(count);
+          this._mergedClusterCentroids.set(cid, centroid);
+        }
+      }
+    }
+  }
+
+  /**
+   * Undo tile merging — restore individual tile meshes to visible, remove merged meshes.
+   * Called before operations that modify tile assignments (scrambleClusters, sponsor changes).
+   */
+  unmergeClusterTiles() {
+    if (!this._mergedClusterMeshes) return;
+
+    // Restore individual tile visibility
+    this.hexGroup.children.forEach((child) => {
+      if (child.isMesh && child.userData?._merged) {
+        child.visible = true;
+        delete child.userData._merged;
+      }
+    });
+
+    // Remove and dispose merged meshes
+    for (const mesh of this._mergedClusterMeshes) {
+      this.hexGroup.remove(mesh);
+      mesh.geometry.dispose();
+      if (mesh.material && mesh.material.dispose) mesh.material.dispose();
+    }
+
+    this._mergedClusterMeshes = [];
+    this._mergedClusterCentroids = null;
+  }
+
   _createRockWallTexture() {
     const size = 8;
     const canvas = document.createElement("canvas");
@@ -1619,9 +1825,11 @@ class Planet {
       attribute float height;
       varying float vHeight;
       varying vec3 vPos;
+      varying vec3 vWorldPosition;
       void main() {
         vHeight = height;
         vPos = position;
+        vWorldPosition = (modelMatrix * vec4(position, 1.0)).xyz;
         gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
       }
     `;
@@ -1630,7 +1838,13 @@ class Planet {
       uniform float uTime;
       varying float vHeight;
       varying vec3 vPos;
+      varying vec3 vWorldPosition;
       void main() {
+        // Far-side culling: discard fragments on the back of the planet
+        vec3 surfNorm = normalize(vWorldPosition);
+        vec3 camToFrag = normalize(vWorldPosition - cameraPosition);
+        if (dot(surfNorm, camToFrag) > 0.15) discard;
+
         // Angular coord around pole axis for curtain variation
         float angle = atan(vPos.z, vPos.x);
 
@@ -2255,6 +2469,27 @@ class Planet {
     // Backface + frustum cull hex tiles
     this.hexGroup.children.forEach((child) => {
       if (!child.isMesh) return;
+
+      // Cull merged cluster meshes by centroid
+      if (child.userData?.isMergedCluster) {
+        const centroid = this._mergedClusterCentroids?.get(child.userData.clusterId);
+        if (!centroid) return;
+
+        temp.tileWorldPos.copy(centroid).applyMatrix4(hexGroupMatrix);
+        temp.tileNormal.copy(temp.tileWorldPos).normalize();
+        temp.tileToCamera.copy(temp.cameraWorldPos).sub(temp.tileWorldPos).normalize();
+        const dot = temp.tileNormal.dot(temp.tileToCamera);
+
+        child.visible = dot > -0.15;
+        if (child.visible && frustum) {
+          child.visible = frustum.intersectsObject(child);
+        }
+        return;
+      }
+
+      // Skip individual tiles that have been merged (they stay invisible)
+      if (child.userData?._merged) return;
+
       if (child.userData?.tileIndex === undefined) return;
 
       const tileIndex = child.userData.tileIndex;
@@ -2317,6 +2552,9 @@ class Planet {
    * @param {number} seed - New seed for random generation
    */
   scrambleClusters(seed) {
+    // Unmerge cluster tiles before modifying cluster assignments
+    this.unmergeClusterTiles();
+
     // Store sponsor cluster data before regeneration
     const sponsorData = [];
     for (const data of this.sponsorClusters.values()) {
@@ -2399,6 +2637,9 @@ class Planet {
 
     // Reset capture state for procedural clusters
     this._initializeCaptureState();
+
+    // Re-merge cluster tiles for draw call reduction
+    this.mergeClusterTiles();
   }
 
   /**
@@ -4360,9 +4601,11 @@ class Planet {
       vertexShader: `
                 attribute float distanceFromEdge;
                 varying float vDistance;
+                varying vec3 vWorldPosition;
 
                 void main() {
                     vDistance = distanceFromEdge;
+                    vWorldPosition = (modelMatrix * vec4(position, 1.0)).xyz;
                     gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
                 }
             `,
@@ -4374,8 +4617,14 @@ class Planet {
                 uniform float pulseIntensity;
 
                 varying float vDistance;
+                varying vec3 vWorldPosition;
 
                 void main() {
+                    // Far-side culling: discard fragments on the back of the planet
+                    vec3 surfNorm = normalize(vWorldPosition);
+                    vec3 camToFrag = normalize(vWorldPosition - cameraPosition);
+                    if (dot(surfNorm, camToFrag) > 0.15) discard;
+
                     // Smooth fade: solid at edge (0), transparent at inner (1)
                     float fade = 1.0 - pow(vDistance, fadeExponent);
                     fade = clamp(fade, 0.0, 1.0);

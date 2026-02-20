@@ -184,9 +184,11 @@
           }).then(() => {
             planet.applySponsorVisuals(data.world.sponsors);
             planet.deElevateSponsorTiles();
+            planet.mergeClusterTiles();
             mp.setSponsorTexturesReady();
           });
         } else {
+          planet.mergeClusterTiles();
           mp.setSponsorTexturesReady();
         }
 
@@ -544,7 +546,7 @@
         }
       }
 
-      // Sync moon orbital angles
+      // Sync moon orbital angles (client advances locally; server corrects drift)
       if (data.ma && mp.environment) {
         const moons = mp.environment.moons;
         data.ma.forEach((serverAngle, i) => {
@@ -553,15 +555,16 @@
           let drift = serverAngle - moon.userData.angle;
           while (drift > Math.PI) drift -= Math.PI * 2;
           while (drift < -Math.PI) drift += Math.PI * 2;
-          if (Math.abs(drift) > 0.01) {
+          if (Math.abs(drift) > 0.5) {
             moon.userData.angle = serverAngle;
-          } else if (Math.abs(drift) > 0.001) {
-            moon.userData.angle += drift * 0.2;
+          } else if (Math.abs(drift) > 0.0001) {
+            moon.userData.angle += drift * 0.1;
           }
         });
       }
 
       // Sync space station orbital angles, rotation, and orbital plane
+      // Client advances locally; server corrects drift smoothly
       if (data.sa && mp.environment) {
         const stations = mp.environment.spaceStations;
         data.sa.forEach((arr, i) => {
@@ -571,19 +574,19 @@
           let orbDrift = arr[0] - s.userData.orbitalAngle;
           while (orbDrift > Math.PI) orbDrift -= Math.PI * 2;
           while (orbDrift < -Math.PI) orbDrift += Math.PI * 2;
-          if (Math.abs(orbDrift) > 0.01) {
+          if (Math.abs(orbDrift) > 0.5) {
             s.userData.orbitalAngle = arr[0];
-          } else if (Math.abs(orbDrift) > 0.001) {
-            s.userData.orbitalAngle += orbDrift * 0.2;
+          } else if (Math.abs(orbDrift) > 0.0001) {
+            s.userData.orbitalAngle += orbDrift * 0.1;
           }
 
           let rotDrift = arr[1] - s.userData.localRotation;
           while (rotDrift > Math.PI) rotDrift -= Math.PI * 2;
           while (rotDrift < -Math.PI) rotDrift += Math.PI * 2;
-          if (Math.abs(rotDrift) > 0.01) {
+          if (Math.abs(rotDrift) > 0.5) {
             s.userData.localRotation = arr[1];
-          } else if (Math.abs(rotDrift) > 0.001) {
-            s.userData.localRotation += rotDrift * 0.2;
+          } else if (Math.abs(rotDrift) > 0.0001) {
+            s.userData.localRotation += rotDrift * 0.1;
           }
 
           // Orbital plane params (sent every ~5s to handle late joins / missed welcome)
@@ -605,10 +608,10 @@
           let orbDrift = arr[0] - b.userData.orbitalAngle;
           while (orbDrift > Math.PI) orbDrift -= Math.PI * 2;
           while (orbDrift < -Math.PI) orbDrift += Math.PI * 2;
-          if (Math.abs(orbDrift) > 0.01) {
+          if (Math.abs(orbDrift) > 0.5) {
             b.userData.orbitalAngle = arr[0];
-          } else if (Math.abs(orbDrift) > 0.001) {
-            b.userData.orbitalAngle += orbDrift * 0.2;
+          } else if (Math.abs(orbDrift) > 0.0001) {
+            b.userData.orbitalAngle += orbDrift * 0.1;
           }
 
           // Full orbital params (sent every ~5s)
@@ -867,7 +870,7 @@
             cannonSystem.cryptoSystem.awardCrypto(
               killCrypto,
               isCommander ? "commander kill" : "kill",
-              worldPos,
+              _hitWorldPos,
             );
           }
 
@@ -1365,6 +1368,7 @@
 
       // Clear existing sponsor state and stale texture cache so updated
       // images (cache-busted URLs) are re-fetched from the server.
+      planet.unmergeClusterTiles();
       planet.clearSponsorData();
       planet.clearSponsorTextureCache();
 
@@ -1376,7 +1380,10 @@
         planet.preloadSponsorTextures(data.world.sponsors).then(() => {
           planet.applySponsorVisuals(data.world.sponsors);
           planet.deElevateSponsorTiles();
+          planet.mergeClusterTiles();
         });
+      } else {
+        planet.mergeClusterTiles();
       }
 
       // Restore territory capture state (applyServerWorld clears it)

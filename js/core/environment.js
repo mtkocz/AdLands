@@ -1255,7 +1255,7 @@ gl_FragColor = vec4( outgoingLight, diffuseColor.a );`
 
     // Update moons with visibility culling
     this.moons.forEach((moon) => {
-      if (!this.isMultiplayer) moon.userData.angle += moon.userData.speed * deltaTime;
+      moon.userData.angle += moon.userData.speed * deltaTime;
       const a = moon.userData.angle;
       const d = moon.userData.distance;
       const inc = moon.userData.inclination;
@@ -1317,10 +1317,8 @@ gl_FragColor = vec4( outgoingLight, diffuseColor.a );`
 
     // Update space stations with visibility culling
     this.spaceStations.forEach((station) => {
-      if (!this.isMultiplayer) {
-        station.userData.orbitalAngle += station.userData.speed * deltaTime;
-        station.userData.localRotation += station.userData.rotationSpeed * deltaTime;
-      }
+      station.userData.orbitalAngle += station.userData.speed * deltaTime;
+      station.userData.localRotation += station.userData.rotationSpeed * deltaTime;
 
       const angle = station.userData.orbitalAngle;
       const r = station.userData.orbitRadius;
@@ -1352,7 +1350,7 @@ gl_FragColor = vec4( outgoingLight, diffuseColor.a );`
       // Skip unrented billboards — they stay hidden
       if (!bb.userData.sponsor) return;
 
-      if (!this.isMultiplayer) bb.userData.orbitalAngle += bb.userData.speed * deltaTime;
+      bb.userData.orbitalAngle += bb.userData.speed * deltaTime;
 
       const angle = bb.userData.orbitalAngle;
       const r = bb.userData.orbitRadius;

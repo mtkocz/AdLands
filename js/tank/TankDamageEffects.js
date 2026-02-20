@@ -10,6 +10,10 @@
 // Preallocated temp spheres for frustum culling (avoid per-frame clone())
 const _dmgSmokeSphere = new THREE.Sphere();
 const _dmgFireSphere = new THREE.Sphere();
+// Preallocated vectors for far-side (backface) culling
+const _dmgCullNormal = new THREE.Vector3();
+const _dmgCullDir = new THREE.Vector3();
+const _dmgCameraWorldPos = new THREE.Vector3();
 
 class TankDamageEffects {
     constructor(scene, sphereRadius) {
@@ -120,10 +124,13 @@ class TankDamageEffects {
     /**
      * Update all active effects (call each frame)
      */
-    update(deltaTime, frustum = null) {
+    update(deltaTime, frustum = null, camera = null) {
         const dt = deltaTime || 1 / 60;
 
-        // Frustum culling for particle systems (with 10 unit margin for smooth visibility)
+        // Cache camera world position for backface culling
+        if (camera) camera.getWorldPosition(_dmgCameraWorldPos);
+
+        // Backface + frustum culling for particle systems (with 10 unit margin for smooth visibility)
         if (frustum) {
             // Cull smoke system (with cached bounding sphere for performance)
             if (this.smokeSystem && this.smoke.activeCount > 0) {
@@ -134,7 +141,14 @@ class TankDamageEffects {
                 _dmgSmokeSphere.copy(this.smokeSystem.geometry.boundingSphere);
                 _dmgSmokeSphere.applyMatrix4(this.smokeSystem.matrixWorld);
                 _dmgSmokeSphere.radius += 10;
-                this.smokeSystem.visible = frustum.intersectsSphere(_dmgSmokeSphere);
+                // Backface cull — hide if particle cloud center is on far side of planet
+                _dmgCullNormal.copy(_dmgSmokeSphere.center).normalize();
+                _dmgCullDir.copy(_dmgSmokeSphere.center).sub(_dmgCameraWorldPos).normalize();
+                if (_dmgCullNormal.dot(_dmgCullDir) > 0.15) {
+                    this.smokeSystem.visible = false;
+                } else {
+                    this.smokeSystem.visible = frustum.intersectsSphere(_dmgSmokeSphere);
+                }
             }
 
             // Cull fire system (with cached bounding sphere for performance)
@@ -146,7 +160,14 @@ class TankDamageEffects {
                 _dmgFireSphere.copy(this.fireSystem.geometry.boundingSphere);
                 _dmgFireSphere.applyMatrix4(this.fireSystem.matrixWorld);
                 _dmgFireSphere.radius += 10;
-                this.fireSystem.visible = frustum.intersectsSphere(_dmgFireSphere);
+                // Backface cull — hide if particle cloud center is on far side of planet
+                _dmgCullNormal.copy(_dmgFireSphere.center).normalize();
+                _dmgCullDir.copy(_dmgFireSphere.center).sub(_dmgCameraWorldPos).normalize();
+                if (_dmgCullNormal.dot(_dmgCullDir) > 0.15) {
+                    this.fireSystem.visible = false;
+                } else {
+                    this.fireSystem.visible = frustum.intersectsSphere(_dmgFireSphere);
+                }
             }
         }
 

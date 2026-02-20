@@ -12,6 +12,10 @@
 // Preallocated temp spheres for frustum culling (avoid per-frame clone())
 const _colDustSphere = new THREE.Sphere();
 const _colSparkSphere = new THREE.Sphere();
+// Preallocated vectors for far-side (backface) culling
+const _colCullNormal = new THREE.Vector3();
+const _colCullDir = new THREE.Vector3();
+const _colCameraWorldPos = new THREE.Vector3();
 
 class TankCollision {
     constructor(scene, sphereRadius) {
@@ -112,7 +116,10 @@ class TankCollision {
         if (!this.planet?.terrainElevation) return false;
         this._temp.terrainLocal.copy(worldPos);
         this.planet.hexGroup.worldToLocal(this._temp.terrainLocal);
-        return this.planet.terrainElevation.getElevationAtPosition(this._temp.terrainLocal) > 0;
+        // Check both elevated terrain AND polar holes
+        if (this.planet.terrainElevation.getElevationAtPosition(this._temp.terrainLocal) > 0) return true;
+        if (this.planet.isInsidePolarHole && this.planet.isInsidePolarHole(this._temp.terrainLocal)) return true;
+        return false;
     }
 
     /**
@@ -133,7 +140,7 @@ class TankCollision {
         uniforms.uAmbientIntensity.value = lightConfig.ambient.intensity;
     }
 
-    update(deltaTime, frustum = null) {
+    update(deltaTime, frustum = null, camera = null) {
         this._frameCount++;
 
         // Update spatial grid (staggered - not every frame for distant tanks)
@@ -142,7 +149,10 @@ class TankCollision {
         // Check collisions using spatial hash
         this._checkCollisionsSpatial();
 
-        // Frustum culling for particle systems (with 10 unit margin for smooth visibility)
+        // Cache camera world position for backface culling
+        if (camera) camera.getWorldPosition(_colCameraWorldPos);
+
+        // Backface + frustum culling for particle systems (with 10 unit margin for smooth visibility)
         if (frustum) {
             // Cull dust system
             if (this.dustSystem && this.dust.activeCount > 0) {
@@ -150,7 +160,13 @@ class TankCollision {
                 _colDustSphere.copy(this.dustSystem.geometry.boundingSphere);
                 _colDustSphere.applyMatrix4(this.dustSystem.matrixWorld);
                 _colDustSphere.radius += 10;
-                this.dustSystem.visible = frustum.intersectsSphere(_colDustSphere);
+                _colCullNormal.copy(_colDustSphere.center).normalize();
+                _colCullDir.copy(_colDustSphere.center).sub(_colCameraWorldPos).normalize();
+                if (_colCullNormal.dot(_colCullDir) > 0.15) {
+                    this.dustSystem.visible = false;
+                } else {
+                    this.dustSystem.visible = frustum.intersectsSphere(_colDustSphere);
+                }
             }
 
             // Cull spark system
@@ -159,7 +175,13 @@ class TankCollision {
                 _colSparkSphere.copy(this.sparkSystem.geometry.boundingSphere);
                 _colSparkSphere.applyMatrix4(this.sparkSystem.matrixWorld);
                 _colSparkSphere.radius += 10;
-                this.sparkSystem.visible = frustum.intersectsSphere(_colSparkSphere);
+                _colCullNormal.copy(_colSparkSphere.center).normalize();
+                _colCullDir.copy(_colSparkSphere.center).sub(_colCameraWorldPos).normalize();
+                if (_colCullNormal.dot(_colCullDir) > 0.15) {
+                    this.sparkSystem.visible = false;
+                } else {
+                    this.sparkSystem.visible = frustum.intersectsSphere(_colSparkSphere);
+                }
             }
         }
 
@@ -315,24 +337,21 @@ class TankCollision {
         const speedB = Math.abs(tankB.state?.speed || tankB.botRef?.state?.speed || 0);
         const relativeSpeed = speedA + speedB;
 
-        // Push tanks apart using world-space direction
-        this._pushTanksWorldSpace(tankA, tankB, overlap);
+        // --- Soft prediction push (local player only) ---
+        // Server is authoritative for collision resolution. Client only applies
+        // a gentle push to the local player for immediate visual feedback.
+        // Remote tanks are interpolating toward server positions — don't touch them.
+        const localId = "player";
+        if (idA === localId) {
+            this._softPushLocal(tankA, overlap);
+            this._dampenVelocity(tankA, 0.5);
+        } else if (idB === localId) {
+            this._softPushLocal(tankB, overlap);
+            this._dampenVelocity(tankB, 0.5);
+        }
+        // Remote-to-remote: no push, no velocity change (server handles it)
 
-        // Calculate bounce intensity - always have a minimum bounce to unstick tanks
-        const minBounce = 0.00008;  // Minimum bounce even at low/zero speed
-        const speedBounce = relativeSpeed * 0.8;  // Stronger speed-based bounce
-        const bounceIntensity = Math.max(minBounce, Math.min(speedBounce, 0.0003));
-
-        // Kill current velocity completely to prevent pushing through
-        this._dampenVelocity(tankA, 0);
-        this._dampenVelocity(tankB, 0);
-
-        // Apply strong bounce-back velocity (negative speed = reverse)
-        // Both tanks bounce back regardless of who was moving
-        this._applyBounceVelocity(tankA, -bounceIntensity);
-        this._applyBounceVelocity(tankB, -bounceIntensity);
-
-        // Check cooldown for visual effects
+        // Check cooldown for visual effects (unchanged — instant client feedback)
         const pairKey = idA < idB ? `${idA}-${idB}` : `${idB}-${idA}`;
         const lastCollision = this.collisionCooldowns.get(pairKey) || 0;
 
@@ -341,6 +360,27 @@ class TankCollision {
             this._temp.collisionPoint.copy(this._temp.posA).add(this._temp.posB).multiplyScalar(0.5);
             this._emitCollisionEffects(this._temp.collisionPoint, relativeSpeed);
             this.collisionCooldowns.set(pairKey, now);
+        }
+    }
+
+    _softPushLocal(localTank, overlap) {
+        // Gentle push: 30% of overlap for immediate visual feedback.
+        // Server will send the full authoritative correction next tick.
+        const posA = this._temp.posA;
+        const posB = this._temp.posB;
+
+        if (!isFinite(posA.x) || !isFinite(posB.x)) return;
+
+        this._temp.pushDir.copy(posA).sub(posB);
+        const len = this._temp.pushDir.length();
+        if (len < 0.0001) return;
+        this._temp.pushDir.divideScalar(len);
+
+        const pushAmount = overlap * 0.3;
+        const newPos = posA.clone().addScaledVector(this._temp.pushDir, pushAmount);
+
+        if (!this._isOnElevatedTerrain(newPos)) {
+            this._applyWorldPositionToTank(localTank, newPos);
         }
     }
 

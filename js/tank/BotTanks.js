@@ -256,7 +256,7 @@ class BotTanks {
     this.skipSpawn = !!options.skipSpawn;
 
     // Player population management
-    this.TARGET_TOTAL_PLAYERS = 300;
+    this.TARGET_TOTAL_PLAYERS = 150;
     this.humanPlayers = []; // Array of {id, position: Vector3, faction: string, theta, phi}
     this.playerTankRef = null; // Reference to local player tank for collision avoidance
 
@@ -273,20 +273,24 @@ class BotTanks {
 
     // Pole avoidance parameters
     this.BOT_POLE_SOFT_LIMIT = 0.5; // Phi where soft repulsion begins (radians from pole)
-    this.BOT_POLE_HARD_LIMIT = 0.25; // Absolute minimum phi (hard clamp as safety net)
-    this.BOT_POLE_REPULSION_STRENGTH = 0.002; // How strongly bots are pushed away from poles
+    this.BOT_POLE_HARD_LIMIT = 0.20; // Absolute minimum phi (hard clamp as safety net)
+    this.BOT_POLE_REPULSION_STRENGTH = 0.005; // How strongly bots are pushed away from poles
 
     // Collision avoidance parameters
-    this.BOT_AVOID_DISTANCE = 0.08; // Angular distance to start avoiding (radians)
-    this.BOT_AVOID_ANGLE = Math.PI / 3; // Cone angle for forward sensing (60 degrees)
-    this.BOT_AVOID_STRENGTH = 0.8; // How strongly to steer away (0-1)
+    this.BOT_AVOID_DISTANCE = 0.04; // Angular distance to start avoiding (radians)
+    this.BOT_AVOID_ANGLE = Math.PI / 2.5; // Cone angle for forward sensing (72 degrees)
+    this.BOT_AVOID_STRENGTH = 1.0; // How strongly to steer away (0-1)
+
+    // Omnidirectional separation (anti-bunching)
+    this.BOT_SEPARATION_RADIUS = 0.025; // All-direction repulsion radius
+    this.BOT_SEPARATION_STRENGTH = 0.15; // Separation force strength
 
     // Terrain navigation parameters (relaxed — pathfinding handles routing around terrain)
-    this.BOT_STUCK_CHECK_INTERVAL = 1.0; // Seconds between stuck checks
+    this.BOT_STUCK_CHECK_INTERVAL = 0.75; // Seconds between stuck checks
     this.BOT_STUCK_THRESHOLD = 3; // Consecutive stuck checks before recovery
-    this.BOT_TERRAIN_BOUNCE_LIMIT = 3; // Bounces before drastic course change
-    this.BOT_COLLISION_SPEED_RETAIN = 0.30; // 70% speed loss on terrain collision
-    this.BOT_TERRAIN_AVOID_COOLDOWN = 0.8; // Brief pause then re-plan
+    this.BOT_TERRAIN_BOUNCE_LIMIT = 1; // Bounces before drastic course change
+    this.BOT_COLLISION_SPEED_RETAIN = 0.15; // 85% speed loss on terrain collision
+    this.BOT_TERRAIN_AVOID_COOLDOWN = 2.5; // Longer pause to escape terrain
 
     // Bot turret rotation physics (slightly slower than player)
     this.botTurretPhysics = {
@@ -339,6 +343,9 @@ class BotTanks {
 
     // Create shared geometries and materials for performance (reused across all bots)
     this._setupSharedAssets();
+
+    // Create InstancedMesh pools for LOD rendering (lodBox + shadowBlob)
+    this._setupInstancedMeshes();
 
     // Preallocated temp objects for visibility culling (avoid GC pressure)
     this._cullTemp = {
@@ -458,6 +465,57 @@ class BotTanks {
       this._lodDotMaterials[factionName] =
         this._createLODDotMaterial(pureFactionColor);
     }
+  }
+
+  /**
+   * Create InstancedMesh pools for LOD box and shadow blob rendering.
+   * Replaces per-bot individual meshes with batched instanced draws.
+   * lodBox: 3 InstancedMesh (one per faction), shadowBlob: 1 InstancedMesh (shared material).
+   */
+  _setupInstancedMeshes() {
+    const maxPerFaction = Math.ceil(this.TARGET_TOTAL_PLAYERS / 3) + 10; // ~60 per faction
+    const factionNames = ["rust", "cobalt", "viridian"];
+
+    // InstancedMesh pools for LOD boxes (one per faction for different materials)
+    this._instancedLodBox = {};
+    for (const faction of factionNames) {
+      const im = new THREE.InstancedMesh(
+        this._sharedGeom.lodBox,
+        this._sharedMat[faction].lod,
+        maxPerFaction,
+      );
+      im.count = 0;
+      im.castShadow = true;
+      im.receiveShadow = false;
+      im.frustumCulled = false; // We handle culling per-bot
+      this._instancedLodBox[faction] = im;
+      this.planet.hexGroup.add(im);
+    }
+
+    // Single InstancedMesh for shadow blobs (same material for all factions)
+    this._instancedShadowBlob = new THREE.InstancedMesh(
+      this._shadowGeometry,
+      this._shadowMaterial,
+      this.TARGET_TOTAL_PLAYERS,
+    );
+    this._instancedShadowBlob.count = 0;
+    this._instancedShadowBlob.castShadow = false;
+    this._instancedShadowBlob.receiveShadow = false;
+    this._instancedShadowBlob.frustumCulled = false;
+    this._instancedShadowBlob.renderOrder = -1;
+    this.planet.hexGroup.add(this._instancedShadowBlob);
+
+    // Precomputed constant offset matrices (local to bot.group)
+    this._lodBoxOffset = new THREE.Matrix4().makeTranslation(0, 0.75, 0);
+    this._shadowBlobOffset = new THREE.Matrix4()
+      .makeTranslation(0, -0.3, 0)
+      .multiply(new THREE.Matrix4().makeRotationX(-Math.PI / 2));
+
+    // Preallocated temps for per-frame instance matrix computation
+    this._instanceTemp = {
+      matrix: new THREE.Matrix4(),
+      botMatrix: new THREE.Matrix4(),
+    };
   }
 
   /**
@@ -778,30 +836,8 @@ class BotTanks {
     hitbox.userData.type = "tank";
     group.add(hitbox);
 
-    // Create LOD box (hidden by default, shown when camera is far)
-    // Uses custom terminator-aware material for correct lighting on dark side
-    const lodMesh = new THREE.Mesh(
-      this._sharedGeom.lodBox,
-      this._sharedMat[factionName].lod,
-    );
-    lodMesh.position.set(0, 0.75, 0); // Same position as hitbox
-    lodMesh.visible = false;
-    lodMesh.castShadow = true; // Cast shadows on other tanks
-    lodMesh.receiveShadow = false; // Custom shader handles lighting
-    group.add(lodMesh);
-
-    // Create fake shadow blob (shown only in orbital mode)
-    // Uses shared rectangular geometry/material matching tank proportions
-    const shadowBlob = new THREE.Mesh(
-      this._shadowGeometry,
-      this._shadowMaterial,
-    );
-    shadowBlob.position.set(0, -0.3, 0); // Beneath tank center
-    shadowBlob.scale.set(1, 1, 1); // No scaling - geometry is correct size
-    shadowBlob.rotation.x = -Math.PI / 2; // Rotate to lie flat on ground
-    shadowBlob.visible = false; // Hidden by default
-    shadowBlob.renderOrder = -1; // Render before other objects
-    group.add(shadowBlob);
+    // LOD box and shadow blob are rendered via InstancedMesh (see _setupInstancedMeshes)
+    // No individual meshes created per bot — saves ~400 draw calls in orbital view
 
     // Commander mode: billboarded dot with shader-based dark outline
     const lodDot = new THREE.Mesh(
@@ -928,10 +964,10 @@ class BotTanks {
       bodyGroup,
       turretGroup,
       hitbox,
-      lodMesh,
+      lodMesh: null, // Rendered via InstancedMesh
       lodDot,
       lodDotOutline,
-      shadowBlob,
+      shadowBlob: null, // Rendered via InstancedMesh
       detailedMeshes,
       faction: factionName,
       theta,
@@ -1005,6 +1041,15 @@ class BotTanks {
 
     this.bots.push(bot);
     this._factionBots[factionName].push(bot);
+
+    // Register in TankCollision for physical push-apart
+    if (this._tankCollision) {
+      this._tankCollision.registerTank(`sbot-${bot.playerId}`, {
+        group: bot.group,
+        state: bot.state,
+        isBot: true,
+      });
+    }
   }
 
   // ========================
@@ -1094,11 +1139,14 @@ class BotTanks {
       // 4b. Turret rotation (spring-based, matches player)
       this._updateBotTurret(bot, deltaTime);
 
-      // 5. Visibility culling
+      // 5. Visibility culling (sets bot._lodState for instanced rendering)
       if (camera && frustum) {
         this._updateBotVisibility(bot, frustum, cameraWorldPos);
       }
     });
+
+    // 6. Batch-update InstancedMesh buffers for LOD boxes and shadow blobs
+    this._updateInstancedLOD();
   }
 
   // ========================
@@ -1115,7 +1163,61 @@ class BotTanks {
 
   _updateBotVisibility(bot, frustum, cameraWorldPos) {
     // Use shared LOD update logic from Tank class
+    // Sets bot._lodState: -1=hidden, 0=detail, 1=box, 2=dot
     Tank.updateTankLOD(bot, cameraWorldPos, frustum, this._lodOptions || {});
+  }
+
+  /**
+   * Update InstancedMesh buffers for all bot LOD boxes and shadow blobs.
+   * Called once per frame after all bot positions/visibility have been updated.
+   * Reads bot._lodState (set by Tank.updateTankLOD) to determine which instances to write.
+   */
+  _updateInstancedLOD() {
+    const temp = this._instanceTemp;
+
+    // Reset instance counts
+    const lodBoxCounts = { rust: 0, cobalt: 0, viridian: 0 };
+    let shadowBlobCount = 0;
+
+    for (let i = 0; i < this.bots.length; i++) {
+      const bot = this.bots[i];
+
+      // Only write instances for bots in "box" LOD state (state 1)
+      // State -1: hidden (culled), 0: detail meshes, 2: dot (individual mesh)
+      if (bot._lodState !== 1) continue;
+
+      const faction = bot.faction;
+      const boxIdx = lodBoxCounts[faction];
+      const im = this._instancedLodBox[faction];
+
+      if (boxIdx < im.instanceMatrix.count) {
+        // Compose bot's local-to-hexGroup transform from current position/quaternion/scale
+        temp.botMatrix.compose(bot.group.position, bot.group.quaternion, bot.group.scale);
+
+        // LOD box: bot transform × offset (0, 0.75, 0)
+        temp.matrix.copy(temp.botMatrix).multiply(this._lodBoxOffset);
+        im.setMatrixAt(boxIdx, temp.matrix);
+        lodBoxCounts[faction]++;
+
+        // Shadow blob: bot transform × offset (0, -0.3, 0) + rotateX(-PI/2)
+        temp.matrix.copy(temp.botMatrix).multiply(this._shadowBlobOffset);
+        this._instancedShadowBlob.setMatrixAt(shadowBlobCount, temp.matrix);
+        shadowBlobCount++;
+      }
+    }
+
+    // Update instance counts and mark buffers dirty
+    for (const faction of ["rust", "cobalt", "viridian"]) {
+      const im = this._instancedLodBox[faction];
+      im.count = lodBoxCounts[faction];
+      if (im.count > 0) {
+        im.instanceMatrix.needsUpdate = true;
+      }
+    }
+    this._instancedShadowBlob.count = shadowBlobCount;
+    if (shadowBlobCount > 0) {
+      this._instancedShadowBlob.instanceMatrix.needsUpdate = true;
+    }
   }
 
   // ========================
@@ -1193,23 +1295,26 @@ class BotTanks {
           bot._stuckCounter = 0;
           bot._replanCount++;
           if (bot._replanCount >= 3) {
-            // Too many re-plans — give up and wander, then get reassigned
+            // Too many re-plans — give up with aggressive escape heading
             bot._replanCount = 0;
             bot.pathWaypoints = [];
             bot.targetClusterId = null;
             bot.targetPosition = null;
-            bot.wanderDirection = bot.heading + (Math.random() - 0.5) * Math.PI;
+            bot.wanderDirection = bot.heading + Math.PI * (0.5 + Math.random());
             bot.aiState = BOT_STATES.WANDERING;
             bot.stateTimer = 0;
+            bot.state.speed = 0;
           } else {
-            // Re-plan from current position
+            // Re-plan: reverse briefly to clear obstacle, then re-path
             bot.pathWaypoints = [];
-            // Will re-request next frame
+            bot.wanderDirection = bot.heading + Math.PI;
+            bot.state.speed = 0;
+            bot._terrainAvoidTimer = 0.5;
           }
         }
         break;
 
-      case BOT_STATES.CAPTURING:
+      case BOT_STATES.CAPTURING: {
         const captureState = this.planet.clusterCaptureState.get(bot.clusterId);
         if (captureState && captureState.owner === bot.faction) {
           bot.targetClusterId = null;
@@ -1226,9 +1331,20 @@ class BotTanks {
           bot.aiState = BOT_STATES.MOVING;
           bot.stateTimer = 0;
         }
+        // Stuck detection while capturing — re-path to target
+        if (this._checkStuck(bot)) {
+          bot._stuckCounter = 0;
+          bot.pathWaypoints = [];
+          bot.wanderDirection = bot.heading + Math.PI + (Math.random() - 0.5) * 1.0;
+          bot.state.speed = 0;
+          bot._terrainAvoidTimer = 0.5;
+          bot.aiState = BOT_STATES.MOVING;
+          bot.stateTimer = 0;
+        }
         break;
+      }
 
-      case BOT_STATES.WANDERING:
+      case BOT_STATES.WANDERING: {
         const wanderDuration = 3 + bot.personality * 5;
         if (bot.stateTimer > wanderDuration) {
           bot.aiState = BOT_STATES.IDLE;
@@ -1244,7 +1360,15 @@ class BotTanks {
         if (Math.random() < 0.01) {
           bot.wanderDirection += (Math.random() - 0.5) * 0.8;
         }
+        // Stuck detection while wandering — pick new random direction
+        if (this._checkStuck(bot)) {
+          bot._stuckCounter = 0;
+          bot.wanderDirection = bot.heading + Math.PI + (Math.random() - 0.5) * 1.0;
+          bot.state.speed = 0;
+          bot._terrainAvoidTimer = 0.5;
+        }
         break;
+      }
     }
   }
 
@@ -1261,6 +1385,12 @@ class BotTanks {
       bot._terrainAvoidTimer -= deltaTime;
     }
 
+    // Omnidirectional separation force (anti-bunching, applied before all other steering)
+    const separation = this._calculateSeparation(bot);
+    if (separation !== 0) {
+      bot.wanderDirection += separation;
+    }
+
     // Target-directed steering: point wanderDirection toward current waypoint (or target)
     // Suppressed during terrain avoidance cooldown to prevent re-engagement
     if (bot._terrainAvoidTimer <= 0) {
@@ -1275,7 +1405,7 @@ class BotTanks {
             // Personality-based blend rate: decisive bots track tighter
             const blendRate = 0.08 + bot.personality * 0.12;
             bot.wanderDirection += targetDiff * blendRate;
-            bot.wanderDirection += bot.driftOffset * 0.02;
+            bot.wanderDirection += bot.driftOffset * 0.06;
           }
         }
       } else if (bot.aiState === BOT_STATES.CAPTURING && bot.targetPosition) {
@@ -1340,7 +1470,7 @@ class BotTanks {
       // Slow down proportional to threat level
       if (avoidance.threat > 0.5) {
         // High threat - brake hard
-        if (bot.state.speed > this.BOT_MAX_SPEED * 0.2) {
+        if (Math.abs(bot.state.speed) > this.BOT_MAX_SPEED * 0.2) {
           bot.state.keys.s = true;
         }
       } else if (avoidance.threat > 0.3) {
@@ -1365,7 +1495,7 @@ class BotTanks {
         bot.state.keys.w = true;
       } else if (Math.abs(headingDiff) > Math.PI * 0.75) {
         // Very wrong direction - brake to help turn
-        if (bot.state.speed < this.BOT_MAX_SPEED * 0.3) {
+        if (Math.abs(bot.state.speed) < this.BOT_MAX_SPEED * 0.3) {
           bot.state.keys.s = true;
         }
       }
@@ -1378,13 +1508,65 @@ class BotTanks {
   }
 
   /**
+   * Omnidirectional separation force — repels from all nearby bots regardless of direction.
+   * Returns a heading offset to blend into wanderDirection.
+   */
+  _calculateSeparation(bot) {
+    let separationX = 0; // theta component
+    let separationY = 0; // phi component
+    const radius = this.BOT_SEPARATION_RADIUS;
+
+    for (const other of this.bots) {
+      if (other === bot || other.isDead || other.isDeploying) continue;
+
+      let dTheta = bot.theta - other.theta;
+      while (dTheta > Math.PI) dTheta -= Math.PI * 2;
+      while (dTheta < -Math.PI) dTheta += Math.PI * 2;
+      const dPhi = bot.phi - other.phi;
+      const dist = Math.sqrt(dTheta * dTheta + dPhi * dPhi);
+
+      if (dist < radius && dist > 0.0001) {
+        const weight = (1 - dist / radius);
+        const factor = weight * weight; // quadratic falloff
+        separationX += (dTheta / dist) * factor;
+        separationY += (dPhi / dist) * factor;
+      }
+    }
+
+    // Also repel from player tank
+    if (this.playerTankRef && this.playerTankRef.state && !this.playerTankRef.state.isDead) {
+      let dTheta = bot.theta - this.playerTankRef.state.theta;
+      while (dTheta > Math.PI) dTheta -= Math.PI * 2;
+      while (dTheta < -Math.PI) dTheta += Math.PI * 2;
+      const dPhi = bot.phi - this.playerTankRef.state.phi;
+      const dist = Math.sqrt(dTheta * dTheta + dPhi * dPhi);
+
+      if (dist < radius && dist > 0.0001) {
+        const weight = (1 - dist / radius);
+        const factor = weight * weight;
+        separationX += (dTheta / dist) * factor;
+        separationY += (dPhi / dist) * factor;
+      }
+    }
+
+    if (separationX === 0 && separationY === 0) return 0;
+
+    const repulsionHeading = Math.atan2(separationX * Math.max(0.1, Math.sin(bot.phi)), separationY);
+    let offset = repulsionHeading - bot.wanderDirection;
+    while (offset > Math.PI) offset -= Math.PI * 2;
+    while (offset < -Math.PI) offset += Math.PI * 2;
+
+    return offset * this.BOT_SEPARATION_STRENGTH;
+  }
+
+  /**
    * Detect tanks ahead that pose a collision threat
    * @param {Object} bot - The bot to check
    * @returns {Object} { threat: 0-1, steerDirection: -1 or 1 }
    */
   _detectCollisionThreat(bot) {
-    let maxThreat = 0;
-    let steerDirection = 0;
+    let botThreat = 0;
+    let botSteer = 0;
 
     const avoidDist = this.BOT_AVOID_DISTANCE;
     const avoidAngle = this.BOT_AVOID_ANGLE;
@@ -1405,9 +1587,9 @@ class BotTanks {
         avoidAngle,
       );
 
-      if (threat.level > maxThreat) {
-        maxThreat = threat.level;
-        steerDirection = threat.steerDirection;
+      if (threat.level > botThreat) {
+        botThreat = threat.level;
+        botSteer = threat.steerDirection;
       }
     }
 
@@ -1427,29 +1609,44 @@ class BotTanks {
         avoidAngle,
       );
 
-      if (threat.level > maxThreat) {
-        maxThreat = threat.level;
-        steerDirection = threat.steerDirection;
+      if (threat.level > botThreat) {
+        botThreat = threat.level;
+        botSteer = threat.steerDirection;
       }
     }
 
     // Check terrain elevation threats (every 3rd frame to reduce probe overhead)
+    let terrainThreat = 0;
+    let terrainSteer = 0;
     if (this.planet.terrainElevation) {
       bot._terrainProbeFrame = (bot._terrainProbeFrame || 0) + 1;
       if (bot._terrainProbeFrame >= 3) {
         bot._terrainProbeFrame = 0;
-        const terrainThreat = this._detectTerrainThreat(bot);
-        bot._lastTerrainThreat = terrainThreat;
+        const t = this._detectTerrainThreat(bot);
+        bot._lastTerrainThreat = t;
       }
-      const cachedThreat = bot._lastTerrainThreat;
-      if (cachedThreat && cachedThreat.level > maxThreat) {
-        maxThreat = cachedThreat.level;
-        steerDirection = cachedThreat.steerDirection;
+      const cachedTerrain = bot._lastTerrainThreat;
+      if (cachedTerrain) {
+        terrainThreat = cachedTerrain.level;
+        terrainSteer = cachedTerrain.steerDirection;
       }
     }
 
+    // Additive blend: both threats contribute instead of winner-take-all
+    const combinedThreat = Math.min(1.0, botThreat + terrainThreat);
+    let steerDirection;
+    if (botThreat > 0 && terrainThreat > 0) {
+      const totalWeight = botThreat + terrainThreat;
+      const blended = (botSteer * botThreat + terrainSteer * terrainThreat) / totalWeight;
+      steerDirection = blended >= 0 ? 1 : -1;
+    } else if (terrainThreat > 0) {
+      steerDirection = terrainSteer;
+    } else {
+      steerDirection = botSteer;
+    }
+
     return {
-      threat: maxThreat * this.BOT_AVOID_STRENGTH,
+      threat: combinedThreat * this.BOT_AVOID_STRENGTH,
       steerDirection: steerDirection,
     };
   }
@@ -1515,6 +1712,62 @@ class BotTanks {
   // TERRAIN HELPERS
   // ========================
 
+  /**
+   * 5-probe oriented-box terrain collision check for bots.
+   * Matches Tank._isTerrainBlocked and GameRoom._isTerrainBlockedAt.
+   * @returns {boolean} true if any probe hits terrain or polar hole
+   */
+  _isBotTerrainBlocked(theta, phi, heading, speed) {
+    const r = this.sphereRadius;
+    const sinPhi = Math.sin(phi);
+    const safeSinPhi = Math.abs(sinPhi) < 0.01 ? 0.01 * Math.sign(sinPhi || 1) : sinPhi;
+    const dir = speed > 0 ? 1 : speed < 0 ? -1 : 0;
+    const cosH = Math.cos(heading);
+    const sinH = Math.sin(heading);
+
+    // Forward/right unit vectors in (dPhi, dTheta) space
+    const fwdPhi = -cosH;
+    const fwdTh = -sinH / safeSinPhi;
+    const rgtPhi = sinH;
+    const rgtTh = -cosH / safeSinPhi;
+
+    const HALF_LEN = 2.75;
+    const HALF_WID = 1.5;
+    const probes = [
+      [0, 0],
+      [HALF_LEN * dir, -HALF_WID],
+      [HALF_LEN * dir, HALF_WID],
+      [-HALF_LEN * dir, -HALF_WID],
+      [-HALF_LEN * dir, HALF_WID],
+    ];
+
+    for (const [fwd, rgt] of probes) {
+      const pPhi = phi + (fwdPhi * fwd + rgtPhi * rgt) / r;
+      const pTh = theta + (fwdTh * fwd + rgtTh * rgt) / r;
+
+      // Convert to Cartesian for client-side terrain lookup
+      const pSinPhi = Math.sin(pPhi);
+      this._terrainTemp.testPos.set(
+        r * pSinPhi * Math.cos(pTh),
+        r * Math.cos(pPhi),
+        r * pSinPhi * Math.sin(pTh),
+      );
+
+      // Check polar hole
+      if (this.planet.isInsidePolarHole) {
+        const localPos = this._terrainTemp.testPos.clone();
+        this.planet.hexGroup.worldToLocal(localPos);
+        if (this.planet.isInsidePolarHole(localPos)) return true;
+      }
+
+      // Check terrain elevation
+      if (this.planet.terrainElevation.getElevationAtPosition(this._terrainTemp.testPos) > 0) {
+        return true;
+      }
+    }
+    return false;
+  }
+
   _isElevatedSphericalPos(theta, phi) {
     const r = this.sphereRadius;
     this._terrainTemp.testPos.set(
@@ -1522,6 +1775,12 @@ class BotTanks {
       r * Math.cos(phi),
       r * Math.sin(phi) * Math.sin(theta),
     );
+    // Check polar hole first
+    if (this.planet.isInsidePolarHole) {
+      const localPos = this._terrainTemp.testPos.clone();
+      this.planet.hexGroup.worldToLocal(localPos);
+      if (this.planet.isInsidePolarHole(localPos)) return true;
+    }
     return (
       this.planet.terrainElevation.getElevationAtPosition(
         this._terrainTemp.testPos,
@@ -1545,7 +1804,7 @@ class BotTanks {
 
     for (const dist of probeDistances) {
       for (const angleOffset of probeAngles) {
-        const probeHeading = bot.heading + angleOffset;
+        const probeHeading = bot.heading + Math.PI + angleOffset;
         const probePhi = bot.phi - Math.cos(probeHeading) * dist;
         const probeTheta =
           bot.theta - (Math.sin(probeHeading) * dist) / botSinPhi;
@@ -1556,12 +1815,20 @@ class BotTanks {
           r * Math.sin(probePhi) * Math.sin(probeTheta),
         );
 
-        const elevation =
-          this.planet.terrainElevation.getElevationAtPosition(
-            this._terrainTemp.testPos,
-          );
-
+        // Check both elevation AND polar holes
+        let blocked = false;
+        const elevation = this.planet.terrainElevation.getElevationAtPosition(
+          this._terrainTemp.testPos,
+        );
         if (elevation > 0) {
+          blocked = true;
+        } else if (this.planet.isInsidePolarHole) {
+          const localPos = this._terrainTemp.testPos.clone();
+          this.planet.hexGroup.worldToLocal(localPos);
+          if (this.planet.isInsidePolarHole(localPos)) blocked = true;
+        }
+
+        if (blocked) {
           const distThreat = 1 - dist / maxProbeDist;
           const angleThreat = 1 - Math.abs(angleOffset) / 1.5;
           const threat = distThreat * angleThreat;
@@ -1611,11 +1878,11 @@ class BotTanks {
     while (dTheta > Math.PI) dTheta -= Math.PI * 2;
     while (dTheta < -Math.PI) dTheta += Math.PI * 2;
 
-    // Match _moveOnSphere conventions:
-    //   dPhi = -cos(heading) * speed  =>  cos(heading) ~ -dPhi
-    //   dTheta = -sin(heading) * speed / sinPhi  =>  sin(heading) ~ -dTheta * sinPhi
+    // Heading points AWAY from target so the cannon (+Z) faces toward it.
+    // With negative-speed-forward convention, the tank drives toward the target
+    // while the cannon (visual front) aims at it.
     const sinPhi = Math.max(0.1, Math.sin(bot.phi));
-    return Math.atan2(-dTheta * sinPhi, -dPhi);
+    return Math.atan2(dTheta * sinPhi, dPhi);
   }
 
   _checkStuck(bot) {
@@ -1671,6 +1938,22 @@ class BotTanks {
     const path = this.pathfinder.findPath(fromTile, toTile);
     if (path && path.length > 0) {
       bot.pathWaypoints = this.pathfinder.pathToWaypoints(path);
+      // Add perpendicular jitter to intermediate waypoints to spread bots across corridor
+      if (bot.pathWaypoints.length > 2) {
+        const jitterSign = bot.driftOffset > 0 ? 1 : -1;
+        const jitterAmount = 0.008 * (0.5 + Math.random() * 0.5) * jitterSign;
+        for (let i = 1; i < bot.pathWaypoints.length - 1; i++) {
+          const wp = bot.pathWaypoints[i];
+          const prev = bot.pathWaypoints[i - 1];
+          const dTheta = wp.theta - prev.theta;
+          const dPhi = wp.phi - prev.phi;
+          const len = Math.sqrt(dTheta * dTheta + dPhi * dPhi);
+          if (len > 0.001) {
+            wp.theta += (-dPhi / len) * jitterAmount;
+            wp.phi += (dTheta / len) * jitterAmount;
+          }
+        }
+      }
       bot.currentWaypointIdx = 0;
       bot.pathTargetCluster = bot.targetClusterId;
       bot._replanCount = 0;
@@ -1737,21 +2020,22 @@ class BotTanks {
     while (bot.heading >= Math.PI * 2) bot.heading -= Math.PI * 2;
 
     // GTA1-STYLE ACCELERATION - scaled by deltaTime
+    // Negative speed = forward (cannon faces heading, model drives opposite)
     if (keys.w) {
-      bot.state.speed += this.BOT_ACCELERATION * dt60;
-      if (bot.state.speed > bot.maxSpeed) {
-        bot.state.speed = bot.maxSpeed;
+      bot.state.speed -= this.BOT_ACCELERATION * dt60;
+      if (bot.state.speed < -bot.maxSpeed) {
+        bot.state.speed = -bot.maxSpeed;
       }
     } else if (keys.s) {
-      if (bot.state.speed > 0) {
+      if (bot.state.speed < 0) {
         // Brake first (faster than deceleration)
-        bot.state.speed -= this.BOT_DECELERATION * 2.5 * dt60;
-        if (bot.state.speed < 0) bot.state.speed = 0;
+        bot.state.speed += this.BOT_DECELERATION * 2.5 * dt60;
+        if (bot.state.speed > 0) bot.state.speed = 0;
       } else {
-        // Then reverse (slower than forward)
-        bot.state.speed -= this.BOT_ACCELERATION * 0.6 * dt60;
-        if (bot.state.speed < -bot.maxSpeed * 0.5) {
-          bot.state.speed = -bot.maxSpeed * 0.5;
+        // Then reverse (positive speed = visual backward, slower than forward)
+        bot.state.speed += this.BOT_ACCELERATION * 0.6 * dt60;
+        if (bot.state.speed > bot.maxSpeed * 0.5) {
+          bot.state.speed = bot.maxSpeed * 0.5;
         }
       }
     } else {
@@ -1839,46 +2123,36 @@ class BotTanks {
     bot.theta -= (planetRotationSpeed * dt60) / 60;
     if (bot.theta < 0) bot.theta += Math.PI * 2;
 
-    // Terrain collision: block movement into elevated hexes
-    // Probe at tank's leading edge (not center) to prevent half-body penetration
+    // 5-probe terrain collision with wall-sliding
+    // Matches Tank._moveOnSphere and GameRoom._gameTick player terrain collision
     if (this.planet.terrainElevation && bot.state.speed !== 0) {
-      const r = this.sphereRadius;
-      const sinPhi_c = Math.sin(bot.phi);
-      const cosPhi_c = Math.cos(bot.phi);
-      const sinTheta_c = Math.sin(bot.theta);
-      const cosTheta_c = Math.cos(bot.theta);
+      const blocked = this._isBotTerrainBlocked(bot.theta, bot.phi, heading, bot.state.speed);
 
-      this._terrainTemp.testPos.set(
-        r * sinPhi_c * cosTheta_c,
-        r * cosPhi_c,
-        r * sinPhi_c * sinTheta_c,
-      );
-
-      // Offset probe forward along heading direction on sphere surface
-      const BUFFER = 2.75; // Half tank body length (5.5 / 2)
-      const dir = Math.sign(bot.state.speed);
-      const cosH = Math.cos(heading);
-      const sinH = Math.sin(heading);
-      // Forward = cosH * North + (-sinH) * East  (unit vector on sphere surface)
-      const offset = dir * BUFFER;
-      this._terrainTemp.testPos.x += (-cosH * cosPhi_c * cosTheta_c + sinH * sinTheta_c) * offset;
-      this._terrainTemp.testPos.y += (cosH * sinPhi_c) * offset;
-      this._terrainTemp.testPos.z += (-cosH * cosPhi_c * sinTheta_c - sinH * cosTheta_c) * offset;
-
-      if (
-        this.planet.terrainElevation.getElevationAtPosition(
-          this._terrainTemp.testPos,
-        ) > 0
-      ) {
-        // Revert movement but keep planet rotation compensation
+      if (blocked) {
         const rotDelta = (planetRotationSpeed * dt60) / 60;
-        bot.theta = prevTheta - rotDelta;
-        if (bot.theta < 0) bot.theta += Math.PI * 2;
-        if (bot.theta > Math.PI * 2) bot.theta -= Math.PI * 2;
-        bot.phi = prevPhi;
 
-        // Nearly full stop on terrain collision
-        bot.state.speed *= this.BOT_COLLISION_SPEED_RETAIN;
+        // Try theta-only slide (keep new theta, revert phi)
+        const thetaOnlyBlocked = this._isBotTerrainBlocked(bot.theta, prevPhi, heading, bot.state.speed);
+        // Try phi-only slide (revert theta, keep new phi)
+        let thetaRev = prevTheta - rotDelta;
+        if (thetaRev < 0) thetaRev += Math.PI * 2;
+        if (thetaRev > Math.PI * 2) thetaRev -= Math.PI * 2;
+        const phiOnlyBlocked = this._isBotTerrainBlocked(thetaRev, bot.phi, heading, bot.state.speed);
+
+        if (!thetaOnlyBlocked) {
+          // Slide along theta (east-west)
+          bot.phi = prevPhi;
+          bot.state.speed *= 0.85;
+        } else if (!phiOnlyBlocked) {
+          // Slide along phi (north-south)
+          bot.theta = thetaRev;
+          bot.state.speed *= 0.85;
+        } else {
+          // Both axes blocked — full revert with speed decay
+          bot.theta = thetaRev;
+          bot.phi = prevPhi;
+          bot.state.speed *= this.BOT_COLLISION_SPEED_RETAIN;
+        }
 
         // Suppress target-seeking to prevent immediate re-engagement
         bot._terrainAvoidTimer = this.BOT_TERRAIN_AVOID_COOLDOWN;
@@ -2073,6 +2347,24 @@ class BotTanks {
   }
 
   /**
+   * Set TankCollision reference for physical push-apart.
+   * Bots will be registered on spawn for collision detection.
+   * @param {TankCollision} tankCollision
+   */
+  setTankCollision(tankCollision) {
+    this._tankCollision = tankCollision;
+    // Register any already-spawned bots
+    for (const bot of this.bots) {
+      const tankId = `sbot-${bot.playerId}`;
+      tankCollision.registerTank(tankId, {
+        group: bot.group,
+        state: bot.state,
+        isBot: true,
+      });
+    }
+  }
+
+  /**
    * Update bot chat - called each frame
    * Chat frequency scales with proximity to enemies
    */
@@ -2253,6 +2545,9 @@ class BotTanks {
       bot.lodDot.visible = false;
     }
 
+    // Mark as hidden for instanced LOD (won't write box/shadow instances)
+    bot._lodState = -1;
+
     // Notify callback for smoke/fire effects (dead = smoke only, no fire)
     if (this.onBotDamageStateChange) {
       this.onBotDamageStateChange(bot, "dead");
@@ -2347,8 +2642,6 @@ class BotTanks {
       bot.tankFadeStarted = true;
       bot.group.traverse((child) => {
         if (child.isMesh && child.material && child !== bot.hitbox) {
-          // Skip LOD mesh (uses ShaderMaterial)
-          if (child === bot.lodMesh) return;
           // Clone material to avoid affecting other tanks using shared materials
           child.material = child.material.clone();
           child.material.transparent = true;
@@ -2364,8 +2657,6 @@ class BotTanks {
     // Apply opacity to all tank meshes
     bot.group.traverse((child) => {
       if (child.isMesh && child.material && child !== bot.hitbox) {
-        // Skip LOD mesh (uses ShaderMaterial)
-        if (child === bot.lodMesh) return;
         child.material.opacity = opacity;
       }
     });
@@ -2532,8 +2823,10 @@ class BotTanks {
       this._factionBots[bot.faction].splice(factionIndex, 1);
     }
 
-    // Dispose geometry/materials if not shared
-    // (Our bots use shared materials, so just remove the group)
+    // Unregister from TankCollision
+    if (this._tankCollision && bot.playerId) {
+      this._tankCollision.unregisterTank(`sbot-${bot.playerId}`);
+    }
   }
 
   /**

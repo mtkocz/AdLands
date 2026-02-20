@@ -120,6 +120,7 @@
       );
 
       if (activeSponsors.length === 0) {
+        planet.mergeClusterTiles();
         return;
       }
 
@@ -143,9 +144,13 @@
 
       // Remove terrain elevation from sponsor hexes (keep them flat)
       planet.deElevateSponsorTiles();
+
+      // Merge cluster tiles for draw call reduction
+      planet.mergeClusterTiles();
     } catch (e) {
       console.error("Error loading sponsors:", e);
       sponsorTexturesReady = true; // Don't block loading screen on failure
+      planet.mergeClusterTiles(); // Still merge for draw call reduction
     }
   }
 
@@ -579,6 +584,9 @@
 
   tankCollision.setPlanet(planet);
 
+  // Connect bot tanks to collision system (singleplayer: bots register on spawn)
+  botTanks.setTankCollision(tankCollision);
+
   // Set up dust lighting (subtle tinting based on sun/fill light)
   const lightConfig = environment.getLightingConfig();
   treadDust.setLightingConfig(lightConfig);
@@ -726,13 +734,32 @@
     const playerId = bot.lodDot.userData.playerId;
     const randomName =
       BOT_NAME_POOL[Math.floor(Math.random() * BOT_NAME_POOL.length)];
+    const botLevel = 1 + Math.floor(Math.random() * 5); // 1-5
+    const botCrypto = Math.floor(Math.random() * 5001); // 0-5000
     playerTags.createTag(playerId, bot, {
       name: randomName,
-      level: Math.floor(Math.random() * 20) + 1,
+      level: botLevel,
       avatar: null,
       squad: null,
       faction: bot.faction,
     });
+    // Register with ProfileCard so right-click shows level/crypto
+    if (window.profileCard) {
+      window.profileCard.registerPlayer({
+        id: playerId,
+        name: randomName,
+        faction: bot.faction,
+        level: botLevel,
+        crypto: botCrypto,
+        rank: 0,
+        title: "Contractor",
+        badges: [],
+        hp: 100,
+        maxHp: 100,
+        isOnline: true,
+        isSelf: false,
+      });
+    }
     // Register bot for tread dust and tracks
     treadDust.registerTank(playerId, bot.group, bot.state);
     treadTracks.registerTank(playerId, bot.group, bot.state);
@@ -836,6 +863,9 @@
     } catch (e) {
       console.error("[onDeath] oil puddle error:", e);
     }
+
+    // Cancel any active charge (prevents lingering camera shake/pullback)
+    cannonSystem.cancelCharge();
 
     // Disable player controls and chat
     tank.setControlsEnabled(false);
@@ -1005,13 +1035,32 @@
     if (playerId) {
       const randomName =
         BOT_NAME_POOL[Math.floor(Math.random() * BOT_NAME_POOL.length)];
+      const botLevel = 1 + Math.floor(Math.random() * 5); // 1-5
+      const botCrypto = Math.floor(Math.random() * 5001); // 0-5000
       playerTags.createTag(playerId, bot, {
         name: randomName,
-        level: Math.floor(Math.random() * 20) + 1,
+        level: botLevel,
         avatar: null,
         squad: null,
         faction: bot.faction,
       });
+      // Update ProfileCard cache with new identity
+      if (window.profileCard) {
+        window.profileCard.registerPlayer({
+          id: playerId,
+          name: randomName,
+          faction: bot.faction,
+          level: botLevel,
+          crypto: botCrypto,
+          rank: 0,
+          title: "Contractor",
+          badges: [],
+          hp: 100,
+          maxHp: 100,
+          isOnline: true,
+          isSelf: false,
+        });
+      }
 
       // Sync new name to lodDot userData
       bot.lodDot.userData.username = randomName;
@@ -3351,8 +3400,9 @@
     );
 
     // Find first hex tile hit (filter out explosions, decals, etc.)
+    // Supports both individual tile meshes (userData.tileIndex) and merged cluster meshes (userData.isMergedCluster)
     const hexHit = intersects.find(
-      (hit) => hit.object.userData?.tileIndex !== undefined,
+      (hit) => hit.object.userData?.tileIndex !== undefined || hit.object.userData?.isMergedCluster,
     );
 
     if (hexHit) {
@@ -3768,11 +3818,11 @@
 
     // Update visual effects
     treadTracks.update(tank, deltaTime, camera, isOrbitalView, sharedFrustum);
-    tankDamageEffects.update(deltaTime, sharedFrustum);
+    tankDamageEffects.update(deltaTime, sharedFrustum, camera);
     treadDust.update(deltaTime, camera, isOrbitalView, sharedFrustum);
     dustShockwave.update(deltaTime, sharedFrustum);
-    capturePulse.update(deltaTime, sharedFrustum);
-    tankCollision.update(deltaTime, sharedFrustum);
+    capturePulse.update(deltaTime, sharedFrustum, camera);
+    tankCollision.update(deltaTime, sharedFrustum, camera);
     tankHeadlights.update(deltaTime, camera);
     cryptoVisuals.update(deltaTime);
 

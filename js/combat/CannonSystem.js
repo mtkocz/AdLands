@@ -4,8 +4,8 @@
  */
 
 // Distance fade config for sprites (explosions, decals, etc.)
-const SPRITE_FADE_START = 100; // Start fading at this camera distance
-const SPRITE_FADE_END = 200; // Fully invisible at this camera distance
+const SPRITE_FADE_START = 100; // Start fading sprites at this camera distance
+const PROJECTILE_CULL_DISTANCE = 260; // Fully invisible at this camera distance
 
 // Preallocated vectors for collision detection and distance fade (avoid per-frame GC)
 const _spriteWorldPos = new THREE.Vector3();
@@ -23,6 +23,9 @@ const _tankSurfaceNormal = new THREE.Vector3();
 const _terrainLocalPos = new THREE.Vector3();
 // Preallocated sphere for frustum culling (flares, projectiles, explosions)
 const _cannonCullSphere = new THREE.Sphere();
+// Preallocated vectors for far-side (backface) culling
+const _cannonCullNormal = new THREE.Vector3();
+const _cannonCullDir = new THREE.Vector3();
 // Preallocated vectors for fireShot (avoid per-shot allocations)
 const _muzzleLocal = new THREE.Vector3();
 const _muzzleWorld = new THREE.Vector3();
@@ -161,20 +164,43 @@ class CannonSystem {
   }
 
   _createLODExplosionSystem() {
-    // Simple circle billboard for orbital view explosions
+    // LOD explosions — hard-edged concentric rings, short & punchy
     this.lodExplosionConfig = {
-      baseSize: 12, // Size of LOD circle
-      duration: 0.8, // Shorter duration for LOD
-      fadeStart: 0.3, // Start fading at 30% of duration
+      baseSize: 10.5,
+      duration: 1,
     };
 
-    // Create LOD materials per faction (simple additive circles)
+    // Hard-edged 3-band ring texture (white core / orange / dark red)
+    const size = 32;
+    const canvas = document.createElement("canvas");
+    canvas.width = size;
+    canvas.height = size;
+    const ctx = canvas.getContext("2d");
+    const half = size / 2;
+    const g = ctx.createRadialGradient(half, half, 0, half, half, half);
+    g.addColorStop(0, "#ffffff");
+    g.addColorStop(0.22, "#ffffff");
+    g.addColorStop(0.23, "#ff8820");
+    g.addColorStop(0.52, "#ff8820");
+    g.addColorStop(0.53, "#551100");
+    g.addColorStop(0.78, "#551100");
+    g.addColorStop(0.79, "rgba(0,0,0,0)");
+    g.addColorStop(1, "rgba(0,0,0,0)");
+    ctx.fillStyle = g;
+    ctx.fillRect(0, 0, size, size);
+    const circleTexture = new THREE.CanvasTexture(canvas);
+    circleTexture.minFilter = THREE.NearestFilter;
+    circleTexture.magFilter = THREE.NearestFilter;
+
+    // Per-faction materials — subtle faction tint over explosion palette
     this.lodExplosionMaterials = {};
     for (const faction of ["rust", "cobalt", "viridian"]) {
-      const color = FACTION_COLORS[faction].three.clone();
-      color.multiplyScalar(3); // Bright for visibility
+      const factionColor = FACTION_COLORS[faction].three.clone();
+      const color = new THREE.Color(1.0, 0.7, 0.4).lerp(factionColor, 0.25);
+      color.multiplyScalar(1.5);
 
       this.lodExplosionMaterials[faction] = new THREE.SpriteMaterial({
+        map: circleTexture,
         color: color,
         transparent: true,
         opacity: 1,
@@ -320,7 +346,7 @@ class CannonSystem {
         ageOpacity = decal.baseOpacity * (1 - fadeProgress);
       }
 
-      // Distance fade
+      // Distance fade (smooth fade to zero at PROJECTILE_CULL_DISTANCE)
       if (this.gameCamera?.camera) {
         decal.mesh.getWorldPosition(_spriteWorldPos);
         const dist = _spriteWorldPos.distanceTo(_cameraWorldPos);
@@ -331,7 +357,7 @@ class CannonSystem {
             Math.min(
               1,
               (dist - SPRITE_FADE_START) /
-                (SPRITE_FADE_END - SPRITE_FADE_START),
+                (PROJECTILE_CULL_DISTANCE - SPRITE_FADE_START),
             ),
           );
         ageOpacity *= distanceFade;
@@ -480,11 +506,31 @@ class CannonSystem {
         puddle.mesh.scale.set(puddle.targetSize, puddle.targetSize, 1);
       }
 
-      // Fade out during last portion of lifetime
+      // Calculate base opacity from age fade
+      let opacity = 1.0;
       if (puddle.age > fadeStart) {
         const fadeProgress = (puddle.age - fadeStart) / cfg.fadeOutDuration;
-        puddle.material.opacity = 1.0 * (1 - fadeProgress);
+        opacity = 1.0 - fadeProgress;
       }
+
+      // Distance fade (smooth fade to zero at PROJECTILE_CULL_DISTANCE)
+      if (this.gameCamera?.camera) {
+        puddle.mesh.getWorldPosition(_spriteWorldPos);
+        const dist = _spriteWorldPos.distanceTo(_cameraWorldPos);
+        const distanceFade =
+          1 -
+          Math.max(
+            0,
+            Math.min(
+              1,
+              (dist - SPRITE_FADE_START) /
+                (PROJECTILE_CULL_DISTANCE - SPRITE_FADE_START),
+            ),
+          );
+        opacity *= distanceFade;
+      }
+
+      puddle.material.opacity = opacity;
     }
   }
 
@@ -834,6 +880,12 @@ void main() {
   updateCharge(deltaTime, tank, faction) {
     if (!this.charging.active) return;
 
+    // Cancel charge if tank died while charging
+    if (tank && tank.isDead) {
+      this.cancelCharge();
+      return;
+    }
+
     // Increase charge power
     const chargeRate = this.charging.maxPower / this.charging.chargeTime;
     this.charging.power = Math.min(
@@ -1117,7 +1169,7 @@ void main() {
    * @param {Object} remoteTank - RemoteTank instance with group/faction
    */
   spawnRemoteProjectile(data, remoteTank) {
-    if (!remoteTank || !remoteTank.group) return;
+    if (!remoteTank || !remoteTank.group || remoteTank.isDead) return;
 
     const faction = remoteTank.faction;
     const chargePower = data.power || 0;
@@ -1344,13 +1396,12 @@ void main() {
     const surfaceNormal = localPosition.clone().normalize();
     sprite.position.addScaledVector(surfaceNormal, 0.5);
 
-    sprite.scale.setScalar(cfg.baseSize * sizeScale);
-    sprite.layers.set(1); // BLOOM_LAYER only - per-object bloom control
+    sprite.scale.setScalar(cfg.baseSize * sizeScale * 1.5); // Start big — punch
+    sprite.layers.set(1); // BLOOM_LAYER only
 
     // Parent to planet's hexGroup so it rotates with planet
     this.planet.hexGroup.add(sprite);
 
-    // Store LOD explosion data
     this.lodExplosions.push({
       sprite,
       material,
@@ -1418,10 +1469,23 @@ void main() {
         flare.sprite.material.dispose();
         this.muzzleFlares.splice(i, 1);
       } else {
-        // Frustum culling for muzzle flare
-        if (frustum) {
-          _cannonCullSphere.set(flare.position, 15);
-          flare.sprite.visible = frustum.intersectsSphere(_cannonCullSphere);
+        // Distance + backface + frustum culling for muzzle flare
+        if (this.gameCamera?.camera) {
+          const dist = flare.position.distanceTo(_cameraWorldPos);
+          if (dist > PROJECTILE_CULL_DISTANCE) {
+            flare.sprite.visible = false;
+          } else {
+            _cannonCullNormal.copy(flare.position).normalize();
+            _cannonCullDir.copy(flare.position).sub(_cameraWorldPos).normalize();
+            if (_cannonCullNormal.dot(_cannonCullDir) > 0.15) {
+              flare.sprite.visible = false;
+            } else if (frustum) {
+              _cannonCullSphere.set(flare.position, 15);
+              flare.sprite.visible = frustum.intersectsSphere(_cannonCullSphere);
+            } else {
+              flare.sprite.visible = true;
+            }
+          }
         }
 
         // Quick fade and expand
@@ -1461,9 +1525,16 @@ void main() {
         continue;
       }
 
-      // Frustum culling for explosions
+      // Backface + frustum culling for explosions
+      exp.sprite.getWorldPosition(_spriteWorldPos);
+      _cannonCullNormal.copy(_spriteWorldPos).normalize();
+      _cannonCullDir.copy(_spriteWorldPos).sub(_cameraWorldPos).normalize();
+      if (_cannonCullNormal.dot(_cannonCullDir) > 0.15) {
+        exp.sprite.visible = false;
+        if (exp.light) exp.light.visible = false;
+        continue;
+      }
       if (frustum) {
-        exp.sprite.getWorldPosition(_spriteWorldPos);
         _cannonCullSphere.set(_spriteWorldPos, cfg.baseSize);
         exp.sprite.visible = frustum.intersectsSphere(_cannonCullSphere);
         if (exp.light) exp.light.visible = exp.sprite.visible;
@@ -1472,7 +1543,7 @@ void main() {
 
       const progress = exp.age / exp.duration;
 
-      // Distance fade
+      // Distance fade (smooth fade to zero at PROJECTILE_CULL_DISTANCE)
       let distanceFade = 1;
       if (this.gameCamera?.camera) {
         if (!frustum) exp.sprite.getWorldPosition(_spriteWorldPos);
@@ -1484,7 +1555,7 @@ void main() {
             Math.min(
               1,
               (dist - SPRITE_FADE_START) /
-                (SPRITE_FADE_END - SPRITE_FADE_START),
+                (PROJECTILE_CULL_DISTANCE - SPRITE_FADE_START),
             ),
           );
       }
@@ -1547,32 +1618,24 @@ void main() {
         continue;
       }
 
-      // Frustum culling for LOD explosions
+      // Backface + frustum culling for LOD explosions
+      exp.sprite.getWorldPosition(_spriteWorldPos);
+      _cannonCullNormal.copy(_spriteWorldPos).normalize();
+      _cannonCullDir.copy(_spriteWorldPos).sub(_cameraWorldPos).normalize();
+      if (_cannonCullNormal.dot(_cannonCullDir) > 0.15) {
+        exp.sprite.visible = false;
+        continue;
+      }
       if (frustum) {
-        exp.sprite.getWorldPosition(_spriteWorldPos);
         _cannonCullSphere.set(_spriteWorldPos, cfg.baseSize * (exp.sizeScale || 1));
         exp.sprite.visible = frustum.intersectsSphere(_cannonCullSphere);
         if (!exp.sprite.visible) continue;
       }
 
-      const progress = exp.age / exp.duration;
-
-      // Quick flash then fade out
-      if (progress < cfg.fadeStart) {
-        // Full brightness during initial flash
-        exp.material.opacity = 1;
-      } else {
-        // Fade out
-        exp.material.opacity =
-          1 - (progress - cfg.fadeStart) / (1 - cfg.fadeStart);
-      }
-
-      // Scale: quick expand then shrink
-      const scaleFactor =
-        progress < 0.2
-          ? 1 + progress * 2 // Expand quickly
-          : 1.4 - (progress - 0.2) * 0.5; // Shrink slowly
-      exp.sprite.scale.setScalar(cfg.baseSize * exp.sizeScale * scaleFactor);
+      const t = 1 - exp.age / exp.duration; // 1 → 0
+      exp.material.opacity = t;
+      // Shrink from 1.5x → 1x over lifetime (collapse after blast)
+      exp.sprite.scale.setScalar(cfg.baseSize * exp.sizeScale * (1 + 0.5 * t));
     }
   }
 
@@ -1595,10 +1658,24 @@ void main() {
       p.position.addScaledVector(p.velocity, deltaTime * 60);
       p.mesh.position.copy(p.position);
 
-      // Frustum culling - hide projectiles outside camera view (with 10 unit margin for smooth visibility)
-      if (frustum) {
-        _cannonCullSphere.set(p.position, 15);
-        p.mesh.visible = frustum.intersectsSphere(_cannonCullSphere);
+      // Distance + backface + frustum culling - hide projectiles far from camera, on far side, or outside view
+      if (this.gameCamera?.camera) {
+        const dist = p.position.distanceTo(_cameraWorldPos);
+        if (dist > PROJECTILE_CULL_DISTANCE) {
+          p.mesh.visible = false;
+        } else {
+          // Backface culling — hide projectiles on far side of planet
+          _cannonCullNormal.copy(p.position).normalize();
+          _cannonCullDir.copy(p.position).sub(_cameraWorldPos).normalize();
+          if (_cannonCullNormal.dot(_cannonCullDir) > 0.15) {
+            p.mesh.visible = false;
+          } else if (frustum) {
+            _cannonCullSphere.set(p.position, 15);
+            p.mesh.visible = frustum.intersectsSphere(_cannonCullSphere);
+          } else {
+            p.mesh.visible = true;
+          }
+        }
       } else {
         p.mesh.visible = true;
       }

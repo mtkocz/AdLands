@@ -849,7 +849,7 @@ class Tank {
     this.lodMesh = new THREE.Mesh(lodGeometry, lodMaterial);
     this.lodMesh.position.set(0, 0.75, 0);
     this.lodMesh.visible = false;
-    this.lodMesh.castShadow = true;
+    this.lodMesh.castShadow = false;
     this.lodMesh.receiveShadow = false;
     this.group.add(this.lodMesh);
 
@@ -1856,6 +1856,7 @@ Tank.updateTankLOD = function (
   const backfaceThreshold = distanceToCamera > 260 ? 0.15 : 0.3;
   if (dotProduct > backfaceThreshold) {
     tank.group.visible = false;
+    tank._lodState = -1;
     return false;
   }
 
@@ -1864,6 +1865,7 @@ Tank.updateTankLOD = function (
     boundingSphere.center.copy(tankWorldPos);
     if (!frustum.intersectsSphere(boundingSphere)) {
       tank.group.visible = false;
+      tank._lodState = -1;
       return false;
     }
   }
@@ -1872,6 +1874,7 @@ Tank.updateTankLOD = function (
   const apparentSize = (5 / distanceToCamera) * 1000;
   if (distanceToCamera > LOD_DISTANCE && apparentSize < MIN_SCREENSPACE) {
     tank.group.visible = false;
+    tank._lodState = -1;
     return false;
   }
 
@@ -1889,6 +1892,9 @@ Tank.updateTankLOD = function (
   // Type 2 (dots): ALL tanks if viewer is commander, only friendlies otherwise
   // Type 1 (box): enemies when viewer is NOT commander
   const useDot = useLOD && (isHumanCommander || isSameFaction);
+
+  // Store LOD state for instanced rendering (0=detail, 1=box, 2=dot, -1=hidden)
+  tank._lodState = useLOD ? (useDot ? 2 : 1) : 0;
 
   // Toggle LOD dot visibility (Type 2 - friendly faction)
   if (tank.lodDot) {
@@ -1948,9 +1954,9 @@ Tank.updateTankLOD = function (
     }
   }
 
-  // Show fake shadow only for Type 1 LOD (box mesh, not dots)
+  // Show blob shadow for LOD tanks (replaces cast shadow)
   if (tank.shadowBlob) {
-    tank.shadowBlob.visible = isOrbitalView && useLOD && !useDot;
+    tank.shadowBlob.visible = useLOD && !useDot;
   }
 
   // Update shadow casting based on LOD
@@ -1972,9 +1978,9 @@ Tank.updateTankLOD = function (
     }
   }
 
-  // LOD mesh casts shadow when visible
+  // LOD mesh never casts shadow (uses blob shadow instead)
   if (tank.lodMesh) {
-    tank.lodMesh.castShadow = useLOD;
+    tank.lodMesh.castShadow = false;
   }
 
   return true;

@@ -641,13 +641,13 @@ class NetworkManager {
     while (thetaErr < -Math.PI) thetaErr += Math.PI * 2;
 
     const errMag = Math.abs(thetaErr) + Math.abs(phiErr);
-    if (errMag > 0 && errMag < 0.005) {
-      // Small drift — apply only 40% of the correction per tick
-      // (accumulates over several ticks for full convergence)
-      localTank.state.theta = clientTheta + thetaErr * 0.4;
-      localTank.state.phi = clientPhi + phiErr * 0.4;
+    if (errMag > 0 && errMag < 0.015) {
+      // Smooth correction — blend 25% per tick for gradual convergence.
+      // Threshold covers collision pushes (~0.006-0.012 rad) to prevent snapping.
+      localTank.state.theta = clientTheta + thetaErr * 0.25;
+      localTank.state.phi = clientPhi + phiErr * 0.25;
     }
-    // Large errors (≥0.005 rad ≈ 2.4 units on r=480): snap immediately (already done)
+    // Large errors (≥0.015 rad ≈ 7.2 units on r=480): snap immediately (already done)
   }
 
   // ========================

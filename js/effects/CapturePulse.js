@@ -15,6 +15,9 @@ const _cpCullSphere = new THREE.Sphere();
 const _cpCameraPos = new THREE.Vector3();
 const _cpTankWorldPos = new THREE.Vector3();
 const _cpTankLocalPos = new THREE.Vector3();
+// Preallocated vectors for far-side (backface) culling
+const _cpCullNormal = new THREE.Vector3();
+const _cpCullDir = new THREE.Vector3();
 
 // Distance fade thresholds
 const _CP_FADE_START = 150;
@@ -271,10 +274,13 @@ class CapturePulse {
    * @param {number} deltaTime - Seconds since last frame
    * @param {THREE.Frustum} frustum - Camera frustum for culling
    */
-  update(deltaTime, frustum) {
+  update(deltaTime, frustum, camera = null) {
     if (this.waves.length === 0) return;
 
     const cfg = this.config;
+
+    // Cache camera world position for backface culling
+    if (camera) camera.getWorldPosition(_cpCameraPos);
 
     // Get tank position in hexGroup local space once for all waves
     if (this.tank && this.planet) {
@@ -301,9 +307,15 @@ class CapturePulse {
         wave.material.uniforms.uCenter.value.copy(_cpTankLocalPos);
       }
 
-      // Frustum culling for capture pulse waves
+      // Backface + frustum culling for capture pulse waves
+      wave.mesh.getWorldPosition(_cpCullPos);
+      _cpCullNormal.copy(_cpCullPos).normalize();
+      _cpCullDir.copy(_cpCullPos).sub(_cpCameraPos).normalize();
+      if (_cpCullNormal.dot(_cpCullDir) > 0.15) {
+        wave.mesh.visible = false;
+        continue;
+      }
       if (frustum) {
-        wave.mesh.getWorldPosition(_cpCullPos);
         _cpCullSphere.set(_cpCullPos, this.config.endRadius);
         wave.mesh.visible = frustum.intersectsSphere(_cpCullSphere);
         if (!wave.mesh.visible) continue;

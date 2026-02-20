@@ -20,6 +20,9 @@ const _tempSunDir = new THREE.Vector3();
 const _tempNormal = new THREE.Vector3();
 const _tempTangentSun = new THREE.Vector3();
 const _zUp = new THREE.Vector3(0, 0, 1);
+// Preallocated vectors for far-side (backface) culling
+const _dsCullNormal = new THREE.Vector3();
+const _dsCullDir = new THREE.Vector3();
 
 class DustShockwave {
   constructor(scene, sphereRadius) {
@@ -813,9 +816,15 @@ class DustShockwave {
         continue;
       }
 
-      // Frustum culling for shockwave (with 10 unit margin for smooth visibility)
+      // Backface + frustum culling for shockwave (with 10 unit margin for smooth visibility)
+      sw.mesh.getWorldPosition(_cullWorldPos);
+      _dsCullNormal.copy(_cullWorldPos).normalize();
+      _dsCullDir.copy(_cullWorldPos).sub(_smokeCameraWorldPos).normalize();
+      if (_dsCullNormal.dot(_dsCullDir) > 0.15) {
+        sw.mesh.visible = false;
+        continue;
+      }
       if (frustum) {
-        sw.mesh.getWorldPosition(_cullWorldPos);
         const scale = sw.startSize + (sw.finalSize - sw.startSize) * progress;
         _cullSphere.set(_cullWorldPos, scale + 10);
         sw.mesh.visible = frustum.intersectsSphere(_cullSphere);
