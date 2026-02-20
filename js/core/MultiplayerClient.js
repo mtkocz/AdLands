@@ -881,7 +881,7 @@
             cannonSystem.cryptoSystem.awardCrypto(
               killCrypto,
               isCommander ? "commander kill" : "kill",
-              _hitWorldPos,
+              _hitWorldPos.clone(),
             );
           }
 

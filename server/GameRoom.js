@@ -1128,8 +1128,13 @@ class GameRoom {
       const updates = {
         lastPlayedAt: admin.firestore.FieldValue.serverTimestamp(),
         level: player.level,
-        totalCrypto: player.totalCrypto,
+        totalCrypto: player.crypto, // Live balance (crypto = totalCrypto + session earnings - spending)
+        unlockedSlots: player.unlockedSlots || ['offense-1'],
+        loadout: player.loadout || {},
       };
+
+      // Keep totalCrypto in sync with live balance for next save
+      player.totalCrypto = player.crypto;
 
       // Only increment stats that have accumulated this session
       if (player._sessionKills > 0) {

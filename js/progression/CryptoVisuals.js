@@ -74,6 +74,7 @@ class CryptoVisuals {
   // ========================
 
   _onCryptoGain(amount, reason, worldPosition) {
+    console.log(`[CryptoVisuals] onCryptoGain: ¢${amount} reason=${reason} pos=${worldPosition ? `(${worldPosition.x.toFixed(1)}, ${worldPosition.y.toFixed(1)}, ${worldPosition.z.toFixed(1)})` : 'null'} enabled=${this.enabled}`);
     // Always update HUD bar regardless of popup setting
     this._updateHUDBar();
 
@@ -96,7 +97,8 @@ class CryptoVisuals {
       this.pendingStack.amount = amount;
     }
     // Always update to latest position so crypto appears above current target
-    this.pendingStack.position = worldPosition;
+    // Clone to avoid stale references to pre-allocated temp vectors
+    this.pendingStack.position = worldPosition?.clone() || null;
 
     this.pendingStack.timeout = setTimeout(() => {
       // Check enabled again in case it changed during timeout

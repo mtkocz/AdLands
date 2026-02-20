@@ -440,14 +440,14 @@ class WorldGenerator {
 
   /**
    * Build a precomputed blocked-grid for fast terrain collision.
-   * Resolution: 256 theta x 128 phi = 32KB Uint8Array.
+   * Resolution: 1024 theta x 512 phi = 512KB Uint8Array.
    * Each cell stores 1 if blocked (elevated terrain or polar hole), 0 otherwise.
    * Must be called after generate() and terrain.generate().
    * @param {Object} terrain - TerrainElevation instance
    */
   buildBlockedGrid(terrain) {
-    const GRID_T = 256;
-    const GRID_P = 128;
+    const GRID_T = 1024;
+    const GRID_P = 512;
     this._blockedGrid = new Uint8Array(GRID_T * GRID_P);
     this._BLOCKED_GRID_T = GRID_T;
     this._BLOCKED_GRID_P = GRID_P;

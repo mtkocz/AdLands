@@ -93,7 +93,7 @@ class GameCamera {
     this.shake = {
       intensity: 0, // Current shake intensity (decays over time)
       decay: 0.7, // How fast shake decays per second
-      maxOffset: 2.109, // Maximum position offset at full intensity
+      maxOffset: 1.0545, // Maximum position offset at full intensity
       offset: new THREE.Vector3(), // Current frame's shake offset
     };
 

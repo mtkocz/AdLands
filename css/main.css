@@ -2068,7 +2068,7 @@ body.tip-dragging .chat-mention.tip-highlight {
         0 0 6px rgba(0, 255, 255, 0.5); /* Subtle cyan glow */
     pointer-events: none;
     transform: translate(-50%, -50%);
-    opacity: 0;
+    opacity: 0.8;
     transition: none;
     white-space: nowrap;
 }

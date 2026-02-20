@@ -10,10 +10,9 @@
 // Preallocated temp spheres for frustum culling (avoid per-frame clone())
 const _dmgSmokeSphere = new THREE.Sphere();
 const _dmgFireSphere = new THREE.Sphere();
-// Preallocated vectors for far-side (backface) culling
-const _dmgCullNormal = new THREE.Vector3();
-const _dmgCullDir = new THREE.Vector3();
-const _dmgCameraWorldPos = new THREE.Vector3();
+// Preallocated vectors for emission (avoid per-particle GC pressure)
+const _emitOffset = new THREE.Vector3();
+const _emitNormal = new THREE.Vector3();
 
 class TankDamageEffects {
     constructor(scene, sphereRadius) {
@@ -84,14 +83,17 @@ class TankDamageEffects {
      * Immediately remove all active particles belonging to a tank
      */
     _clearParticlesForTank(tankId) {
-        // Clear smoke particles owned by this tank
+        let removed = false;
         for (let i = this.smoke.activeCount - 1; i >= 0; i--) {
             if (this.smoke.tankIds[i] === tankId) {
                 this._removeSmokeParticle(i);
+                removed = true;
             }
         }
-        if (this.smoke.activeCount >= 0) {
+        if (removed) {
             this.smokeSystem.geometry.setDrawRange(0, this.smoke.activeCount);
+            // Force dirty flag so GPU upload isn't skipped
+            this.smoke.dirtyParticles.add(0);
             this._markSmokeBuffersDirty();
         }
     }
@@ -127,51 +129,7 @@ class TankDamageEffects {
     update(deltaTime, frustum = null, camera = null) {
         const dt = deltaTime || 1 / 60;
 
-        // Cache camera world position for backface culling
-        if (camera) camera.getWorldPosition(_dmgCameraWorldPos);
-
-        // Backface + frustum culling for particle systems (with 10 unit margin for smooth visibility)
-        if (frustum) {
-            // Cull smoke system (with cached bounding sphere for performance)
-            if (this.smokeSystem && this.smoke.activeCount > 0) {
-                if (!this.smoke.boundingSphereValid) {
-                    this.smokeSystem.geometry.computeBoundingSphere();
-                    this.smoke.boundingSphereValid = true;
-                }
-                _dmgSmokeSphere.copy(this.smokeSystem.geometry.boundingSphere);
-                _dmgSmokeSphere.applyMatrix4(this.smokeSystem.matrixWorld);
-                _dmgSmokeSphere.radius += 10;
-                // Backface cull — hide if particle cloud center is on far side of planet
-                _dmgCullNormal.copy(_dmgSmokeSphere.center).normalize();
-                _dmgCullDir.copy(_dmgSmokeSphere.center).sub(_dmgCameraWorldPos).normalize();
-                if (_dmgCullNormal.dot(_dmgCullDir) > 0.15) {
-                    this.smokeSystem.visible = false;
-                } else {
-                    this.smokeSystem.visible = frustum.intersectsSphere(_dmgSmokeSphere);
-                }
-            }
-
-            // Cull fire system (with cached bounding sphere for performance)
-            if (this.fireSystem && this.fire.activeCount > 0) {
-                if (!this.fire.boundingSphereValid) {
-                    this.fireSystem.geometry.computeBoundingSphere();
-                    this.fire.boundingSphereValid = true;
-                }
-                _dmgFireSphere.copy(this.fireSystem.geometry.boundingSphere);
-                _dmgFireSphere.applyMatrix4(this.fireSystem.matrixWorld);
-                _dmgFireSphere.radius += 10;
-                // Backface cull — hide if particle cloud center is on far side of planet
-                _dmgCullNormal.copy(_dmgFireSphere.center).normalize();
-                _dmgCullDir.copy(_dmgFireSphere.center).sub(_dmgCameraWorldPos).normalize();
-                if (_dmgCullNormal.dot(_dmgCullDir) > 0.15) {
-                    this.fireSystem.visible = false;
-                } else {
-                    this.fireSystem.visible = frustum.intersectsSphere(_dmgFireSphere);
-                }
-            }
-        }
-
-        // Emit particles for each active tank
+        // 1. Emit particles for each active tank
         for (const [tankId, effects] of this.tankEffects) {
             if (effects.smoke) {
                 this._emitSmoke(effects.tankGroup, effects.smoke, tankId, effects.opacity);
@@ -181,9 +139,39 @@ class TankDamageEffects {
             }
         }
 
-        // Update particle systems
+        // 2. Update particle systems (ages, positions, draw range)
         this._updateSmoke(dt);
         this._updateFire(dt);
+
+        // 3. Frustum culling AFTER update so bounding spheres use current data
+        if (frustum) {
+            if (this.smokeSystem && this.smoke.activeCount > 0) {
+                if (!this.smoke.boundingSphereValid) {
+                    this.smokeSystem.geometry.computeBoundingSphere();
+                    this.smoke.boundingSphereValid = true;
+                }
+                _dmgSmokeSphere.copy(this.smokeSystem.geometry.boundingSphere);
+                _dmgSmokeSphere.applyMatrix4(this.smokeSystem.matrixWorld);
+                _dmgSmokeSphere.radius += 10;
+                this.smokeSystem.visible = frustum.intersectsSphere(_dmgSmokeSphere);
+            } else if (this.smokeSystem) {
+                // No active particles — keep visible so new emissions render immediately
+                this.smokeSystem.visible = true;
+            }
+
+            if (this.fireSystem && this.fire.activeCount > 0) {
+                if (!this.fire.boundingSphereValid) {
+                    this.fireSystem.geometry.computeBoundingSphere();
+                    this.fire.boundingSphereValid = true;
+                }
+                _dmgFireSphere.copy(this.fireSystem.geometry.boundingSphere);
+                _dmgFireSphere.applyMatrix4(this.fireSystem.matrixWorld);
+                _dmgFireSphere.radius += 10;
+                this.fireSystem.visible = frustum.intersectsSphere(_dmgFireSphere);
+            } else if (this.fireSystem) {
+                this.fireSystem.visible = true;
+            }
+        }
     }
 
     // ========================
@@ -340,24 +328,24 @@ class TankDamageEffects {
 
             // Get tank world position (rear engine area)
             tankGroup.updateMatrixWorld();
-            const engineOffset = new THREE.Vector3(
+            _emitOffset.set(
                 (Math.random() - 0.5) * 1.5,  // Spread across rear
                 1.0 + Math.random() * 0.5,    // Above hull
                 2.0 + Math.random() * 0.5     // Rear of tank
             );
-            engineOffset.applyMatrix4(tankGroup.matrixWorld);
+            _emitOffset.applyMatrix4(tankGroup.matrixWorld);
 
-            this.smoke.positions[i3] = engineOffset.x;
-            this.smoke.positions[i3 + 1] = engineOffset.y;
-            this.smoke.positions[i3 + 2] = engineOffset.z;
+            this.smoke.positions[i3] = _emitOffset.x;
+            this.smoke.positions[i3 + 1] = _emitOffset.y;
+            this.smoke.positions[i3 + 2] = _emitOffset.z;
 
             // Upward velocity (in world space, from surface normal)
-            const surfaceNormal = engineOffset.clone().normalize();
+            _emitNormal.copy(_emitOffset).normalize();
             const speed = 0.8 + Math.random() * 0.4;
 
-            this.smoke.velocities[i3] = surfaceNormal.x * speed + (Math.random() - 0.5) * 0.2;
-            this.smoke.velocities[i3 + 1] = surfaceNormal.y * speed + (Math.random() - 0.5) * 0.2;
-            this.smoke.velocities[i3 + 2] = surfaceNormal.z * speed + (Math.random() - 0.5) * 0.2;
+            this.smoke.velocities[i3] = _emitNormal.x * speed + (Math.random() - 0.5) * 0.2;
+            this.smoke.velocities[i3 + 1] = _emitNormal.y * speed + (Math.random() - 0.5) * 0.2;
+            this.smoke.velocities[i3 + 2] = _emitNormal.z * speed + (Math.random() - 0.5) * 0.2;
 
             this.smoke.ages[idx] = 0;
             this.smoke.lifetimes[idx] = 1.5 + Math.random() * 1.0;  // 1.5-2.5 seconds
@@ -633,24 +621,24 @@ class TankDamageEffects {
 
             // Get tank world position (engine area, slightly lower than smoke)
             tankGroup.updateMatrixWorld();
-            const engineOffset = new THREE.Vector3(
+            _emitOffset.set(
                 (Math.random() - 0.5) * 1.0,  // Narrower spread
                 0.8 + Math.random() * 0.3,    // Slightly lower
                 1.8 + Math.random() * 0.4     // Rear of tank
             );
-            engineOffset.applyMatrix4(tankGroup.matrixWorld);
+            _emitOffset.applyMatrix4(tankGroup.matrixWorld);
 
-            this.fire.positions[i3] = engineOffset.x;
-            this.fire.positions[i3 + 1] = engineOffset.y;
-            this.fire.positions[i3 + 2] = engineOffset.z;
+            this.fire.positions[i3] = _emitOffset.x;
+            this.fire.positions[i3 + 1] = _emitOffset.y;
+            this.fire.positions[i3 + 2] = _emitOffset.z;
 
             // Upward velocity with flickering motion
-            const surfaceNormal = engineOffset.clone().normalize();
+            _emitNormal.copy(_emitOffset).normalize();
             const speed = 1.5 + Math.random() * 1.0;
 
-            this.fire.velocities[i3] = surfaceNormal.x * speed + (Math.random() - 0.5) * 0.8;
-            this.fire.velocities[i3 + 1] = surfaceNormal.y * speed + (Math.random() - 0.5) * 0.8;
-            this.fire.velocities[i3 + 2] = surfaceNormal.z * speed + (Math.random() - 0.5) * 0.8;
+            this.fire.velocities[i3] = _emitNormal.x * speed + (Math.random() - 0.5) * 0.8;
+            this.fire.velocities[i3 + 1] = _emitNormal.y * speed + (Math.random() - 0.5) * 0.8;
+            this.fire.velocities[i3 + 2] = _emitNormal.z * speed + (Math.random() - 0.5) * 0.8;
 
             this.fire.ages[idx] = 0;
             this.fire.lifetimes[idx] = 0.3 + Math.random() * 0.4;  // 0.3-0.7 seconds (shorter than smoke)
