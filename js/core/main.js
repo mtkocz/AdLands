@@ -1584,6 +1584,7 @@
       }
       window.dashboard.playerName = name;
       window.dashboard.playerFaction = faction;
+      playerLevel = profileData.level || 1;
       window.dashboard.playerLevel = playerLevel;
       const nameEl = document.getElementById("dashboard-player-name");
       if (nameEl) nameEl.textContent = name;
@@ -1654,6 +1655,12 @@
       // so it resets player.crypto and broadcasts to all clients
       if (isProfileSwitch && window.networkManager.connected) {
         window.networkManager.sendSetProfile(profileIndex, profileData);
+
+        // Reset tank to fresh state (full HP, no smoke/fire effects)
+        tank.resetForRespawn();
+        tankDamageEffects.setDamageState("player", tank.group, "healthy");
+        tankDamageEffects.removeTank("player");
+        visualEffects.onRespawn();
       }
     }
 

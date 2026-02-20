@@ -94,8 +94,8 @@ const BOT_RESPAWN_TIME_MAX = 12000;
 
 // Hit detection (oriented-box, matches BodyguardManager)
 const BOT_HIT_HALF_LEN = 3.5;
-const BOT_HIT_HALF_WID = 2.5;
-const BOT_HIT_QUICK_REJECT = 0.010; // radians
+const BOT_HIT_HALF_WID = 3.0;
+const BOT_HIT_QUICK_REJECT = 0.012; // radians
 
 // Trash talk
 const BOT_CHAT_COOLDOWN = 5000; // Per-bot cooldown between messages (ms)

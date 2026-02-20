@@ -2515,13 +2515,16 @@ class BotTanks {
   _updateBotDamageState(bot) {
     const hpPercent = bot.hp / bot.maxHp;
     const oldState = bot.damageState;
-    let newState = "healthy";
 
+    // When hp is 0, don't update state here — _onBotDeath handles the dead transition
+    if (hpPercent <= 0) return;
+
+    let newState;
     if (hpPercent > 0.5) {
       newState = "healthy";
     } else if (hpPercent > 0.25) {
       newState = "damaged";
-    } else if (hpPercent > 0) {
+    } else {
       newState = "critical";
     }
 

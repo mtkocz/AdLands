@@ -2123,13 +2123,13 @@ class GameRoom {
       // Uses heading to check forward/right extents (same approach as terrain probes).
       const R = 480;
       const HALF_LEN = 3.5;   // Forward/back half-extent in world units (2.75 + latency margin)
-      const HALF_WID = 2.5;   // Left/right half-extent in world units (1.5 + latency margin)
-      const QUICK_REJECT = 0.010; // ~4.8 world units — skip distant players fast
+      const HALF_WID = 3.0;   // Left/right half-extent in world units (1.5 + latency margin, matches client hitRadius)
+      const QUICK_REJECT = 0.012; // ~5.8 world units — skip distant players fast
 
       // Swept collision: check multiple points along the path to prevent tunneling
       const moveDist = sphericalDistance(prevTheta, prevPhi, p.theta, p.phi);
-      // Step every ~1.9 world units (half of narrow box dim) to avoid skipping the hitbox
-      const numSteps = Math.max(1, Math.ceil(moveDist / 0.004));
+      // Step every ~1.0 world units (well under half of narrow box dim) to catch edge hits
+      const numSteps = Math.max(1, Math.ceil(moveDist / 0.002));
       let hitPlayer = false;
 
       // Theta wraparound: compute shortest delta for proper interpolation

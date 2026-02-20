@@ -41,6 +41,10 @@ class TankDamageEffects {
      * @param {string} state - 'healthy', 'damaged', 'critical', 'dead'
      */
     setDamageState(tankId, tankGroup, state) {
+        if (state !== 'healthy') {
+            console.warn('[TankDmgFX] setDamageState:', tankId, state, 'group:', !!tankGroup);
+        }
+
         let effects = this.tankEffects.get(tankId);
 
         if (!effects) {
@@ -92,8 +96,6 @@ class TankDamageEffects {
         }
         if (removed) {
             this.smokeSystem.geometry.setDrawRange(0, this.smoke.activeCount);
-            // Force dirty flag so GPU upload isn't skipped
-            this.smoke.dirtyParticles.add(0);
             this._markSmokeBuffersDirty();
         }
     }
@@ -194,11 +196,7 @@ class TankDamageEffects {
             rotationSpeeds: new Float32Array(maxParticles),
             opacities: new Float32Array(maxParticles),  // Tank fade opacity
             tankIds: new Array(maxParticles).fill(null),  // Track which tank owns each particle
-
-            // Dirty tracking for buffer optimization
-            dirtyParticles: new Set(),
-            framesSinceUpdate: 0,
-            boundingSphereValid: true
+            boundingSphereValid: false
         };
 
         // Create geometry
@@ -315,6 +313,9 @@ class TankDamageEffects {
         // Don't emit new particles if tank is mostly faded
         if (tankOpacity < 0.3) return;
 
+        // Safety: skip if tankGroup is missing or invalid
+        if (!tankGroup || !tankGroup.matrixWorld) return;
+
         // Emit 2-3 particles per frame when active
         const emitCount = 2 + (Math.random() < 0.5 ? 1 : 0);
 
@@ -357,49 +358,29 @@ class TankDamageEffects {
             this.smoke.tankIds[idx] = tankId;  // Track which tank owns this particle
 
             this.smoke.activeCount++;
-
-            // Mark the new particle as dirty
-            this.smoke.dirtyParticles.add(idx);
         }
 
-        // Invalidate bounding sphere when new particles added
+        // Ensure draw range and visibility are immediately correct
+        this.smokeSystem.geometry.setDrawRange(0, this.smoke.activeCount);
+        this.smokeSystem.visible = true;
         this.smoke.boundingSphereValid = false;
-
         this._markSmokeBuffersDirty();
     }
 
     _updateSmoke(dt) {
         if (this.smoke.activeCount === 0) return;
 
-        const rotationsAttr = this.smokeSystem.geometry.attributes.aRotation.array;
-
-        // Clear dirty set from previous frame
-        this.smoke.dirtyParticles.clear();
-
         for (let i = 0; i < this.smoke.activeCount; i++) {
-            const prevAge = this.smoke.ages[i];
             this.smoke.ages[i] += dt;
 
             if (this.smoke.ages[i] >= this.smoke.lifetimes[i]) {
                 this._removeSmokeParticle(i);
-                this.smoke.dirtyParticles.add(i);
                 i--;
                 continue;
             }
 
-            // Track if particle changed
-            if (Math.abs(this.smoke.ages[i] - prevAge) > 0.001) {
-                this.smoke.dirtyParticles.add(i);
-            }
-
-            // Particles fade naturally over their lifetime - don't sync to tank opacity
-            // This allows smoke to dissipate gradually when tank dies
-            // The particle's initial opacity is set at emission time
-
             // Update rotation
             this.smoke.rotations[i] += this.smoke.rotationSpeeds[i] * dt;
-            rotationsAttr[i] = this.smoke.rotations[i];
-            this.smoke.dirtyParticles.add(i);
 
             const i3 = i * 3;
 
@@ -410,16 +391,9 @@ class TankDamageEffects {
             this.smoke.velocities[i3 + 2] *= dragFactor;
 
             // Update position
-            const prevX = this.smoke.positions[i3];
             this.smoke.positions[i3] += this.smoke.velocities[i3] * dt;
             this.smoke.positions[i3 + 1] += this.smoke.velocities[i3 + 1] * dt;
             this.smoke.positions[i3 + 2] += this.smoke.velocities[i3 + 2] * dt;
-
-            // Mark dirty if position changed significantly
-            if (Math.abs(this.smoke.positions[i3] - prevX) > 0.01) {
-                this.smoke.dirtyParticles.add(i);
-                this.smoke.boundingSphereValid = false;
-            }
         }
 
         this._markSmokeBuffersDirty();
@@ -470,12 +444,6 @@ class TankDamageEffects {
     }
 
     _markSmokeBuffersDirty() {
-        // Skip update if no particles changed and we updated recently (performance optimization)
-        if (this.smoke.dirtyParticles.size === 0 && this.smoke.framesSinceUpdate < 5) {
-            this.smoke.framesSinceUpdate++;
-            return;  // Skip GPU upload!
-        }
-
         const geo = this.smokeSystem.geometry;
         geo.attributes.position.needsUpdate = true;
         geo.attributes.aAge.needsUpdate = true;
@@ -484,8 +452,6 @@ class TankDamageEffects {
         geo.attributes.aColor.needsUpdate = true;
         geo.attributes.aSize.needsUpdate = true;
         geo.attributes.aOpacity.needsUpdate = true;
-
-        this.smoke.framesSinceUpdate = 0;
         this.smoke.boundingSphereValid = false;
     }
 
@@ -506,11 +472,7 @@ class TankDamageEffects {
             sizes: new Float32Array(maxParticles),
             rotations: new Float32Array(maxParticles),
             rotationSpeeds: new Float32Array(maxParticles),
-
-            // Dirty tracking for buffer optimization
-            dirtyParticles: new Set(),
-            framesSinceUpdate: 0,
-            boundingSphereValid: true
+            boundingSphereValid: false
         };
 
         // Create geometry
@@ -608,6 +570,9 @@ class TankDamageEffects {
     }
 
     _emitFire(tankGroup) {
+        // Safety: skip if tankGroup is missing or invalid
+        if (!tankGroup || !tankGroup.matrixWorld) return;
+
         // Emit 3-5 particles per frame when active
         const emitCount = 3 + Math.floor(Math.random() * 3);
 
@@ -647,45 +612,29 @@ class TankDamageEffects {
             this.fire.rotationSpeeds[idx] = (Math.random() - 0.5) * 6.0;  // -3 to +3 radians/sec (faster for fire)
 
             this.fire.activeCount++;
-
-            // Mark the new particle as dirty
-            this.fire.dirtyParticles.add(idx);
         }
 
-        // Invalidate bounding sphere when new particles added
+        // Ensure draw range and visibility are immediately correct
+        this.fireSystem.geometry.setDrawRange(0, this.fire.activeCount);
+        this.fireSystem.visible = true;
         this.fire.boundingSphereValid = false;
-
         this._markFireBuffersDirty();
     }
 
     _updateFire(dt) {
         if (this.fire.activeCount === 0) return;
 
-        const rotationsAttr = this.fireSystem.geometry.attributes.aRotation.array;
-
-        // Clear dirty set from previous frame
-        this.fire.dirtyParticles.clear();
-
         for (let i = 0; i < this.fire.activeCount; i++) {
-            const prevAge = this.fire.ages[i];
             this.fire.ages[i] += dt;
 
             if (this.fire.ages[i] >= this.fire.lifetimes[i]) {
                 this._removeFireParticle(i);
-                this.fire.dirtyParticles.add(i);
                 i--;
                 continue;
             }
 
-            // Track if particle changed
-            if (Math.abs(this.fire.ages[i] - prevAge) > 0.001) {
-                this.fire.dirtyParticles.add(i);
-            }
-
             // Update rotation
             this.fire.rotations[i] += this.fire.rotationSpeeds[i] * dt;
-            rotationsAttr[i] = this.fire.rotations[i];
-            this.fire.dirtyParticles.add(i);
 
             const i3 = i * 3;
 
@@ -702,16 +651,9 @@ class TankDamageEffects {
             this.fire.velocities[i3 + 2] += (Math.random() - 0.5) * turbulence;
 
             // Update position
-            const prevX = this.fire.positions[i3];
             this.fire.positions[i3] += this.fire.velocities[i3] * dt;
             this.fire.positions[i3 + 1] += this.fire.velocities[i3 + 1] * dt;
             this.fire.positions[i3 + 2] += this.fire.velocities[i3 + 2] * dt;
-
-            // Mark dirty if position changed significantly
-            if (Math.abs(this.fire.positions[i3] - prevX) > 0.01) {
-                this.fire.dirtyParticles.add(i);
-                this.fire.boundingSphereValid = false;
-            }
         }
 
         this._markFireBuffersDirty();
@@ -759,20 +701,12 @@ class TankDamageEffects {
     }
 
     _markFireBuffersDirty() {
-        // Skip update if no particles changed and we updated recently (performance optimization)
-        if (this.fire.dirtyParticles.size === 0 && this.fire.framesSinceUpdate < 5) {
-            this.fire.framesSinceUpdate++;
-            return;  // Skip GPU upload!
-        }
-
         const geo = this.fireSystem.geometry;
         geo.attributes.position.needsUpdate = true;
         geo.attributes.aAge.needsUpdate = true;
         geo.attributes.aLifetime.needsUpdate = true;
         geo.attributes.aSize.needsUpdate = true;
         geo.attributes.aRotation.needsUpdate = true;
-
-        this.fire.framesSinceUpdate = 0;
         this.fire.boundingSphereValid = false;
     }
 
