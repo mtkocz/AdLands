@@ -105,11 +105,9 @@ class ProfileManager {
 
     const fields = {};
 
-    // Save CryptoSystem stats
-    if (this.cryptoSystem) {
-      fields.totalCrypto = this.cryptoSystem.stats.totalCrypto;
-      fields.level = this.cryptoSystem.stats.level;
-    }
+    // NOTE: totalCrypto and level are server-authoritative.
+    // The server saves these on disconnect, auto-save (60s), and shutdown.
+    // Writing them from the client causes race conditions where spending is reverted.
 
     // Save BadgeSystem
     if (this.badgeSystem) {
@@ -152,10 +150,7 @@ class ProfileManager {
 
     const fields = {};
 
-    if (this.cryptoSystem) {
-      fields.totalCrypto = this.cryptoSystem.stats.totalCrypto;
-      fields.level = this.cryptoSystem.stats.level;
-    }
+    // NOTE: totalCrypto and level are server-authoritative — not saved from client.
 
     if (this.badgeSystem) {
       const badgeData = this.badgeSystem.exportData();

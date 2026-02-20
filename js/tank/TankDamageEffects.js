@@ -131,6 +131,20 @@ class TankDamageEffects {
     update(deltaTime, frustum = null, camera = null) {
         const dt = deltaTime || 1 / 60;
 
+        // DEBUG: check how many tanks should emit
+        if (!this._dbgFrame) this._dbgFrame = 0;
+        if (++this._dbgFrame % 60 === 1) {
+            let smokers = 0;
+            for (const [, fx] of this.tankEffects) { if (fx.smoke) smokers++; }
+            if (smokers > 0 || this.smoke.activeCount > 0) {
+                console.error('[TankDmgFX] UPDATE: emitters=' + smokers +
+                    ' smokeActive=' + this.smoke.activeCount +
+                    ' fireActive=' + this.fire.activeCount +
+                    ' smokeVisible=' + this.smokeSystem.visible +
+                    ' drawRange=' + this.smokeSystem.geometry.drawRange.count);
+            }
+        }
+
         // 1. Emit particles for each active tank
         for (const [tankId, effects] of this.tankEffects) {
             if (effects.smoke) {
