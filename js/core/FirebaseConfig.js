@@ -23,6 +23,8 @@ const firebaseAuth = firebase.auth();
 const firebaseDb = firebase.firestore();
 
 // Enable Firestore offline persistence for better UX on flaky connections
+// Note: enablePersistence() triggers a deprecation warning in Firestore 10.12+
+// but is the only option with the compat SDK. Migrating to the modular SDK would fix it.
 firebaseDb.enablePersistence({ synchronizeTabs: true }).catch((err) => {
   if (err.code === "failed-precondition") {
     console.warn("[Firebase] Persistence failed: multiple tabs open");
