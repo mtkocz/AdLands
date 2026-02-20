@@ -1890,9 +1890,6 @@ class GameRoom {
 
     this.tick++;
 
-    // Tick performance monitoring — logs every 5 seconds
-    const tickStart = Date.now();
-
     // Update planet rotation
     this.planetRotation += PLANET_ROTATION_SPEED * dt;
 
@@ -1903,9 +1900,6 @@ class GameRoom {
       s.localRotation += s.rotationSpeed * dt;
     }
     for (const b of this.billboardOrbits) b.orbitalAngle += b.speed * dt;
-
-    // Phase timing (temporary diagnostics)
-    const _t0 = Date.now();
 
     // 1. Apply inputs and simulate all player tanks
     for (const [id, player] of this.players) {
@@ -1954,31 +1948,25 @@ class GameRoom {
     }
 
     // 1.5. Update bodyguard bots (AI + physics + terrain collision)
-    const _t1 = Date.now();
     this.bodyguardManager.update(dt, this.players, this.planetRotation);
 
     // 1.6. Update server bots (AI + physics + terrain collision + combat)
-    const _t2 = Date.now();
     this.nextProjectileId = this.botManager.update(
       dt, this.players, this.projectiles, this.planetRotation, this.tick, this.nextProjectileId
     );
-    const _t3 = Date.now();
 
     // 1.7. Tank-to-tank collision (player-player + player-bot)
     this._resolveTankCollisions();
 
     // 2. Update projectiles
     this._updateProjectiles(dt);
-    const _t4 = Date.now();
 
     // 3. Update territory capture (every other tick — 10Hz is imperceptible for
     //    seconds-long captures, halves getNearestTile calls from capture logic)
     if (this.tick % 2 === 0) this._updateCapture();
-    const _t5 = Date.now();
 
     // 4. Broadcast world state to all clients
     this._broadcastState();
-    const _t6 = Date.now();
 
     // 5. Recompute faction ranks (every 1 second, or immediately when dirty)
     // Runs BEFORE commander-sync so the snapshot is always up-to-date
@@ -2017,22 +2005,6 @@ class GameRoom {
           );
         }
       }
-    }
-
-    // Tick performance monitoring
-    const tickElapsed = Date.now() - tickStart;
-    if (!this._tickTimings) this._tickTimings = { sum: 0, max: 0, count: 0 };
-    this._tickTimings.sum += tickElapsed;
-    this._tickTimings.count++;
-    if (tickElapsed > this._tickTimings.max) this._tickTimings.max = tickElapsed;
-    if (this.tick % (this.tickRate * 5) === 0) {
-      const avg = (this._tickTimings.sum / this._tickTimings.count).toFixed(1);
-      const max = this._tickTimings.max;
-      const budget = (1000 / this.tickRate) | 0;
-      console.warn(`[Tick] avg=${avg}ms max=${max}ms budget=${budget}ms players=${this.players.size} bots=${this.botManager ? this.botManager.bots.size : 0} | players=${_t1-_t0}ms bodyguard=${_t2-_t1}ms bots=${_t3-_t2}ms collProj=${_t4-_t3}ms capture=${_t5-_t4}ms broadcast=${_t6-_t5}ms`);
-      this._tickTimings.sum = 0;
-      this._tickTimings.max = 0;
-      this._tickTimings.count = 0;
     }
 
     this.lastTickTime = now;

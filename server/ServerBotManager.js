@@ -181,9 +181,6 @@ const BOT_TRASH_TALK = {
 // Spatial hash for bot-bot collision
 const SPATIAL_GRID_PHI = 32;
 const SPATIAL_GRID_THETA = 64;
-const BOT_COLLISION_RADIUS = 3.0 / 480; // ~0.00625 radians
-const BOT_PUSH_BUFFER = 1.5 / 480;
-
 class ServerBotManager {
   /**
    * @param {number} sphereRadius - Planet radius (480)
@@ -197,7 +194,7 @@ class ServerBotManager {
     this.worldGen = worldGen;
     this.clusterCaptureState = clusterCaptureState;
 
-    this.TARGET_TOTAL = 100;
+    this.TARGET_TOTAL = 300;
     this.bots = new Map(); // botId → bot state
     this._botArray = []; // Flat array for iteration (synced with Map)
     this._nextBotId = 0;
@@ -482,8 +479,8 @@ class ServerBotManager {
       this.coordinators[faction].update(alive, this.coordinators, now);
     }
 
-    // Staggered AI state updates (30 bots per tick for 150 bots = 5-tick rotation)
-    const botsPerTick = Math.max(1, Math.ceil(this._botArray.length / 5));
+    // Staggered AI state updates (30 bots per tick for 300 bots = 10-tick rotation)
+    const botsPerTick = Math.max(1, Math.ceil(this._botArray.length / 10));
     const startIdx = this._aiUpdateIndex;
     const endIdx = Math.min(startIdx + botsPerTick, this._botArray.length);
 
@@ -530,8 +527,8 @@ class ServerBotManager {
       }
     }
 
-    // Bot-bot collision (spatial hash)
-    this._updateBotCollisions(planetRotation);
+    // Rebuild spatial hash (used by player-bot collision in GameRoom + bot AI separation)
+    this._rebuildSpatialHash();
 
     // Idle trash talk
     this._updateIdleChat(dt);
@@ -1180,144 +1177,23 @@ class ServerBotManager {
   }
 
   // ========================
-  // BOT-BOT COLLISION (spatial hash)
+  // SPATIAL HASH (for player-bot collision + bot AI separation)
   // ========================
 
-  _updateBotCollisions(planetRotation) {
-    // Rebuild spatial hash — reuse pre-allocated cell arrays to avoid GC
-    if (!this._hashCells) {
-      // One-time setup: pre-allocate cell arrays and neighbor buffer
-      this._hashCells = new Map();
-      this._hashCellLengths = new Map();
-      this._neighborBuf = new Int32Array(9);
-      this._checkedPairs = new Set();
-    }
-    // Reset cell lengths (avoids clearing Map + creating new arrays)
-    for (const key of this._hashCellLengths.keys()) {
-      this._hashCellLengths.set(key, 0);
-    }
-
+  _rebuildSpatialHash() {
+    this._spatialHash.clear();
     for (const bot of this._botArray) {
       if (bot.isDead || bot.isDeploying) continue;
       const key = this._getCellKey(bot.theta, bot.phi);
-      if (!this._hashCells.has(key)) {
-        this._hashCells.set(key, []);
-        this._hashCellLengths.set(key, 0);
+      if (!this._spatialHash.has(key)) {
+        this._spatialHash.set(key, []);
       }
-      const arr = this._hashCells.get(key);
-      const len = this._hashCellLengths.get(key);
-      if (len < arr.length) {
-        arr[len] = bot;
-      } else {
-        arr.push(bot);
-      }
-      this._hashCellLengths.set(key, len + 1);
-    }
-
-    // Check pairs via neighbor cells — use numeric pair keys to avoid string alloc
-    this._checkedPairs.clear();
-    const nBuf = this._neighborBuf;
-    for (const [cellKey, bots] of this._hashCells) {
-      const cellLen = this._hashCellLengths.get(cellKey);
-      if (cellLen === 0) continue;
-      const nCount = this._getNeighborKeysInto(cellKey, nBuf);
-      for (let ni = 0; ni < nCount; ni++) {
-        const nKey = nBuf[ni];
-        if (!this._hashCells.has(nKey)) continue;
-        const neighborBots = this._hashCells.get(nKey);
-        const nLen = this._hashCellLengths.get(nKey);
-        if (nLen === 0) continue;
-        for (let ai = 0; ai < cellLen; ai++) {
-          const botA = bots[ai];
-          for (let bi = 0; bi < nLen; bi++) {
-            const botB = neighborBots[bi];
-            if (botA === botB) continue;
-            // Numeric pair key: min*10000+max avoids string allocation
-            const lo = botA.id < botB.id ? botA.id : botB.id;
-            const hi = botA.id < botB.id ? botB.id : botA.id;
-            const pairKey = lo * 10000 + hi;
-            if (this._checkedPairs.has(pairKey)) continue;
-            this._checkedPairs.add(pairKey);
-            this._resolveBotPairCollision(botA, botB, planetRotation);
-          }
-        }
-      }
+      this._spatialHash.get(key).push(bot);
     }
   }
 
-  _resolveBotPairCollision(a, b, planetRotation) {
-    let dTheta = b.theta - a.theta;
-    while (dTheta > Math.PI) dTheta -= Math.PI * 2;
-    while (dTheta < -Math.PI) dTheta += Math.PI * 2;
-    const dPhi = b.phi - a.phi;
-    const dist = Math.sqrt(dTheta * dTheta + dPhi * dPhi);
-    const minDist = BOT_COLLISION_RADIUS * 2;
-
-    if (dist >= minDist) return;
-
-    const overlap = minDist - dist;
-    const push = overlap / 2 + BOT_PUSH_BUFFER;
-    const nx = dist > 0.0001 ? dTheta / dist : 1;
-    const ny = dist > 0.0001 ? dPhi / dist : 0;
-
-    // Push apart (check terrain first)
-    const newATheta = a.theta - nx * push;
-    const newAPhi = a.phi - ny * push;
-    const newBTheta = b.theta + nx * push;
-    const newBPhi = b.phi + ny * push;
-
-    const aBlocked = this._isTerrainBlockedAt(newATheta, newAPhi, a.heading, a.speed, planetRotation);
-    const bBlocked = this._isTerrainBlockedAt(newBTheta, newBPhi, b.heading, b.speed, planetRotation);
-
-    if (!aBlocked && !bBlocked) {
-      a.theta = newATheta;
-      a.phi = newAPhi;
-      b.theta = newBTheta;
-      b.phi = newBPhi;
-    } else if (!aBlocked) {
-      a.theta -= nx * push * 2;
-      a.phi -= ny * push * 2;
-    } else if (!bBlocked) {
-      b.theta += nx * push * 2;
-      b.phi += ny * push * 2;
-    } else {
-      // Both blocked by terrain — try perpendicular push (slide along wall)
-      const perpX = -ny; // perpendicular to separation axis
-      const perpY = nx;
-      const perpAPhi = a.phi - perpY * push;
-      const perpATheta = a.theta - perpX * push;
-      const perpBPhi = b.phi + perpY * push;
-      const perpBTheta = b.theta + perpX * push;
-
-      const aPerpBlocked = this._isTerrainBlockedAt(perpATheta, perpAPhi, a.heading, a.speed, planetRotation);
-      const bPerpBlocked = this._isTerrainBlockedAt(perpBTheta, perpBPhi, b.heading, b.speed, planetRotation);
-
-      if (!aPerpBlocked && !bPerpBlocked) {
-        a.theta = perpATheta;
-        a.phi = perpAPhi;
-        b.theta = perpBTheta;
-        b.phi = perpBPhi;
-      } else if (!aPerpBlocked) {
-        a.theta = perpATheta;
-        a.phi = perpAPhi;
-      } else if (!bPerpBlocked) {
-        b.theta = perpBTheta;
-        b.phi = perpBPhi;
-      }
-      // Stronger reverse when jammed against terrain
-      a.speed = BOT_MAX_SPEED * 0.3;
-      b.speed = BOT_MAX_SPEED * 0.3;
-      a._terrainAvoidTimer = Math.max(a._terrainAvoidTimer, 1.0);
-      b._terrainAvoidTimer = Math.max(b._terrainAvoidTimer, 1.0);
-      a.wanderDirection = a.heading + Math.PI + (Math.random() - 0.5) * 1.0;
-      b.wanderDirection = b.heading + Math.PI + (Math.random() - 0.5) * 1.0;
-      return;
-    }
-
-    // Kill velocity and apply brief reverse (positive speed = visual backward)
-    a.speed = 0.00008;
-    b.speed = 0.00008;
-  }
+  // Bot-bot collision removed for performance (300 bots). Player-bot collision
+  // still works via GameRoom._resolveTankCollisions() using _spatialHash.
 
   // ========================
   // COMBAT
@@ -1938,28 +1814,6 @@ class ServerBotManager {
     return keys;
   }
 
-  /**
-   * Allocation-free version: writes neighbor keys into a pre-allocated buffer.
-   * @param {number} cellKey
-   * @param {Int32Array} buf - Pre-allocated buffer (at least 9 elements)
-   * @returns {number} Number of keys written
-   */
-  _getNeighborKeysInto(cellKey, buf) {
-    const phiIdx = Math.floor(cellKey / SPATIAL_GRID_THETA);
-    const thetaIdx = cellKey % SPATIAL_GRID_THETA;
-    let count = 0;
-
-    for (let dp = -1; dp <= 1; dp++) {
-      const p = phiIdx + dp;
-      if (p < 0 || p >= SPATIAL_GRID_PHI) continue;
-      for (let dt = -1; dt <= 1; dt++) {
-        const t = (thetaIdx + dt + SPATIAL_GRID_THETA) % SPATIAL_GRID_THETA;
-        buf[count++] = p * SPATIAL_GRID_THETA + t;
-      }
-    }
-
-    return count;
-  }
 }
 
 module.exports = ServerBotManager;
