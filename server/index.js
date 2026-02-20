@@ -367,6 +367,21 @@ io.on("connection", (socket) => {
     if (data?.slotId) mainRoom.handleUnlockSlot(socket.id, data.slotId);
   });
 
+  // ---- Loadout Equip/Unequip ----
+  socket.on("equip-upgrade", (data) => {
+    if (data?.slotId && data?.upgradeId) {
+      mainRoom.handleEquipUpgrade(socket.id, data.slotId, data.upgradeId);
+    }
+  });
+  socket.on("unequip-upgrade", (data) => {
+    if (data?.slotId) mainRoom.handleUnequipUpgrade(socket.id, data.slotId);
+  });
+
+  // ---- Tank Upgrade Purchase ----
+  socket.on("tank-upgrade", (data) => {
+    if (data?.type) mainRoom.handleTankUpgrade(socket.id, data.type);
+  });
+
   // ---- Self-Damage (debug K key) ----
   socket.on("self-damage", (data) => {
     if (typeof data?.amount !== "number") return;

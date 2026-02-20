@@ -1131,6 +1131,7 @@ class GameRoom {
         totalCrypto: player.crypto, // Live balance (crypto = totalCrypto + session earnings - spending)
         unlockedSlots: player.unlockedSlots || ['offense-1'],
         loadout: player.loadout || {},
+        tankUpgrades: player.tankUpgrades || { armor: 0, speed: 0, fireRate: 0, damage: 0 },
       };
 
       // Keep totalCrypto in sync with live balance for next save
@@ -1334,6 +1335,7 @@ class GameRoom {
     player.avatarColor = profileData.profilePicture || null;
     player.loadout = profileData.loadout || {};
     player.tankUpgrades = profileData.tankUpgrades || { armor: 0, speed: 0, fireRate: 0, damage: 0 };
+    player.unlockedSlots = profileData.unlockedSlots || ['offense-1'];
 
     // Reset session stats
     player._sessionKills = 0;
@@ -1523,6 +1525,77 @@ class GameRoom {
     }
 
     DEBUG_LOG && console.log(`[Room ${this.roomId}] ${player.name} unlocked slot ${slotId} for ¢${cost}`);
+  }
+
+  /** Handle equipping an upgrade into a loadout slot */
+  handleEquipUpgrade(socketId, slotId, upgradeId) {
+    const player = this.players.get(socketId);
+    if (!player) return;
+
+    // Validate slot ID
+    const validSlots = ['offense-1', 'offense-2', 'defense-1', 'defense-2', 'tactical-1', 'tactical-2'];
+    if (!validSlots.includes(slotId)) return;
+
+    // Validate upgrade ID
+    const validUpgrades = {
+      offense: ['cannon', 'gunner', '50cal', 'missile', 'flamethrower'],
+      defense: ['shield', 'flares', 'barricades'],
+      tactical: ['proximity_mine', 'foot_soldiers', 'turrets', 'welding_gun'],
+    };
+    const slotCategory = slotId.split('-')[0];
+    if (!validUpgrades[slotCategory]?.includes(upgradeId)) return;
+
+    // Check slot is unlocked (offense-1 is always unlocked)
+    if (slotId !== 'offense-1') {
+      if (!player.unlockedSlots || !player.unlockedSlots.includes(slotId)) return;
+    }
+
+    player.loadout[slotId] = upgradeId;
+  }
+
+  /** Handle unequipping an upgrade from a loadout slot */
+  handleUnequipUpgrade(socketId, slotId) {
+    const player = this.players.get(socketId);
+    if (!player) return;
+
+    if (player.loadout && player.loadout[slotId]) {
+      delete player.loadout[slotId];
+    }
+  }
+
+  /** Handle tank upgrade purchase (armor, speed, fireRate, damage) */
+  handleTankUpgrade(socketId, type) {
+    const player = this.players.get(socketId);
+    if (!player) return;
+
+    const validTypes = ['armor', 'speed', 'fireRate', 'damage'];
+    if (!validTypes.includes(type)) return;
+
+    if (!player.tankUpgrades) {
+      player.tankUpgrades = { armor: 0, speed: 0, fireRate: 0, damage: 0 };
+    }
+
+    if (player.tankUpgrades[type] >= 5) return; // Max tier
+
+    const tier = player.tankUpgrades[type] + 1;
+    const costs = [0, 5000, 15000, 40000, 100000, 250000];
+    const cost = costs[tier] || 0;
+    if (cost <= 0) return;
+
+    if (player.crypto < cost) {
+      this._denyAction(socketId, 'tank-upgrade', cost);
+      return;
+    }
+
+    this._deductCrypto(player, cost);
+    player.tankUpgrades[type] = tier;
+
+    const socket = this.io.sockets.sockets.get(socketId);
+    if (socket) {
+      socket.emit("tank-upgrade-confirmed", { type, tier, cost });
+    }
+
+    DEBUG_LOG && console.log(`[Room ${this.roomId}] ${player.name} upgraded ${type} to tier ${tier} for ¢${cost}`);
   }
 
   // ========================

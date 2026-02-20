@@ -1612,6 +1612,11 @@
           window.profileCard.updatePlayer(id, { crypto });
         }
       }
+      // Sync local CryptoSystem with server-authoritative balance
+      // Prevents client-side Firestore saves from writing drifted values
+      if (cryptoState[net.playerId] !== undefined && window.cryptoSystem) {
+        window.cryptoSystem.stats.totalCrypto = cryptoState[net.playerId];
+      }
       // Update own crypto display in dashboard
       if (cryptoState[net.playerId] !== undefined && window.dashboard) {
         window.dashboard.updateCrypto?.(cryptoState[net.playerId]);
@@ -1682,6 +1687,22 @@
       // Update dashboard loadout UI
       if (window.dashboard) {
         window.dashboard.onSlotUnlocked?.(data.slotId);
+      }
+    };
+
+    net.onTankUpgradeConfirmed = (data) => {
+      // Show red spend floater for tank upgrade cost
+      if (data.cost > 0 && window.cryptoVisuals && tank.group) {
+        tank.group.getWorldPosition(_tipScreenPos);
+        window.cryptoVisuals._spawnFloatingNumber(-data.cost, _tipScreenPos);
+      }
+      // Apply confirmed upgrade to local WeaponSlotSystem
+      if (window.weaponSlotSystem) {
+        window.weaponSlotSystem.applyServerUpgrade(data.type, data.tier);
+      }
+      // Refresh dashboard loadout UI
+      if (window.dashboard && window.dashboard.loadoutInitialized) {
+        window.dashboard.updateLoadout(window.dashboard.playerLevel || 1);
       }
     };
 

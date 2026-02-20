@@ -87,6 +87,12 @@ class WeaponSlotSystem {
     if (this.upgradeStats[upgradeId].category !== slotCategory) return false;
 
     this.equipped[slotId] = upgradeId;
+
+    // Notify server so it can persist authoritatively
+    if (window.networkManager?.connected) {
+      window.networkManager.socket.emit("equip-upgrade", { slotId, upgradeId });
+    }
+
     this._saveToProfile();
     return true;
   }
@@ -97,14 +103,21 @@ class WeaponSlotSystem {
    */
   unequip(slotId) {
     delete this.equipped[slotId];
+
+    // Notify server so it can persist authoritatively
+    if (window.networkManager?.connected) {
+      window.networkManager.socket.emit("unequip-upgrade", { slotId });
+    }
+
     this._saveToProfile();
   }
 
   /**
-   * Upgrade a tank stat by one tier (costs crypto).
+   * Upgrade a tank stat by one tier (costs crypto, server-authoritative).
+   * Sends request to server which validates and deducts crypto.
    * @param {string} type - "armor", "speed", "fireRate", or "damage"
-   * @param {CryptoSystem} cryptoSystem - For deducting crypto cost
-   * @returns {boolean} Whether upgrade succeeded
+   * @param {CryptoSystem} cryptoSystem - For local pre-check only
+   * @returns {boolean} Whether request was sent (server confirms asynchronously)
    */
   upgradeTank(type, cryptoSystem) {
     if (!this.tankUpgrades.hasOwnProperty(type)) return false;
@@ -113,13 +126,29 @@ class WeaponSlotSystem {
     const tier = this.tankUpgrades[type] + 1;
     const cost = this._getUpgradeCost(tier);
 
+    // Local pre-check (server is authoritative, this is just UX)
     if (!cryptoSystem || cryptoSystem.stats.totalCrypto < cost) return false;
 
-    // Deduct crypto (award negative)
-    cryptoSystem.stats.totalCrypto -= cost;
-    this.tankUpgrades[type] = tier;
-    this._saveToProfile();
-    return true;
+    // Send to server for authoritative handling
+    if (window.networkManager?.connected) {
+      window.networkManager.socket.emit("tank-upgrade", { type });
+      return true;
+    }
+
+    return false;
+  }
+
+  /**
+   * Apply a server-confirmed tank upgrade.
+   * Called when server sends "tank-upgrade-confirmed".
+   * @param {string} type - "armor", "speed", "fireRate", or "damage"
+   * @param {number} tier - New tier level
+   */
+  applyServerUpgrade(type, tier) {
+    if (this.tankUpgrades.hasOwnProperty(type)) {
+      this.tankUpgrades[type] = tier;
+      this._saveToProfile();
+    }
   }
 
   /**

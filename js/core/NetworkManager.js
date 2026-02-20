@@ -76,6 +76,7 @@ class NetworkManager {
     this.onCommanderPing = null;    // (data) => { id, faction, x, y, z }
     this.onCommanderDrawing = null; // (data) => { id, faction, points }
     this.onPlayerProfileSwitched = null; // (data) => { id, name, faction, level, ... }
+    this.onTankUpgradeConfirmed = null; // (data) => { type, tier, cost }
   }
 
   // ========================
@@ -331,6 +332,11 @@ class NetworkManager {
     // Economy: loadout slot unlocked
     this.socket.on("slot-unlocked", (data) => {
       if (this.onSlotUnlocked) this.onSlotUnlocked(data);
+    });
+
+    // Economy: tank upgrade confirmed
+    this.socket.on("tank-upgrade-confirmed", (data) => {
+      if (this.onTankUpgradeConfirmed) this.onTankUpgradeConfirmed(data);
     });
 
     // Commander tip events
