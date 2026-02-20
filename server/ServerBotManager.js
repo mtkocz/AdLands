@@ -1739,7 +1739,7 @@ class ServerBotManager {
       mode,
     };
 
-    console.log(`[BotChat] ${bot.name} (${category}, ${mode}${global ? ", global" : ""}): ${text}`);
+    if (process.env.DEBUG_LOG === "1") console.log(`[BotChat] ${bot.name} (${category}, ${mode}${global ? ", global" : ""}): ${text}`);
 
     if (global) {
       // Broadcast to entire room
