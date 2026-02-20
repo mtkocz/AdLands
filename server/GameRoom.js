@@ -1902,6 +1902,7 @@ class GameRoom {
     }
     for (const b of this.billboardOrbits) b.orbitalAngle += b.speed * dt;
 
+    const _t0 = Date.now();
     // 1. Apply inputs and simulate all player tanks
     for (const [id, player] of this.players) {
       if (player.waitingForPortal || player.isDead) {
@@ -1948,17 +1949,21 @@ class GameRoom {
       }
     }
 
+    const _t1 = Date.now();
     // 1.5. Update bodyguard bots (AI + physics + terrain collision)
     this.bodyguardManager.update(dt, this.players, this.planetRotation);
 
+    const _t2 = Date.now();
     // 1.6. Update server bots (AI + physics + terrain collision + combat)
     this.nextProjectileId = this.botManager.update(
       dt, this.players, this.projectiles, this.planetRotation, this.tick, this.nextProjectileId
     );
 
+    const _t3 = Date.now();
     // 1.7. Tank-to-tank collision (player-player + player-bot)
     this._resolveTankCollisions();
 
+    const _t4 = Date.now();
     // 2. Update projectiles
     this._updateProjectiles(dt);
 
@@ -1966,8 +1971,10 @@ class GameRoom {
     //    seconds-long captures, halves getNearestTile calls from capture logic)
     if (this.tick % 2 === 0) this._updateCapture();
 
+    const _t5 = Date.now();
     // 4. Broadcast world state to all clients
     this._broadcastState();
+    const _t6 = Date.now();
 
     // 5. Recompute faction ranks (every 1 second, or immediately when dirty)
     // Runs BEFORE commander-sync so the snapshot is always up-to-date
@@ -2016,9 +2023,20 @@ class GameRoom {
     this._tickSum += tickMs;
     this._tickMax = Math.max(this._tickMax, tickMs);
     this._tickCount++;
+    // Accumulate phase timings
+    if (!this._phaseSum) this._phaseSum = [0,0,0,0,0,0];
+    this._phaseSum[0] += _t1 - _t0; // players
+    this._phaseSum[1] += _t2 - _t1; // bodyguards
+    this._phaseSum[2] += _t3 - _t2; // bots
+    this._phaseSum[3] += _t4 - _t3; // collision
+    this._phaseSum[4] += _t5 - _t4; // projectiles+capture
+    this._phaseSum[5] += _t6 - _t5; // broadcast
     if (this._tickCount >= 100) {
-      console.warn(`[Tick] avg=${(this._tickSum / this._tickCount).toFixed(0)}ms max=${this._tickMax}ms budget=100ms bots=${this.botManager.bots.size} players=${this.players.size}`);
+      const n = this._tickCount;
+      const p = this._phaseSum;
+      console.warn(`[Tick] avg=${(this._tickSum/n).toFixed(0)}ms max=${this._tickMax}ms | players=${(p[0]/n).toFixed(0)} guards=${(p[1]/n).toFixed(0)} bots=${(p[2]/n).toFixed(0)} collide=${(p[3]/n).toFixed(0)} proj=${(p[4]/n).toFixed(0)} broadcast=${(p[5]/n).toFixed(0)} | n=${this.botManager.bots.size}bots ${this.players.size}players`);
       this._tickSum = 0; this._tickMax = 0; this._tickCount = 0;
+      this._phaseSum = [0,0,0,0,0,0];
     }
   }
 
