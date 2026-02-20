@@ -29,7 +29,7 @@ class ServerFactionCoordinator {
     this.faction = faction;
     this.assignedBots = new Map();
     this.targetPriorities = [];
-    this.updateInterval = 2000;
+    this.updateInterval = 5000;
     this.lastUpdate = 0;
     this.pathfinder = null;
 
@@ -164,9 +164,6 @@ class ServerFactionCoordinator {
         (b) => b.targetClusterId === null || b.targetClusterId === undefined,
       );
 
-      const targetTile = this.pathfinder
-        ? this.pathfinder.getClusterCenterTile(target.clusterId)
-        : -1;
       const candidateCount = Math.min(unassigned.length, botsNeeded * 3);
 
       let candidates = unassigned
@@ -174,15 +171,7 @@ class ServerFactionCoordinator {
         .sort((a, b) => a.dist - b.dist)
         .slice(0, candidateCount);
 
-      if (this.pathfinder && targetTile !== -1) {
-        candidates = candidates.map(({ bot }) => {
-          const botTile = this.pathfinder.getNearestTraversableTile(bot.theta, bot.phi);
-          const dist = botTile !== -1
-            ? this.pathfinder.getPathDistance(botTile, targetTile)
-            : Infinity;
-          return { bot, dist };
-        }).sort((a, b) => a.dist - b.dist);
-      }
+      // Use sphere distance only — pathfinding is too expensive for 300 bots
 
       candidates
         .slice(0, botsNeeded)
@@ -210,10 +199,6 @@ class ServerFactionCoordinator {
       phi >= Math.PI - ServerFactionCoordinator.BOT_POLE_SOFT_LIMIT
     ) {
       return false;
-    }
-    if (this.pathfinder) {
-      const centerTile = this.pathfinder.getClusterCenterTile(clusterId);
-      if (centerTile === -1) return false;
     }
     return true;
   }
