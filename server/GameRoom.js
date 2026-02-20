@@ -1886,6 +1886,7 @@ class GameRoom {
 
   _gameTick() {
     const now = Date.now();
+    const tickStart = now;
     const dt = this.tickDelta; // Fixed timestep
 
     this.tick++;
@@ -2008,6 +2009,17 @@ class GameRoom {
     }
 
     this.lastTickTime = now;
+
+    // Log tick duration every 100 ticks (~10s)
+    const tickMs = Date.now() - tickStart;
+    if (!this._tickSum) { this._tickSum = 0; this._tickMax = 0; this._tickCount = 0; }
+    this._tickSum += tickMs;
+    this._tickMax = Math.max(this._tickMax, tickMs);
+    this._tickCount++;
+    if (this._tickCount >= 100) {
+      console.warn(`[Tick] avg=${(this._tickSum / this._tickCount).toFixed(0)}ms max=${this._tickMax}ms budget=100ms bots=${this.botManager.bots.size} players=${this.players.size}`);
+      this._tickSum = 0; this._tickMax = 0; this._tickCount = 0;
+    }
   }
 
   // ========================
