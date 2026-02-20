@@ -1937,6 +1937,22 @@ class GameRoom {
       }
     }
 
+    // Tick performance monitoring
+    const tickElapsed = Date.now() - tickStart;
+    if (!this._tickTimings) this._tickTimings = { sum: 0, max: 0, count: 0 };
+    this._tickTimings.sum += tickElapsed;
+    this._tickTimings.count++;
+    if (tickElapsed > this._tickTimings.max) this._tickTimings.max = tickElapsed;
+    if (this.tick % (this.tickRate * 5) === 0) {
+      const avg = (this._tickTimings.sum / this._tickTimings.count).toFixed(1);
+      const max = this._tickTimings.max;
+      const budget = (1000 / this.tickRate) | 0;
+      console.warn(`[Tick] avg=${avg}ms max=${max}ms budget=${budget}ms players=${this.players.size} bots=${this.botManager ? this.botManager.bots.length : 0}`);
+      this._tickTimings.sum = 0;
+      this._tickTimings.max = 0;
+      this._tickTimings.count = 0;
+    }
+
     this.lastTickTime = now;
   }
 
