@@ -257,7 +257,6 @@ class PingMarkerSystem {
       color: color,
       transparent: true,
       opacity: 0.9,
-      depthTest: false, // Always visible (2D-like)
       depthWrite: false,
       side: THREE.DoubleSide,
     });
@@ -276,7 +275,6 @@ class PingMarkerSystem {
       color: PING_CONFIG.darkOutlineColor,
       transparent: true,
       opacity: PING_CONFIG.darkOutlineOpacity,
-      depthTest: false, // Always visible (2D-like)
       depthWrite: false,
       side: THREE.DoubleSide,
     });
@@ -466,7 +464,6 @@ class PingMarkerSystem {
       ping.mesh.lookAt(this.camera.position);
       ping.outlineMesh.lookAt(this.camera.position);
 
-      // Always visible (2D-like, no occlusion hiding)
       ping.mesh.visible = true;
       ping.outlineMesh.visible = true;
     }
