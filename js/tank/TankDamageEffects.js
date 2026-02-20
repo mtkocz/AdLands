@@ -13,6 +13,8 @@ const _dmgFireSphere = new THREE.Sphere();
 // Preallocated vectors for emission (avoid per-particle GC pressure)
 const _emitOffset = new THREE.Vector3();
 const _emitNormal = new THREE.Vector3();
+// Preallocated vector for distance culling check
+const _tankWorldPos = new THREE.Vector3();
 
 class TankDamageEffects {
     constructor(scene, sphereRadius) {
@@ -41,10 +43,6 @@ class TankDamageEffects {
      * @param {string} state - 'healthy', 'damaged', 'critical', 'dead'
      */
     setDamageState(tankId, tankGroup, state) {
-        if (state !== 'healthy') {
-            console.warn('[TankDmgFX] setDamageState:', tankId, state, 'group:', !!tankGroup);
-        }
-
         let effects = this.tankEffects.get(tankId);
 
         if (!effects) {
@@ -131,27 +129,35 @@ class TankDamageEffects {
     update(deltaTime, frustum = null, camera = null) {
         const dt = deltaTime || 1 / 60;
 
-        // DEBUG: check how many tanks should emit
-        if (!this._dbgFrame) this._dbgFrame = 0;
-        if (++this._dbgFrame % 60 === 1) {
-            let smokers = 0;
-            for (const [, fx] of this.tankEffects) { if (fx.smoke) smokers++; }
-            if (smokers > 0 || this.smoke.activeCount > 0) {
-                console.error('[TankDmgFX] UPDATE: emitters=' + smokers +
-                    ' smokeActive=' + this.smoke.activeCount +
-                    ' fireActive=' + this.fire.activeCount +
-                    ' smokeVisible=' + this.smokeSystem.visible +
-                    ' drawRange=' + this.smokeSystem.geometry.drawRange.count);
-            }
-        }
+        // Distance culling: only emit for tanks near the camera
+        const camPos = camera ? camera.position : null;
+        const maxDistSq = this.sphereRadius * this.sphereRadius * 4; // 2x sphereRadius
 
-        // 1. Emit particles for each active tank
+        // 1. Emit particles for each active tank (nearby only)
         for (const [tankId, effects] of this.tankEffects) {
+            if (!effects.smoke && !effects.fire) continue;
+            if (!effects.tankGroup) continue;
+
+            // Skip tanks far from camera
+            if (camPos) {
+                _tankWorldPos.setFromMatrixPosition(effects.tankGroup.matrixWorld);
+                if (_tankWorldPos.distanceToSquared(camPos) > maxDistSq) continue;
+            }
+
             if (effects.smoke) {
                 this._emitSmoke(effects.tankGroup, effects.smoke, tankId, effects.opacity);
             }
             if (effects.fire) {
                 this._emitFire(effects.tankGroup);
+            }
+        }
+
+        // 1b. Prune stale entries: dead tanks with no active particles that are far away
+        if (this.tankEffects.size > 20) {
+            for (const [tankId, effects] of this.tankEffects) {
+                if (!effects.smoke && !effects.fire) {
+                    this.tankEffects.delete(tankId);
+                }
             }
         }
 
@@ -195,7 +201,7 @@ class TankDamageEffects {
     // ========================
 
     _createSmokeSystem() {
-        const maxParticles = 100;
+        const maxParticles = 250;
 
         this.smoke = {
             maxParticles,
@@ -350,16 +356,6 @@ class TankDamageEffects {
             );
             _emitOffset.applyMatrix4(tankGroup.matrixWorld);
 
-            // Debug: log first particle per tank to verify positions
-            if (i === 0 && !this._debugLoggedTanks) this._debugLoggedTanks = new Set();
-            if (i === 0 && !this._debugLoggedTanks.has(tankId)) {
-                this._debugLoggedTanks.add(tankId);
-                const dist = Math.sqrt(_emitOffset.x * _emitOffset.x + _emitOffset.y * _emitOffset.y + _emitOffset.z * _emitOffset.z);
-                console.warn('[TankDmgFX] _emitSmoke:', tankId, 'pos:', _emitOffset.x.toFixed(1), _emitOffset.y.toFixed(1), _emitOffset.z.toFixed(1),
-                    'dist:', dist.toFixed(1), 'activeCount:', this.smoke.activeCount,
-                    'visible:', this.smokeSystem.visible, 'drawRange:', this.smokeSystem.geometry.drawRange.count);
-            }
-
             this.smoke.positions[i3] = _emitOffset.x;
             this.smoke.positions[i3 + 1] = _emitOffset.y;
             this.smoke.positions[i3 + 2] = _emitOffset.z;
@@ -484,7 +480,7 @@ class TankDamageEffects {
     // ========================
 
     _createFireSystem() {
-        const maxParticles = 25;
+        const maxParticles = 60;
 
         this.fire = {
             maxParticles,
