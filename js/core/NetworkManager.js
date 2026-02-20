@@ -32,7 +32,9 @@ class NetworkManager {
     this._inputSendInterval = 50; // ms — matches 20 tick/sec server
 
     // Ping measurement
-    this.ping = 0; // latest round-trip time in ms
+    this.ping = 0;           // latest raw round-trip time in ms
+    this.smoothPing = 50;    // exponential moving average of ping
+    this.jitter = 0;         // exponential moving average of ping variance
     this._pingInterval = null;
 
     // Server state for reconciliation
@@ -117,7 +119,12 @@ class NetworkManager {
 
     // Ping response from server
     this.socket.on("pong-measure", (ts) => {
-      this.ping = Date.now() - ts;
+      const rawPing = Date.now() - ts;
+      this.ping = rawPing;
+      // Exponential moving average for stable ping/jitter values
+      const alpha = 0.15;
+      this.smoothPing = this.smoothPing * (1 - alpha) + rawPing * alpha;
+      this.jitter = this.jitter * (1 - alpha) + Math.abs(rawPing - this.smoothPing) * alpha;
     });
 
     this.socket.on("reconnect", () => {
@@ -561,7 +568,7 @@ class NetworkManager {
     this._stopPing();
     this._pingInterval = setInterval(() => {
       if (this.connected) this.socket.emit("ping-measure", Date.now());
-    }, 2000);
+    }, 1000);
   }
 
   _stopPing() {
@@ -590,9 +597,10 @@ class NetworkManager {
     // Remove all inputs the server has already processed
     this.pendingInputs = this.pendingInputs.filter((i) => i.seq > serverSeq);
 
-    // Save client's predicted position before reconciliation
+    // Save client's predicted state before reconciliation
     const clientTheta = localTank.state.theta;
     const clientPhi = localTank.state.phi;
+    const clientHeading = localTank.state.heading;
 
     // Snap to server state
     localTank.state.theta = serverPlayerState.t;
@@ -631,9 +639,9 @@ class NetworkManager {
       localTank.state.keys = prevKeys;
     }
 
-    // Smooth small corrections: if the reconciled position is close to where
-    // the client predicted, blend gradually to avoid micro-jitter from
-    // floating-point drift or terrain collision differences.
+    // Graduated smooth correction — replaces the old hard snap threshold.
+    // Instead of snapping above 0.015 rad, we blend all errors smoothly.
+    // Larger errors converge faster; small errors converge slowly.
     let thetaErr = localTank.state.theta - clientTheta;
     const phiErr = localTank.state.phi - clientPhi;
     // Normalize theta error to [-PI, PI]
@@ -641,13 +649,25 @@ class NetworkManager {
     while (thetaErr < -Math.PI) thetaErr += Math.PI * 2;
 
     const errMag = Math.abs(thetaErr) + Math.abs(phiErr);
-    if (errMag > 0 && errMag < 0.015) {
-      // Smooth correction — blend 25% per tick for gradual convergence.
-      // Threshold covers collision pushes (~0.006-0.012 rad) to prevent snapping.
-      localTank.state.theta = clientTheta + thetaErr * 0.25;
-      localTank.state.phi = clientPhi + phiErr * 0.25;
+
+    if (errMag > 0.1) {
+      // Teleport-level error (>48 units): snap immediately (portal, respawn, etc.)
+      // No blending — the server position after replay is already set.
+    } else if (errMag > 0) {
+      // Graduated blend: larger errors converge faster, small errors converge slowly.
+      // blendFactor: 0.15 for tiny errors, up to 0.6 for medium errors.
+      const blendFactor = 0.15 + MathUtils.smoothstep(Math.min(1, errMag / 0.05)) * 0.45;
+      localTank.state.theta = clientTheta + thetaErr * blendFactor;
+      localTank.state.phi = clientPhi + phiErr * blendFactor;
     }
-    // Large errors (≥0.015 rad ≈ 7.2 units on r=480): snap immediately (already done)
+
+    // Smooth heading correction — prevents turret/body orientation flicker
+    let headingErr = localTank.state.heading - clientHeading;
+    while (headingErr > Math.PI) headingErr -= Math.PI * 2;
+    while (headingErr < -Math.PI) headingErr += Math.PI * 2;
+    if (Math.abs(headingErr) < 0.5 && Math.abs(headingErr) > 0.001) {
+      localTank.state.heading = MathUtils.lerpAngle(clientHeading, localTank.state.heading, 0.3);
+    }
   }
 
   // ========================

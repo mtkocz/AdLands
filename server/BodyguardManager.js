@@ -598,14 +598,7 @@ class BodyguardManager {
     for (const [fwd, rgt] of probes) {
       const pPhi = bg.phi + (fwdPhi * fwd + rgtPhi * rgt) / R;
       const pTh = bg.theta + (fwdTh * fwd + rgtTh * rgt) / R;
-      // Precise polar hole check using actual hex boundary polygon
-      if (this.worldGen.isInsidePolarHole(pTh + planetRotation, pPhi)) {
-        return true;
-      }
-      const result = this.worldGen.getNearestTile(pTh + planetRotation, pPhi);
-      if (result && this.terrain.getElevationAtTileIndex(result.tileIndex) > 0) {
-        return true;
-      }
+      if (this.worldGen.isTerrainBlocked(pTh + planetRotation, pPhi)) return true;
     }
     return false;
   }

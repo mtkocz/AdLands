@@ -96,6 +96,8 @@ class Dashboard {
     this._cachedProfile = { level: null, crypto: null, rank: null, rankTotal: null };
     this._formattedStrings = { damage: "", tics: "", crypto: "" };
     this._serverCryptoMode = false; // When true, updateCrypto() owns the roller (skip updateProfile crypto)
+    this._cryptoPaused = false; // When true, updateCrypto() buffers value but doesn't display (during death terminal)
+    this._pendingCrypto = null; // Buffered crypto value while paused
 
     // Slot-machine roller state
     this._rollerColumns = [];
@@ -1563,6 +1565,12 @@ class Dashboard {
     this._serverCryptoMode = true; // Server owns the roller from now on
     this._lastServerCrypto = amount; // Track for economy pre-checks
 
+    // Buffer value during death terminal (don't update display)
+    if (this._cryptoPaused) {
+      this._pendingCrypto = amount;
+      return;
+    }
+
     // Handle negative balance display
     const cryptoEl = document.querySelector(".header-crypto-amount");
     if (cryptoEl) {
@@ -1609,6 +1617,21 @@ class Dashboard {
         cryptoToNext: cryptoForNextLevel,
         cryptoPercent: levelProgress * 100,
       });
+    }
+  }
+
+  /** Pause crypto display updates (during death terminal sequence) */
+  pauseCrypto() {
+    this._cryptoPaused = true;
+    this._pendingCrypto = null;
+  }
+
+  /** Resume crypto display updates and apply any buffered value */
+  resumeCrypto() {
+    this._cryptoPaused = false;
+    if (this._pendingCrypto !== null) {
+      this.updateCrypto(this._pendingCrypto);
+      this._pendingCrypto = null;
     }
   }
 

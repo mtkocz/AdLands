@@ -435,6 +435,62 @@ class WorldGenerator {
   }
 
   // ========================
+  // PRECOMPUTED TERRAIN BLOCKED GRID
+  // ========================
+
+  /**
+   * Build a precomputed blocked-grid for fast terrain collision.
+   * Resolution: 256 theta x 128 phi = 32KB Uint8Array.
+   * Each cell stores 1 if blocked (elevated terrain or polar hole), 0 otherwise.
+   * Must be called after generate() and terrain.generate().
+   * @param {Object} terrain - TerrainElevation instance
+   */
+  buildBlockedGrid(terrain) {
+    const GRID_T = 256;
+    const GRID_P = 128;
+    this._blockedGrid = new Uint8Array(GRID_T * GRID_P);
+    this._BLOCKED_GRID_T = GRID_T;
+    this._BLOCKED_GRID_P = GRID_P;
+
+    for (let pt = 0; pt < GRID_T; pt++) {
+      for (let pp = 0; pp < GRID_P; pp++) {
+        const theta = (pt / GRID_T) * Math.PI * 2;
+        const phi = (pp / GRID_P) * Math.PI;
+
+        // Check polar hole
+        if (this.isInsidePolarHole(theta, phi)) {
+          this._blockedGrid[pp * GRID_T + pt] = 1;
+          continue;
+        }
+
+        // Check terrain elevation
+        const result = this.getNearestTile(theta, phi);
+        if (result && terrain.getElevationAtTileIndex(result.tileIndex) > 0) {
+          this._blockedGrid[pp * GRID_T + pt] = 1;
+        }
+      }
+    }
+
+    console.log(`[WorldGenerator] Built blocked grid (${GRID_T}x${GRID_P} = ${this._blockedGrid.length} bytes)`);
+  }
+
+  /**
+   * O(1) terrain blocked check. Returns true if position is on elevated terrain or in a polar hole.
+   * @param {number} theta - World-space theta (already includes planet rotation)
+   * @param {number} phi
+   * @returns {boolean}
+   */
+  isTerrainBlocked(theta, phi) {
+    // Normalize theta to [0, 2PI]
+    let t = theta % (Math.PI * 2);
+    if (t < 0) t += Math.PI * 2;
+
+    const ti = Math.min(this._BLOCKED_GRID_T - 1, (t / (Math.PI * 2) * this._BLOCKED_GRID_T) | 0);
+    const pi = Math.min(this._BLOCKED_GRID_P - 1, (phi / Math.PI * this._BLOCKED_GRID_P) | 0);
+    return this._blockedGrid[pi * this._BLOCKED_GRID_T + ti] === 1;
+  }
+
+  // ========================
   // POLAR BOUNDARY POLYGON (precise collision)
   // ========================
 

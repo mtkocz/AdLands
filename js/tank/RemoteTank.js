@@ -36,7 +36,7 @@ class RemoteTank {
       },
     };
 
-    // Target state (latest from server, we interpolate toward this)
+    // Target state (latest from server, used as fallback for dead-reckoning)
     this.targetState = {
       theta: this.state.theta,
       phi: this.state.phi,
@@ -44,6 +44,12 @@ class RemoteTank {
       speed: 0,
       turretAngle: 0,
     };
+
+    // Snapshot interpolation buffer — stores timestamped server states.
+    // Instead of lerping toward one jittery target, we buffer 2-3 snapshots
+    // and interpolate between them at a fixed rate for smooth motion.
+    this.snapshotBuffer = [];
+    this.interpolationDelay = 100; // ms — render 100ms behind real-time (2 server ticks)
 
     // Health
     this.hp = playerData.hp || 100;
@@ -152,7 +158,7 @@ class RemoteTank {
 
   /**
    * Set the target state from a server update.
-   * The render loop will interpolate toward this.
+   * Pushes a timestamped snapshot into the interpolation buffer.
    */
   setTargetState(serverState) {
     const wasDead = this.isDead;
@@ -161,22 +167,35 @@ class RemoteTank {
     this.hp = serverState.hp;
 
     if (this.isDead) {
-      // Dead tanks ignore server position updates — the client-side
-      // update() loop handles planet rotation counter-rotation only.
-      // This prevents any interpolation-caused movement after death.
       if (!wasDead) {
-        // Just died — freeze speed immediately
         this.state.speed = 0;
         this.targetState.speed = 0;
+        this.snapshotBuffer.length = 0;
       }
       return;
     }
 
+    // Update targetState as fallback for dead-reckoning when buffer runs dry
     this.targetState.theta = serverState.t;
     this.targetState.phi = serverState.p;
     this.targetState.heading = serverState.h;
     this.targetState.speed = serverState.s;
     this.targetState.turretAngle = serverState.ta;
+
+    // Push timestamped snapshot into buffer
+    this.snapshotBuffer.push({
+      t: performance.now(),
+      theta: serverState.t,
+      phi: serverState.p,
+      heading: serverState.h,
+      speed: serverState.s,
+      turretAngle: serverState.ta,
+    });
+
+    // Keep only the last 6 snapshots (300ms at 20Hz)
+    while (this.snapshotBuffer.length > 6) {
+      this.snapshotBuffer.shift();
+    }
   }
 
   /**
@@ -222,51 +241,71 @@ class RemoteTank {
       return;
     }
 
-    // Dead-reckon the target forward using speed + heading between server ticks.
-    // This fills in smooth motion between 20Hz updates instead of the target
-    // staying static and the lerp decelerating into a sawtooth pattern.
-    if (this.targetState.speed !== 0) {
-      const heading = this.targetState.heading;
-      const phi = this.targetState.phi;
-      const velocityNorth = Math.cos(heading) * this.targetState.speed * dt60;
-      const velocityEast = -Math.sin(heading) * this.targetState.speed * dt60;
-      const sinPhi = Math.sin(phi);
-      const safeSinPhi = Math.abs(sinPhi) < 0.01 ? 0.01 : sinPhi;
-      this.targetState.phi -= velocityNorth;
-      this.targetState.theta += velocityEast / safeSinPhi;
+    // Snapshot interpolation: render at a fixed delay behind real-time.
+    // This decouples network jitter from visual movement — remote tanks
+    // move at a perfectly smooth rate regardless of packet arrival timing.
+    const renderTime = performance.now() - this.interpolationDelay;
+    const buf = this.snapshotBuffer;
+
+    let interpolated = false;
+
+    if (buf.length >= 2) {
+      // Find the two snapshots bracketing renderTime
+      let fromSnap = null;
+      let toSnap = null;
+      for (let i = buf.length - 2; i >= 0; i--) {
+        if (buf[i].t <= renderTime) {
+          fromSnap = buf[i];
+          toSnap = buf[i + 1];
+          break;
+        }
+      }
+
+      if (fromSnap && toSnap) {
+        const span = toSnap.t - fromSnap.t;
+        const progress = span > 0 ? Math.min(1, (renderTime - fromSnap.t) / span) : 1;
+
+        this.state.theta = MathUtils.lerpAngle2Pi(fromSnap.theta, toSnap.theta, progress);
+        this.state.phi = fromSnap.phi + (toSnap.phi - fromSnap.phi) * progress;
+        this.state.heading = MathUtils.lerpAngle(fromSnap.heading, toSnap.heading, progress);
+        this.state.speed = fromSnap.speed + (toSnap.speed - fromSnap.speed) * progress;
+        this.state.turretAngle = MathUtils.lerpAngle(fromSnap.turretAngle, toSnap.turretAngle, progress);
+        interpolated = true;
+      }
     }
+
+    if (!interpolated) {
+      // Not enough snapshots or renderTime is ahead — fall back to
+      // dead-reckoning from latest known state + lerp (original approach)
+      if (this.targetState.speed !== 0) {
+        const heading = this.targetState.heading;
+        const phi = this.targetState.phi;
+        const velocityNorth = Math.cos(heading) * this.targetState.speed * dt60;
+        const velocityEast = -Math.sin(heading) * this.targetState.speed * dt60;
+        const sinPhi = Math.sin(phi);
+        const safeSinPhi = Math.abs(sinPhi) < 0.01 ? 0.01 : sinPhi;
+        this.targetState.phi -= velocityNorth;
+        this.targetState.theta += velocityEast / safeSinPhi;
+      }
+      this.targetState.theta -= (SharedPhysics.PLANET_ROTATION_SPEED * dt60) / 60;
+      while (this.targetState.theta < 0) this.targetState.theta += Math.PI * 2;
+      while (this.targetState.theta >= Math.PI * 2) this.targetState.theta -= Math.PI * 2;
+
+      const lerpSpeed = 10;
+      const t = Math.min(1, lerpSpeed * deltaTime);
+      this.state.theta = MathUtils.lerpAngle2Pi(this.state.theta, this.targetState.theta, t);
+      this.state.phi = this.state.phi + (this.targetState.phi - this.state.phi) * t;
+      this.state.heading = MathUtils.lerpAngle(this.state.heading, this.targetState.heading, t);
+      this.state.speed = this.state.speed + (this.targetState.speed - this.state.speed) * t;
+      this.state.turretAngle = MathUtils.lerpAngle(this.state.turretAngle, this.targetState.turretAngle, t);
+    }
+
     // Counter planet rotation for ALL remote tanks (they're scene children,
     // not hexGroup children, so they need active counter-rotation to stay
     // fixed on the planet surface — even when dead or stationary)
-    this.targetState.theta -= (SharedPhysics.PLANET_ROTATION_SPEED * dt60) / 60;
-    while (this.targetState.theta < 0) this.targetState.theta += Math.PI * 2;
-    while (this.targetState.theta >= Math.PI * 2) this.targetState.theta -= Math.PI * 2;
-
-    // Interpolation speed — lower for smoother motion with dead reckoning
-    const lerpSpeed = 10;
-    const t = Math.min(1, lerpSpeed * deltaTime);
-
-    // Interpolate position
-    this.state.theta = MathUtils.lerpAngle2Pi(
-      this.state.theta,
-      this.targetState.theta,
-      t
-    );
-    this.state.phi = this.state.phi + (this.targetState.phi - this.state.phi) * t;
-    this.state.heading = MathUtils.lerpAngle(
-      this.state.heading,
-      this.targetState.heading,
-      t
-    );
-    this.state.speed =
-      this.state.speed + (this.targetState.speed - this.state.speed) * t;
-
-    // Interpolate turret
-    this.state.turretAngle = MathUtils.lerpAngle(
-      this.state.turretAngle,
-      this.targetState.turretAngle,
-      t
-    );
+    this.state.theta -= (SharedPhysics.PLANET_ROTATION_SPEED * dt60) / 60;
+    while (this.state.theta < 0) this.state.theta += Math.PI * 2;
+    while (this.state.theta >= Math.PI * 2) this.state.theta -= Math.PI * 2;
 
     // Update wiggle phase based on speed
     const speed = Math.abs(this.state.speed);
@@ -438,6 +477,7 @@ class RemoteTank {
   revive() {
     this.isDead = false;
     this.state.isDead = false;
+    this.snapshotBuffer.length = 0;
     if (this.state.lean) this.state.lean.initialized = false;
     this.isFading = false;
     this.damageState = "healthy";
@@ -465,6 +505,8 @@ class RemoteTank {
     this.targetState.theta = theta;
     this.targetState.phi = phi;
     this.targetState.heading = heading;
+    // Clear snapshot buffer so we don't interpolate from old positions
+    this.snapshotBuffer.length = 0;
     // Reset lean to prevent false acceleration spike
     if (this.state.lean) this.state.lean.initialized = false;
   }

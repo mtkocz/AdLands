@@ -18,6 +18,7 @@ const TerrainElevation = require("./shared/TerrainElevation");
 const TuskGlobalChat = require("./TuskGlobalChat");
 const BodyguardManager = require("./BodyguardManager");
 const ServerBotManager = require("./ServerBotManager");
+const DEBUG_LOG = process.env.DEBUG_LOG === "1";
 
 // Bot name pool (same as client for consistency)
 const BOT_NAME_POOL = [
@@ -132,6 +133,9 @@ class GameRoom {
       worldResult.polarTileIndices
     );
 
+    // Build O(1) terrain blocked grid for fast collision checks
+    this.worldGen.buildBlockedGrid(this.terrain);
+
     // Compute portal positions in spherical coords from world data
     this.portalPositions = [];
     this.portalPositionsByTile = new Map(); // tileIndex → { theta, phi }
@@ -169,7 +173,7 @@ class GameRoom {
       this.portalNeighborPositions.set(portalIdx, positions);
     }
 
-    console.log(`[Room ${roomId}] ${this.portalPositions.length} portals computed from world gen`);
+    DEBUG_LOG && console.log(`[Room ${roomId}] ${this.portalPositions.length} portals computed from world gen`);
 
     // ---- Snapshot original world state (before sponsor modifications) ----
     this._worldResult = worldResult;
@@ -192,7 +196,7 @@ class GameRoom {
     if (this.sponsorStore) {
       this.sponsors = this.sponsorStore.getAll().filter(s => s.active !== false && !s.paused);
       this._applySponsorClusters(worldResult);
-      console.log(`[Room ${roomId}] Applied ${this.sponsors.length} sponsor clusters`);
+      DEBUG_LOG && console.log(`[Room ${roomId}] Applied ${this.sponsors.length} sponsor clusters`);
     }
 
     // Prepare serialized world data to send to clients on connect
@@ -240,7 +244,7 @@ class GameRoom {
     // Restore faction capture state from Firestore BEFORE accepting connections
     // (must complete before tick loop or welcome messages reference this data)
     if (process.env.RESET_TERRITORIES === "true") {
-      console.log(`[Room ${this.roomId}] RESET_TERRITORIES=true — starting with fresh territory state`);
+      DEBUG_LOG && console.log(`[Room ${this.roomId}] RESET_TERRITORIES=true — starting with fresh territory state`);
     } else {
       await this.loadCaptureState();
     }
@@ -251,7 +255,7 @@ class GameRoom {
     this._tickRunning = true;
     this._nextTickTime = Date.now();
     this._scheduleTick();
-    console.log(`[Room ${this.roomId}] Started at ${this.tickRate} ticks/sec`);
+    DEBUG_LOG && console.log(`[Room ${this.roomId}] Started at ${this.tickRate} ticks/sec`);
 
     // Load all Firestore profiles into cache (async, non-blocking)
     this._loadAllProfiles();
@@ -318,8 +322,50 @@ class GameRoom {
       }
 
       this.profileCacheReady = true;
+
+      // Reconcile: players who connected before the cache was ready
+      // need their cache entries linked to their live sockets
+      for (const [socketId, player] of this.players) {
+        if (!player.uid) continue;
+        const cacheKey = `${player.uid}:${player.profileIndex}`;
+        let entry = this.profileCacheIndex.get(cacheKey);
+        if (entry) {
+          entry.isOnline = true;
+          entry.socketId = socketId;
+          entry.name = player.name;
+          entry.level = player.level || 1;
+          entry.totalCrypto = player.totalCrypto || 0;
+          entry.territoryCaptured = player.territoryCaptured || 0;
+          entry.avatarColor = player.avatarColor || entry.avatarColor;
+          if (entry.faction !== player.faction) {
+            const oldArr = this.factionProfileCache[entry.faction];
+            const idx = oldArr.indexOf(entry);
+            if (idx !== -1) oldArr.splice(idx, 1);
+            const newArr = this.factionProfileCache[player.faction];
+            if (newArr.indexOf(entry) === -1) newArr.push(entry);
+            entry.faction = player.faction;
+          }
+        } else {
+          entry = {
+            uid: player.uid,
+            profileIndex: player.profileIndex,
+            name: player.name,
+            faction: player.faction,
+            level: player.level || 1,
+            totalCrypto: player.totalCrypto || 0,
+            territoryCaptured: player.territoryCaptured || 0,
+            lastPlayedAt: null,
+            avatarColor: player.avatarColor || null,
+            isOnline: true,
+            socketId: socketId,
+          };
+          this.factionProfileCache[player.faction].push(entry);
+          this.profileCacheIndex.set(cacheKey, entry);
+        }
+      }
+
       this._markRanksDirty();
-      console.log(`[Room ${this.roomId}] Loaded ${snapshot.size} profiles from Firestore`);
+      DEBUG_LOG && console.log(`[Room ${this.roomId}] Loaded ${snapshot.size} profiles from Firestore`);
     } catch (err) {
       console.warn(`[Room ${this.roomId}] Failed to load profiles from Firestore:`, err.message);
       this.profileCacheReady = false;
@@ -343,7 +389,7 @@ class GameRoom {
     if (this.tuskChat && typeof this.tuskChat.destroy === "function") {
       this.tuskChat.destroy();
     }
-    console.log(`[Room ${this.roomId}] Stopped`);
+    DEBUG_LOG && console.log(`[Room ${this.roomId}] Stopped`);
   }
 
   /**
@@ -499,7 +545,7 @@ class GameRoom {
       captureState,
     });
 
-    console.log(`[Room ${this.roomId}] Sponsors reloaded: ${this.sponsors.length} active, broadcast to clients`);
+    DEBUG_LOG && console.log(`[Room ${this.roomId}] Sponsors reloaded: ${this.sponsors.length} active, broadcast to clients`);
   }
 
   // ========================
@@ -542,7 +588,7 @@ class GameRoom {
     if (this._worldPayload) this._worldPayload.moonSponsors = moonSponsors;
     this.io.to(this.roomId).emit("moon-sponsors-reloaded", { moonSponsors });
     const active = moonSponsors.filter(Boolean).length;
-    console.log(`[Room ${this.roomId}] Moon sponsors reloaded: ${active} active, broadcast to clients`);
+    DEBUG_LOG && console.log(`[Room ${this.roomId}] Moon sponsors reloaded: ${active} active, broadcast to clients`);
   }
 
   _generateBillboardOrbits() {
@@ -605,7 +651,7 @@ class GameRoom {
     if (this._worldPayload) this._worldPayload.billboardSponsors = billboardSponsors;
     this.io.to(this.roomId).emit("billboard-sponsors-reloaded", { billboardSponsors });
     const active = billboardSponsors.filter(Boolean).length;
-    console.log(`[Room ${this.roomId}] Billboard sponsors reloaded: ${active} active, broadcast to clients`);
+    DEBUG_LOG && console.log(`[Room ${this.roomId}] Billboard sponsors reloaded: ${active} active, broadcast to clients`);
   }
 
   // ========================
@@ -703,7 +749,8 @@ class GameRoom {
           const oldArr = this.factionProfileCache[entry.faction];
           const idx = oldArr.indexOf(entry);
           if (idx !== -1) oldArr.splice(idx, 1);
-          this.factionProfileCache[player.faction].push(entry);
+          const newArr = this.factionProfileCache[player.faction];
+          if (newArr.indexOf(entry) === -1) newArr.push(entry);
           entry.faction = player.faction;
         }
         entry.isOnline = true;
@@ -807,7 +854,7 @@ class GameRoom {
     // Send roster immediately so the player doesn't wait for the next 10s broadcast
     this._sendRosterToPlayer(socket.id);
 
-    console.log(
+    DEBUG_LOG && console.log(
       `[Room ${this.roomId}] ${player.name} (${player.faction}) joined. ` +
       `Players: ${this.players.size}, Bots: ${this.botManager.bots.size}`
     );
@@ -993,7 +1040,7 @@ class GameRoom {
     this._recomputeRanks();
     this._sendRosterToPlayer(socket.id);
 
-    console.log(
+    DEBUG_LOG && console.log(
       `[Room ${this.roomId}] ${saved.name} (${saved.faction}) reconnected ` +
       `after ${((Date.now() - session.disconnectedAt) / 1000).toFixed(1)}s. ` +
       `Players: ${this.players.size}`
@@ -1032,7 +1079,7 @@ class GameRoom {
       const uid = player.uid;
       const cleanupTimer = setTimeout(() => {
         this.disconnectedSessions.delete(uid);
-        console.log(`[Room ${this.roomId}] Reconnect grace expired for ${player.name} (${uid})`);
+        DEBUG_LOG && console.log(`[Room ${this.roomId}] Reconnect grace expired for ${player.name} (${uid})`);
       }, RECONNECT_GRACE_MS);
 
       this.disconnectedSessions.set(player.uid, {
@@ -1051,7 +1098,7 @@ class GameRoom {
     // Spawn a bot to maintain population balance
     this.botManager.onHumanLeave(this.players.size);
 
-    console.log(
+    DEBUG_LOG && console.log(
       `[Room ${this.roomId}] ${player.name} left. Players: ${this.players.size}, Bots: ${this.botManager.bots.size}`
     );
   }
@@ -1199,7 +1246,7 @@ class GameRoom {
       });
       const count = Object.keys(clusters).length;
       if (count > 0) {
-        console.log(`[Room ${this.roomId}] Saved capture state (${count} active clusters)`);
+        DEBUG_LOG && console.log(`[Room ${this.roomId}] Saved capture state (${count} active clusters)`);
       }
     } catch (err) {
       console.warn(`[Room ${this.roomId}] Failed to save capture state:`, err.message);
@@ -1242,7 +1289,7 @@ class GameRoom {
           }
         }
       }
-      console.log(`[Room ${this.roomId}] Restored capture state (${restored} clusters, ${timersRestored} sponsor timers from ${data.savedAt?.toDate?.() || "unknown"})`);
+      DEBUG_LOG && console.log(`[Room ${this.roomId}] Restored capture state (${restored} clusters, ${timersRestored} sponsor timers from ${data.savedAt?.toDate?.() || "unknown"})`);
       return true;
     } catch (err) {
       console.warn(`[Room ${this.roomId}] Failed to load capture state:`, err.message);
@@ -1254,7 +1301,7 @@ class GameRoom {
   _autoSaveAllPlayers() {
     const authCount = [...this.players.values()].filter(p => p.uid).length;
     if (authCount === 0) return;
-    console.log(`[Room ${this.roomId}] Auto-saving ${authCount} player profile(s)...`);
+    DEBUG_LOG && console.log(`[Room ${this.roomId}] Auto-saving ${authCount} player profile(s)...`);
     this.saveAllPlayers().catch(err => {
       console.warn(`[Room ${this.roomId}] Auto-save error:`, err.message);
     });
@@ -1334,7 +1381,8 @@ class GameRoom {
           const oldArr = this.factionProfileCache[newEntry.faction];
           const idx = oldArr.indexOf(newEntry);
           if (idx !== -1) oldArr.splice(idx, 1);
-          this.factionProfileCache[player.faction].push(newEntry);
+          const newArr = this.factionProfileCache[player.faction];
+          if (newArr.indexOf(newEntry) === -1) newArr.push(newEntry);
           newEntry.faction = player.faction;
         }
         newEntry.isOnline = true;
@@ -1377,7 +1425,7 @@ class GameRoom {
       this._markRanksDirty();
     }
 
-    console.log(
+    DEBUG_LOG && console.log(
       `[Room ${this.roomId}] ${player.name} switched profile → ${player.faction} Lv${player.level}`
     );
   }
@@ -1437,7 +1485,7 @@ class GameRoom {
     // Broadcast updated level to all via rank recomputation
     this._markRanksDirty();
 
-    console.log(`[Room ${this.roomId}] ${player.name} purchased level ${nextLevel} for ¢${cost}`);
+    DEBUG_LOG && console.log(`[Room ${this.roomId}] ${player.name} purchased level ${nextLevel} for ¢${cost}`);
   }
 
   /** Handle loadout slot unlock purchase */
@@ -1469,7 +1517,7 @@ class GameRoom {
       socket.emit("slot-unlocked", { slotId, cost });
     }
 
-    console.log(`[Room ${this.roomId}] ${player.name} unlocked slot ${slotId} for ¢${cost}`);
+    DEBUG_LOG && console.log(`[Room ${this.roomId}] ${player.name} unlocked slot ${slotId} for ¢${cost}`);
   }
 
   // ========================
@@ -1660,7 +1708,7 @@ class GameRoom {
 
     // Validate portal tile index
     if (!this.portalPositionsByTile.has(portalTileIndex)) {
-      console.log(`[Room ${this.roomId}] Invalid portal tile ${portalTileIndex} from ${player.name}`);
+      DEBUG_LOG && console.log(`[Room ${this.roomId}] Invalid portal tile ${portalTileIndex} from ${player.name}`);
       return;
     }
 
@@ -1749,7 +1797,7 @@ class GameRoom {
       this._markRanksDirty();
     }
 
-    console.log(
+    DEBUG_LOG && console.log(
       `[Room ${this.roomId}] ${player.name} ${wasWaiting ? 'deployed' : 'fast-traveled'} at portal tile ${portalTileIndex}`
     );
   }
@@ -1835,8 +1883,9 @@ class GameRoom {
     // 2. Update projectiles
     this._updateProjectiles(dt);
 
-    // 3. Update territory capture
-    this._updateCapture();
+    // 3. Update territory capture (every other tick — 10Hz is imperceptible for
+    //    seconds-long captures, halves getNearestTile calls from capture logic)
+    if (this.tick % 2 === 0) this._updateCapture();
 
     // 4. Broadcast world state to all clients
     this._broadcastState();
@@ -2006,9 +2055,7 @@ class GameRoom {
     for (const [fwd, rgt] of probes) {
       const pPhi = phi + (fwdPhi * fwd + rgtPhi * rgt) / R;
       const pTh  = theta + (fwdTh * fwd + rgtTh * rgt) / R;
-      if (this.worldGen.isInsidePolarHole(pTh + this.planetRotation, pPhi)) return true;
-      const result = this.worldGen.getNearestTile(pTh + this.planetRotation, pPhi);
-      if (result && this.terrain.getElevationAtTileIndex(result.tileIndex) > 0) return true;
+      if (this.worldGen.isTerrainBlocked(pTh + this.planetRotation, pPhi)) return true;
     }
     return false;
   }
@@ -2573,7 +2620,7 @@ class GameRoom {
       // Process tic gains per faction
       for (const faction of FACTIONS) {
         if (counts[faction] <= 0) continue;
-        const ticsToAdd = counts[faction] * this.tickDelta;
+        const ticsToAdd = counts[faction] * this.tickDelta * 2; // x2 to compensate for running at half tick rate
 
         // Subtract from enemy factions (split evenly among those with tics)
         let enemyCount = 0;
@@ -2635,8 +2682,10 @@ class GameRoom {
     }
 
     // 2a. Award tic crypto to contributing players (once per second)
+    // Counter increments at half tick rate (capture runs every other tick),
+    // so threshold is halved to maintain 1-second cadence.
     this.captureSecondCounter++;
-    if (this.captureSecondCounter >= this.tickRate) {
+    if (this.captureSecondCounter >= this.tickRate / 2) {
       this.captureSecondCounter = 0;
       for (const [id, player] of this.players) {
         if (player.isDead || player.waitingForPortal) continue;
@@ -2801,7 +2850,7 @@ class GameRoom {
       factionCrypto[faction] = Math.round(total);
     }
 
-    console.log(`[HoldingCrypto] R:${factionCrypto.rust} C:${factionCrypto.cobalt} V:${factionCrypto.viridian}`);
+    DEBUG_LOG && console.log(`[HoldingCrypto] R:${factionCrypto.rust} C:${factionCrypto.cobalt} V:${factionCrypto.viridian}`);
 
     // Award to each alive player and emit event (include cluster IDs for client visuals)
     for (const [id, player] of this.players) {
@@ -2978,7 +3027,8 @@ class GameRoom {
         const oldArr = this.factionProfileCache[entry.faction];
         const idx = oldArr.indexOf(entry);
         if (idx !== -1) oldArr.splice(idx, 1);
-        this.factionProfileCache[newFaction].push(entry);
+        const newArr = this.factionProfileCache[newFaction];
+        if (newArr.indexOf(entry) === -1) newArr.push(entry);
         entry.faction = newFaction;
       }
     }
@@ -3046,7 +3096,8 @@ class GameRoom {
           const oldArr = this.factionProfileCache[entry.faction];
           const idx = oldArr.indexOf(entry);
           if (idx !== -1) oldArr.splice(idx, 1);
-          this.factionProfileCache[faction].push(entry);
+          const newArr = this.factionProfileCache[faction];
+          if (newArr.indexOf(entry) === -1) newArr.push(entry);
           entry.faction = faction;
         }
       }
@@ -3074,7 +3125,7 @@ class GameRoom {
   _recomputeRanks() {
     if (!this._rankLogOnce) {
       this._rankLogOnce = true;
-      console.log(`[Ranks] Real-time ranking active: level DESC → live crypto DESC`);
+      DEBUG_LOG && console.log(`[Ranks] Real-time ranking active: level DESC → live crypto DESC`);
     }
     const now = Date.now();
     for (const faction of FACTIONS) {
@@ -3092,10 +3143,15 @@ class GameRoom {
             entry.level = p.level || 1;
             entry.totalCrypto = p.crypto || 0; // Live balance (not stale p.totalCrypto)
             entry.territoryCaptured = p.territoryCaptured || entry.territoryCaptured;
+            // Ensure socket linkage stays current (heals startup race + edge cases)
+            entry.socketId = id;
+            entry.isOnline = true;
           }
         }
 
         for (const entry of this.factionProfileCache[faction]) {
+          // Skip entries stranded in wrong faction array (stale from failed move)
+          if (entry.faction !== faction) continue;
           if (entry.socketId) {
             // Exclude players who haven't deployed yet (still choosing portal)
             const player = this.players.get(entry.socketId);

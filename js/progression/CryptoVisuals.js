@@ -253,11 +253,10 @@ class CryptoVisuals {
 
     this.floatingNumbers.push(floater);
 
-    // Set initial screen position
+    // Set initial screen position (transform avoids layout recalc)
     const screen = this._worldToScreen(worldPos);
     if (screen) {
-      element.style.left = `${Math.round(screen.x)}px`;
-      element.style.top = `${Math.round(screen.y)}px`;
+      element.style.transform = `translate(${Math.round(screen.x)}px, ${Math.round(screen.y)}px)`;
     }
   }
 
@@ -283,12 +282,12 @@ class CryptoVisuals {
     element.textContent = `-¢${absAmount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
     element.style.cssText = `
       position: fixed;
-      left: ${Math.round(startX)}px;
-      top: ${Math.round(startY)}px;
+      left: 0;
+      top: 0;
       z-index: 251;
       pointer-events: none;
       white-space: nowrap;
-      transform: translateX(-50%);
+      transform: translate(calc(${Math.round(startX)}px - 50%), ${Math.round(startY)}px);
       opacity: 0.8;
       color: #ff4444;
       font-family: ${counterStyle.fontFamily};
@@ -486,8 +485,7 @@ class CryptoVisuals {
         if (progress > 0.6) {
           opacity *= 1 - (progress - 0.6) / 0.4;
         }
-        floater.element.style.left = `${Math.round(floater.startX)}px`;
-        floater.element.style.top = `${Math.round(floater.startY + driftY)}px`;
+        floater.element.style.transform = `translate(calc(${Math.round(floater.startX)}px - 50%), ${Math.round(floater.startY + driftY)}px)`;
         floater.element.style.opacity = opacity;
         continue;
       }
@@ -527,10 +525,9 @@ class CryptoVisuals {
         finalOpacity *= 1 - fadeProgress;
       }
 
-      // Apply position and opacity
+      // Apply position and opacity (transform avoids layout recalc)
       floater.element.style.display = "block";
-      floater.element.style.left = `${Math.round(screen.x)}px`;
-      floater.element.style.top = `${Math.round(screen.y)}px`;
+      floater.element.style.transform = `translate(${Math.round(screen.x)}px, ${Math.round(screen.y)}px)`;
       floater.element.style.opacity = finalOpacity;
     }
   }

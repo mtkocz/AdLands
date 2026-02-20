@@ -20,6 +20,10 @@ class PlayerTags {
     this._tempPos = new THREE.Vector3();
     this._surfaceNormal = new THREE.Vector3();
     this._cameraToTank = new THREE.Vector3();
+
+    // Frame throttle: skip N-1 out of every N frames (0 = no throttle)
+    this._frameCounter = 0;
+    this._frameSkip = 2; // Update every 3rd frame (~20fps at 60fps)
   }
 
   /**
@@ -275,6 +279,7 @@ class PlayerTags {
     const cameraDistanceFromSurface = cameraPos.length() - this.sphereRadius;
 
     // Hide all tags if camera is too far from surface (zoom out)
+    // Always runs (no throttle) so culling is instant
     if (cameraDistanceFromSurface > ZOOM_CUTOFF) {
       for (const [, tagData] of this.tags) {
         if (tagData.lastVisible !== false) {
@@ -283,6 +288,12 @@ class PlayerTags {
         }
       }
       return;
+    }
+
+    // Frame throttle: skip updates to reduce DOM/projection work
+    // ZOOM_CUTOFF check above always runs so tags hide instantly on zoom-out
+    if (this._frameSkip > 0) {
+      if (++this._frameCounter % (this._frameSkip + 1) !== 0) return;
     }
 
     // Calculate zoom-based opacity (affects all tags uniformly during zoom)

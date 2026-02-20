@@ -989,14 +989,8 @@ class ServerBotManager {
    * Uses WorldGenerator's spatial hash (server-side).
    */
   _isPositionBlocked(theta, phi) {
-    // Add planet rotation offset for world-space tile lookups
     const rotTheta = theta + (this._planetRotation || 0);
-    // Polar hole check (precise polygon boundary)
-    if (this.worldGen.isInsidePolarHole(rotTheta, phi)) return true;
-    // Terrain elevation check
-    const result = this.worldGen.getNearestTile(rotTheta, phi);
-    if (result && this.terrain.getElevationAtTileIndex(result.tileIndex) > 0) return true;
-    return false;
+    return this.worldGen.isTerrainBlocked(rotTheta, phi);
   }
 
   // ========================
@@ -1174,12 +1168,7 @@ class ServerBotManager {
     for (const [fwd, rgt] of probes) {
       const pPhi = phi + (fwdPhi * fwd + rgtPhi * rgt) / R;
       const pTh = theta + (fwdTh * fwd + rgtTh * rgt) / R;
-
-      // Polar hole check
-      if (this.worldGen.isInsidePolarHole(pTh + planetRotation, pPhi)) return true;
-      // Terrain elevation check
-      const result = this.worldGen.getNearestTile(pTh + planetRotation, pPhi);
-      if (result && this.terrain.getElevationAtTileIndex(result.tileIndex) > 0) return true;
+      if (this.worldGen.isTerrainBlocked(pTh + planetRotation, pPhi)) return true;
     }
     return false;
   }
@@ -1738,15 +1727,19 @@ class ServerBotManager {
     bot.lastChatTime = now;
     this._lastGlobalChatTime = now;
 
+    // Global broadcasts use lobby mode (visible to everyone in all tabs).
+    // Proximity messages randomly pick faction or lobby, matching client-side bot behavior.
+    const mode = global ? "lobby" : (Math.random() < 0.5 ? "lobby" : "faction");
+
     const chatData = {
       id: bot.id,
       name: bot.name,
       faction: bot.faction,
       text,
-      mode: "faction",
+      mode,
     };
 
-    console.log(`[BotChat] ${bot.name} (${category}${global ? ", global" : ""}): ${text}`);
+    console.log(`[BotChat] ${bot.name} (${category}, ${mode}${global ? ", global" : ""}): ${text}`);
 
     if (global) {
       // Broadcast to entire room
@@ -1776,12 +1769,12 @@ class ServerBotManager {
 
   /**
    * Called when a bot kills someone.
-   * Guaranteed to fire (only cooldowns can block). 15% chance global.
+   * Guaranteed to fire (only cooldowns can block). 30% chance global.
    */
   onBotKill(bot, victimId, players) {
     const victimName = this._resolveName(victimId, players);
     if (!victimName) return;
-    const isGlobal = Math.random() < 0.15;
+    const isGlobal = Math.random() < 0.30;
     this._botChat(bot, "onKill", { victim: victimName }, isGlobal, true);
   }
 
@@ -1811,7 +1804,7 @@ class ServerBotManager {
   }
 
   /**
-   * Random idle chatter — called from update() on a timer. Proximity-only.
+   * Random idle chatter — called from update() on a timer. Broadcast globally.
    */
   _updateIdleChat(dt) {
     this._idleChatTimer -= dt;
@@ -1822,7 +1815,7 @@ class ServerBotManager {
     const alive = this._botArray.filter(b => !b.isDead && !b.isDeploying);
     if (alive.length === 0) return;
     const bot = alive[Math.floor(Math.random() * alive.length)];
-    this._botChat(bot, "idle", {});
+    this._botChat(bot, "idle", {}, true);
   }
 
   // ========================

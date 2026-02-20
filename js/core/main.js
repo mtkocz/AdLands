@@ -885,6 +885,9 @@
     pingMarkerSystem.suppressed = true;
     tuskCommentary.onDeath(playerFaction);
 
+    // Freeze crypto counter during terminal (respawn cost deducted after)
+    if (window.dashboard) window.dashboard.pauseCrypto();
+
     // Track death for title system (lifespan in seconds)
     const lifespan = (Date.now() - (tank.lastSpawnTime || Date.now())) / 1000;
     titleSystem.trackDeath(lifespan);
@@ -919,6 +922,8 @@
     visualEffects.onSignalLostComplete = () => {
       tuskCommentary.setSuppressed(!uiVisible);
       pingMarkerSystem.suppressed = false;
+      // Resume crypto counter (was frozen during terminal)
+      if (window.dashboard) window.dashboard.resumeCrypto();
       fastTravel.startRespawn();
     };
   };
@@ -2469,14 +2474,15 @@
     if (!ringAnimState.isDirty) return;
     ringAnimState.isDirty = false;
 
-    // Sync canvas changes to post-processing texture (only when actually redrawn)
-    if (territoryRingOverlayTexture) territoryRingOverlayTexture.needsUpdate = true;
-
-    // Skip drawing if fully transparent — just clear
+    // Skip drawing if fully transparent — just clear (avoid GPU texture upload for subsequent frames)
     if (ringAnimState.opacity < 0.01) {
       ctx.clearRect(0, 0, w, h);
+      if (territoryRingOverlayTexture) territoryRingOverlayTexture.needsUpdate = true;
       return;
     }
+
+    // Sync canvas changes to post-processing texture (only when actually redrawn)
+    if (territoryRingOverlayTexture) territoryRingOverlayTexture.needsUpdate = true;
 
     // Clear canvas (full viewport)
     ctx.clearRect(0, 0, w, h);

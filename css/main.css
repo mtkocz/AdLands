@@ -615,28 +615,22 @@ canvas {
 .owner-badge.rust {
     background: rgba(204, 68, 68, 0.3);
     color: var(--rust-light);
-    /* Pixelated outline in faction color */
-    filter: drop-shadow(2px 0 0 var(--rust)) drop-shadow(-2px 0 0 var(--rust))
-        drop-shadow(0 2px 0 var(--rust)) drop-shadow(0 -2px 0 var(--rust));
+    /* Single-pass SVG filter (replaces 4x drop-shadow chain) */
+    filter: url(#pixel-outline-rust);
 }
 
 .owner-badge.cobalt {
     background: rgba(68, 119, 204, 0.3);
     color: var(--cobalt-light);
-    /* Pixelated outline in faction color */
-    filter: drop-shadow(2px 0 0 var(--cobalt))
-        drop-shadow(-2px 0 0 var(--cobalt)) drop-shadow(0 2px 0 var(--cobalt))
-        drop-shadow(0 -2px 0 var(--cobalt));
+    /* Single-pass SVG filter (replaces 4x drop-shadow chain) */
+    filter: url(#pixel-outline-cobalt);
 }
 
 .owner-badge.viridian {
     background: rgba(68, 170, 68, 0.3);
     color: var(--viridian-light);
-    /* Pixelated outline in faction color */
-    filter: drop-shadow(2px 0 0 var(--viridian))
-        drop-shadow(-2px 0 0 var(--viridian))
-        drop-shadow(0 2px 0 var(--viridian))
-        drop-shadow(0 -2px 0 var(--viridian));
+    /* Single-pass SVG filter (replaces 4x drop-shadow chain) */
+    filter: url(#pixel-outline-viridian);
 }
 
 #contested-badge {
@@ -2054,6 +2048,8 @@ body.tip-dragging .chat-mention.tip-highlight {
 /* Floating Crypto Numbers - GTA1 Style, pixel perfect, CYAN accent */
 .crypto-floating-number {
     position: absolute;
+    left: 0;
+    top: 0;
     font-family: var(--font-small);
     /* text-transform removed - preserve case */
     font-size: var(--font-size-small);

@@ -393,6 +393,17 @@
           }
 
           remoteTank.setTargetState(state);
+
+          // Adaptive interpolation delay based on measured ping/jitter.
+          // Low-ping players get tighter responsiveness; high-ping players
+          // get enough buffer to absorb jitter without extrapolation stalls.
+          if (remoteTank.snapshotBuffer) {
+            const halfRtt = net.smoothPing / 2;
+            const adaptiveDelay = Math.max(60, Math.min(200, halfRtt + net.jitter * 2 + 50));
+            // Slow blend (5%) to prevent oscillation
+            remoteTank.interpolationDelay = remoteTank.interpolationDelay * 0.95 + adaptiveDelay * 0.05;
+          }
+
           // Sync server-authoritative rank
           if (state.r !== undefined && state.r !== remoteTank.rank) {
             remoteTank.rank = state.r;
@@ -933,6 +944,9 @@
         // null it out so no stale callback fires after we've already entered fast travel).
         visualEffects.onSignalLostComplete = null;
       }
+
+      // Resume crypto counter (was frozen during terminal)
+      if (window.dashboard) window.dashboard.resumeCrypto();
 
       // Do NOT reset the tank here — keep isDead=true during portal selection.
       // The tank only resets when the player clicks "Deploy Here!" in

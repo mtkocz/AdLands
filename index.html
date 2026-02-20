@@ -110,6 +110,25 @@
                         <feMergeNode in="SourceGraphic" />
                     </feMerge>
                 </filter>
+                <!-- Faction-colored pixel outlines (single-pass, replaces 4x drop-shadow chains) -->
+                <filter id="pixel-outline-rust" x="-10%" y="-10%" width="120%" height="120%" color-interpolation-filters="sRGB">
+                    <feMorphology operator="dilate" radius="2" in="SourceAlpha" result="expand" />
+                    <feFlood flood-color="#cc4444" flood-opacity="1" result="factionColor" />
+                    <feComposite in="factionColor" in2="expand" operator="in" result="outline" />
+                    <feMerge><feMergeNode in="outline" /><feMergeNode in="SourceGraphic" /></feMerge>
+                </filter>
+                <filter id="pixel-outline-cobalt" x="-10%" y="-10%" width="120%" height="120%" color-interpolation-filters="sRGB">
+                    <feMorphology operator="dilate" radius="2" in="SourceAlpha" result="expand" />
+                    <feFlood flood-color="#3b82f6" flood-opacity="1" result="factionColor" />
+                    <feComposite in="factionColor" in2="expand" operator="in" result="outline" />
+                    <feMerge><feMergeNode in="outline" /><feMergeNode in="SourceGraphic" /></feMerge>
+                </filter>
+                <filter id="pixel-outline-viridian" x="-10%" y="-10%" width="120%" height="120%" color-interpolation-filters="sRGB">
+                    <feMorphology operator="dilate" radius="2" in="SourceAlpha" result="expand" />
+                    <feFlood flood-color="#4ade80" flood-opacity="1" result="factionColor" />
+                    <feComposite in="factionColor" in2="expand" operator="in" result="outline" />
+                    <feMerge><feMergeNode in="outline" /><feMergeNode in="SourceGraphic" /></feMerge>
+                </filter>
             </defs>
         </svg>
 
