@@ -17,6 +17,7 @@ const WorldGenerator = require("./WorldGenerator");
 const TerrainElevation = require("./shared/TerrainElevation");
 const TuskGlobalChat = require("./TuskGlobalChat");
 const BodyguardManager = require("./BodyguardManager");
+const ServerBotManager = require("./ServerBotManager");
 
 // Bot name pool (same as client for consistency)
 const BOT_NAME_POOL = [
@@ -221,6 +222,10 @@ class GameRoom {
     // Server-authoritative bodyguards (2 per commander, synced to all clients)
     this.bodyguardManager = new BodyguardManager(480, this.terrain, this.worldGen);
 
+    // Server-authoritative bots (population fills to 150, despawn as humans join)
+    this.botManager = new ServerBotManager(480, this.terrain, this.worldGen, this.clusterCaptureState);
+    this.botManager.setIO(io, roomId);
+
     // ---- All-profile faction ranking cache ----
     // Stores ALL profiles from Firestore (online + offline) for true faction ranking.
     // Updated live as connected players' stats change.
@@ -239,6 +244,9 @@ class GameRoom {
     } else {
       await this.loadCaptureState();
     }
+
+    // Initialize server bots (pathfinder + initial population)
+    this.botManager.init(this.players.size);
 
     this._tickRunning = true;
     this._nextTickTime = Date.now();
@@ -790,6 +798,9 @@ class GameRoom {
       avatarColor: player.avatarColor || null,
     });
 
+    // Despawn a bot to maintain population balance
+    this.botManager.onHumanJoin(player);
+
     // Recompute ranks and commander for all factions
     this._recomputeRanks();
 
@@ -798,7 +809,7 @@ class GameRoom {
 
     console.log(
       `[Room ${this.roomId}] ${player.name} (${player.faction}) joined. ` +
-      `Players: ${this.players.size}`
+      `Players: ${this.players.size}, Bots: ${this.botManager.bots.size}`
     );
 
     return player;
@@ -1037,8 +1048,11 @@ class GameRoom {
     // Tell everyone the player left
     this.io.to(this.roomId).emit("player-left", { id: socketId });
 
+    // Spawn a bot to maintain population balance
+    this.botManager.onHumanLeave(this.players.size);
+
     console.log(
-      `[Room ${this.roomId}] ${player.name} left. Players: ${this.players.size}`
+      `[Room ${this.roomId}] ${player.name} left. Players: ${this.players.size}, Bots: ${this.botManager.bots.size}`
     );
   }
 
@@ -1810,6 +1824,14 @@ class GameRoom {
     // 1.5. Update bodyguard bots (AI + physics + terrain collision)
     this.bodyguardManager.update(dt, this.players, this.planetRotation);
 
+    // 1.6. Update server bots (AI + physics + terrain collision + combat)
+    this.nextProjectileId = this.botManager.update(
+      dt, this.players, this.projectiles, this.planetRotation, this.tick, this.nextProjectileId
+    );
+
+    // 1.7. Tank-to-tank collision (player-player + player-bot)
+    this._resolveTankCollisions();
+
     // 2. Update projectiles
     this._updateProjectiles(dt);
 
@@ -1859,6 +1881,106 @@ class GameRoom {
     }
 
     this.lastTickTime = now;
+  }
+
+  // ========================
+  // TANK-TO-TANK COLLISION
+  // ========================
+
+  _resolveTankCollisions() {
+    const COLLISION_RADIUS = 3.0 / 480;   // ~0.00625 rad (matches bot collision)
+    const MIN_DIST = COLLISION_RADIUS * 2;
+    const PUSH_BUFFER = 1.5 / 480;
+    const SPEED_DAMPEN = 0.3;             // Retain 30% speed on collision
+
+    // --- Player-Player collisions (brute force, max ~1225 pairs) ---
+    const playerArray = [];
+    for (const [id, p] of this.players) {
+      if (!p.isDead && !p.waitingForPortal) playerArray.push(p);
+    }
+    for (let i = 0; i < playerArray.length; i++) {
+      for (let j = i + 1; j < playerArray.length; j++) {
+        this._resolvePairCollision(playerArray[i], playerArray[j], MIN_DIST, PUSH_BUFFER, SPEED_DAMPEN);
+      }
+    }
+
+    // --- Player-Bot collisions (using bot spatial hash for efficiency) ---
+    const bm = this.botManager;
+    if (!bm || !bm._spatialHash) return;
+
+    for (let i = 0; i < playerArray.length; i++) {
+      const player = playerArray[i];
+      const cellKey = bm._getCellKey(player.theta, player.phi);
+      const neighborKeys = bm._getNeighborKeys(cellKey);
+
+      for (const key of neighborKeys) {
+        const cellBots = bm._spatialHash.get(key);
+        if (!cellBots) continue;
+
+        for (const bot of cellBots) {
+          if (bot.isDead || bot.isDeploying) continue;
+          this._resolvePairCollision(player, bot, MIN_DIST, PUSH_BUFFER, SPEED_DAMPEN);
+        }
+      }
+    }
+  }
+
+  _resolvePairCollision(a, b, minDist, pushBuffer, speedDampen) {
+    let dTheta = b.theta - a.theta;
+    while (dTheta > Math.PI) dTheta -= Math.PI * 2;
+    while (dTheta < -Math.PI) dTheta += Math.PI * 2;
+    const dPhi = b.phi - a.phi;
+    const dist = Math.sqrt(dTheta * dTheta + dPhi * dPhi);
+
+    if (dist >= minDist) return;
+
+    const overlap = minDist - dist;
+    const push = overlap / 2 + pushBuffer;
+    const nx = dist > 0.0001 ? dTheta / dist : 1;
+    const ny = dist > 0.0001 ? dPhi / dist : 0;
+
+    // Terrain-aware push: try both, then one-sided, then perpendicular
+    const newATheta = a.theta - nx * push;
+    const newAPhi = a.phi - ny * push;
+    const newBTheta = b.theta + nx * push;
+    const newBPhi = b.phi + ny * push;
+
+    const aBlocked = this._isTerrainBlockedAt(newATheta, newAPhi, a.heading, a.speed);
+    const bBlocked = this._isTerrainBlockedAt(newBTheta, newBPhi, b.heading, b.speed);
+
+    if (!aBlocked && !bBlocked) {
+      a.theta = newATheta; a.phi = newAPhi;
+      b.theta = newBTheta; b.phi = newBPhi;
+    } else if (!aBlocked) {
+      a.theta -= nx * push * 2; a.phi -= ny * push * 2;
+    } else if (!bBlocked) {
+      b.theta += nx * push * 2; b.phi += ny * push * 2;
+    } else {
+      // Both blocked — try perpendicular push (slide along wall)
+      const perpX = -ny;
+      const perpY = nx;
+      const perpATheta = a.theta - perpX * push;
+      const perpAPhi = a.phi - perpY * push;
+      const perpBTheta = b.theta + perpX * push;
+      const perpBPhi = b.phi + perpY * push;
+
+      const aPerpBlocked = this._isTerrainBlockedAt(perpATheta, perpAPhi, a.heading, a.speed);
+      const bPerpBlocked = this._isTerrainBlockedAt(perpBTheta, perpBPhi, b.heading, b.speed);
+
+      if (!aPerpBlocked && !bPerpBlocked) {
+        a.theta = perpATheta; a.phi = perpAPhi;
+        b.theta = perpBTheta; b.phi = perpBPhi;
+      } else if (!aPerpBlocked) {
+        a.theta = perpATheta; a.phi = perpAPhi;
+      } else if (!bPerpBlocked) {
+        b.theta = perpBTheta; b.phi = perpBPhi;
+      }
+      // Both fully blocked: just dampen speed, no position change
+    }
+
+    // Dampen speed (softer than killing to 0)
+    a.speed *= speedDampen;
+    b.speed *= speedDampen;
   }
 
   _isTerrainBlockedAt(theta, phi, heading, speed) {
@@ -1998,7 +2120,8 @@ class GameRoom {
             player.speed = 0;
 
             const killer = this.players.get(p.ownerId);
-            const killerName = killer ? killer.name : "Unknown";
+            const killerBot = this.botManager.bots.get(p.ownerId);
+            const killerName = killer ? killer.name : (killerBot ? killerBot.name : "Unknown");
             const victimName = player.name;
 
             this.io.to(this.roomId).emit("player-killed", {
@@ -2009,6 +2132,11 @@ class GameRoom {
               victimName: victimName,
               killerName: killerName,
             });
+
+            // Bot killer trash talk (bot killed a human player)
+            if (killerBot) {
+              this.botManager.onBotKill(killerBot, id, this.players);
+            }
 
             // Track kill/death streaks for Tusk
             if (killer) {
@@ -2080,7 +2208,61 @@ class GameRoom {
           break;
         }
       }
-      // Check bodyguard hits (after player checks)
+      // Check bot hits (after player checks)
+      if (!hitPlayer) {
+        const botHit = this.botManager.checkProjectileHit(testTheta, testPhi, p.ownerFaction, p.ownerId);
+        if (botHit) {
+          const damage = p.damage || 25;
+          const died = this.botManager.applyDamage(botHit.id, damage, p.ownerId, this.players);
+
+          // Award crypto to human attacker
+          const attacker = this.players.get(p.ownerId);
+          if (attacker) {
+            attacker.crypto += Math.floor(damage);
+          }
+
+          this.io.to(this.roomId).emit("player-hit", {
+            targetId: botHit.id,
+            attackerId: p.ownerId,
+            damage,
+            hp: botHit.hp,
+            theta: p.theta,
+            phi: p.phi,
+          });
+
+          if (died) {
+            const killer = this.players.get(p.ownerId);
+            const killerBot = this.botManager.bots.get(p.ownerId);
+            const killerName = killer ? killer.name : (killerBot?.name || "Unknown");
+            this.io.to(this.roomId).emit("player-killed", {
+              victimId: botHit.id,
+              killerId: p.ownerId,
+              victimFaction: botHit.faction,
+              killerFaction: p.ownerFaction,
+              victimName: botHit.name,
+              killerName,
+            });
+
+            // Award kill bounty to human attacker (no Tusk commentary for bot kills)
+            if (killer) {
+              killer.crypto += 500;
+              killer.killStreak = (killer.killStreak || 0) + 1;
+              killer.totalKills = (killer.totalKills || 0) + 1;
+            }
+
+            // Bot killer trash talk
+            if (killerBot) {
+              this.botManager.onBotKill(killerBot, botHit.id, this.players);
+            }
+          }
+
+          this.projectiles.splice(i, 1);
+          hitPlayer = true;
+          break;
+        }
+      }
+
+      // Check bodyguard hits (after player and bot checks)
       if (!hitPlayer) {
         const bgHit = this.bodyguardManager.checkProjectileHit(
           testTheta, testPhi, p.ownerFaction
@@ -2364,6 +2546,17 @@ class GameRoom {
       clusterTankCounts.get(result.clusterId)[player.faction]++;
     }
 
+    // 1b. Count server bots in clusters
+    for (const [id, bot] of this.botManager.bots) {
+      if (bot.isDead || bot.isDeploying) continue;
+      if (bot.currentClusterId === null) continue;
+
+      if (!clusterTankCounts.has(bot.currentClusterId)) {
+        clusterTankCounts.set(bot.currentClusterId, { rust: 0, cobalt: 0, viridian: 0 });
+      }
+      clusterTankCounts.get(bot.currentClusterId)[bot.faction]++;
+    }
+
     // 2. Process capture logic for each cluster with players in it
     const territoryChanges = [];
 
@@ -2640,6 +2833,17 @@ class GameRoom {
       if (!this.players.has(id)) delete playerStates[id];
     }
 
+    // Remove stale bot entries
+    const botStates = this.botManager.getStatesForBroadcast();
+    for (const id in playerStates) {
+      if (id.startsWith("bot-") && !botStates[id]) delete playerStates[id];
+    }
+
+    // Merge bot states
+    for (const id in botStates) {
+      playerStates[id] = botStates[id];
+    }
+
     // Update/create entries for current players
     for (const [id, p] of this.players) {
       let state = playerStates[id];
@@ -2728,6 +2932,9 @@ class GameRoom {
         avatarColor: p.avatarColor || null,
       };
     }
+    // Merge bot full states
+    const botStates = this.botManager.getFullStatesForWelcome();
+    Object.assign(states, botStates);
     return states;
   }
 
