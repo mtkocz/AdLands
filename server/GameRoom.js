@@ -75,8 +75,8 @@ class GameRoom {
     // Server-authoritative billboard orbital parameters (18 billboards across 2 tiers)
     this.billboardOrbits = this._generateBillboardOrbits();
 
-    // Tick loop: 20 ticks/second
-    this.tickRate = 20;
+    // Tick loop: 10 ticks/second
+    this.tickRate = 10;
     this.tickDelta = 1 / this.tickRate;
     this.tickInterval = null;
     this.lastTickTime = Date.now();

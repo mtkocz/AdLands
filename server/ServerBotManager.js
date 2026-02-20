@@ -197,7 +197,7 @@ class ServerBotManager {
     this.worldGen = worldGen;
     this.clusterCaptureState = clusterCaptureState;
 
-    this.TARGET_TOTAL = 150;
+    this.TARGET_TOTAL = 75;
     this.bots = new Map(); // botId → bot state
     this._botArray = []; // Flat array for iteration (synced with Map)
     this._nextBotId = 0;
