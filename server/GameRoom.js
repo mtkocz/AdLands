@@ -2069,12 +2069,14 @@ class GameRoom {
       const player = playerArray[i];
       const cellKey = bm._getCellKey(player.theta, player.phi);
       const neighborKeys = bm._getNeighborKeys(cellKey);
+      const nCount = bm._neighborKeysCount;
 
-      for (const key of neighborKeys) {
-        const cellBots = bm._spatialHash.get(key);
+      for (let ni = 0; ni < nCount; ni++) {
+        const cellBots = bm._spatialHash.get(neighborKeys[ni]);
         if (!cellBots) continue;
 
-        for (const bot of cellBots) {
+        for (let ci = 0; ci < cellBots.length; ci++) {
+          const bot = cellBots[ci];
           if (bot.isDead || bot.isDeploying) continue;
           this._resolvePairCollision(player, bot, MIN_DIST, PUSH_BUFFER, SPEED_DAMPEN);
         }

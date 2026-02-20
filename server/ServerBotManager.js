@@ -507,7 +507,9 @@ class ServerBotManager {
       }
 
       // 1. AI decides virtual keys
-      this._updateInput(bot, dt);
+      // Expensive separation + collision threat only on stagger ticks (30/tick)
+      const isStagger = (j >= startIdx && j < endIdx);
+      this._updateInput(bot, dt, isStagger);
 
       // 2. Physics: apply keys to heading and speed
       this._updatePhysics(bot, dt);
@@ -522,7 +524,7 @@ class ServerBotManager {
       bot.currentClusterId = this.worldGen.getClusterIdAt(bot.theta + planetRotation, bot.phi);
 
       // 6. Combat (staggered with AI updates)
-      if (j >= startIdx && j < endIdx) {
+      if (isStagger) {
         nextProjectileId = this._updateCombat(bot, dt, players, planetRotation, projectiles, nextProjectileId, now);
       }
     }
@@ -686,15 +688,24 @@ class ServerBotManager {
   // INPUT SIMULATION
   // ========================
 
-  _updateInput(bot, dt) {
-    bot.keys = { w: false, a: false, s: false, d: false };
+  _updateInput(bot, dt, isStaggerTick) {
+    // Reuse keys object instead of allocating new one
+    bot.keys.w = false; bot.keys.a = false; bot.keys.s = false; bot.keys.d = false;
 
     if (bot._terrainAvoidTimer > 0) {
       bot._terrainAvoidTimer -= dt;
     }
 
-    // Omnidirectional separation force (anti-bunching, applied before all other steering)
-    const separation = this._calculateSeparation(bot);
+    // Expensive spatial queries only on stagger ticks (30 bots/tick)
+    if (isStaggerTick) {
+      bot._cachedSeparation = this._calculateSeparation(bot);
+      const threat = this._detectCollisionThreat(bot);
+      bot._cachedThreat = threat.threat;
+      bot._cachedSteer = threat.steerDirection;
+    }
+
+    // Apply cached separation force
+    const separation = bot._cachedSeparation || 0;
     if (separation !== 0) {
       bot.wanderDirection += separation;
     }
@@ -725,8 +736,8 @@ class ServerBotManager {
       }
     }
 
-    // Collision avoidance (bots + terrain)
-    const avoidance = this._detectCollisionThreat(bot);
+    // Use cached collision avoidance
+    const avoidance = { threat: bot._cachedThreat || 0, steerDirection: bot._cachedSteer || 0 };
 
     let headingDiff = bot.wanderDirection - bot.heading;
     while (headingDiff > Math.PI) headingDiff -= Math.PI * 2;
@@ -802,11 +813,13 @@ class ServerBotManager {
 
     const cellKey = this._getCellKey(bot.theta, bot.phi);
     const neighborKeys = this._getNeighborKeys(cellKey);
+    const nCount = this._neighborKeysCount;
 
-    for (const key of neighborKeys) {
-      const cellBots = this._spatialHash.get(key);
+    for (let ni = 0; ni < nCount; ni++) {
+      const cellBots = this._spatialHash.get(neighborKeys[ni]);
       if (!cellBots) continue;
-      for (const other of cellBots) {
+      for (let ci = 0; ci < cellBots.length; ci++) {
+        const other = cellBots[ci];
         if (other === bot || other.isDead || other.isDeploying) continue;
 
         let dTheta = bot.theta - other.theta;
@@ -846,11 +859,13 @@ class ServerBotManager {
     // Use spatial hash for nearby bot checks
     const cellKey = this._getCellKey(bot.theta, bot.phi);
     const neighborKeys = this._getNeighborKeys(cellKey);
+    const nCount = this._neighborKeysCount;
 
-    for (const key of neighborKeys) {
-      const cellBots = this._spatialHash.get(key);
+    for (let ni = 0; ni < nCount; ni++) {
+      const cellBots = this._spatialHash.get(neighborKeys[ni]);
       if (!cellBots) continue;
-      for (const otherBot of cellBots) {
+      for (let ci = 0; ci < cellBots.length; ci++) {
+        const otherBot = cellBots[ci];
         if (otherBot === bot || otherBot.isDead || otherBot.isDeploying) continue;
         const threat = this._calculateThreat(
           bot.theta, bot.phi, bot.heading,
@@ -1800,18 +1815,21 @@ class ServerBotManager {
   _getNeighborKeys(cellKey) {
     const phiIdx = Math.floor(cellKey / SPATIAL_GRID_THETA);
     const thetaIdx = cellKey % SPATIAL_GRID_THETA;
-    const keys = [];
+    // Reuse pre-allocated array (max 9 neighbors)
+    if (!this._neighborKeysBuf) this._neighborKeysBuf = new Int32Array(9);
+    let count = 0;
 
     for (let dp = -1; dp <= 1; dp++) {
       const p = phiIdx + dp;
       if (p < 0 || p >= SPATIAL_GRID_PHI) continue;
       for (let dt = -1; dt <= 1; dt++) {
         const t = (thetaIdx + dt + SPATIAL_GRID_THETA) % SPATIAL_GRID_THETA;
-        keys.push(p * SPATIAL_GRID_THETA + t);
+        this._neighborKeysBuf[count++] = p * SPATIAL_GRID_THETA + t;
       }
     }
 
-    return keys;
+    this._neighborKeysCount = count;
+    return this._neighborKeysBuf;
   }
 
 }
