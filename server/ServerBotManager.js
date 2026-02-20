@@ -454,6 +454,8 @@ class ServerBotManager {
     this._pathfindCount = 0; // Reset per-tick pathfind budget
     this._planetRotation = planetRotation; // Store for use in sub-methods
 
+    const _b0 = Date.now();
+
     // Deploy bots whose timers have expired
     for (const bot of this._botArray) {
       if (!bot.isDeploying) continue;
@@ -479,6 +481,8 @@ class ServerBotManager {
       this.coordinators[faction].update(alive, this.coordinators, now);
     }
 
+    const _b1 = Date.now();
+
     // Staggered AI state updates (30 bots per tick for 300 bots = 10-tick rotation)
     const botsPerTick = Math.max(1, Math.ceil(this._botArray.length / 10));
     const startIdx = this._aiUpdateIndex;
@@ -491,6 +495,9 @@ class ServerBotManager {
     }
 
     this._aiUpdateIndex = endIdx >= this._botArray.length ? 0 : endIdx;
+
+    const _b2 = Date.now();
+    let _inputMs = 0, _physMs = 0, _moveMs = 0, _combatMs = 0;
 
     // Every-tick updates for all bots
     for (let j = 0; j < this._botArray.length; j++) {
@@ -509,13 +516,19 @@ class ServerBotManager {
       // 1. AI decides virtual keys
       // Expensive separation + collision threat only on stagger ticks (30/tick)
       const isStagger = (j >= startIdx && j < endIdx);
+      let _s = Date.now();
       this._updateInput(bot, dt, isStagger);
+      _inputMs += Date.now() - _s;
 
       // 2. Physics: apply keys to heading and speed
+      _s = Date.now();
       this._updatePhysics(bot, dt);
+      _physMs += Date.now() - _s;
 
       // 3. Movement on sphere with pole avoidance
+      _s = Date.now();
       this._moveOnSphere(bot, planetRotation, dt);
+      _moveMs += Date.now() - _s;
 
       // 4. Terrain collision (5-probe wall-sliding)
       // (handled inside _moveOnSphere)
@@ -525,15 +538,41 @@ class ServerBotManager {
 
       // 6. Combat (staggered with AI updates)
       if (isStagger) {
+        _s = Date.now();
         nextProjectileId = this._updateCombat(bot, dt, players, planetRotation, projectiles, nextProjectileId, now);
+        _combatMs += Date.now() - _s;
       }
     }
+
+    const _b3 = Date.now();
 
     // Rebuild spatial hash (used by player-bot collision in GameRoom + bot AI separation)
     this._rebuildSpatialHash();
 
+    const _b4 = Date.now();
+
     // Idle trash talk
     this._updateIdleChat(dt);
+
+    // Sub-phase timing (every 100 ticks)
+    if (!this._botTickCount) this._botTickCount = 0;
+    if (!this._botPhaseSum) this._botPhaseSum = { coord: 0, ai: 0, input: 0, phys: 0, move: 0, combat: 0, hash: 0, total: 0 };
+    const bp = this._botPhaseSum;
+    bp.coord += _b1 - _b0;
+    bp.ai += _b2 - _b1;
+    bp.input += _inputMs;
+    bp.phys += _physMs;
+    bp.move += _moveMs;
+    bp.combat += _combatMs;
+    bp.hash += _b4 - _b3;
+    bp.total += _b4 - _b0;
+    this._botTickCount++;
+    if (this._botTickCount >= 100) {
+      const n = this._botTickCount;
+      console.warn(`[Bot] coord=${(bp.coord/n).toFixed(0)} ai=${(bp.ai/n).toFixed(0)} input=${(bp.input/n).toFixed(0)} phys=${(bp.phys/n).toFixed(0)} move=${(bp.move/n).toFixed(0)} combat=${(bp.combat/n).toFixed(0)} hash=${(bp.hash/n).toFixed(0)} total=${(bp.total/n).toFixed(0)}ms`);
+      this._botTickCount = 0;
+      this._botPhaseSum = { coord: 0, ai: 0, input: 0, phys: 0, move: 0, combat: 0, hash: 0, total: 0 };
+    }
 
     return nextProjectileId;
   }
