@@ -467,12 +467,19 @@ class ServerBotManager {
     }
 
     // Update faction coordinators (every 2 seconds, staggered)
-    for (const [faction, coordinator] of Object.entries(this.coordinators)) {
-      coordinator.update(
-        this._factionBots[faction].filter(b => !b.isDead && !b.isDeploying),
-        this.coordinators,
-        now,
-      );
+    // Reuse pre-allocated arrays to avoid GC from .filter()
+    if (!this._aliveFactionBots) {
+      this._aliveFactionBots = { rust: [], cobalt: [], viridian: [] };
+    }
+    for (const faction of FACTIONS) {
+      const alive = this._aliveFactionBots[faction];
+      alive.length = 0;
+      const factionBots = this._factionBots[faction];
+      for (let i = 0; i < factionBots.length; i++) {
+        const b = factionBots[i];
+        if (!b.isDead && !b.isDeploying) alive.push(b);
+      }
+      this.coordinators[faction].update(alive, this.coordinators, now);
     }
 
     // Staggered AI state updates (30 bots per tick for 150 bots = 5-tick rotation)
@@ -1177,30 +1184,60 @@ class ServerBotManager {
   // ========================
 
   _updateBotCollisions(planetRotation) {
-    // Rebuild spatial hash
-    this._spatialHash.clear();
+    // Rebuild spatial hash — reuse pre-allocated cell arrays to avoid GC
+    if (!this._hashCells) {
+      // One-time setup: pre-allocate cell arrays and neighbor buffer
+      this._hashCells = new Map();
+      this._hashCellLengths = new Map();
+      this._neighborBuf = new Int32Array(9);
+      this._checkedPairs = new Set();
+    }
+    // Reset cell lengths (avoids clearing Map + creating new arrays)
+    for (const key of this._hashCellLengths.keys()) {
+      this._hashCellLengths.set(key, 0);
+    }
+
     for (const bot of this._botArray) {
       if (bot.isDead || bot.isDeploying) continue;
       const key = this._getCellKey(bot.theta, bot.phi);
-      if (!this._spatialHash.has(key)) {
-        this._spatialHash.set(key, []);
+      if (!this._hashCells.has(key)) {
+        this._hashCells.set(key, []);
+        this._hashCellLengths.set(key, 0);
       }
-      this._spatialHash.get(key).push(bot);
+      const arr = this._hashCells.get(key);
+      const len = this._hashCellLengths.get(key);
+      if (len < arr.length) {
+        arr[len] = bot;
+      } else {
+        arr.push(bot);
+      }
+      this._hashCellLengths.set(key, len + 1);
     }
 
-    // Check pairs via neighbor cells
-    const checked = new Set();
-    for (const [cellKey, bots] of this._spatialHash) {
-      const neighborKeys = this._getNeighborKeys(cellKey);
-      for (const nKey of neighborKeys) {
-        const neighborBots = this._spatialHash.get(nKey);
-        if (!neighborBots) continue;
-        for (const botA of bots) {
-          for (const botB of neighborBots) {
+    // Check pairs via neighbor cells — use numeric pair keys to avoid string alloc
+    this._checkedPairs.clear();
+    const nBuf = this._neighborBuf;
+    for (const [cellKey, bots] of this._hashCells) {
+      const cellLen = this._hashCellLengths.get(cellKey);
+      if (cellLen === 0) continue;
+      const nCount = this._getNeighborKeysInto(cellKey, nBuf);
+      for (let ni = 0; ni < nCount; ni++) {
+        const nKey = nBuf[ni];
+        if (!this._hashCells.has(nKey)) continue;
+        const neighborBots = this._hashCells.get(nKey);
+        const nLen = this._hashCellLengths.get(nKey);
+        if (nLen === 0) continue;
+        for (let ai = 0; ai < cellLen; ai++) {
+          const botA = bots[ai];
+          for (let bi = 0; bi < nLen; bi++) {
+            const botB = neighborBots[bi];
             if (botA === botB) continue;
-            const pairKey = botA.id < botB.id ? `${botA.id}|${botB.id}` : `${botB.id}|${botA.id}`;
-            if (checked.has(pairKey)) continue;
-            checked.add(pairKey);
+            // Numeric pair key: min*10000+max avoids string allocation
+            const lo = botA.id < botB.id ? botA.id : botB.id;
+            const hi = botA.id < botB.id ? botB.id : botA.id;
+            const pairKey = lo * 10000 + hi;
+            if (this._checkedPairs.has(pairKey)) continue;
+            this._checkedPairs.add(pairKey);
             this._resolveBotPairCollision(botA, botB, planetRotation);
           }
         }
@@ -1899,6 +1936,29 @@ class ServerBotManager {
     }
 
     return keys;
+  }
+
+  /**
+   * Allocation-free version: writes neighbor keys into a pre-allocated buffer.
+   * @param {number} cellKey
+   * @param {Int32Array} buf - Pre-allocated buffer (at least 9 elements)
+   * @returns {number} Number of keys written
+   */
+  _getNeighborKeysInto(cellKey, buf) {
+    const phiIdx = Math.floor(cellKey / SPATIAL_GRID_THETA);
+    const thetaIdx = cellKey % SPATIAL_GRID_THETA;
+    let count = 0;
+
+    for (let dp = -1; dp <= 1; dp++) {
+      const p = phiIdx + dp;
+      if (p < 0 || p >= SPATIAL_GRID_PHI) continue;
+      for (let dt = -1; dt <= 1; dt++) {
+        const t = (thetaIdx + dt + SPATIAL_GRID_THETA) % SPATIAL_GRID_THETA;
+        buf[count++] = p * SPATIAL_GRID_THETA + t;
+      }
+    }
+
+    return count;
   }
 }
 
