@@ -4293,11 +4293,6 @@ class Planet {
       timer.owner = currentOwner;
       timer.capturedAt = Date.now();
       timer.holdDuration = 0;
-    } else if (!currentOwner && timer.owner) {
-      // Lost ownership
-      timer.owner = null;
-      timer.capturedAt = null;
-      timer.holdDuration = 0;
     }
   }
 

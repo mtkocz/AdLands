@@ -449,29 +449,37 @@ class WorldGenerator {
     const GRID_T = 1024;
     const GRID_P = 512;
     this._blockedGrid = new Uint8Array(GRID_T * GRID_P);
+    this._clusterGrid = new Int16Array(GRID_T * GRID_P);
     this._BLOCKED_GRID_T = GRID_T;
     this._BLOCKED_GRID_P = GRID_P;
 
     for (let pt = 0; pt < GRID_T; pt++) {
       for (let pp = 0; pp < GRID_P; pp++) {
+        const idx = pp * GRID_T + pt;
         const theta = (pt / GRID_T) * Math.PI * 2;
         const phi = (pp / GRID_P) * Math.PI;
 
         // Check polar hole
         if (this.isInsidePolarHole(theta, phi)) {
-          this._blockedGrid[pp * GRID_T + pt] = 1;
+          this._blockedGrid[idx] = 1;
+          this._clusterGrid[idx] = -1;
           continue;
         }
 
-        // Check terrain elevation
+        // Look up nearest tile (used for both blocked + clusterId)
         const result = this.getNearestTile(theta, phi);
-        if (result && terrain.getElevationAtTileIndex(result.tileIndex) > 0) {
-          this._blockedGrid[pp * GRID_T + pt] = 1;
+        if (result) {
+          if (terrain.getElevationAtTileIndex(result.tileIndex) > 0) {
+            this._blockedGrid[idx] = 1;
+          }
+          this._clusterGrid[idx] = result.clusterId !== null ? result.clusterId : -1;
+        } else {
+          this._clusterGrid[idx] = -1;
         }
       }
     }
 
-    console.log(`[WorldGenerator] Built blocked grid (${GRID_T}x${GRID_P} = ${this._blockedGrid.length} bytes)`);
+    console.log(`[WorldGenerator] Built blocked grid (${GRID_T}x${GRID_P} = ${this._blockedGrid.length} bytes) + cluster grid`);
   }
 
   /**
@@ -488,6 +496,21 @@ class WorldGenerator {
     const ti = Math.min(this._BLOCKED_GRID_T - 1, (t / (Math.PI * 2) * this._BLOCKED_GRID_T) | 0);
     const pi = Math.min(this._BLOCKED_GRID_P - 1, (phi / Math.PI * this._BLOCKED_GRID_P) | 0);
     return this._blockedGrid[pi * this._BLOCKED_GRID_T + ti] === 1;
+  }
+
+  /**
+   * O(1) cluster ID lookup from precomputed grid.
+   * @param {number} theta - World-space theta (already includes planet rotation)
+   * @param {number} phi
+   * @returns {number|null} clusterId or null
+   */
+  getClusterIdAt(theta, phi) {
+    let t = theta % (Math.PI * 2);
+    if (t < 0) t += Math.PI * 2;
+    const ti = Math.min(this._BLOCKED_GRID_T - 1, (t / (Math.PI * 2) * this._BLOCKED_GRID_T) | 0);
+    const pi = Math.min(this._BLOCKED_GRID_P - 1, (phi / Math.PI * this._BLOCKED_GRID_P) | 0);
+    const val = this._clusterGrid[pi * this._BLOCKED_GRID_T + ti];
+    return val >= 0 ? val : null;
   }
 
   // ========================

@@ -197,7 +197,7 @@ class ServerBotManager {
     this.worldGen = worldGen;
     this.clusterCaptureState = clusterCaptureState;
 
-    this.TARGET_TOTAL = 75;
+    this.TARGET_TOTAL = 150;
     this.bots = new Map(); // botId → bot state
     this._botArray = []; // Flat array for iteration (synced with Map)
     this._nextBotId = 0;
@@ -514,9 +514,8 @@ class ServerBotManager {
       // 4. Terrain collision (5-probe wall-sliding)
       // (handled inside _moveOnSphere)
 
-      // 5. Update cluster ID
-      const result = this.worldGen.getNearestTile(bot.theta + planetRotation, bot.phi);
-      bot.currentClusterId = (result && result.clusterId !== null) ? result.clusterId : null;
+      // 5. Update cluster ID (O(1) grid lookup)
+      bot.currentClusterId = this.worldGen.getClusterIdAt(bot.theta + planetRotation, bot.phi);
 
       // 6. Combat (staggered with AI updates)
       if (j >= startIdx && j < endIdx) {

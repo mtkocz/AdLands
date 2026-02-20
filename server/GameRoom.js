@@ -2611,19 +2611,19 @@ class GameRoom {
     for (const [id, player] of this.players) {
       if (player.isDead || player.waitingForPortal) continue;
 
-      // getNearestTile expects local-space theta; player.theta is world-space, so add planetRotation
-      const result = this.worldGen.getNearestTile(player.theta + this.planetRotation, player.phi);
-      if (!result || result.clusterId === null) {
+      // O(1) cluster ID lookup from precomputed grid
+      const clusterId = this.worldGen.getClusterIdAt(player.theta + this.planetRotation, player.phi);
+      if (clusterId === null) {
         player.currentClusterId = null;
         continue;
       }
 
-      player.currentClusterId = result.clusterId;
+      player.currentClusterId = clusterId;
 
-      if (!clusterTankCounts.has(result.clusterId)) {
-        clusterTankCounts.set(result.clusterId, { rust: 0, cobalt: 0, viridian: 0 });
+      if (!clusterTankCounts.has(clusterId)) {
+        clusterTankCounts.set(clusterId, { rust: 0, cobalt: 0, viridian: 0 });
       }
-      clusterTankCounts.get(result.clusterId)[player.faction]++;
+      clusterTankCounts.get(clusterId)[player.faction]++;
     }
 
     // 1b. Count server bots in clusters
@@ -2681,7 +2681,9 @@ class GameRoom {
         }
       }
 
-      // Determine ownership (only when capacity is filled)
+      // Determine ownership
+      // Once a faction owns a territory, it stays owned until another faction
+      // takes a clear lead. Ownership never reverts to unclaimed.
       const currentTotal = state.tics.rust + state.tics.cobalt + state.tics.viridian;
       if (currentTotal >= state.capacity) {
         let maxTics = 0;
@@ -2698,10 +2700,12 @@ class GameRoom {
           }
         }
 
-        state.owner = isTied ? null : leadingFaction;
-      } else {
-        state.owner = null;
+        // On tie, keep previous owner (defender's advantage)
+        if (!isTied) {
+          state.owner = leadingFaction;
+        }
       }
+      // Below capacity: keep previous owner (territory doesn't revert to unclaimed)
 
       // Track ownership changes for broadcast
       if (state.owner !== previousOwner) {
@@ -2762,10 +2766,6 @@ class GameRoom {
       } else if (state.owner && state.owner !== timer.owner) {
         timer.owner = state.owner;
         timer.capturedAt = Date.now();
-        timer.holdDuration = 0;
-      } else if (!state.owner && timer.owner) {
-        timer.owner = null;
-        timer.capturedAt = null;
         timer.holdDuration = 0;
       }
     }

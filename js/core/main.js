@@ -2166,7 +2166,9 @@
         state.momentum[faction] = state.tics[faction] - _captureOldTics[faction];
       }
 
-      // Determine ownership (only when capacity is filled)
+      // Determine ownership
+      // Once a faction owns a territory, it stays owned until another faction
+      // takes a clear lead. Ownership never reverts to unclaimed.
       const currentTotal =
         state.tics.rust + state.tics.cobalt + state.tics.viridian;
       if (currentTotal >= state.capacity) {
@@ -2185,12 +2187,12 @@
           }
         }
 
-        // Only assign owner if there's a clear leader (no tie)
-        state.owner = isTied ? null : leadingFaction;
-      } else {
-        // Capacity not filled yet - no owner
-        state.owner = null;
+        // On tie, keep previous owner (defender's advantage)
+        if (!isTied) {
+          state.owner = leadingFaction;
+        }
       }
+      // Below capacity: keep previous owner (territory doesn't revert to unclaimed)
 
       // Track ownership flip for animation
       if (state.owner !== previousOwner) {

@@ -167,8 +167,9 @@ class CryptoVisuals {
     const distToCrypto = cameraPos.distanceTo(worldPosition);
 
     // If planet intersection is closer than crypto position, it's occluded
-    // Small buffer prevents z-fighting at surface
-    return tHit < distToCrypto - 0.5;
+    // Buffer accounts for terrain elevation (up to ~10.5 units above base sphere)
+    // and tank body height above surface
+    return tHit < distToCrypto - 15;
   }
 
   /**
@@ -189,7 +190,7 @@ class CryptoVisuals {
   }
 
   _spawnFloatingNumber(amount, worldPosition) {
-    if (amount === 0) return;
+    if (amount === 0) { console.log('[CryptoVisuals] _spawnFloatingNumber: SKIP amount=0'); return; }
 
     const isSpend = amount < 0;
 
@@ -204,10 +205,12 @@ class CryptoVisuals {
     }
 
     // Skip if no valid world position
-    if (!worldPosition) return;
+    if (!worldPosition) { console.log('[CryptoVisuals] _spawnFloatingNumber: SKIP no worldPosition'); return; }
 
     // Check if position is occluded by planet at spawn time
-    if (this._isOccludedByPlanet(worldPosition)) {
+    const occluded = this._isOccludedByPlanet(worldPosition);
+    console.log(`[CryptoVisuals] _spawnFloatingNumber: ¢${amount} occluded=${occluded} dist=${worldPosition.length().toFixed(1)} planetR=${this.planet?.radius}`);
+    if (occluded) {
       return;
     }
 
