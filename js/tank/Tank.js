@@ -184,47 +184,39 @@ class Tank {
         if (this.state.theta < 0) this.state.theta += Math.PI * 2;
         if (this.state.theta > Math.PI * 2) this.state.theta -= Math.PI * 2;
         this.state.phi = prevPhi;
-        this.state.speed = 0;
+        this.state.speed *= 0.3;
         return true;
       }
       return false;
     }
 
-    const r = this.sphereRadius;
-    const t = Tank._terrainTemp;
-    const sinPhi = Math.sin(this.state.phi);
-    const cosPhi = Math.cos(this.state.phi);
-    const sinTheta = Math.sin(this.state.theta);
-    const cosTheta = Math.cos(this.state.theta);
-
-    // Check center position (no forward probe — reconcile already moved)
-    t.testPos.set(
-      r * sinPhi * cosTheta,
-      r * cosPhi,
-      r * sinPhi * sinTheta,
-    );
-    this.planet.hexGroup.worldToLocal(t.testPos);
-
-    // Precise polar hole check using actual hex boundary polygon
-    const inPolar = this.planet.isInsidePolarHole
-      ? this.planet.isInsidePolarHole(t.testPos)
-      : this.planet.polarTileIndices.has(
-          this.planet.terrainElevation.getNearestTileIndex(t.testPos)
-        );
-    const tileIdx = this.planet.terrainElevation.getNearestTileIndex(t.testPos);
-    if (inPolar || (tileIdx >= 0 &&
-      this.planet.terrainElevation.getElevationAtTileIndex(tileIdx) > 0
-    )) {
-      const dt60 = deltaTime * 60;
-      const rotDelta = (planetRotationSpeed * dt60) / 60;
-      this.state.theta = prevTheta - rotDelta;
-      if (this.state.theta < 0) this.state.theta += Math.PI * 2;
-      if (this.state.theta > Math.PI * 2) this.state.theta -= Math.PI * 2;
-      this.state.phi = prevPhi;
-      this.state.speed = 0;
-      return true;
+    // Use the same _isTerrainBlocked check used for normal movement
+    if (!this._isTerrainBlocked(this.state.theta, this.state.phi)) {
+      return false;
     }
-    return false;
+
+    // Wall-sliding — must match server logic exactly
+    const dt60 = deltaTime * 60;
+    const rotDelta = (planetRotationSpeed * dt60) / 60;
+    let thetaRev = prevTheta - rotDelta;
+    if (thetaRev < 0) thetaRev += Math.PI * 2;
+    if (thetaRev > Math.PI * 2) thetaRev -= Math.PI * 2;
+
+    if (!this._isTerrainBlocked(this.state.theta, prevPhi)) {
+      // Slide along latitude
+      this.state.phi = prevPhi;
+      this.state.speed *= 0.85;
+    } else if (!this._isTerrainBlocked(thetaRev, this.state.phi)) {
+      // Slide along longitude
+      this.state.theta = thetaRev;
+      this.state.speed *= 0.85;
+    } else {
+      // Both blocked — full revert
+      this.state.theta = thetaRev;
+      this.state.phi = prevPhi;
+      this.state.speed *= 0.3;
+    }
+    return true;
   }
 
   setCannonSystem(cannonSystem) {

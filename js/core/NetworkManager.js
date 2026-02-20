@@ -137,6 +137,7 @@ class NetworkManager {
       this.playerName = data.you.name;
       this.playerFaction = data.you.faction;
       this.serverTickRate = data.tickRate;
+      this._inputSendInterval = 1000 / this.serverTickRate;
 
       if (this.onConnected) this.onConnected(data);
     });
@@ -653,20 +654,21 @@ class NetworkManager {
     if (errMag > 0.1) {
       // Teleport-level error (>48 units): snap immediately (portal, respawn, etc.)
       // No blending — the server position after replay is already set.
-    } else if (errMag > 0) {
-      // Graduated blend: larger errors converge faster, small errors converge slowly.
-      // blendFactor: 0.15 for tiny errors, up to 0.6 for medium errors.
-      const blendFactor = 0.15 + MathUtils.smoothstep(Math.min(1, errMag / 0.05)) * 0.45;
+    } else if (errMag > 0.0005) {
+      // Graduated blend: softer corrections for low tick rates.
+      // blendFactor: 0.1 for tiny errors, up to 0.4 for medium errors.
+      const blendFactor = 0.1 + MathUtils.smoothstep(Math.min(1, errMag / 0.05)) * 0.3;
       localTank.state.theta = clientTheta + thetaErr * blendFactor;
       localTank.state.phi = clientPhi + phiErr * blendFactor;
     }
+    // Ignore sub-pixel errors (< 0.0005 rad ≈ 0.24 units) — eliminates micro-jitter
 
     // Smooth heading correction — prevents turret/body orientation flicker
     let headingErr = localTank.state.heading - clientHeading;
     while (headingErr > Math.PI) headingErr -= Math.PI * 2;
     while (headingErr < -Math.PI) headingErr += Math.PI * 2;
-    if (Math.abs(headingErr) < 0.5 && Math.abs(headingErr) > 0.001) {
-      localTank.state.heading = MathUtils.lerpAngle(clientHeading, localTank.state.heading, 0.3);
+    if (Math.abs(headingErr) < 0.5 && Math.abs(headingErr) > 0.005) {
+      localTank.state.heading = MathUtils.lerpAngle(clientHeading, localTank.state.heading, 0.2);
     }
   }
 

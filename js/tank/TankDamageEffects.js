@@ -336,6 +336,16 @@ class TankDamageEffects {
             );
             _emitOffset.applyMatrix4(tankGroup.matrixWorld);
 
+            // Debug: log first particle per tank to verify positions
+            if (i === 0 && !this._debugLoggedTanks) this._debugLoggedTanks = new Set();
+            if (i === 0 && !this._debugLoggedTanks.has(tankId)) {
+                this._debugLoggedTanks.add(tankId);
+                const dist = Math.sqrt(_emitOffset.x * _emitOffset.x + _emitOffset.y * _emitOffset.y + _emitOffset.z * _emitOffset.z);
+                console.warn('[TankDmgFX] _emitSmoke:', tankId, 'pos:', _emitOffset.x.toFixed(1), _emitOffset.y.toFixed(1), _emitOffset.z.toFixed(1),
+                    'dist:', dist.toFixed(1), 'activeCount:', this.smoke.activeCount,
+                    'visible:', this.smokeSystem.visible, 'drawRange:', this.smokeSystem.geometry.drawRange.count);
+            }
+
             this.smoke.positions[i3] = _emitOffset.x;
             this.smoke.positions[i3 + 1] = _emitOffset.y;
             this.smoke.positions[i3 + 2] = _emitOffset.z;
