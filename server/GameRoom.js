@@ -3065,7 +3065,7 @@ class GameRoom {
     // Human players are always included; bots filtered by distance on the sphere.
     // Commanders (who see the whole planet) get all entities.
     // Uses unit vector dot product for O(1) distance check per entity pair.
-    const NEARBY_DOT_THRESHOLD = 0.36; // cos(~69°) — generous hemisphere cutoff
+    const NEARBY_DOT_THRESHOLD = 0.65; // cos(~49°) — tighter radius to limit client rendering
 
     // Precompute unit vectors for bot states (theta/phi → xyz on unit sphere)
     if (!this._botUnitVecs) this._botUnitVecs = {};
