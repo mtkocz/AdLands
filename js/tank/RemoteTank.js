@@ -49,7 +49,7 @@ class RemoteTank {
     // Instead of lerping toward one jittery target, we buffer 2-3 snapshots
     // and interpolate between them at a fixed rate for smooth motion.
     this.snapshotBuffer = [];
-    this.interpolationDelay = 100; // ms — render 100ms behind real-time (2 server ticks)
+    this.interpolationDelay = 200; // ms — render 200ms behind real-time (2 server ticks at 10Hz)
 
     // Health
     this.hp = playerData.hp || 100;
@@ -192,7 +192,7 @@ class RemoteTank {
       turretAngle: serverState.ta,
     });
 
-    // Keep only the last 6 snapshots (300ms at 20Hz)
+    // Keep only the last 6 snapshots (600ms at 10Hz)
     while (this.snapshotBuffer.length > 6) {
       this.snapshotBuffer.shift();
     }
