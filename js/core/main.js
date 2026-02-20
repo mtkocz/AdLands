@@ -3368,6 +3368,20 @@
     intelMouse.x = (clickX / window.innerWidth) * 2 - 1;
     intelMouse.y = -(clickY / window.innerHeight) * 2 + 1;
 
+    // Check player dots FIRST (TankLODInteraction's hover-based handler can miss at certain angles)
+    if (gameCamera.mode === "orbital" || gameCamera.mode === "fastTravel") {
+      const clickedPlayer = tankLODInteraction.getClickedPlayer(
+        intelMouse.x,
+        intelMouse.y,
+      );
+      if (clickedPlayer) {
+        if (window.profileCard) {
+          window.profileCard.show(clickedPlayer.playerId, clickX, clickY);
+        }
+        return;
+      }
+    }
+
     intelRaycaster.setFromCamera(intelMouse, camera);
 
     // Check billboards and moons FIRST so they block clicks to the planet surface
