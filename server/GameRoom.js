@@ -2913,11 +2913,10 @@ class GameRoom {
       state.rt = this.factionMemberCounts[p.faction] || 0;
     }
 
-    // Reuse payload object
+    // -- Celestial data (shared by all clients — computed once) --
     if (!this._statePayload) this._statePayload = { tick: 0, players: null, bg: null, pr: 0, ma: [], sa: [], ba: [] };
     const statePayload = this._statePayload;
     statePayload.tick = this.tick;
-    statePayload.players = playerStates;
     statePayload.bg = this.bodyguardManager.getStatesForBroadcast();
     statePayload.pr = this.planetRotation;
 
@@ -2927,7 +2926,6 @@ class GameRoom {
 
     // Update station data in-place
     if (this.tick % 100 === 0) {
-      // Full orbital params every ~5s
       statePayload.sa = this.stations.map(s => [s.orbitalAngle, s.localRotation, s.inclination, s.ascendingNode, s.orbitRadius]);
     } else {
       statePayload.sa.length = this.stations.length;
@@ -2942,7 +2940,6 @@ class GameRoom {
 
     // Update billboard orbital angles in-place
     if (this.tick % 100 === 0) {
-      // Full orbital params every ~5s
       statePayload.ba = this.billboardOrbits.map(b => [b.orbitalAngle, b.inclination, b.ascendingNode, b.orbitRadius, b.wobbleX, b.wobbleY, b.wobbleZ, b.speed]);
     } else {
       statePayload.ba.length = this.billboardOrbits.length;
@@ -2953,8 +2950,88 @@ class GameRoom {
       }
     }
 
-    // volatile: if client buffer is full, drop stale state rather than queueing
-    this.io.to(this.roomId).volatile.emit("state", statePayload);
+    // -- Spatial interest management --
+    // Only send nearby bots to each player to reduce bandwidth and serialization.
+    // Human players are always included; bots filtered by distance on the sphere.
+    // Commanders (who see the whole planet) get all entities.
+    // Uses unit vector dot product for O(1) distance check per entity pair.
+    const NEARBY_DOT_THRESHOLD = 0.36; // cos(~69°) — generous hemisphere cutoff
+
+    // Precompute unit vectors for bot states (theta/phi → xyz on unit sphere)
+    if (!this._botUnitVecs) this._botUnitVecs = {};
+    const botUnitVecs = this._botUnitVecs;
+    for (const botId in botStates) {
+      const bs = botStates[botId];
+      if (!botUnitVecs[botId]) botUnitVecs[botId] = { x: 0, y: 0, z: 0 };
+      const sinP = Math.sin(bs.p);
+      botUnitVecs[botId].x = sinP * Math.cos(bs.t);
+      botUnitVecs[botId].y = Math.cos(bs.p);
+      botUnitVecs[botId].z = sinP * Math.sin(bs.t);
+    }
+    // Clean stale entries
+    for (const id in botUnitVecs) {
+      if (!botStates[id]) delete botUnitVecs[id];
+    }
+
+    // Collect all human player IDs into an array for fast iteration
+    const humanIds = [];
+    for (const [id] of this.players) humanIds.push(id);
+
+    // Check which player IDs are commanders
+    const commanderIds = new Set();
+    for (const faction of FACTIONS) {
+      const cmdr = this.commanders[faction];
+      if (cmdr && cmdr.id) commanderIds.add(cmdr.id);
+    }
+
+    // Per-player filtered broadcast
+    if (!this._filteredPayloads) this._filteredPayloads = new Map();
+    const filteredPayloads = this._filteredPayloads;
+
+    for (const [socketId, player] of this.players) {
+      // Compute this player's unit vector
+      const pSinP = Math.sin(player.phi);
+      const px = pSinP * Math.cos(player.theta);
+      const py = Math.cos(player.phi);
+      const pz = pSinP * Math.sin(player.theta);
+
+      const isCommander = commanderIds.has(socketId);
+
+      // Build filtered players object: all humans + nearby bots
+      let filtered = filteredPayloads.get(socketId);
+      if (!filtered) {
+        filtered = {};
+        filteredPayloads.set(socketId, filtered);
+      }
+
+      // Clear previous tick's entries
+      for (const id in filtered) delete filtered[id];
+
+      // Always include all human players
+      for (const hid of humanIds) {
+        filtered[hid] = playerStates[hid];
+      }
+
+      // Include bots: all for commanders, distance-filtered for others
+      if (isCommander) {
+        for (const botId in botStates) {
+          filtered[botId] = playerStates[botId];
+        }
+      } else {
+        for (const botId in botStates) {
+          const bv = botUnitVecs[botId];
+          const dot = px * bv.x + py * bv.y + pz * bv.z;
+          if (dot > NEARBY_DOT_THRESHOLD) {
+            filtered[botId] = playerStates[botId];
+          }
+        }
+      }
+
+      statePayload.players = filtered;
+
+      const socket = this.io.sockets.sockets.get(socketId);
+      if (socket) socket.volatile.emit("state", statePayload);
+    }
   }
 
   _getAllPlayerStates() {
@@ -3153,9 +3230,9 @@ class GameRoom {
           // Skip entries stranded in wrong faction array (stale from failed move)
           if (entry.faction !== faction) continue;
           if (entry.socketId) {
-            // Exclude players who haven't deployed yet (still choosing portal)
             const player = this.players.get(entry.socketId);
-            if (player && player.waitingForPortal) continue;
+            // Track portal state (ranked but skipped for commander)
+            entry.waitingForPortal = !!(player && player.waitingForPortal);
             // Mark resigned players (still ranked, but skipped for commander)
             const resignedUntil = this.resignedPlayers.get(entry.socketId);
             if (resignedUntil && now < resignedUntil) {
@@ -3164,6 +3241,8 @@ class GameRoom {
               entry.resigned = false;
               if (resignedUntil) this.resignedPlayers.delete(entry.socketId);
             }
+          } else {
+            entry.waitingForPortal = false;
           }
           allMembers.push(entry);
         }
@@ -3171,7 +3250,6 @@ class GameRoom {
         // Include guest players (no uid) who aren't in the profile cache
         for (const [id, p] of this.players) {
           if (p.faction !== faction || p.uid) continue;
-          if (p.waitingForPortal) continue; // Not yet deployed
           let resigned = false;
           const resignedUntil = this.resignedPlayers.get(id);
           if (resignedUntil && now < resignedUntil) {
@@ -3189,13 +3267,13 @@ class GameRoom {
             avatarColor: p.avatarColor || null,
             isOnline: true,
             resigned,
+            waitingForPortal: !!p.waitingForPortal,
           });
         }
       } else {
         // ---- Fallback: connected players only (original behavior) ----
         for (const [id, p] of this.players) {
           if (p.faction !== faction) continue;
-          if (p.waitingForPortal) continue; // Not yet deployed
           let resigned = false;
           const resignedUntil = this.resignedPlayers.get(id);
           if (resignedUntil && now < resignedUntil) {
@@ -3213,6 +3291,7 @@ class GameRoom {
             avatarColor: p.avatarColor || null,
             isOnline: true,
             resigned,
+            waitingForPortal: !!p.waitingForPortal,
           });
         }
       }
@@ -3295,8 +3374,8 @@ class GameRoom {
         }
       }
 
-      // True Commander = rank #1 overall (override or top-ranked non-resigned)
-      const trueCommander = overrideEntry || allMembers.find(m => !m.resigned) || null;
+      // True Commander = rank #1 overall (override or top-ranked deployed non-resigned)
+      const trueCommander = overrideEntry || allMembers.find(m => !m.resigned && !m.waitingForPortal) || null;
 
       // Determine active commander (who actually gets perks right now)
       let activeCommander = null;
@@ -3309,9 +3388,9 @@ class GameRoom {
         activeCommander = trueCommander;
         isActing = false;
       } else {
-        // True commander is offline — highest-ranked online non-resigned player is Acting Commander
+        // True commander is offline — highest-ranked online deployed non-resigned player is Acting Commander
         isActing = true;
-        activeCommander = allMembers.find(m => m.isOnline && m.socketId && !m.resigned) || null;
+        activeCommander = allMembers.find(m => m.isOnline && m.socketId && !m.resigned && !m.waitingForPortal) || null;
       }
 
       const current = this.commanders[faction];
