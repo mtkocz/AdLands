@@ -1817,6 +1817,9 @@ class GameRoom {
 
     this.tick++;
 
+    // Tick performance monitoring — logs every 5 seconds
+    const tickStart = Date.now();
+
     // Update planet rotation
     this.planetRotation += PLANET_ROTATION_SPEED * dt;
 
