@@ -295,13 +295,6 @@ class TankDamageEffects {
                 uniform vec3 uFillColor;
 
                 void main() {
-                    // Rotate UV coordinates
-                    vec2 coord = gl_PointCoord - vec2(0.5);
-                    float c = cos(vRotation);
-                    float s = sin(vRotation);
-                    vec2 rc = vec2(coord.x * c - coord.y * s, coord.x * s + coord.y * c);
-                    if (abs(rc.x) > 0.45 || abs(rc.y) > 0.45) discard;
-
                     // Terminator-aware coloring
                     vec3 surfaceNormal = normalize(vWorldPosition);
                     float sunFacing = dot(surfaceNormal, uSunDirection);
@@ -549,12 +542,6 @@ class TankDamageEffects {
                 varying float vRotation;
 
                 void main() {
-                    vec2 coord = gl_PointCoord - vec2(0.5);
-                    float c = cos(vRotation);
-                    float s = sin(vRotation);
-                    vec2 rc = vec2(coord.x * c - coord.y * s, coord.x * s + coord.y * c);
-                    if (abs(rc.x) > 0.45 || abs(rc.y) > 0.45) discard;
-
                     gl_FragColor = vec4(vColor * 0.9, vAlpha);
                 }
             `,
