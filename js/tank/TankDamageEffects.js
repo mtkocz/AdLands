@@ -131,6 +131,13 @@ class TankDamageEffects {
     update(deltaTime, frustum = null, camera = null) {
         const dt = deltaTime || 1 / 60;
 
+        // Update camera position uniform for distance-based shader fading
+        if (camera) {
+            const cp = camera.position;
+            this.smokeSystem.material.uniforms.uCameraPos.value.set(cp.x, cp.y, cp.z);
+            this.fireSystem.material.uniforms.uCameraPos.value.set(cp.x, cp.y, cp.z);
+        }
+
         // Distance culling: only emit for tanks near the camera
         const camPos = camera ? camera.position : null;
         const maxDistSq = 67600; // 260² — don't emit/render beyond 260 units
@@ -245,11 +252,14 @@ class TankDamageEffects {
         const material = new THREE.ShaderMaterial({
             uniforms: {
                 uTime: { value: 0 },
+                uCameraPos: { value: new THREE.Vector3() },
                 uSunDirection: { value: new THREE.Vector3(1, 0, 0) },
                 uSunColor: { value: new THREE.Vector3(1.0, 0.95, 0.9) },
                 uFillColor: { value: new THREE.Vector3(0.4, 0.5, 0.8) }
             },
             vertexShader: `
+                uniform vec3 uCameraPos;
+
                 attribute float aAge;
                 attribute float aLifetime;
                 attribute float aColor;
@@ -268,10 +278,14 @@ class TankDamageEffects {
                     vRotation = aRotation;
                     vWorldPosition = position;
 
+                    // Distance-based fade (invisible beyond 260 units)
+                    float distToCamera = distance(position, uCameraPos);
+                    float distanceFade = 1.0 - smoothstep(100.0, 260.0, distToCamera);
+
                     // Fade in quickly, then fade out (peak at 10%)
                     float fadeIn = smoothstep(0.0, 0.1, lifeRatio);
                     float fadeOut = 1.0 - smoothstep(0.5, 1.0, lifeRatio);
-                    vAlpha = fadeIn * fadeOut * 0.85 * aOpacity;
+                    vAlpha = fadeIn * fadeOut * 0.85 * aOpacity * distanceFade;
 
                     // Gray (0) or black (1) smoke - pass brightness to fragment
                     vBrightness = mix(0.45, 0.05, aColor);
@@ -503,9 +517,12 @@ class TankDamageEffects {
         // Shader material for fire
         const material = new THREE.ShaderMaterial({
             uniforms: {
-                uTime: { value: 0 }
+                uTime: { value: 0 },
+                uCameraPos: { value: new THREE.Vector3() }
             },
             vertexShader: `
+                uniform vec3 uCameraPos;
+
                 attribute float aAge;
                 attribute float aLifetime;
                 attribute float aSize;
@@ -521,11 +538,15 @@ class TankDamageEffects {
                     vLifeRatio = lifeRatio;
                     vRotation = aRotation;
 
+                    // Distance-based fade (invisible beyond 260 units)
+                    float distToCamera = distance(position, uCameraPos);
+                    float distanceFade = 1.0 - smoothstep(100.0, 260.0, distToCamera);
+
                     // Fire shrinks as it rises
                     float sizeFactor = 1.0 - lifeRatio * 0.6;
 
                     // Fast fade
-                    vAlpha = (1.0 - lifeRatio) * 0.85;
+                    vAlpha = (1.0 - lifeRatio) * 0.85 * distanceFade;
 
                     // Darker flame colors to reduce bloom washout
                     // Yellow-orange core -> orange -> red-brown -> dark
