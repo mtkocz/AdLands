@@ -282,9 +282,9 @@ class TankDamageEffects {
                     float distToCamera = distance(position, uCameraPos);
                     float distanceFade = 1.0 - smoothstep(100.0, 260.0, distToCamera);
 
-                    // Fade in quickly, then fade out (peak at 10%)
-                    float fadeIn = smoothstep(0.0, 0.1, lifeRatio);
-                    float fadeOut = 1.0 - smoothstep(0.5, 1.0, lifeRatio);
+                    // Fade in quickly, stay visible longer, then fade out
+                    float fadeIn = smoothstep(0.0, 0.05, lifeRatio);
+                    float fadeOut = 1.0 - smoothstep(0.6, 1.0, lifeRatio);
                     vAlpha = fadeIn * fadeOut * 0.85 * aOpacity * distanceFade;
 
                     // Gray (0) or black (1) smoke - pass brightness to fragment
@@ -309,12 +309,15 @@ class TankDamageEffects {
                 uniform vec3 uFillColor;
 
                 void main() {
+                    // Early discard for invisible particles
+                    if (vAlpha < 0.001) discard;
+
                     // Rotated square
                     vec2 coord = gl_PointCoord - vec2(0.5);
                     float c = cos(vRotation);
                     float s = sin(vRotation);
                     vec2 rc = vec2(coord.x * c - coord.y * s, coord.x * s + coord.y * c);
-                    if (abs(rc.x) > 0.45 || abs(rc.y) > 0.45) discard;
+                    if (abs(rc.x) > 0.4 || abs(rc.y) > 0.4) discard;
 
                     // Terminator-aware coloring
                     vec3 surfaceNormal = normalize(vWorldPosition);
@@ -323,10 +326,14 @@ class TankDamageEffects {
 
                     vec3 baseColor = vec3(vBrightness);
                     vec3 dayColor = baseColor * mix(vec3(1.17), uSunColor, 0.15);
-                    vec3 nightColor = baseColor * uFillColor * vec3(0.88, 0.94, 1.22);
+                    vec3 nightColor = baseColor * uFillColor * vec3(0.95, 1.0, 1.25);
                     vec3 smokeColor = mix(nightColor, dayColor, dayFactor);
 
-                    gl_FragColor = vec4(smokeColor, vAlpha);
+                    // Soft edge falloff
+                    float dist = max(abs(rc.x), abs(rc.y));
+                    float alpha = vAlpha * (1.0 - dist * 1.5);
+
+                    gl_FragColor = vec4(smokeColor, alpha);
                 }
             `,
             transparent: true,
