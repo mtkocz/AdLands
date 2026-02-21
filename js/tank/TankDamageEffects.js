@@ -148,7 +148,7 @@ class TankDamageEffects {
 
             // Frame-rate independent emission using accumulator
             if (effects.smoke) {
-                effects.emitAccum += dt * 5; // 5 smoke particles per second
+                effects.emitAccum += dt * 2.5; // 2.5 smoke particles per second
                 const emitCount = Math.floor(effects.emitAccum);
                 if (emitCount > 0) {
                     effects.emitAccum -= emitCount;
@@ -378,9 +378,9 @@ class TankDamageEffects {
             this.smoke.velocities[i3 + 2] = _emitNormal.z * speed + (Math.random() - 0.5) * 0.2;
 
             this.smoke.ages[idx] = 0;
-            this.smoke.lifetimes[idx] = 1.5 + Math.random() * 1.0;  // 1.5-2.5 seconds
+            this.smoke.lifetimes[idx] = 1.1 + Math.random() * 0.75;  // 1.1-1.85 seconds
             this.smoke.colors[idx] = smokeType === 'black' ? 1.0 : 0.0;
-            this.smoke.sizes[idx] = 6.0 + Math.random() * 4.0;
+            this.smoke.sizes[idx] = 3.0 + Math.random() * 2.0;
             this.smoke.rotations[idx] = Math.random() * Math.PI * 2;
             this.smoke.rotationSpeeds[idx] = (Math.random() - 0.5) * 2.0;  // -1 to +1 radians/sec
             this.smoke.opacities[idx] = tankOpacity;  // Initial opacity from tank
