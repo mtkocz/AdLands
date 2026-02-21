@@ -22,7 +22,7 @@ class TankDamageEffects {
         this.sphereRadius = sphereRadius;
 
         // Track effects per tank
-        this.tankEffects = new Map();  // tankId -> { smoke, fire }
+        this.tankEffects = new Map();  // tankId -> { smoke, fire, emitAccum, fireAccum }
 
         // Shared particle systems (pooled)
         this.smokeSystem = null;
@@ -46,7 +46,7 @@ class TankDamageEffects {
         let effects = this.tankEffects.get(tankId);
 
         if (!effects) {
-            effects = { smoke: false, fire: false, tankGroup, opacity: 1.0 };
+            effects = { smoke: false, fire: false, tankGroup, opacity: 1.0, emitAccum: 0, fireAccum: 0 };
             this.tankEffects.set(tankId, effects);
         }
 
@@ -57,6 +57,8 @@ class TankDamageEffects {
                 effects.smoke = false;
                 effects.fire = false;
                 effects.opacity = 1.0;
+                effects.emitAccum = 0;
+                effects.fireAccum = 0;
                 this._clearParticlesForTank(tankId);
                 break;
             case 'damaged':
@@ -131,10 +133,9 @@ class TankDamageEffects {
 
         // Distance culling: only emit for tanks near the camera
         const camPos = camera ? camera.position : null;
-        const maxDistSq = this.sphereRadius * this.sphereRadius * 4; // 2x sphereRadius
+        const maxDistSq = this.sphereRadius * this.sphereRadius * 0.5; // ~0.7x sphereRadius
 
         // 1. Emit particles for each active tank (nearby only)
-        let nearbyEmitters = 0;
         for (const [tankId, effects] of this.tankEffects) {
             if (!effects.smoke && !effects.fire) continue;
             if (!effects.tankGroup) continue;
@@ -145,26 +146,26 @@ class TankDamageEffects {
                 if (_dmgTankWorldPos.distanceToSquared(camPos) > maxDistSq) continue;
             }
 
-            nearbyEmitters++;
+            // Frame-rate independent emission using accumulator
             if (effects.smoke) {
-                this._emitSmoke(effects.tankGroup, effects.smoke, tankId, effects.opacity);
+                effects.emitAccum += dt * 5; // 5 smoke particles per second
+                const emitCount = Math.floor(effects.emitAccum);
+                if (emitCount > 0) {
+                    effects.emitAccum -= emitCount;
+                    this._emitSmoke(effects.tankGroup, effects.smoke, tankId, effects.opacity, emitCount);
+                }
             }
             if (effects.fire) {
-                this._emitFire(effects.tankGroup);
+                effects.fireAccum += dt * 10; // 10 fire particles per second
+                const emitCount = Math.floor(effects.fireAccum);
+                if (emitCount > 0) {
+                    effects.fireAccum -= emitCount;
+                    this._emitFire(effects.tankGroup, emitCount);
+                }
             }
         }
 
-        // DEBUG: log every 60 frames
-        if (!this._dbgFrame) this._dbgFrame = 0;
-        if (++this._dbgFrame % 60 === 0 && (nearbyEmitters > 0 || this.smoke.activeCount > 0)) {
-            console.warn('[TankDmgFX] nearby=' + nearbyEmitters +
-                ' smoke=' + this.smoke.activeCount +
-                ' fire=' + this.fire.activeCount +
-                ' vis=' + this.smokeSystem.visible +
-                ' draw=' + this.smokeSystem.geometry.drawRange.count);
-        }
-
-        // 1b. Prune stale entries: dead tanks with no active particles that are far away
+        // Prune stale entries: healthy tanks with no active effects
         if (this.tankEffects.size > 20) {
             for (const [tankId, effects] of this.tankEffects) {
                 if (!effects.smoke && !effects.fire) {
@@ -189,7 +190,6 @@ class TankDamageEffects {
                 _dmgSmokeSphere.radius += 10;
                 this.smokeSystem.visible = frustum.intersectsSphere(_dmgSmokeSphere);
             } else if (this.smokeSystem) {
-                // No active particles — keep visible so new emissions render immediately
                 this.smokeSystem.visible = true;
             }
 
@@ -268,13 +268,19 @@ class TankDamageEffects {
                     vRotation = aRotation;
                     vWorldPosition = position;
 
-                    // DEBUG: huge, fully opaque, instant
-                    float sizeFactor = 3.0;
-                    vAlpha = 1.0;
-                    vBrightness = 0.0; // will be overridden in frag
+                    // Smoke grows as it rises
+                    float sizeFactor = 1.0 + lifeRatio * 2.5;
+
+                    // Fade in quickly, then fade out (peak at 10%)
+                    float fadeIn = smoothstep(0.0, 0.1, lifeRatio);
+                    float fadeOut = 1.0 - smoothstep(0.5, 1.0, lifeRatio);
+                    vAlpha = fadeIn * fadeOut * 0.85 * aOpacity;
+
+                    // Gray (0) or black (1) smoke - pass brightness to fragment
+                    vBrightness = mix(0.45, 0.05, aColor);
 
                     vec4 mvPosition = modelViewMatrix * vec4(position, 1.0);
-                    gl_PointSize = 30.0 * (300.0 / -mvPosition.z);
+                    gl_PointSize = aSize * sizeFactor * (300.0 / -mvPosition.z);
                     gl_Position = projectionMatrix * mvPosition;
                 }
             `,
@@ -289,8 +295,36 @@ class TankDamageEffects {
                 uniform vec3 uFillColor;
 
                 void main() {
-                    // DEBUG: solid bright red square
-                    gl_FragColor = vec4(1.0, 0.0, 0.0, 1.0);
+                    // Rotate UV coordinates
+                    vec2 coord = gl_PointCoord - vec2(0.5);
+                    float c = cos(vRotation);
+                    float s = sin(vRotation);
+                    vec2 rotatedCoord = vec2(
+                        coord.x * c - coord.y * s,
+                        coord.x * s + coord.y * c
+                    );
+
+                    // Square PS1-style particles (rotated)
+                    if (abs(rotatedCoord.x) > 0.45 || abs(rotatedCoord.y) > 0.45) discard;
+
+                    // Terminator-aware coloring: sun-tinted on day side, darker blue-tinted on night side
+                    vec3 surfaceNormal = normalize(vWorldPosition);
+                    float sunFacing = dot(surfaceNormal, uSunDirection);
+                    float dayFactor = smoothstep(-0.2, 0.3, sunFacing);
+
+                    // Base smoke color from brightness
+                    vec3 baseColor = vec3(vBrightness);
+
+                    // Day side: neutral/warm tint, Night side: blue fill light tint
+                    vec3 dayColor = baseColor * mix(vec3(1.17), uSunColor, 0.15);
+                    vec3 nightColor = baseColor * uFillColor * vec3(0.88, 0.94, 1.22);
+
+                    vec3 smokeColor = mix(nightColor, dayColor, dayFactor);
+
+                    // Soft smoky edge from center
+                    float dist = max(abs(rotatedCoord.x), abs(rotatedCoord.y));
+                    float alpha = vAlpha * (1.0 - dist * 1.8);
+                    gl_FragColor = vec4(smokeColor, alpha);
                 }
             `,
             transparent: true,
@@ -307,15 +341,12 @@ class TankDamageEffects {
         this.scene.add(this.smokeSystem);
     }
 
-    _emitSmoke(tankGroup, smokeType, tankId, tankOpacity) {
+    _emitSmoke(tankGroup, smokeType, tankId, tankOpacity, emitCount) {
         // Don't emit new particles if tank is mostly faded
         if (tankOpacity < 0.3) return;
 
         // Safety: skip if tankGroup is missing or invalid
         if (!tankGroup || !tankGroup.matrixWorld) return;
-
-        // Emit 2-3 particles per frame when active
-        const emitCount = 2 + (Math.random() < 0.5 ? 1 : 0);
 
         for (let i = 0; i < emitCount; i++) {
             if (this.smoke.activeCount >= this.smoke.maxParticles) {
@@ -349,7 +380,7 @@ class TankDamageEffects {
             this.smoke.ages[idx] = 0;
             this.smoke.lifetimes[idx] = 1.5 + Math.random() * 1.0;  // 1.5-2.5 seconds
             this.smoke.colors[idx] = smokeType === 'black' ? 1.0 : 0.0;
-            this.smoke.sizes[idx] = 3.0 + Math.random() * 2.0;
+            this.smoke.sizes[idx] = 6.0 + Math.random() * 4.0;
             this.smoke.rotations[idx] = Math.random() * Math.PI * 2;
             this.smoke.rotationSpeeds[idx] = (Math.random() - 0.5) * 2.0;  // -1 to +1 radians/sec
             this.smoke.opacities[idx] = tankOpacity;  // Initial opacity from tank
@@ -560,19 +591,14 @@ class TankDamageEffects {
         this.fireSystem = new THREE.Points(geometry, material);
         this.fireSystem.frustumCulled = false;
         this.fireSystem.renderOrder = 15;  // Fire renders before smoke so smoke can occlude it
-        // Fire particles don't bloom (performance optimization per user request)
-        // this.fireSystem.layers.set(1);  // Disabled - fire stays on default layer
         geometry.setDrawRange(0, 0);
 
         this.scene.add(this.fireSystem);
     }
 
-    _emitFire(tankGroup) {
+    _emitFire(tankGroup, emitCount) {
         // Safety: skip if tankGroup is missing or invalid
         if (!tankGroup || !tankGroup.matrixWorld) return;
-
-        // Emit 3-5 particles per frame when active
-        const emitCount = 3 + Math.floor(Math.random() * 3);
 
         for (let i = 0; i < emitCount; i++) {
             if (this.fire.activeCount >= this.fire.maxParticles) {
@@ -605,7 +631,7 @@ class TankDamageEffects {
 
             this.fire.ages[idx] = 0;
             this.fire.lifetimes[idx] = 0.3 + Math.random() * 0.4;  // 0.3-0.7 seconds (shorter than smoke)
-            this.fire.sizes[idx] = 2.0 + Math.random() * 1.5;
+            this.fire.sizes[idx] = 4.0 + Math.random() * 3.0;
             this.fire.rotations[idx] = Math.random() * Math.PI * 2;
             this.fire.rotationSpeeds[idx] = (Math.random() - 0.5) * 6.0;  // -3 to +3 radians/sec (faster for fire)
 
