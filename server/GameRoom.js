@@ -34,6 +34,9 @@ const BOT_NAME_POOL = [
 // Grace period for reconnecting players (ms)
 const RECONNECT_GRACE_MS = 30000;
 
+// Kick players after 60 seconds of no meaningful input
+const INACTIVITY_TIMEOUT_MS = 60000;
+
 class GameRoom {
   constructor(io, roomId, sponsorStore, sponsorImageUrls, moonSponsorStore, moonSponsorImageUrls, billboardSponsorStore, billboardSponsorImageUrls) {
     this.io = io;
@@ -726,6 +729,9 @@ class GameRoom {
       unlockedSlots: profileData?.unlockedSlots || ['offense-1'],
       tankUpgrades: profileData?.tankUpgrades || { armor: 0, speed: 0, fireRate: 0, damage: 0 },
 
+      // Inactivity tracking (timestamp of last meaningful action)
+      lastActivityAt: Date.now(),
+
       // Session tracking for Firestore saves (deltas accumulated this session)
       _sessionKills: 0,
       _sessionDeaths: 0,
@@ -887,6 +893,7 @@ class GameRoom {
     saved.keys = { w: false, a: false, s: false, d: false, shift: false };
     saved.lastInputSeq = 0;
     saved.speed = 0;
+    saved.lastActivityAt = Date.now();
 
     // If player was dead at disconnect, send them to portal selection
     if (saved.isDead) {
@@ -1492,6 +1499,9 @@ class GameRoom {
     // Broadcast updated level to all via rank recomputation
     this._markRanksDirty();
 
+    // Persist immediately so level survives disconnect/crash
+    this.savePlayerProfile(socketId).catch(() => {});
+
     DEBUG_LOG && console.log(`[Room ${this.roomId}] ${player.name} purchased level ${nextLevel} for ¢${cost}`);
   }
 
@@ -1524,6 +1534,9 @@ class GameRoom {
       socket.emit("slot-unlocked", { slotId, cost });
     }
 
+    // Persist immediately so unlock survives disconnect/crash
+    this.savePlayerProfile(socketId).catch(() => {});
+
     DEBUG_LOG && console.log(`[Room ${this.roomId}] ${player.name} unlocked slot ${slotId} for ¢${cost}`);
   }
 
@@ -1551,6 +1564,9 @@ class GameRoom {
     }
 
     player.loadout[slotId] = upgradeId;
+
+    // Persist immediately so loadout survives disconnect/crash
+    this.savePlayerProfile(socketId).catch(() => {});
   }
 
   /** Handle unequipping an upgrade from a loadout slot */
@@ -1560,6 +1576,8 @@ class GameRoom {
 
     if (player.loadout && player.loadout[slotId]) {
       delete player.loadout[slotId];
+      // Persist immediately so loadout survives disconnect/crash
+      this.savePlayerProfile(socketId).catch(() => {});
     }
   }
 
@@ -1595,6 +1613,9 @@ class GameRoom {
       socket.emit("tank-upgrade-confirmed", { type, tier, cost });
     }
 
+    // Persist immediately so upgrade survives disconnect/crash
+    this.savePlayerProfile(socketId).catch(() => {});
+
     DEBUG_LOG && console.log(`[Room ${this.roomId}] ${player.name} upgraded ${type} to tier ${tier} for ¢${cost}`);
   }
 
@@ -1613,6 +1634,11 @@ class GameRoom {
       player.keys.s = !!input.keys.s;
       player.keys.d = !!input.keys.d;
       player.keys.shift = !!input.keys.shift;
+
+      // Any key pressed counts as meaningful activity
+      if (input.keys.w || input.keys.a || input.keys.s || input.keys.d) {
+        player.lastActivityAt = Date.now();
+      }
     }
 
     // Turret angle (validated — must be a finite number)
@@ -1634,6 +1660,7 @@ class GameRoom {
     const now = Date.now();
     if (now - player.lastFireTime < 2000) return;
     player.lastFireTime = now;
+    player.lastActivityAt = now;
 
     // Clamp charge power to valid range (0-10)
     const chargePower = Math.max(0, Math.min(10, power || 0));
@@ -1783,6 +1810,7 @@ class GameRoom {
   handleChoosePortal(socketId, portalTileIndex) {
     const player = this.players.get(socketId);
     if (!player || player.isDead || !player.waitingForPortal) return;
+    player.lastActivityAt = Date.now();
 
     // Validate portal tile index
     if (!this.portalPositionsByTile.has(portalTileIndex)) {
@@ -1993,6 +2021,28 @@ class GameRoom {
       this._broadcastCrypto();
       // Full commander state sync (reliable — catches any missed commander-update events)
       this.io.to(this.roomId).emit("commander-sync", this._getCommanderSnapshot());
+    }
+
+    // 6.5. Kick inactive players (check every 5 seconds)
+    if (this.tick % (this.tickRate * 5) === 0) {
+      const now2 = Date.now();
+      for (const [socketId, player] of this.players) {
+        if (now2 - player.lastActivityAt > INACTIVITY_TIMEOUT_MS) {
+          const sock = this.io.sockets.sockets.get(socketId);
+          if (sock) {
+            console.log(`[Room ${this.roomId}] Kicking ${player.name} (${socketId}) for inactivity`);
+            sock.emit("kicked", { reason: "inactivity" });
+            // Save profile before force-disconnecting so progression is not lost
+            if (player.uid) {
+              this.savePlayerProfile(socketId).catch(() => {}).finally(() => {
+                sock.disconnect(true);
+              });
+            } else {
+              sock.disconnect(true);
+            }
+          }
+        }
+      }
     }
 
     // 7. Award holding crypto (at the top of each wall-clock minute)

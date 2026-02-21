@@ -441,6 +441,7 @@ io.on("connection", (socket) => {
   socket.on("chat", (msg) => {
     // Relay chat with player info
     if (typeof msg.text !== "string" || msg.text.length > 500) return;
+    if (player) player.lastActivityAt = Date.now();
 
     const validModes = ["faction", "lobby", "squad"];
     const mode = validModes.includes(msg.mode) ? msg.mode : "lobby";

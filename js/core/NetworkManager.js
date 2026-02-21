@@ -118,6 +118,12 @@ class NetworkManager {
       this._stopPing();
     });
 
+    this.socket.on("kicked", (data) => {
+      if (data && data.reason === "inactivity") {
+        window.location.reload();
+      }
+    });
+
     // Ping response from server
     this.socket.on("pong-measure", (ts) => {
       const rawPing = Date.now() - ts;

@@ -155,7 +155,7 @@ class TankDamageEffects {
 
             // Frame-rate independent emission using accumulator
             if (effects.smoke) {
-                effects.emitAccum += dt * 5; // 5 smoke particles per second
+                effects.emitAccum += dt * 10; // 10 smoke particles per second
                 const emitCount = Math.floor(effects.emitAccum);
                 if (emitCount > 0) {
                     effects.emitAccum -= emitCount;
