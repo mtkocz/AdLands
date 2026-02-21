@@ -1477,7 +1477,7 @@ class GameRoom {
   /** Handle level-up purchase request */
   handleLevelUp(socketId) {
     const player = this.players.get(socketId);
-    if (!player) return;
+    if (!player || !player.uid) return; // Guests can't level up
 
     const nextLevel = player.level + 1;
     const cost = this._getLevelCost(nextLevel);
@@ -1508,7 +1508,7 @@ class GameRoom {
   /** Handle loadout slot unlock purchase */
   handleUnlockSlot(socketId, slotId) {
     const player = this.players.get(socketId);
-    if (!player) return;
+    if (!player || !player.uid) return; // Guests can't unlock slots
 
     const cost = this.costs.slotUnlock[slotId];
     if (!cost) return; // Invalid slot or offense-1 (free)
@@ -1543,7 +1543,7 @@ class GameRoom {
   /** Handle equipping an upgrade into a loadout slot */
   handleEquipUpgrade(socketId, slotId, upgradeId) {
     const player = this.players.get(socketId);
-    if (!player) return;
+    if (!player || !player.uid) return; // Guests can't equip upgrades
 
     // Validate slot ID
     const validSlots = ['offense-1', 'offense-2', 'defense-1', 'defense-2', 'tactical-1', 'tactical-2'];
@@ -1572,7 +1572,7 @@ class GameRoom {
   /** Handle unequipping an upgrade from a loadout slot */
   handleUnequipUpgrade(socketId, slotId) {
     const player = this.players.get(socketId);
-    if (!player) return;
+    if (!player || !player.uid) return;
 
     if (player.loadout && player.loadout[slotId]) {
       delete player.loadout[slotId];
@@ -1584,7 +1584,7 @@ class GameRoom {
   /** Handle tank upgrade purchase (armor, speed, fireRate, damage) */
   handleTankUpgrade(socketId, type) {
     const player = this.players.get(socketId);
-    if (!player) return;
+    if (!player || !player.uid) return; // Guests can't purchase upgrades
 
     const validTypes = ['armor', 'speed', 'fireRate', 'damage'];
     if (!validTypes.includes(type)) return;
@@ -2027,6 +2027,7 @@ class GameRoom {
     if (this.tick % (this.tickRate * 5) === 0) {
       const now2 = Date.now();
       for (const [socketId, player] of this.players) {
+        if (!player.uid) continue; // Only kick authenticated players
         if (now2 - player.lastActivityAt > INACTIVITY_TIMEOUT_MS) {
           const sock = this.io.sockets.sockets.get(socketId);
           if (sock) {
@@ -2350,7 +2351,9 @@ class GameRoom {
               killer.killStreak = (killer.killStreak || 0) + 1;
               killer.totalKills = (killer.totalKills || 0) + 1;
               const isVictimCommander = this.commanders[player.faction]?.id === id;
-              killer.crypto += 500 * (isVictimCommander ? 10 : 1); // Kill bounty (10x for commanders)
+              if (killer.uid) {
+                killer.crypto += 500 * (isVictimCommander ? 10 : 1); // Kill bounty (authenticated only)
+              }
 
               // Tusk kill announcement (pass socket IDs for deferred name resolution)
               this.tuskChat.onKill(killerName, victimName, p.ownerFaction, player.faction, p.ownerId, id);
@@ -2452,7 +2455,7 @@ class GameRoom {
 
             // Award kill bounty to human attacker (no Tusk commentary for bot kills)
             if (killer) {
-              killer.crypto += 500;
+              if (killer.uid) killer.crypto += 500; // Authenticated only
               killer.killStreak = (killer.killStreak || 0) + 1;
               killer.totalKills = (killer.totalKills || 0) + 1;
             }
@@ -2855,7 +2858,9 @@ class GameRoom {
             cap: state.capacity,
           };
           this.io.to(id).emit("tic-crypto", ticPayload);
-          player.crypto += 10; // Territory capture income
+          if (player.uid) {
+            player.crypto += 10; // Territory capture income (authenticated only)
+          }
           player.territoryCaptured += currentTics - lastTics; // Rank tiebreaker
         }
       }
@@ -2996,6 +3001,7 @@ class GameRoom {
     // Award to each alive player and emit event (include cluster IDs for client visuals)
     for (const [id, player] of this.players) {
       if (player.isDead || player.waitingForPortal) continue;
+      if (!player.uid) continue; // Guests don't earn crypto
 
       const amount = factionCrypto[player.faction];
       if (amount <= 0) continue;

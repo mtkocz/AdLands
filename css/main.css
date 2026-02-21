@@ -28,6 +28,15 @@ body {
     cursor: var(--cursor-reticle);
 }
 
+/* Hide all HUD elements until the player signs in with a profile */
+body.pre-auth #left-panel-stack,
+body.pre-auth #chat-window,
+body.pre-auth #dashboard-container,
+body.pre-auth #ping-arrows-container,
+body.pre-auth #player-tags-container {
+    display: none !important;
+}
+
 /* Game canvas explicitly uses reticle */
 canvas#game-canvas,
 canvas:not(#tank-preview-canvas) {

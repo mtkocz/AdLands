@@ -1555,6 +1555,9 @@
 
   // Wire auth screen confirm callback (used when Firebase is available)
   authScreen.onConfirm = ({ name, faction, profileIndex, profileData }) => {
+    // Reveal HUD elements now that a profile is selected
+    document.body.classList.remove("pre-auth");
+
     // Detect mid-game profile switch (profile was already loaded)
     const isProfileSwitch = profileManager.loaded;
 
