@@ -14,7 +14,7 @@ const _dmgFireSphere = new THREE.Sphere();
 const _emitOffset = new THREE.Vector3();
 const _emitNormal = new THREE.Vector3();
 // Preallocated vector for distance culling check
-const _tankWorldPos = new THREE.Vector3();
+const _dmgTankWorldPos = new THREE.Vector3();
 
 class TankDamageEffects {
     constructor(scene, sphereRadius) {
@@ -140,8 +140,8 @@ class TankDamageEffects {
 
             // Skip tanks far from camera
             if (camPos) {
-                _tankWorldPos.setFromMatrixPosition(effects.tankGroup.matrixWorld);
-                if (_tankWorldPos.distanceToSquared(camPos) > maxDistSq) continue;
+                _dmgTankWorldPos.setFromMatrixPosition(effects.tankGroup.matrixWorld);
+                if (_dmgTankWorldPos.distanceToSquared(camPos) > maxDistSq) continue;
             }
 
             if (effects.smoke) {
