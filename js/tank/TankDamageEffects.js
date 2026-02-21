@@ -299,32 +299,20 @@ class TankDamageEffects {
                     vec2 coord = gl_PointCoord - vec2(0.5);
                     float c = cos(vRotation);
                     float s = sin(vRotation);
-                    vec2 rotatedCoord = vec2(
-                        coord.x * c - coord.y * s,
-                        coord.x * s + coord.y * c
-                    );
+                    vec2 rc = vec2(coord.x * c - coord.y * s, coord.x * s + coord.y * c);
+                    if (abs(rc.x) > 0.45 || abs(rc.y) > 0.45) discard;
 
-                    // Square PS1-style particles (rotated)
-                    if (abs(rotatedCoord.x) > 0.45 || abs(rotatedCoord.y) > 0.45) discard;
-
-                    // Terminator-aware coloring: sun-tinted on day side, darker blue-tinted on night side
+                    // Terminator-aware coloring
                     vec3 surfaceNormal = normalize(vWorldPosition);
                     float sunFacing = dot(surfaceNormal, uSunDirection);
                     float dayFactor = smoothstep(-0.2, 0.3, sunFacing);
 
-                    // Base smoke color from brightness
                     vec3 baseColor = vec3(vBrightness);
-
-                    // Day side: neutral/warm tint, Night side: blue fill light tint
                     vec3 dayColor = baseColor * mix(vec3(1.17), uSunColor, 0.15);
                     vec3 nightColor = baseColor * uFillColor * vec3(0.88, 0.94, 1.22);
-
                     vec3 smokeColor = mix(nightColor, dayColor, dayFactor);
 
-                    // Soft smoky edge from center
-                    float dist = max(abs(rotatedCoord.x), abs(rotatedCoord.y));
-                    float alpha = vAlpha * (1.0 - dist * 1.8);
-                    gl_FragColor = vec4(smokeColor, alpha);
+                    gl_FragColor = vec4(smokeColor, vAlpha);
                 }
             `,
             transparent: true,
@@ -561,26 +549,13 @@ class TankDamageEffects {
                 varying float vRotation;
 
                 void main() {
-                    // Rotate UV coordinates
                     vec2 coord = gl_PointCoord - vec2(0.5);
                     float c = cos(vRotation);
                     float s = sin(vRotation);
-                    vec2 rotatedCoord = vec2(
-                        coord.x * c - coord.y * s,
-                        coord.x * s + coord.y * c
-                    );
+                    vec2 rc = vec2(coord.x * c - coord.y * s, coord.x * s + coord.y * c);
+                    if (abs(rc.x) > 0.45 || abs(rc.y) > 0.45) discard;
 
-                    // Square PS1-style particles (rotated)
-                    if (abs(rotatedCoord.x) > 0.45 || abs(rotatedCoord.y) > 0.45) discard;
-
-                    // Bright center, soft edge from center
-                    float dist = max(abs(rotatedCoord.x), abs(rotatedCoord.y));
-                    float alpha = vAlpha * (1.0 - dist * 1.5);
-
-                    // Keep flame color visible (no HDR boost)
-                    vec3 color = vColor * 0.9;
-
-                    gl_FragColor = vec4(color, alpha);
+                    gl_FragColor = vec4(vColor * 0.9, vAlpha);
                 }
             `,
             transparent: true,
