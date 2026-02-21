@@ -134,6 +134,7 @@ class TankDamageEffects {
         const maxDistSq = this.sphereRadius * this.sphereRadius * 4; // 2x sphereRadius
 
         // 1. Emit particles for each active tank (nearby only)
+        let nearbyEmitters = 0;
         for (const [tankId, effects] of this.tankEffects) {
             if (!effects.smoke && !effects.fire) continue;
             if (!effects.tankGroup) continue;
@@ -144,12 +145,23 @@ class TankDamageEffects {
                 if (_dmgTankWorldPos.distanceToSquared(camPos) > maxDistSq) continue;
             }
 
+            nearbyEmitters++;
             if (effects.smoke) {
                 this._emitSmoke(effects.tankGroup, effects.smoke, tankId, effects.opacity);
             }
             if (effects.fire) {
                 this._emitFire(effects.tankGroup);
             }
+        }
+
+        // DEBUG: log every 60 frames
+        if (!this._dbgFrame) this._dbgFrame = 0;
+        if (++this._dbgFrame % 60 === 0 && (nearbyEmitters > 0 || this.smoke.activeCount > 0)) {
+            console.warn('[TankDmgFX] nearby=' + nearbyEmitters +
+                ' smoke=' + this.smoke.activeCount +
+                ' fire=' + this.fire.activeCount +
+                ' vis=' + this.smokeSystem.visible +
+                ' draw=' + this.smokeSystem.geometry.drawRange.count);
         }
 
         // 1b. Prune stale entries: dead tanks with no active particles that are far away
@@ -256,19 +268,13 @@ class TankDamageEffects {
                     vRotation = aRotation;
                     vWorldPosition = position;
 
-                    // Smoke grows as it rises
-                    float sizeFactor = 1.0 + lifeRatio * 2.0;
-
-                    // Fade in then out (peak at 20%)
-                    float fadeIn = smoothstep(0.0, 0.2, lifeRatio);
-                    float fadeOut = 1.0 - smoothstep(0.5, 1.0, lifeRatio);
-                    vAlpha = fadeIn * fadeOut * 0.6 * aOpacity;
-
-                    // Gray (0) or black (1) smoke - pass brightness to fragment
-                    vBrightness = mix(0.5, 0.05, aColor);
+                    // DEBUG: huge, fully opaque, instant
+                    float sizeFactor = 3.0;
+                    vAlpha = 1.0;
+                    vBrightness = 0.0; // will be overridden in frag
 
                     vec4 mvPosition = modelViewMatrix * vec4(position, 1.0);
-                    gl_PointSize = aSize * sizeFactor * (300.0 / -mvPosition.z);
+                    gl_PointSize = 30.0 * (300.0 / -mvPosition.z);
                     gl_Position = projectionMatrix * mvPosition;
                 }
             `,
@@ -283,36 +289,8 @@ class TankDamageEffects {
                 uniform vec3 uFillColor;
 
                 void main() {
-                    // Rotate UV coordinates
-                    vec2 coord = gl_PointCoord - vec2(0.5);
-                    float c = cos(vRotation);
-                    float s = sin(vRotation);
-                    vec2 rotatedCoord = vec2(
-                        coord.x * c - coord.y * s,
-                        coord.x * s + coord.y * c
-                    );
-
-                    // Square PS1-style particles (rotated)
-                    if (abs(rotatedCoord.x) > 0.45 || abs(rotatedCoord.y) > 0.45) discard;
-
-                    // Terminator-aware coloring: sun-tinted on day side, darker blue-tinted on night side
-                    vec3 surfaceNormal = normalize(vWorldPosition);
-                    float sunFacing = dot(surfaceNormal, uSunDirection);
-                    float dayFactor = smoothstep(-0.2, 0.3, sunFacing);
-
-                    // Base smoke color from brightness
-                    vec3 baseColor = vec3(vBrightness);
-
-                    // Day side: neutral/warm tint, Night side: blue fill light tint
-                    vec3 dayColor = baseColor * mix(vec3(1.17), uSunColor, 0.15);
-                    vec3 nightColor = baseColor * uFillColor * vec3(0.88, 0.94, 1.22);
-
-                    vec3 smokeColor = mix(nightColor, dayColor, dayFactor);
-
-                    // Soft smoky edge from center
-                    float dist = max(abs(rotatedCoord.x), abs(rotatedCoord.y));
-                    float alpha = vAlpha * (1.0 - dist * 1.8);
-                    gl_FragColor = vec4(smokeColor, alpha);
+                    // DEBUG: solid bright red square
+                    gl_FragColor = vec4(1.0, 0.0, 0.0, 1.0);
                 }
             `,
             transparent: true,
