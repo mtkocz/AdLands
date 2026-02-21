@@ -2723,29 +2723,10 @@ class GameRoom {
 
       const previousOwner = state.owner;
 
-      // Calculate current total tics
-      const currentTotalTics = state.tics.rust + state.tics.cobalt + state.tics.viridian;
-      const isFull = currentTotalTics >= state.capacity;
-
       // Process tic gains per faction
       for (const faction of FACTIONS) {
         if (counts[faction] <= 0) continue;
         const ticsToAdd = counts[faction] * this.tickDelta * 2; // x2 to compensate for running at half tick rate
-
-        // Subtract from enemy factions (split evenly among those with tics)
-        let enemyCount = 0;
-        for (const f of FACTIONS) {
-          if (f !== faction && state.tics[f] > 0) enemyCount++;
-        }
-        if (enemyCount > 0) {
-          const lossPerEnemy = ticsToAdd / enemyCount;
-          for (const f of FACTIONS) {
-            if (f !== faction && state.tics[f] > 0) {
-              state.tics[f] = Math.max(0, state.tics[f] - lossPerEnemy);
-            }
-          }
-        }
-
         state.tics[faction] += ticsToAdd;
       }
 

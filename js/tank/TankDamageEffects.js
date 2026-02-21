@@ -133,7 +133,7 @@ class TankDamageEffects {
 
         // Distance culling: only emit for tanks near the camera
         const camPos = camera ? camera.position : null;
-        const maxDistSq = this.sphereRadius * this.sphereRadius * 0.5; // ~0.7x sphereRadius
+        const maxDistSq = 67600; // 260² — don't emit/render beyond 260 units
 
         // 1. Emit particles for each active tank (nearby only)
         for (const [tankId, effects] of this.tankEffects) {
@@ -148,7 +148,7 @@ class TankDamageEffects {
 
             // Frame-rate independent emission using accumulator
             if (effects.smoke) {
-                effects.emitAccum += dt * 2.5; // 2.5 smoke particles per second
+                effects.emitAccum += dt * 5; // 5 smoke particles per second
                 const emitCount = Math.floor(effects.emitAccum);
                 if (emitCount > 0) {
                     effects.emitAccum -= emitCount;
@@ -268,9 +268,6 @@ class TankDamageEffects {
                     vRotation = aRotation;
                     vWorldPosition = position;
 
-                    // Smoke grows as it rises
-                    float sizeFactor = 1.0 + lifeRatio * 2.5;
-
                     // Fade in quickly, then fade out (peak at 10%)
                     float fadeIn = smoothstep(0.0, 0.1, lifeRatio);
                     float fadeOut = 1.0 - smoothstep(0.5, 1.0, lifeRatio);
@@ -280,7 +277,7 @@ class TankDamageEffects {
                     vBrightness = mix(0.45, 0.05, aColor);
 
                     vec4 mvPosition = modelViewMatrix * vec4(position, 1.0);
-                    gl_PointSize = aSize * sizeFactor * (300.0 / -mvPosition.z);
+                    gl_PointSize = aSize * (300.0 / -mvPosition.z);
                     gl_Position = projectionMatrix * mvPosition;
                 }
             `,
@@ -361,7 +358,7 @@ class TankDamageEffects {
             this.smoke.ages[idx] = 0;
             this.smoke.lifetimes[idx] = 1.1 + Math.random() * 0.75;  // 1.1-1.85 seconds
             this.smoke.colors[idx] = smokeType === 'black' ? 1.0 : 0.0;
-            this.smoke.sizes[idx] = 3.0 + Math.random() * 2.0;
+            this.smoke.sizes[idx] = 2.25 + Math.random() * 1.5;
             this.smoke.rotations[idx] = Math.random() * Math.PI * 2;
             this.smoke.rotationSpeeds[idx] = (Math.random() - 0.5) * 2.0;  // -1 to +1 radians/sec
             this.smoke.opacities[idx] = tankOpacity;  // Initial opacity from tank

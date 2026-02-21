@@ -2102,30 +2102,10 @@
       _captureOldTics.viridian = state.tics.viridian;
       const previousOwner = state.owner;
 
-      // Calculate current total tics to determine if we're in filling or contest phase
-      const currentTotalTics =
-        state.tics.rust + state.tics.cobalt + state.tics.viridian;
-      const isFull = currentTotalTics >= state.capacity;
-
       // Process tic gains - inline loop avoids .filter() array allocation
       for (const faction of _captureFactions) {
         if (counts[faction] <= 0) continue;
         const ticsToAdd = counts[faction];
-
-        // Subtract from enemy factions (split evenly among those with tics)
-        let enemyCount = 0;
-        for (const f of _captureFactions) {
-          if (f !== faction && state.tics[f] > 0) enemyCount++;
-        }
-
-        if (enemyCount > 0) {
-          const lossPerEnemy = ticsToAdd / enemyCount;
-          for (const f of _captureFactions) {
-            if (f !== faction && state.tics[f] > 0) {
-              state.tics[f] = Math.max(0, state.tics[f] - lossPerEnemy);
-            }
-          }
-        }
 
         state.tics[faction] += ticsToAdd;
 

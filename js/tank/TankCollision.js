@@ -152,6 +152,18 @@ class TankCollision {
         // Cache camera world position for backface culling
         if (camera) camera.getWorldPosition(_colCameraWorldPos);
 
+        // Hide particle systems when camera is far from surface (>260 units)
+        if (camera) {
+            const camAltitude = _colCameraWorldPos.length() - this.sphereRadius;
+            if (camAltitude > 260) {
+                if (this.dustSystem) this.dustSystem.visible = false;
+                if (this.sparkSystem) this.sparkSystem.visible = false;
+                this._updateDust(deltaTime);
+                this._updateSparks(deltaTime);
+                return;
+            }
+        }
+
         // Backface + frustum culling for particle systems (with 10 unit margin for smooth visibility)
         if (frustum) {
             // Cull dust system
