@@ -276,8 +276,11 @@ class TankDamageEffects {
                     // Gray (0) or black (1) smoke - pass brightness to fragment
                     vBrightness = mix(0.45, 0.05, aColor);
 
+                    // Smoke grows over lifetime
+                    float sizeFactor = 1.0 + lifeRatio * 2.0;
+
                     vec4 mvPosition = modelViewMatrix * vec4(position, 1.0);
-                    gl_PointSize = aSize * (300.0 / -mvPosition.z);
+                    gl_PointSize = aSize * sizeFactor * (300.0 / -mvPosition.z);
                     gl_Position = projectionMatrix * mvPosition;
                 }
             `,
@@ -292,6 +295,13 @@ class TankDamageEffects {
                 uniform vec3 uFillColor;
 
                 void main() {
+                    // Rotated square
+                    vec2 coord = gl_PointCoord - vec2(0.5);
+                    float c = cos(vRotation);
+                    float s = sin(vRotation);
+                    vec2 rc = vec2(coord.x * c - coord.y * s, coord.x * s + coord.y * c);
+                    if (abs(rc.x) > 0.45 || abs(rc.y) > 0.45) discard;
+
                     // Terminator-aware coloring
                     vec3 surfaceNormal = normalize(vWorldPosition);
                     float sunFacing = dot(surfaceNormal, uSunDirection);
@@ -358,7 +368,7 @@ class TankDamageEffects {
             this.smoke.ages[idx] = 0;
             this.smoke.lifetimes[idx] = 1.1 + Math.random() * 0.75;  // 1.1-1.85 seconds
             this.smoke.colors[idx] = smokeType === 'black' ? 1.0 : 0.0;
-            this.smoke.sizes[idx] = 2.25 + Math.random() * 1.5;
+            this.smoke.sizes[idx] = 3.375 + Math.random() * 2.25;
             this.smoke.rotations[idx] = Math.random() * Math.PI * 2;
             this.smoke.rotationSpeeds[idx] = (Math.random() - 0.5) * 2.0;  // -1 to +1 radians/sec
             this.smoke.opacities[idx] = tankOpacity;  // Initial opacity from tank
@@ -539,6 +549,13 @@ class TankDamageEffects {
                 varying float vRotation;
 
                 void main() {
+                    // Rotated square
+                    vec2 coord = gl_PointCoord - vec2(0.5);
+                    float c = cos(vRotation);
+                    float s = sin(vRotation);
+                    vec2 rc = vec2(coord.x * c - coord.y * s, coord.x * s + coord.y * c);
+                    if (abs(rc.x) > 0.45 || abs(rc.y) > 0.45) discard;
+
                     gl_FragColor = vec4(vColor * 0.9, vAlpha);
                 }
             `,
@@ -590,7 +607,7 @@ class TankDamageEffects {
 
             this.fire.ages[idx] = 0;
             this.fire.lifetimes[idx] = 0.3 + Math.random() * 0.4;  // 0.3-0.7 seconds (shorter than smoke)
-            this.fire.sizes[idx] = 4.0 + Math.random() * 3.0;
+            this.fire.sizes[idx] = 2.0 + Math.random() * 1.5;
             this.fire.rotations[idx] = Math.random() * Math.PI * 2;
             this.fire.rotationSpeeds[idx] = (Math.random() - 0.5) * 6.0;  // -3 to +3 radians/sec (faster for fire)
 
