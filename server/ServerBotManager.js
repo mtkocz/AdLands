@@ -1571,6 +1571,7 @@ class ServerBotManager {
       state.hp = bot.hp;
       state.d = bot.isDead ? 1 : 0;
       state.f = bot.faction;
+      state.n = bot.name; // For lazy client-side spawning
       state.r = 0; // Bots have no rank
       state.rt = 0;
     }

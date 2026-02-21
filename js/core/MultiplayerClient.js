@@ -266,9 +266,11 @@
         }
       }
 
-      // Spawn existing players that are NOT waiting for portal
+      // Spawn existing HUMAN players that are NOT waiting for portal
+      // Bots are lazily spawned from state updates (spatial-filtered, ~60 nearby)
       for (const [id, playerState] of Object.entries(data.players)) {
         if (id === net.playerId) continue; // Skip ourselves
+        if (id.startsWith("bot-")) continue; // Bots created lazily from state updates
         if (playerState.waitingForPortal) continue; // Don't spawn waiting players
         spawnRemoteTank(playerState);
       }
@@ -309,6 +311,10 @@
     };
 
     net.onStateUpdate = (data) => {
+      // Track which bots were seen this tick (for cleanup)
+      if (!mp._seenBotIds) mp._seenBotIds = new Set();
+      mp._seenBotIds.clear();
+
       // Update all remote tanks with their new target states
       for (const [id, state] of Object.entries(data.players)) {
         if (id === net.playerId) {
@@ -343,7 +349,20 @@
         // Skip waiting players (d === 2)
         if (state.d === 2) continue;
 
-        const remoteTank = remoteTanks.get(id);
+        // Track seen bots for cleanup
+        if (id.startsWith("bot-")) mp._seenBotIds.add(id);
+
+        // Lazy-spawn bots that entered the spatial filter radius
+        let remoteTank = remoteTanks.get(id);
+        if (!remoteTank && id.startsWith("bot-") && state.d !== 1) {
+          spawnRemoteTank({
+            id, name: state.n || id.slice(4),
+            faction: state.f, theta: state.t, phi: state.p,
+            heading: state.h, speed: state.s, hp: state.hp || 100, maxHp: 100,
+            isBot: true,
+          });
+          remoteTank = remoteTanks.get(id);
+        }
         if (remoteTank) {
           // Handle death/alive state transitions from server ticks
           if (state.d === 1 && !remoteTank.isDead) {
@@ -419,6 +438,13 @@
             playerTags.updateFaction?.(id, state.f);
             tankHeadlights.updateFaction?.(id, state.f);
           }
+        }
+      }
+
+      // Cleanup bots that left the spatial filter (not seen in this tick)
+      for (const [id] of remoteTanks) {
+        if (id.startsWith("bot-") && !mp._seenBotIds.has(id)) {
+          despawnRemoteTank(id);
         }
       }
 
