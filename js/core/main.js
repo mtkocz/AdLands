@@ -2946,7 +2946,8 @@
   document.getElementById("abort-travel-btn").addEventListener("click", () => {
     fastTravel.onAbortClick();
   });
-  document.getElementById("travel-btn").addEventListener("click", () => {
+  document.getElementById("travel-btn").addEventListener("click", (e) => {
+    console.log('[main.js] travel-btn clicked! fastTravel.state:', fastTravel.state, 'active:', fastTravel.active, 'previewPortalIndex:', fastTravel.previewPortalIndex);
     fastTravel.onTravelClick();
   });
   document.getElementById("go-back-btn").addEventListener("click", () => {
@@ -3999,15 +4000,20 @@
       }
 
       // Progress bar: weighted sum of loading phases (never decreases)
-      // When sponsors are loading: warmup 40% + sponsors 40% + stability 20%
-      // When no sponsors:          warmup 80% + stability 20%
+      // Sponsors actively loading:   warmup 40% + sponsors 40% + stability 20%
+      // Waiting for connection / no sponsors: warmup 80% + stability 20%
       const warmupRatio = Math.min(1, warmupFrames / WARMUP_FRAMES_MIN);
       const stabilityRatio = Math.min(1, stableFrameCount / STABLE_FRAMES_NEEDED);
       let newProgress;
-      if (sponsorLoadActive || !sponsorTexturesReady) {
+      const sponsorsLoading = sponsorLoadActive || (sponsorLoadProgress > 0 && !sponsorTexturesReady);
+      if (sponsorsLoading) {
         newProgress = warmupRatio * 40 + sponsorLoadProgress * 40 + stabilityRatio * 20;
       } else {
         newProgress = warmupRatio * 80 + stabilityRatio * 20;
+      }
+      // Cap at 90% while waiting for connection (sponsorTexturesReady is still false)
+      if (!sponsorTexturesReady && !sponsorsLoading) {
+        newProgress = Math.min(90, newProgress);
       }
       loadingProgress = Math.max(loadingProgress, Math.min(100, newProgress));
 
@@ -4020,10 +4026,12 @@
 
       // Update loading text based on progress
       if (loadingText) {
-        if (!sponsorTexturesReady && sponsorLoadProgress < 0.9) {
+        if (!sponsorTexturesReady && sponsorLoadProgress > 0 && sponsorLoadProgress < 0.9) {
           loadingText.textContent = "loading sponsors...";
-        } else if (!sponsorTexturesReady) {
+        } else if (!sponsorTexturesReady && sponsorLoadProgress >= 0.9) {
           loadingText.textContent = "finalizing...";
+        } else if (!sponsorTexturesReady && loadingProgress >= 80) {
+          loadingText.textContent = "connecting...";
         } else if (loadingProgress < 30) {
           loadingText.textContent = "initializing...";
         } else if (loadingProgress < 60) {

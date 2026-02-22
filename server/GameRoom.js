@@ -575,7 +575,7 @@ class GameRoom {
         patternImage: urls.patternUrl ? urls.patternUrl + cacheBust : null,
         patternAdjustment: sponsor.patternAdjustment,
         createdAt: sponsor.createdAt,
-        logoImage: sponsor.logoImage || null,
+        logoImage: urls.logoUrl ? urls.logoUrl + cacheBust : null,
       };
     });
   }
@@ -638,7 +638,7 @@ class GameRoom {
         patternImage: urls.patternUrl ? urls.patternUrl + cacheBust : null,
         patternAdjustment: sponsor.patternAdjustment,
         createdAt: sponsor.createdAt,
-        logoImage: sponsor.logoImage || null,
+        logoImage: urls.logoUrl ? urls.logoUrl + cacheBust : null,
       };
     });
   }
