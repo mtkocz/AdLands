@@ -173,12 +173,14 @@
   skybox.layers.set(0);
   scene.add(skybox);
 
+  let skyboxReady = false;
   new THREE.TextureLoader().load('assets/sprites/hdri.png', (tex) => {
     tex.minFilter = THREE.NearestFilter;
     tex.magFilter = THREE.NearestFilter;
     tex.generateMipmaps = false;
     skyboxMat.map = tex;
     skyboxMat.needsUpdate = true;
+    skyboxReady = true;
   });
 
   const camera = new THREE.PerspectiveCamera(
@@ -4033,8 +4035,9 @@
         }
       }
 
-      // Ready when: sponsor textures loaded AND ((min frames passed AND stable) OR hard cap reached)
+      // Ready when: skybox + sponsors loaded AND ((min frames passed AND stable) OR hard cap reached)
       const isReady =
+        skyboxReady &&
         sponsorTexturesReady &&
         ((warmupFrames >= WARMUP_FRAMES_MIN &&
           stableFrameCount >= STABLE_FRAMES_NEEDED) ||

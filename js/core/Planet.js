@@ -3836,16 +3836,13 @@ class Planet {
     roughness = 0.8,
     metalness = 0.1,
   ) {
-    // Apply levels adjustment then pixel art filter
+    // Apply levels adjustment (pixel art filter is pre-baked server-side)
     let finalTexture = texture;
     if (texture.image) {
-      // Apply full Photoshop-style levels adjustment
-      const levelsTexture = this._applyLevelsAdjustment(
+      finalTexture = this._applyLevelsAdjustment(
         texture.image,
         adjustment,
       );
-      // Then apply pixel art filter for retro look
-      finalTexture = this._applyPixelArtFilter(levelsTexture.image);
       finalTexture.wrapS = texture.wrapS;
       finalTexture.wrapT = texture.wrapT;
     }

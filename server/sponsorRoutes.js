@@ -8,12 +8,10 @@ const { Router } = require("express");
 const fs = require("fs");
 const fsp = require("fs").promises;
 const path = require("path");
-let sharp;
-try { sharp = require("sharp"); } catch (e) { /* optional — image resizing disabled */ }
+let applyPixelArtFilter;
+try { applyPixelArtFilter = require("./pixelArtFilter").applyPixelArtFilter; } catch (e) { /* optional — needs sharp */ }
 const { getFirestore } = require("./firebaseAdmin");
 const { sendViaResend } = require("./inquiryRoutes");
-
-const SPONSOR_MAX_DIMENSION = 512;
 
 /**
  * Find an existing file on disk matching a prefix (e.g. "sponsor_123." or "sponsor_123_logo.").
@@ -41,20 +39,16 @@ async function extractSponsorImage(sponsor, texDir) {
       const ext = match[1] === "jpeg" ? "jpg" : match[1];
       const filePath = path.join(texDir, `${sponsor.id}.${ext}`);
       const raw = Buffer.from(match[2], "base64");
-      if (sharp) {
-        // Resize to max 512px and write optimized PNG
-        const optimized = await sharp(raw)
-          .resize(SPONSOR_MAX_DIMENSION, SPONSOR_MAX_DIMENSION, {
-            fit: "inside",
-            withoutEnlargement: true,
-          })
-          .png({ compressionLevel: 9 })
-          .toBuffer();
-        await fsp.writeFile(filePath, optimized);
+      if (applyPixelArtFilter) {
+        // Bake pixel art filter: downscale to 128px, 8 colors, Bayer dithering
+        const baked = await applyPixelArtFilter(raw);
+        const pngPath = path.join(texDir, `${sponsor.id}.png`);
+        await fsp.writeFile(pngPath, baked);
+        urls.patternUrl = `/sponsor-textures/${sponsor.id}.png`;
       } else {
         await fsp.writeFile(filePath, raw);
+        urls.patternUrl = `/sponsor-textures/${sponsor.id}.${ext}`;
       }
-      urls.patternUrl = `/sponsor-textures/${sponsor.id}.${ext}`;
     }
   } else {
     // No base64 data — check for previously extracted file on disk
