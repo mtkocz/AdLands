@@ -175,13 +175,17 @@
       if (data.world && planet) {
         planet.applyServerWorld(data.world);
 
-        // Apply sponsor metadata immediately, load textures lazily in background
+        // Preload sponsor textures (baked to ~1-3KB each, fast even on slow connections)
         if (data.world.sponsors && data.world.sponsors.length > 0) {
-          planet.applySponsorVisuals(data.world.sponsors, true); // skip textures
-          planet.deElevateSponsorTiles();
-          planet.mergeClusterTiles();
-          mp.setSponsorTexturesReady(); // unblock loading screen now
-          planet.lazyLoadSponsorTextures(data.world.sponsors); // load textures in background
+          if (mp.setSponsorLoadProgress) mp.setSponsorLoadProgress(0);
+          planet.preloadSponsorTextures(data.world.sponsors, (p) => {
+            if (mp.setSponsorLoadProgress) mp.setSponsorLoadProgress(p * 0.9);
+          }).then(() => {
+            planet.applySponsorVisuals(data.world.sponsors);
+            planet.deElevateSponsorTiles();
+            planet.mergeClusterTiles();
+            mp.setSponsorTexturesReady();
+          });
         } else {
           planet.mergeClusterTiles();
           mp.setSponsorTexturesReady();
@@ -232,7 +236,8 @@
       // Fallback: if server says we need to choose a portal but fast travel
       // UI isn't showing (mid-game reconnect that fell through to addPlayer),
       // enter fast travel so the player isn't stuck with ignored inputs.
-      if (data.you.waitingForPortal && mp.fastTravel && !mp.fastTravel.active) {
+      // Only for reconnections — fresh players go through auth → startPortalSelection().
+      if (data.you.reconnected && data.you.waitingForPortal && mp.fastTravel && !mp.fastTravel.active) {
         net.pendingInputs = [];
         tank.setVisible(false);
         tank.setControlsEnabled(false);
@@ -923,6 +928,7 @@
 
     // Portal confirmed: server accepted our portal choice — teleport and exit fast travel
     net.onPortalConfirmed = (data) => {
+      console.log('[MP] portal-confirmed received:', data);
       // Clear stale prediction inputs accumulated during fast travel
       net.pendingInputs = [];
 
@@ -1927,8 +1933,11 @@
         }
       };
       mp.fastTravel.onPortalChosen = (portalTileIndex) => {
+        console.log('[MP] onPortalChosen — portalTileIndex:', portalTileIndex, 'isMultiplayer:', net.isMultiplayer, 'connected:', net.connected, 'playerId:', net.playerId);
         if (net.isMultiplayer) {
           net.sendChoosePortal(portalTileIndex);
+        } else {
+          console.warn('[MP] NOT sending choose-portal — isMultiplayer is false');
         }
       };
     }

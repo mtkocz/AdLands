@@ -315,10 +315,12 @@ class FastTravel {
     }
 
     _executeTravel() {
-        if (this.previewPortalIndex === null) return;
+        console.log('[FastTravel] _executeTravel — previewPortalIndex:', this.previewPortalIndex, 'onPortalChosen:', !!this.onPortalChosen);
+        if (this.previewPortalIndex === null) { console.warn('[FastTravel] previewPortalIndex is null, aborting'); return; }
 
         // Multiplayer: send portal choice to server, wait for confirmation
         if (this.onPortalChosen) {
+            console.log('[FastTravel] Sending portal choice to server:', this.previewPortalIndex);
             this.onPortalChosen(this.previewPortalIndex);
             // Hide UI while waiting for server confirmation
             this._hideAllUI();
@@ -663,6 +665,7 @@ class FastTravel {
     }
 
     onTravelClick() {
+        console.log('[FastTravel] onTravelClick — state:', this.state, 'previewPortalIndex:', this.previewPortalIndex, 'onPortalChosen:', !!this.onPortalChosen);
         if (this.state === 'preview') {
             this._executeTravel();
         }

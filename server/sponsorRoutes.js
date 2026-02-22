@@ -60,10 +60,20 @@ async function extractSponsorImage(sponsor, texDir) {
   if (sponsor.logoImage) {
     const match = sponsor.logoImage.match(/^data:image\/(\w+);base64,(.+)$/);
     if (match) {
-      const ext = match[1] === "jpeg" ? "jpg" : match[1];
-      const filePath = path.join(texDir, `${sponsor.id}_logo.${ext}`);
-      await fsp.writeFile(filePath, Buffer.from(match[2], "base64"));
-      urls.logoUrl = `/sponsor-textures/${sponsor.id}_logo.${ext}`;
+      const raw = Buffer.from(match[2], "base64");
+      const pngPath = path.join(texDir, `${sponsor.id}_logo.png`);
+      if (applyPixelArtFilter) {
+        // Resize logo to 128px (displayed at 64px CSS / 128px retina)
+        const sharp = require("sharp");
+        const optimized = await sharp(raw)
+          .resize(128, 128, { fit: "inside", withoutEnlargement: true })
+          .png({ compressionLevel: 9 })
+          .toBuffer();
+        await fsp.writeFile(pngPath, optimized);
+      } else {
+        await fsp.writeFile(pngPath, raw);
+      }
+      urls.logoUrl = `/sponsor-textures/${sponsor.id}_logo.png`;
     }
   } else {
     // No base64 data — check for previously extracted logo file on disk

@@ -1809,12 +1809,15 @@ class GameRoom {
 
   handleChoosePortal(socketId, portalTileIndex) {
     const player = this.players.get(socketId);
-    if (!player || player.isDead || !player.waitingForPortal) return;
+    if (!player || player.isDead || !player.waitingForPortal) {
+      console.log(`[Room ${this.roomId}] choosePortal REJECTED — player:${!!player}, isDead:${player?.isDead}, waitingForPortal:${player?.waitingForPortal}`);
+      return;
+    }
     player.lastActivityAt = Date.now();
 
     // Validate portal tile index
     if (!this.portalPositionsByTile.has(portalTileIndex)) {
-      DEBUG_LOG && console.log(`[Room ${this.roomId}] Invalid portal tile ${portalTileIndex} from ${player.name}`);
+      console.log(`[Room ${this.roomId}] Invalid portal tile ${portalTileIndex} from ${player.name} (valid: ${[...this.portalPositionsByTile.keys()].join(',')})`);
       return;
     }
 

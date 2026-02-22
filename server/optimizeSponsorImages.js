@@ -38,10 +38,10 @@ async function optimize() {
     let optimized;
 
     if (isLogo) {
-      // Logos: just compress, don't apply pixel art filter
+      // Logos: resize to 128px (displayed at 64px CSS / 128px retina), no pixel art filter
       const sharp = require('sharp');
       optimized = await sharp(inputBuffer)
-        .resize(256, 256, { fit: 'inside', withoutEnlargement: true })
+        .resize(128, 128, { fit: 'inside', withoutEnlargement: true })
         .png({ compressionLevel: 9 })
         .toBuffer();
       logoCount++;

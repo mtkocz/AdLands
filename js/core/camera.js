@@ -149,7 +149,7 @@ class GameCamera {
     } else if (this.mode === "orbital") {
       this._updateOrbital(deltaTime);
     } else if (this.mode === "fastTravel") {
-      this._updateFastTravel();
+      this._updateFastTravel(deltaTime);
     } else if (this.mode === "portalPreview") {
       this._updatePortalPreview();
     } else {
@@ -233,8 +233,16 @@ class GameCamera {
     );
   }
 
-  _updateFastTravel() {
-    // Similar to orbital but at fastTravelDistance
+  _updateFastTravel(deltaTime) {
+    // Auto-rotate when idle (same as orbital)
+    if (this.autoRotate && !this.isDragging) {
+      const hasUserMomentum =
+        Math.abs(this.orbitalVelocity.theta) > 0.0001 ||
+        Math.abs(this.orbitalVelocity.phi) > 0.0001;
+      if (!hasUserMomentum) {
+        this.orbitalTheta += this.autoRotateSpeed * (deltaTime || 1 / 60);
+      }
+    }
     this._applyOrbitalMomentum();
     this._positionCamera(
       this.fastTravelDistance,
@@ -361,7 +369,7 @@ class GameCamera {
           break;
         case "toFastTravel":
           this.mode = "fastTravel";
-          this._updateFastTravel();
+          this._updateFastTravel(deltaTime);
           break;
         case "toPortalPreview":
           this.mode = "portalPreview";
@@ -599,7 +607,6 @@ class GameCamera {
     this.mode = "fastTravel";
     this.fastTravelEnabled = true;
     this.transitioning = false;
-    this.autoRotate = false; // Stop auto-rotate once gameplay begins
 
     // Keep current orbital angles (preserves random position on initial load)
     // Only reset if needed for respawn transitions
@@ -754,6 +761,7 @@ class GameCamera {
         !this.transitioning;
       if (canDrag) {
         this.isDragging = true;
+        this.autoRotate = false; // User took over camera control
         this._rightClickDragStart = { x: e.clientX, y: e.clientY };
         this._wasRightClickDrag = false;
         this.previousMouse = { x: e.clientX, y: e.clientY };
@@ -855,6 +863,7 @@ class GameCamera {
             !this.transitioning;
 
           if (canDrag) {
+            this.autoRotate = false; // User took over camera control
             this._isTrackpadOrbiting = true;
             clearTimeout(this._trackpadOrbitTimeout);
             this._trackpadOrbitTimeout = setTimeout(() => {
@@ -896,6 +905,7 @@ class GameCamera {
               !this.transitioning;
 
             if (canDrag) {
+              this.autoRotate = false; // User took over camera control
               this._isTrackpadOrbiting = true;
               clearTimeout(this._trackpadOrbitTimeout);
               this._trackpadOrbitTimeout = setTimeout(() => {
@@ -951,6 +961,7 @@ class GameCamera {
           if (canDrag) {
             e.preventDefault();
             this.isDragging = true;
+            this.autoRotate = false; // User took over camera control
             this.orbitalVelocity.theta = 0;
             this.orbitalVelocity.phi = 0;
             this.lastMoveTime = performance.now();

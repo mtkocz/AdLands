@@ -3999,12 +3999,12 @@
       }
 
       // Progress bar: weighted sum of loading phases (never decreases)
-      // Singleplayer with sponsor loading: warmup 40% + sponsors 40% + stability 20%
-      // Otherwise (multiplayer lazy-loads sponsors): warmup 80% + stability 20%
+      // When sponsors are loading: warmup 40% + sponsors 40% + stability 20%
+      // When no sponsors:          warmup 80% + stability 20%
       const warmupRatio = Math.min(1, warmupFrames / WARMUP_FRAMES_MIN);
       const stabilityRatio = Math.min(1, stableFrameCount / STABLE_FRAMES_NEEDED);
       let newProgress;
-      if (sponsorLoadActive) {
+      if (sponsorLoadActive || !sponsorTexturesReady) {
         newProgress = warmupRatio * 40 + sponsorLoadProgress * 40 + stabilityRatio * 20;
       } else {
         newProgress = warmupRatio * 80 + stabilityRatio * 20;
@@ -4020,9 +4020,9 @@
 
       // Update loading text based on progress
       if (loadingText) {
-        if (sponsorLoadActive && sponsorLoadProgress < 0.9) {
+        if (!sponsorTexturesReady && sponsorLoadProgress < 0.9) {
           loadingText.textContent = "loading sponsors...";
-        } else if (sponsorLoadActive && !sponsorTexturesReady) {
+        } else if (!sponsorTexturesReady) {
           loadingText.textContent = "finalizing...";
         } else if (loadingProgress < 30) {
           loadingText.textContent = "initializing...";
