@@ -13,6 +13,7 @@
   justify-content: center;
   background: rgba(10, 10, 10, 0.6);
   transition: opacity 0.4s ease;
+  pointer-events: none;
 }
 
 #auth-screen.auth-hidden {
@@ -35,6 +36,7 @@
   border: var(--border-width) solid var(--border-dark);
   -webkit-clip-path: var(--clip-rounded-8);
   clip-path: var(--clip-rounded-8);
+  pointer-events: auto;
 }
 
 /* Close button (return to game) */

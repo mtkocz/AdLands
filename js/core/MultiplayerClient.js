@@ -175,18 +175,13 @@
       if (data.world && planet) {
         planet.applyServerWorld(data.world);
 
-        // Sponsor images are now URLs (not base64) — browser loads them efficiently
+        // Apply sponsor metadata immediately, load textures lazily in background
         if (data.world.sponsors && data.world.sponsors.length > 0) {
-          if (mp.setSponsorLoadProgress) mp.setSponsorLoadProgress(0);
-          planet.preloadSponsorTextures(data.world.sponsors, (p) => {
-            // Cap at 0.9 — remaining 0.1 covers applySponsorVisuals + deElevateSponsorTiles
-            if (mp.setSponsorLoadProgress) mp.setSponsorLoadProgress(p * 0.9);
-          }).then(() => {
-            planet.applySponsorVisuals(data.world.sponsors);
-            planet.deElevateSponsorTiles();
-            planet.mergeClusterTiles();
-            mp.setSponsorTexturesReady();
-          });
+          planet.applySponsorVisuals(data.world.sponsors, true); // skip textures
+          planet.deElevateSponsorTiles();
+          planet.mergeClusterTiles();
+          mp.setSponsorTexturesReady(); // unblock loading screen now
+          planet.lazyLoadSponsorTextures(data.world.sponsors); // load textures in background
         } else {
           planet.mergeClusterTiles();
           mp.setSponsorTexturesReady();

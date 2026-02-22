@@ -2105,12 +2105,34 @@
       _captureOldTics.viridian = state.tics.viridian;
       const previousOwner = state.owner;
 
+      // Snapshot tics before modifications (for snapshot-based steal calculations)
+      const snapR = state.tics.rust, snapC = state.tics.cobalt, snapV = state.tics.viridian;
+      const snapTotal = snapR + snapC + snapV;
+      const isFull = snapTotal >= state.capacity;
+
       // Process tic gains - inline loop avoids .filter() array allocation
       for (const faction of _captureFactions) {
         if (counts[faction] <= 0) continue;
         const ticsToAdd = counts[faction];
 
-        state.tics[faction] += ticsToAdd;
+        if (isFull) {
+          // Territory full — steal from enemy factions proportionally
+          const selfSnap = faction === 'rust' ? snapR : faction === 'cobalt' ? snapC : snapV;
+          const enemyTotal = snapTotal - selfSnap;
+          if (enemyTotal > 0) {
+            for (const f of _captureFactions) {
+              if (f === faction) continue;
+              const fSnap = f === 'rust' ? snapR : f === 'cobalt' ? snapC : snapV;
+              if (fSnap > 0) {
+                state.tics[f] -= ticsToAdd * (fSnap / enemyTotal);
+              }
+            }
+            state.tics[faction] += ticsToAdd;
+          }
+        } else {
+          // Territory not full — add from unclaimed pool
+          state.tics[faction] += ticsToAdd;
+        }
 
         // Award crypto for player contributing tics
         if (
@@ -2118,21 +2140,13 @@
           clusterId === playerCluster &&
           !tank.isDead
         ) {
-          // Calculate enemy tic presence
-          const enemyTics =
-            state.tics.rust +
-            state.tics.cobalt +
-            state.tics.viridian -
-            state.tics[playerFaction];
-
-          // Check if territory is fully owned with no contest
+          // Check if territory is fully owned by player's faction
           const isFullyOwned =
             state.owner === playerFaction &&
             state.tics[playerFaction] >= state.capacity * 0.99;
-          const hasEnemyPresence = enemyTics > 0.5; // Account for floating point math
 
-          // Only award crypto if territory is NOT fully secured (contested or uncaptured)
-          if (!isFullyOwned || hasEnemyPresence) {
+          // Only award crypto if territory is NOT fully secured
+          if (!isFullyOwned) {
             tank.group.getWorldPosition(_capturePlayerWorldPos);
             cryptoSystem.awardTicCrypto(_capturePlayerWorldPos);
             capturePulse.emit(_capturePlayerWorldPos, playerFaction, playerCluster);
@@ -2140,11 +2154,15 @@
         }
       }
 
-      // Cap total tics at cluster capacity
+      // Floor negative tics (floating-point edge cases near zero)
+      for (const f of _captureFactions) {
+        if (state.tics[f] < 0) state.tics[f] = 0;
+      }
+
+      // Cap total tics at cluster capacity (handles not-full → full transition)
       const totalTics =
         state.tics.rust + state.tics.cobalt + state.tics.viridian;
       if (totalTics > state.capacity) {
-        // Scale down proportionally to fit capacity
         const scale = state.capacity / totalTics;
         for (const faction of _captureFactions) {
           state.tics[faction] *= scale;
@@ -3979,13 +3997,12 @@
       }
 
       // Progress bar: weighted sum of loading phases (never decreases)
-      // When sponsors are loading: warmup 40% + sponsors 40% + stability 20%
-      // When no sponsors:          warmup 80% + stability 20%
+      // Singleplayer with sponsor loading: warmup 40% + sponsors 40% + stability 20%
+      // Otherwise (multiplayer lazy-loads sponsors): warmup 80% + stability 20%
       const warmupRatio = Math.min(1, warmupFrames / WARMUP_FRAMES_MIN);
       const stabilityRatio = Math.min(1, stableFrameCount / STABLE_FRAMES_NEEDED);
       let newProgress;
-      // sponsorLoadActive (singleplayer) or !sponsorTexturesReady (multiplayer waiting for server)
-      if (sponsorLoadActive || !sponsorTexturesReady) {
+      if (sponsorLoadActive) {
         newProgress = warmupRatio * 40 + sponsorLoadProgress * 40 + stabilityRatio * 20;
       } else {
         newProgress = warmupRatio * 80 + stabilityRatio * 20;
@@ -4001,9 +4018,9 @@
 
       // Update loading text based on progress
       if (loadingText) {
-        if (!sponsorTexturesReady && sponsorLoadProgress < 0.9) {
+        if (sponsorLoadActive && sponsorLoadProgress < 0.9) {
           loadingText.textContent = "loading sponsors...";
-        } else if (!sponsorTexturesReady) {
+        } else if (sponsorLoadActive && !sponsorTexturesReady) {
           loadingText.textContent = "finalizing...";
         } else if (loadingProgress < 30) {
           loadingText.textContent = "initializing...";

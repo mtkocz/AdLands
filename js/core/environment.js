@@ -181,6 +181,11 @@ class Environment {
     if (this._currentFrustumSize !== undefined && Math.abs(this._currentFrustumSize - frustumSize) < 5) return;
     this._currentFrustumSize = frustumSize;
 
+    // Scale normalBias with frustum to maintain consistent texel-space offset
+    const biasScale = frustumSize / 200;
+    this.sunLight.shadow.normalBias = 0.03 * biasScale;
+    if (this.fillLight) this.fillLight.shadow.normalBias = 0.05 * biasScale;
+
     const sunCam = this.sunLight.shadow.camera;
     const fillCam = this.fillLight ? this.fillLight.shadow.camera : null;
 

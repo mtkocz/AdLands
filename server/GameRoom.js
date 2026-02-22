@@ -2776,14 +2776,42 @@ class GameRoom {
 
       const previousOwner = state.owner;
 
+      // Snapshot tics before modifications (for snapshot-based steal calculations)
+      const snapR = state.tics.rust, snapC = state.tics.cobalt, snapV = state.tics.viridian;
+      const snapTotal = snapR + snapC + snapV;
+      const isFull = snapTotal >= state.capacity;
+
       // Process tic gains per faction
       for (const faction of FACTIONS) {
         if (counts[faction] <= 0) continue;
         const ticsToAdd = counts[faction] * this.tickDelta * 2; // x2 to compensate for running at half tick rate
-        state.tics[faction] += ticsToAdd;
+
+        if (isFull) {
+          // Territory full — steal from enemy factions proportionally
+          const selfSnap = faction === 'rust' ? snapR : faction === 'cobalt' ? snapC : snapV;
+          const enemyTotal = snapTotal - selfSnap;
+          if (enemyTotal > 0) {
+            for (const f of FACTIONS) {
+              if (f === faction) continue;
+              const fSnap = f === 'rust' ? snapR : f === 'cobalt' ? snapC : snapV;
+              if (fSnap > 0) {
+                state.tics[f] -= ticsToAdd * (fSnap / enemyTotal);
+              }
+            }
+            state.tics[faction] += ticsToAdd;
+          }
+        } else {
+          // Territory not full — add from unclaimed pool
+          state.tics[faction] += ticsToAdd;
+        }
       }
 
-      // Cap total tics at cluster capacity
+      // Floor negative tics (floating-point edge cases near zero)
+      for (const f of FACTIONS) {
+        if (state.tics[f] < 0) state.tics[f] = 0;
+      }
+
+      // Cap total tics at cluster capacity (handles not-full → full transition)
       const totalTics = state.tics.rust + state.tics.cobalt + state.tics.viridian;
       if (totalTics > state.capacity) {
         const scale = state.capacity / totalTics;

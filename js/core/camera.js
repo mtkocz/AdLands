@@ -85,6 +85,10 @@ class GameCamera {
     this.previousMouse = { x: 0, y: 0 };
     this.lastMoveTime = 0;
 
+    // Auto-rotate state (gentle orbit on auth/login screen)
+    this.autoRotate = true; // Enabled by default, disabled when gameplay starts
+    this.autoRotateSpeed = 0.06; // Radians per second (~3.4° per second, full revolution ~104s)
+
     // Orbital momentum state
     this.orbitalVelocity = { theta: 0, phi: 0 };
     this.orbitalFriction = 0.95; // Velocity decay per frame (lower = faster stop)
@@ -143,7 +147,7 @@ class GameCamera {
     if (this.transitioning) {
       this._updateTransition(tankPosition, deltaTime);
     } else if (this.mode === "orbital") {
-      this._updateOrbital();
+      this._updateOrbital(deltaTime);
     } else if (this.mode === "fastTravel") {
       this._updateFastTravel();
     } else if (this.mode === "portalPreview") {
@@ -211,7 +215,16 @@ class GameCamera {
   // MODE UPDATES
   // ========================
 
-  _updateOrbital() {
+  _updateOrbital(deltaTime) {
+    // Auto-rotate when idle (login screen ambiance)
+    if (this.autoRotate && !this.isDragging) {
+      const hasUserMomentum =
+        Math.abs(this.orbitalVelocity.theta) > 0.0001 ||
+        Math.abs(this.orbitalVelocity.phi) > 0.0001;
+      if (!hasUserMomentum) {
+        this.orbitalTheta += this.autoRotateSpeed * (deltaTime || 1 / 60);
+      }
+    }
     this._applyOrbitalMomentum();
     this._positionCamera(
       this.orbitalDistance,
@@ -344,7 +357,7 @@ class GameCamera {
       switch (this.transitionType) {
         case "toOrbital":
           this.mode = "orbital";
-          this._updateOrbital();
+          this._updateOrbital(deltaTime);
           break;
         case "toFastTravel":
           this.mode = "fastTravel";
@@ -586,6 +599,7 @@ class GameCamera {
     this.mode = "fastTravel";
     this.fastTravelEnabled = true;
     this.transitioning = false;
+    this.autoRotate = false; // Stop auto-rotate once gameplay begins
 
     // Keep current orbital angles (preserves random position on initial load)
     // Only reset if needed for respawn transitions
@@ -733,7 +747,6 @@ class GameCamera {
     this._wasRightClickDrag = false;
 
     el.addEventListener("mousedown", (e) => {
-      if (window._authScreenInstance?.isVisible) return;
       if (e.button !== 2) return; // Only right-click
 
       const canDrag =
@@ -752,7 +765,6 @@ class GameCamera {
 
     // Use window for mousemove/mouseup so dragging works even when mouse goes over UI elements
     window.addEventListener("mousemove", (e) => {
-      if (window._authScreenInstance?.isVisible) return;
       const canDrag =
         (this.mode === "orbital" || this.mode === "fastTravel") &&
         !this.transitioning;
@@ -812,7 +824,6 @@ class GameCamera {
       "wheel",
       (e) => {
         e.preventDefault();
-        if (window._authScreenInstance?.isVisible) return;
 
         // Pinch gesture (ctrlKey) = zoom between surface/orbital
         if (e.ctrlKey) {
@@ -933,7 +944,6 @@ class GameCamera {
     el.addEventListener(
       "touchstart",
       (e) => {
-        if (window._authScreenInstance?.isVisible) return;
         if (e.touches.length === 2) {
           const canDrag =
             (this.mode === "orbital" || this.mode === "fastTravel") &&
@@ -964,7 +974,6 @@ class GameCamera {
     el.addEventListener(
       "touchmove",
       (e) => {
-        if (window._authScreenInstance?.isVisible) return;
         if (e.touches.length === 2 && this.isDragging) {
           const canDrag =
             (this.mode === "orbital" || this.mode === "fastTravel") &&

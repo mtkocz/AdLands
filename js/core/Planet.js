@@ -3371,7 +3371,7 @@ class Planet {
    * It only marks sponsor metadata, initializes hold timers, and applies textures.
    * @param {Array} sponsors - Array of sponsor objects with clusterId from server
    */
-  applySponsorVisuals(sponsors) {
+  applySponsorVisuals(sponsors, skipTextures = false) {
     for (const sponsor of sponsors) {
       if (!sponsor.cluster || !sponsor.cluster.tileIndices || sponsor.cluster.tileIndices.length === 0) continue;
       const clusterId = sponsor.clusterId;
@@ -3413,7 +3413,9 @@ class Planet {
       });
 
       // Apply sponsor pattern texture to tiles (Three.js visuals)
-      this._applySponsorTexture(sponsor, tileIndices);
+      if (!skipTextures) {
+        this._applySponsorTexture(sponsor, tileIndices);
+      }
     }
 
     // Regenerate all cluster outlines so sponsor clusters get outlines
@@ -3541,6 +3543,60 @@ class Planet {
       img.src = src;
     }));
     return Promise.all(loads);
+  }
+
+  /**
+   * Lazy-load sponsor textures in batches after the loading screen dismisses.
+   * Each texture is applied to its tiles as it arrives.
+   * @param {Array} sponsors - Array of sponsor objects with patternImage fields
+   */
+  lazyLoadSponsorTextures(sponsors) {
+    const queue = [];
+    for (const sponsor of sponsors) {
+      const src = sponsor.patternImage || sponsor.patternUrl;
+      if (!src) continue;
+      if (this._sponsorTextureCache.has(src)) continue;
+      queue.push({ sponsor, src });
+    }
+    if (queue.length === 0) return;
+
+    const BATCH_SIZE = 4;
+    let index = 0;
+    const planet = this;
+
+    const loadNext = () => {
+      const batch = queue.slice(index, index + BATCH_SIZE);
+      index += BATCH_SIZE;
+      if (batch.length === 0) return;
+
+      const promises = batch.map(({ sponsor, src }) => new Promise((resolve) => {
+        const img = new Image();
+        img.onload = () => {
+          const texture = new THREE.Texture(img);
+          texture.wrapS = texture.wrapT = THREE.RepeatWrapping;
+          texture.minFilter = THREE.NearestFilter;
+          texture.magFilter = THREE.NearestFilter;
+          texture.needsUpdate = true;
+          planet._sponsorTextureCache.set(src, texture);
+
+          const entry = planet.sponsorClusters.get(sponsor.id);
+          if (entry) {
+            planet._updateSponsorTileMaterialsTiled(entry.tileIndices, texture, sponsor);
+          }
+          resolve();
+        };
+        img.onerror = () => {
+          console.warn(`[Planet] Failed to lazy-load sponsor texture: ${sponsor.name || sponsor.id}`);
+          resolve();
+        };
+        img.src = src;
+      }));
+
+      Promise.all(promises).then(loadNext);
+    };
+
+    // Start after loading screen fade-out completes
+    setTimeout(loadNext, 200);
   }
 
   /**

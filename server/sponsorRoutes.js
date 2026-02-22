@@ -8,8 +8,11 @@ const { Router } = require("express");
 const fs = require("fs");
 const fsp = require("fs").promises;
 const path = require("path");
+const sharp = require("sharp");
 const { getFirestore } = require("./firebaseAdmin");
 const { sendViaResend } = require("./inquiryRoutes");
+
+const SPONSOR_MAX_DIMENSION = 512;
 
 /**
  * Find an existing file on disk matching a prefix (e.g. "sponsor_123." or "sponsor_123_logo.").
@@ -36,7 +39,15 @@ async function extractSponsorImage(sponsor, texDir) {
     if (match) {
       const ext = match[1] === "jpeg" ? "jpg" : match[1];
       const filePath = path.join(texDir, `${sponsor.id}.${ext}`);
-      await fsp.writeFile(filePath, Buffer.from(match[2], "base64"));
+      // Resize to max 512px and write optimized PNG
+      const optimized = await sharp(Buffer.from(match[2], "base64"))
+        .resize(SPONSOR_MAX_DIMENSION, SPONSOR_MAX_DIMENSION, {
+          fit: "inside",
+          withoutEnlargement: true,
+        })
+        .png({ compressionLevel: 9 })
+        .toBuffer();
+      await fsp.writeFile(filePath, optimized);
       urls.patternUrl = `/sponsor-textures/${sponsor.id}.${ext}`;
     }
   } else {
