@@ -8,7 +8,8 @@ const { Router } = require("express");
 const fs = require("fs");
 const fsp = require("fs").promises;
 const path = require("path");
-const sharp = require("sharp");
+let sharp;
+try { sharp = require("sharp"); } catch (e) { /* optional — image resizing disabled */ }
 const { getFirestore } = require("./firebaseAdmin");
 const { sendViaResend } = require("./inquiryRoutes");
 
@@ -39,15 +40,20 @@ async function extractSponsorImage(sponsor, texDir) {
     if (match) {
       const ext = match[1] === "jpeg" ? "jpg" : match[1];
       const filePath = path.join(texDir, `${sponsor.id}.${ext}`);
-      // Resize to max 512px and write optimized PNG
-      const optimized = await sharp(Buffer.from(match[2], "base64"))
-        .resize(SPONSOR_MAX_DIMENSION, SPONSOR_MAX_DIMENSION, {
-          fit: "inside",
-          withoutEnlargement: true,
-        })
-        .png({ compressionLevel: 9 })
-        .toBuffer();
-      await fsp.writeFile(filePath, optimized);
+      const raw = Buffer.from(match[2], "base64");
+      if (sharp) {
+        // Resize to max 512px and write optimized PNG
+        const optimized = await sharp(raw)
+          .resize(SPONSOR_MAX_DIMENSION, SPONSOR_MAX_DIMENSION, {
+            fit: "inside",
+            withoutEnlargement: true,
+          })
+          .png({ compressionLevel: 9 })
+          .toBuffer();
+        await fsp.writeFile(filePath, optimized);
+      } else {
+        await fsp.writeFile(filePath, raw);
+      }
       urls.patternUrl = `/sponsor-textures/${sponsor.id}.${ext}`;
     }
   } else {
