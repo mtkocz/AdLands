@@ -2470,6 +2470,9 @@ class Planet {
     this.hexGroup.children.forEach((child) => {
       if (!child.isMesh) return;
 
+      // Fast-skip tiles hidden by cluster merging (majority of children)
+      if (child.userData?._merged) return;
+
       // Cull merged cluster meshes by centroid
       if (child.userData?.isMergedCluster) {
         const centroid = this._mergedClusterCentroids?.get(child.userData.clusterId);
@@ -2486,9 +2489,6 @@ class Planet {
         }
         return;
       }
-
-      // Skip individual tiles that have been merged (they stay invisible)
-      if (child.userData?._merged) return;
 
       if (child.userData?.tileIndex === undefined) return;
 
@@ -3362,6 +3362,7 @@ class Planet {
       texture.dispose();
     }
     this._sponsorTextureCache.clear();
+    if (window._sponsorImageCache) window._sponsorImageCache.clear();
   }
 
   /**
@@ -3531,6 +3532,8 @@ class Planet {
         texture.magFilter = THREE.NearestFilter;
         texture.needsUpdate = true;
         this._sponsorTextureCache.set(src, texture);
+        // Store in global cache so moon/billboard can reuse the same image
+        if (window._sponsorImageCache) window._sponsorImageCache.set(src, { img });
         loaded++;
         if (onProgress) onProgress(loaded / total);
         resolve();
@@ -3580,6 +3583,7 @@ class Planet {
           texture.magFilter = THREE.NearestFilter;
           texture.needsUpdate = true;
           planet._sponsorTextureCache.set(src, texture);
+          if (window._sponsorImageCache) window._sponsorImageCache.set(src, { img });
 
           const entry = planet.sponsorClusters.get(sponsor.id);
           if (entry) {
@@ -3632,7 +3636,7 @@ class Planet {
         texture.needsUpdate = true;
 
         this._sponsorTextureCache.set(src, texture);
-        // Update materials with tiled spherical UV projection
+        if (window._sponsorImageCache) window._sponsorImageCache.set(src, { img });
         this._updateSponsorTileMaterialsTiled(tileIndices, texture, sponsor);
       };
       img.src = src;
@@ -3968,7 +3972,6 @@ class Planet {
    * @returns {THREE.CanvasTexture}
    */
   _applyPixelArtFilter(image) {
-    console.log("[PixelArt] _applyPixelArtFilter called, input:", image.width, "x", image.height, image.constructor.name);
     const targetShortSide = 128; // Doubled from 64 for higher resolution
     const maxColors = 8; // Limit to 8-color palette for retro look
     const ditherIntensity = 32;
@@ -4085,7 +4088,6 @@ class Planet {
     finalCtx.imageSmoothingEnabled = false;
     finalCtx.drawImage(downCanvas, 0, 0, upWidth, upHeight);
 
-    console.log("[PixelArt] output:", upWidth, "x", upHeight, "from", targetWidth, "x", targetHeight, "| palette:", palette.length, "colors");
     const processedTexture = new THREE.CanvasTexture(finalCanvas);
     processedTexture.generateMipmaps = false;
     processedTexture.magFilter = THREE.NearestFilter;

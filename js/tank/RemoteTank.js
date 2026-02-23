@@ -45,10 +45,14 @@ class RemoteTank {
       turretAngle: 0,
     };
 
-    // Snapshot interpolation buffer — stores timestamped server states.
+    // Snapshot interpolation ring buffer — stores timestamped server states.
     // Instead of lerping toward one jittery target, we buffer 2-3 snapshots
     // and interpolate between them at a fixed rate for smooth motion.
-    this.snapshotBuffer = [];
+    // Fixed-size ring buffer avoids Array.shift() reindexing (600 calls/sec with 60 tanks at 10Hz).
+    this._snapCap = 8;
+    this._snapBuf = new Array(this._snapCap);
+    this._snapHead = 0;  // next write position
+    this._snapCount = 0; // valid entries (0 to _snapCap)
     this.interpolationDelay = 200; // ms — render 200ms behind real-time (2 server ticks at 10Hz)
 
     // Health
@@ -170,7 +174,7 @@ class RemoteTank {
       if (!wasDead) {
         this.state.speed = 0;
         this.targetState.speed = 0;
-        this.snapshotBuffer.length = 0;
+        this._snapCount = 0;
       }
       return;
     }
@@ -182,20 +186,17 @@ class RemoteTank {
     this.targetState.speed = serverState.s;
     this.targetState.turretAngle = serverState.ta;
 
-    // Push timestamped snapshot into buffer
-    this.snapshotBuffer.push({
+    // Push timestamped snapshot into ring buffer
+    this._snapBuf[this._snapHead] = {
       t: performance.now(),
       theta: serverState.t,
       phi: serverState.p,
       heading: serverState.h,
       speed: serverState.s,
       turretAngle: serverState.ta,
-    });
-
-    // Keep only the last 6 snapshots (600ms at 10Hz)
-    while (this.snapshotBuffer.length > 6) {
-      this.snapshotBuffer.shift();
-    }
+    };
+    this._snapHead = (this._snapHead + 1) % this._snapCap;
+    if (this._snapCount < this._snapCap) this._snapCount++;
   }
 
   /**
@@ -245,18 +246,22 @@ class RemoteTank {
     // This decouples network jitter from visual movement — remote tanks
     // move at a perfectly smooth rate regardless of packet arrival timing.
     const renderTime = performance.now() - this.interpolationDelay;
-    const buf = this.snapshotBuffer;
+    const snapCount = this._snapCount;
 
     let interpolated = false;
 
-    if (buf.length >= 2) {
-      // Find the two snapshots bracketing renderTime
+    if (snapCount >= 2) {
+      // Ring buffer index helper: i=0 is oldest, i=snapCount-1 is newest
+      const oldest = (this._snapHead - snapCount + this._snapCap) % this._snapCap;
+
+      // Find the two snapshots bracketing renderTime (search from newest backward)
       let fromSnap = null;
       let toSnap = null;
-      for (let i = buf.length - 2; i >= 0; i--) {
-        if (buf[i].t <= renderTime) {
-          fromSnap = buf[i];
-          toSnap = buf[i + 1];
+      for (let i = snapCount - 2; i >= 0; i--) {
+        const snap = this._snapBuf[(oldest + i) % this._snapCap];
+        if (snap.t <= renderTime) {
+          fromSnap = snap;
+          toSnap = this._snapBuf[(oldest + i + 1) % this._snapCap];
           break;
         }
       }
@@ -477,7 +482,7 @@ class RemoteTank {
   revive() {
     this.isDead = false;
     this.state.isDead = false;
-    this.snapshotBuffer.length = 0;
+    this._snapCount = 0;
     if (this.state.lean) this.state.lean.initialized = false;
     this.isFading = false;
     this.damageState = "healthy";
@@ -506,7 +511,7 @@ class RemoteTank {
     this.targetState.phi = phi;
     this.targetState.heading = heading;
     // Clear snapshot buffer so we don't interpolate from old positions
-    this.snapshotBuffer.length = 0;
+    this._snapCount = 0;
     // Reset lean to prevent false acceleration spike
     if (this.state.lean) this.state.lean.initialized = false;
   }

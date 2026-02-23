@@ -65,7 +65,26 @@ async function extractSponsorImage(sponsor, texDir) {
     // No base64 data — check for previously extracted file on disk
     const existing = findExistingFile(texDir, sponsor.id + ".");
     if (existing && !existing.includes("_logo")) {
-      urls.patternUrl = withMtime(`/sponsor-textures/${existing}`, path.join(texDir, existing));
+      const filePath = path.join(texDir, existing);
+      // Re-bake oversized files through pixel art filter on startup
+      if (applyPixelArtFilter) {
+        try {
+          const stat = fs.statSync(filePath);
+          if (stat.size > 5000) {
+            const raw = fs.readFileSync(filePath);
+            const baked = await applyPixelArtFilter(raw);
+            const pngPath = path.join(texDir, `${sponsor.id}.png`);
+            await fsp.writeFile(pngPath, baked);
+            urls.patternUrl = withMtime(`/sponsor-textures/${sponsor.id}.png`, pngPath);
+          } else {
+            urls.patternUrl = withMtime(`/sponsor-textures/${existing}`, filePath);
+          }
+        } catch (e) {
+          urls.patternUrl = withMtime(`/sponsor-textures/${existing}`, filePath);
+        }
+      } else {
+        urls.patternUrl = withMtime(`/sponsor-textures/${existing}`, filePath);
+      }
     }
   }
   if (sponsor.logoImage) {

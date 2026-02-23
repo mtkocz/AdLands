@@ -415,7 +415,7 @@
 
           // Adaptive interpolation delay based on server tick rate + ping/jitter.
           // Must be at least 2 server ticks behind for smooth snapshot interpolation.
-          if (remoteTank.snapshotBuffer) {
+          if (remoteTank._snapBuf) {
             const tickMs = 1000 / (net.serverTickRate || 10);
             const halfRtt = net.smoothPing / 2;
             const minDelay = tickMs * 2; // Need 2 ticks of buffer minimum
@@ -1306,7 +1306,6 @@
     // Server awarded tic contribution crypto (once per second while contributing)
     const _ticCryptoPos = new THREE.Vector3();
     net.onTicCrypto = (data) => {
-      if (!window.cryptoSystem) return;
       // Update capture state from payload BEFORE flash (avoids race with capture-progress)
       if (data && data.id) {
         const capState = planet.clusterCaptureState.get(data.id);
@@ -1317,14 +1316,17 @@
           capState.capacity = data.cap;
         }
       }
+      // Sync ring flash with tic pulse — fires regardless of cryptoSystem
+      // so the ring always tracks tic growth (stepped advances here only in MP)
+      mp.triggerTickFlash?.();
+      // Visual effects require cryptoSystem
+      if (!window.cryptoSystem) return;
       tank.group.getWorldPosition(_ticCryptoPos);
       window.cryptoSystem.awardTicCrypto(_ticCryptoPos);
       if (mp.capturePulse) {
         const clusterId = tank.getCurrentClusterId(planet);
         mp.capturePulse.emit(_ticCryptoPos, tank.faction, clusterId);
       }
-      // Sync ring flash with tic pulse (1/sec)
-      mp.triggerTickFlash?.();
     };
 
     // Server awarded holding crypto (once per minute for territory holdings)

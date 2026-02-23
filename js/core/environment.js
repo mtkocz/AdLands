@@ -4,6 +4,14 @@
  */
 
 /**
+ * Global sponsor image cache shared between Planet and Environment.
+ * Keyed by URL — stores { img: HTMLImageElement, filtered: HTMLCanvasElement }.
+ * Prevents duplicate downloads and duplicate pixel art filter runs when the
+ * same sponsor advertises on hex clusters, moons, and billboards.
+ */
+window._sponsorImageCache = window._sponsorImageCache || new Map();
+
+/**
  * Apply pixel art filter to an image: downscale to 128px, 8-color palette,
  * Bayer dithering, then upscale to 4x with nearest-neighbor.
  * Returns a canvas element ready for THREE.Texture.
@@ -158,8 +166,8 @@ class Environment {
     const sunLight = new THREE.DirectionalLight(0xffd9b7, 1.5);
     sunLight.position.set(960, 0, 0);
     sunLight.castShadow = true;
-    sunLight.shadow.mapSize.width = 8192; // High resolution for reduced banding
-    sunLight.shadow.mapSize.height = 8192;
+    sunLight.shadow.mapSize.width = 4096;
+    sunLight.shadow.mapSize.height = 4096;
     sunLight.shadow.camera.near = 0.5;
     sunLight.shadow.camera.far = 2000;
     sunLight.shadow.camera.left = -200; // Reduced frustum for better texel density
@@ -197,8 +205,8 @@ class Environment {
     const fillLight = new THREE.DirectionalLight(0x6b8e99, 0.75);
     fillLight.position.set(-960, 0, 0);
     fillLight.castShadow = true;
-    fillLight.shadow.mapSize.width = 4096;
-    fillLight.shadow.mapSize.height = 4096;
+    fillLight.shadow.mapSize.width = 2048;
+    fillLight.shadow.mapSize.height = 2048;
     fillLight.shadow.camera.near = 0.5;
     fillLight.shadow.camera.far = 2000;
     fillLight.shadow.camera.left = -200;
@@ -626,11 +634,9 @@ class Environment {
       createdAt: sponsorData.createdAt,
     };
 
-    // Load texture from URL
-    const img = new Image();
-    img.crossOrigin = "anonymous";
-    img.onload = () => {
-      const texSrc = _envPixelArtFilter(img);
+    // Load texture from URL (use global cache to share with hex/billboard)
+    const src = sponsorData.patternImage;
+    const applyTexture = (texSrc) => {
       const texture = new THREE.Texture(texSrc);
       texture.wrapS = texture.wrapT = THREE.ClampToEdgeWrapping;
       texture.generateMipmaps = false;
@@ -641,7 +647,6 @@ class Environment {
       mat.uniforms.hasTexture.value = 1;
       mat.uniforms.moonTexture.value = texture;
 
-      // Apply adjustments
       const adj = sponsorData.patternAdjustment || {};
       mat.uniforms.textureScale.value = adj.scale || 1;
       mat.uniforms.textureOffsetX.value = adj.offsetX || 0;
@@ -655,7 +660,20 @@ class Environment {
 
       mat.needsUpdate = true;
     };
-    img.src = sponsorData.patternImage;
+
+    const cached = window._sponsorImageCache.get(src);
+    if (cached?.filtered) {
+      applyTexture(cached.filtered);
+    } else {
+      const img = new Image();
+      img.crossOrigin = "anonymous";
+      img.onload = () => {
+        const filtered = _envPixelArtFilter(img);
+        window._sponsorImageCache.set(src, { img, filtered });
+        applyTexture(filtered);
+      };
+      img.src = src;
+    }
   }
 
   /** Clear all moon sponsor textures, reverting to default gray. */
@@ -1564,11 +1582,9 @@ gl_FragColor = vec4( outgoingLight, diffuseColor.a );`
       createdAt: sponsorData.createdAt,
     };
 
-    // Load texture from URL
-    const img = new Image();
-    img.crossOrigin = "anonymous";
-    img.onload = () => {
-      const texSrc = _envPixelArtFilter(img);
+    // Load texture from URL (use global cache to share with hex/moon)
+    const src = sponsorData.patternImage;
+    const applyTexture = (texSrc) => {
       const texture = new THREE.Texture(texSrc);
       texture.wrapS = texture.wrapT = THREE.RepeatWrapping;
       texture.generateMipmaps = false;
@@ -1586,8 +1602,7 @@ gl_FragColor = vec4( outgoingLight, diffuseColor.a );`
         texture.offset.set((1 - panelAspect / texAspect) / 2, 0);
       }
 
-      // Apply patternAdjustment (scale, offset) — matches shader in hexSelector
-      // Shader: vUv = (coverUv - 0.5) / uScale + 0.5 + vec2(uOffsetX, uOffsetY) * 0.5
+      // Apply patternAdjustment (scale, offset)
       const adj = sponsorData.patternAdjustment || {};
       const scale = adj.scale || 1;
       const coverOffX = texture.offset.x;
@@ -1606,14 +1621,26 @@ gl_FragColor = vec4( outgoingLight, diffuseColor.a );`
       adPanel.material.emissiveMap = texture;
       adPanel.material.emissiveIntensity = 0.85;
       adPanel.material.needsUpdate = true;
-      // Add to bloom layer so sponsor textures cause subtle glow
       adPanel.layers.enable(1);
     };
-    img.onerror = () => {
-      console.warn(`Billboard ${billboardIndex}: failed to load image`, sponsorData.patternImage);
-      bb.visible = false;
-    };
-    img.src = sponsorData.patternImage;
+
+    const cached = window._sponsorImageCache.get(src);
+    if (cached?.filtered) {
+      applyTexture(cached.filtered);
+    } else {
+      const img = new Image();
+      img.crossOrigin = "anonymous";
+      img.onload = () => {
+        const filtered = _envPixelArtFilter(img);
+        window._sponsorImageCache.set(src, { img, filtered });
+        applyTexture(filtered);
+      };
+      img.onerror = () => {
+        console.warn(`Billboard ${billboardIndex}: failed to load image`, src);
+        bb.visible = false;
+      };
+      img.src = src;
+    }
   }
 
   /** Clear all billboard sponsor textures. */

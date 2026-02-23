@@ -60,10 +60,28 @@ async function extractSlotSponsorImages(store, gameDir, filePrefix) {
         }
       }
     } else {
-      // No base64 — find existing file on disk
+      // No base64 — find existing file on disk, re-bake if oversized
       const existing = findExistingFile(texDir, `${filePrefix}${i}.`);
       if (existing) {
-        urlMap[i] = { patternUrl: withMtime(`/sponsor-textures/${existing}`, path.join(texDir, existing)) };
+        const filePath = path.join(texDir, existing);
+        if (applyPixelArtFilter) {
+          try {
+            const stat = fs.statSync(filePath);
+            if (stat.size > 5000) {
+              const raw = fs.readFileSync(filePath);
+              const baked = await applyPixelArtFilter(raw);
+              const pngPath = path.join(texDir, `${filePrefix}${i}.png`);
+              await fsp.writeFile(pngPath, baked);
+              urlMap[i] = { patternUrl: withMtime(`/sponsor-textures/${filePrefix}${i}.png`, pngPath) };
+            } else {
+              urlMap[i] = { patternUrl: withMtime(`/sponsor-textures/${existing}`, filePath) };
+            }
+          } catch (e) {
+            urlMap[i] = { patternUrl: withMtime(`/sponsor-textures/${existing}`, filePath) };
+          }
+        } else {
+          urlMap[i] = { patternUrl: withMtime(`/sponsor-textures/${existing}`, filePath) };
+        }
       }
     }
   }

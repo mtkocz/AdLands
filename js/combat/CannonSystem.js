@@ -244,6 +244,14 @@ class CannonSystem {
       return;
     }
 
+    // Cap decals to limit draw calls — recycle oldest when full
+    while (this.impactDecals.length >= 30) {
+      const oldest = this.impactDecals.shift();
+      this.planet.hexGroup.remove(oldest.mesh);
+      oldest.material.alphaMap = null;
+      oldest.material.dispose();
+    }
+
     const normal = position.clone().normalize();
 
     // Project position onto sphere surface (not at explosion height)
@@ -380,6 +388,14 @@ class CannonSystem {
     if (!this.planet) {
       console.warn("[OIL PUDDLE] Planet not set");
       return;
+    }
+
+    // Cap puddles to limit draw calls — recycle oldest when full
+    while (this.oilPuddles.length >= 10) {
+      const oldest = this.oilPuddles.shift();
+      this.planet.hexGroup.remove(oldest.mesh);
+      oldest.geometry.dispose();
+      oldest.material.dispose();
     }
 
     const cfg = this.oilPuddleConfig;
@@ -1298,16 +1314,10 @@ void main() {
       const surfaceNormal = localPosition.clone().normalize();
       sprite.position.addScaledVector(surfaceNormal, 0.5);
       this.planet.hexGroup.add(sprite);
-      // Spawn point light for the explosion (offset above surface to avoid washing out nearby tanks)
-      const light = new THREE.PointLight(FACTION_COLORS[faction].hex, 3, 30);
-      light.position.copy(sprite.position);
-      light.position.addScaledVector(surfaceNormal, 3);
-      this.planet.hexGroup.add(light);
 
       this.explosions.push({
         sprite: sprite,
         material: material,
-        light: light,
         age: 0,
         duration: 1.0,
       });
@@ -1359,18 +1369,11 @@ void main() {
     // Add to scene
     this.planet.hexGroup.add(sprite);
 
-    // Spawn point light for the explosion (offset above surface to avoid washing out nearby tanks)
-    const light = new THREE.PointLight(factionColor, 3, 30);
-    light.position.copy(sprite.position);
-    light.position.addScaledVector(surfaceNormal, 3);
-    this.planet.hexGroup.add(light);
-
     // Store for animation
     this.explosions.push({
       sprite: sprite,
       material: material,
       texture: texture,
-      light: light,
       age: 0,
       duration: cfg.duration,
       currentFrame: 0,
