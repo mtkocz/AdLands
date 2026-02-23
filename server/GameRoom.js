@@ -2038,9 +2038,7 @@ class GameRoom {
     this.bodyguardManager.update(dt, this.players, this.planetRotation);
 
     const _t2 = Date.now();
-    // 1.6. Send tick to bot worker + process previous tick's output
-    const sendCaptureState = (this.tick % 50 === 0) ? this.clusterCaptureState : null;
-    this.botBridge.sendTickInput(dt, this.players, this.planetRotation, this.tick, this.nextProjectileId, sendCaptureState);
+    // 1.6. Process previous tick's bot output (worker already finished during inter-tick gap)
     const botResult = this.botBridge.processPendingOutput();
     this.nextProjectileId = botResult.nextProjectileId;
     // Add bot-fired projectiles to shared array
@@ -2148,6 +2146,12 @@ class GameRoom {
     }
 
     this.lastTickTime = now;
+
+    // 9. Send NEXT tick's input to bot worker — placed at end of tick so the
+    //    worker has the full ~100ms inter-tick gap to process. Its output will
+    //    be ready at the start of the next tick (no 1-tick stale positions).
+    const sendCaptureState = (this.tick % 50 === 0) ? this.clusterCaptureState : null;
+    this.botBridge.sendTickInput(dt, this.players, this.planetRotation, this.tick, this.nextProjectileId, sendCaptureState);
 
     // Log tick duration every 100 ticks (~10s)
     const tickMs = Date.now() - tickStart;

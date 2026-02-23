@@ -414,19 +414,24 @@ class BotWorkerBridge {
       while (dTheta < -Math.PI) dTheta += Math.PI * 2;
       const dPhi = phi - botPhi;
 
-      const angularDist = Math.sqrt(dTheta * dTheta + dPhi * dPhi);
-      if (angularDist > BOT_HIT_QUICK_REJECT) continue;
+      // Spherical correction: scale dTheta by sin(phi) for true arc distance
+      const sinPhi = Math.sin(botPhi);
+      const safeSin = Math.abs(sinPhi) < 0.01 ? 0.01 * Math.sign(sinPhi || 1) : sinPhi;
 
-      // Oriented-box check (same as ServerBotManager.checkProjectileHit)
+      // Convert to world-space offsets (matching GameRoom player hit detection)
+      const northOff = dPhi * R;
+      const eastOff = dTheta * safeSin * R;
+
+      // Quick reject in world units
+      if (northOff * northOff + eastOff * eastOff > BOT_HIT_QUICK_REJECT * BOT_HIT_QUICK_REJECT * R * R) continue;
+
+      // Oriented-box check in tank's local frame (matching GameRoom player hit detection)
       const cosH = Math.cos(botHeading);
       const sinH = Math.sin(botHeading);
-      const localForward = -dPhi * cosH - dTheta * sinH;
-      const localRight = -dPhi * sinH + dTheta * cosH;
+      const localFwd = -cosH * northOff - sinH * eastOff;
+      const localRgt =  sinH * northOff - cosH * eastOff;
 
-      const worldForward = localForward * R;
-      const worldRight = localRight * R;
-
-      if (Math.abs(worldForward) < BOT_HIT_HALF_LEN && Math.abs(worldRight) < BOT_HIT_HALF_WID) {
+      if (Math.abs(localFwd) < BOT_HIT_HALF_LEN && Math.abs(localRgt) < BOT_HIT_HALF_WID) {
         return { id: ids[i], theta: botTheta, phi: botPhi, heading: botHeading };
       }
     }

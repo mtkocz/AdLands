@@ -626,24 +626,27 @@ class BodyguardManager {
       while (dTheta < -Math.PI) dTheta += Math.PI * 2;
       const dPhi = phi - bg.phi;
 
-      const angularDist = Math.sqrt(dTheta * dTheta + dPhi * dPhi);
-      if (angularDist > BG_HIT_QUICK_REJECT) continue;
+      // Spherical correction: scale dTheta by sin(phi) for true arc distance
+      const sinPhi = Math.sin(bg.phi);
+      const safeSin = Math.abs(sinPhi) < 0.01 ? 0.01 * Math.sign(sinPhi || 1) : sinPhi;
 
-      // Project into bodyguard's local heading frame
+      // Convert to world-space offsets (matching GameRoom player hit detection)
+      const R = this.sphereRadius;
+      const northOff = dPhi * R;
+      const eastOff = dTheta * safeSin * R;
+
+      // Quick reject in world units
+      if (northOff * northOff + eastOff * eastOff > BG_HIT_QUICK_REJECT * BG_HIT_QUICK_REJECT * R * R) continue;
+
+      // Oriented-box check in bodyguard's local frame (matching GameRoom player hit detection)
       const cosH = Math.cos(bg.heading);
       const sinH = Math.sin(bg.heading);
-      // Local forward (along heading) and right
-      const localForward = -dPhi * cosH - dTheta * sinH;
-      const localRight = -dPhi * sinH + dTheta * cosH;
-
-      // Scale to world units
-      const R = this.sphereRadius;
-      const worldForward = localForward * R;
-      const worldRight = localRight * R;
+      const localFwd = -cosH * northOff - sinH * eastOff;
+      const localRgt =  sinH * northOff - cosH * eastOff;
 
       if (
-        Math.abs(worldForward) <= BG_HIT_HALF_LEN &&
-        Math.abs(worldRight) <= BG_HIT_HALF_WID
+        Math.abs(localFwd) <= BG_HIT_HALF_LEN &&
+        Math.abs(localRgt) <= BG_HIT_HALF_WID
       ) {
         return bg;
       }
