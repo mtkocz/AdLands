@@ -10,7 +10,7 @@
 
 const ServerBotPathfinder = require("./ServerBotPathfinder");
 const ServerFactionCoordinator = require("./ServerFactionCoordinator");
-const { FACTIONS, sphericalDistance } = require("./shared/physics");
+const { FACTIONS, sphericalDistance, PLANET_ROTATION_SPEED } = require("./shared/physics");
 
 // Bot AI states
 const BOT_STATES = {
@@ -1223,7 +1223,7 @@ class ServerBotManager {
     while (bot.theta < 0) bot.theta += Math.PI * 2;
 
     // Counter planet rotation
-    bot.theta -= (dt60 / 60) * 0.001; // PLANET_ROTATION_SPEED = 0.001
+    bot.theta -= (dt60 / 60) * PLANET_ROTATION_SPEED;
     if (bot.theta < 0) bot.theta += Math.PI * 2;
 
     // 5-probe terrain collision with wall-sliding
@@ -1593,6 +1593,9 @@ class ServerBotManager {
     bot._stuckCounter = 0;
     bot._terrainBounceCount = 0;
     bot._terrainAvoidTimer = 0;
+    // Brief deploy grace period so client doesn't see an instant teleport
+    bot.isDeploying = true;
+    bot.deployTimer = 0.3;
   }
 
   // ========================
@@ -1698,7 +1701,11 @@ class ServerBotManager {
     }
 
     for (const [id, bot] of this.bots) {
-      if (bot.isDeploying) continue;
+      if (bot.isDeploying) {
+        // Remove stale entry so the old position isn't broadcast during deploy
+        delete this._stateCache[id];
+        continue;
+      }
 
       let state = this._stateCache[id];
       if (!state) {

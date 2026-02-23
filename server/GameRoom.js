@@ -3867,8 +3867,8 @@ class GameRoom {
         }
       }
 
-      // True Commander = rank #1 overall (override or top-ranked deployed non-resigned)
-      const trueCommander = overrideEntry || allMembers.find(m => !m.resigned && !m.waitingForPortal) || null;
+      // True Commander = rank #1 overall (override or top-ranked non-resigned)
+      const trueCommander = overrideEntry || allMembers.find(m => !m.resigned) || null;
 
       // Determine active commander (who actually gets perks right now)
       let activeCommander = null;
@@ -3881,9 +3881,9 @@ class GameRoom {
         activeCommander = trueCommander;
         isActing = false;
       } else {
-        // True commander is offline — highest-ranked online deployed non-resigned player is Acting Commander
+        // True commander is offline — highest-ranked online non-resigned player is Acting Commander
         isActing = true;
-        activeCommander = allMembers.find(m => m.isOnline && m.socketId && !m.resigned && !m.waitingForPortal) || null;
+        activeCommander = allMembers.find(m => m.isOnline && m.socketId && !m.resigned) || null;
       }
 
       const current = this.commanders[faction];

@@ -316,10 +316,12 @@ class RemoteTank {
       }
     }
 
-    // Counter planet rotation for ALL remote tanks (they're scene children,
-    // not hexGroup children, so they need active counter-rotation to stay
-    // fixed on the planet surface — even when dead or stationary)
-    this.state.theta -= (SharedPhysics.PLANET_ROTATION_SPEED * dt60) / 60;
+    // Counter planet rotation: convert from planet-fixed coords to world coords.
+    // Only needed for the interpolation path — dead-reckoning already applies
+    // counter-rotation to targetState (which state was lerped/snapped toward).
+    if (interpolated) {
+      this.state.theta -= (SharedPhysics.PLANET_ROTATION_SPEED * dt60) / 60;
+    }
     while (this.state.theta < 0) this.state.theta += Math.PI * 2;
     while (this.state.theta >= Math.PI * 2) this.state.theta -= Math.PI * 2;
 

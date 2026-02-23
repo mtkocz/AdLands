@@ -383,7 +383,7 @@ class CannonSystem {
    * @returns {THREE.CanvasTexture}
    */
   _generateOilPuddleTexture() {
-    const size = 16; // Small canvas = chunky pixels
+    const size = 32; // Pixelated but higher detail
     const canvas = document.createElement("canvas");
     canvas.width = size;
     canvas.height = size;
