@@ -97,6 +97,9 @@ const BOT_HIT_HALF_LEN = 3.5;
 const BOT_HIT_HALF_WID = 3.0;
 const BOT_HIT_QUICK_REJECT = 0.012; // radians
 
+// LOD (distance-based AI simplification)
+const BOT_LOD_NEAR_THRESHOLD = 0.5; // cos(60°) — bots within ~60° of any player get full AI
+
 // Trash talk
 const BOT_CHAT_COOLDOWN = 5000; // Per-bot cooldown between messages (ms)
 const BOT_GLOBAL_CHAT_COOLDOWN = 1500; // Global cooldown so bots don't flood (ms)
@@ -479,6 +482,9 @@ class ServerBotManager {
       this.coordinators[faction].update(alive, this.coordinators, now);
     }
 
+    // Precompute player unit vectors for LOD classification
+    this._precomputePlayerVecs(players);
+
     // Staggered AI state updates (30 bots per tick for 300 bots = 10-tick rotation)
     const botsPerTick = Math.max(1, Math.ceil(this._botArray.length / 10));
     const startIdx = this._aiUpdateIndex;
@@ -487,7 +493,11 @@ class ServerBotManager {
     for (let i = startIdx; i < endIdx; i++) {
       const bot = this._botArray[i];
       if (bot.isDead || bot.isDeploying) continue;
-      this._updateAI(bot, dt * (this._botArray.length / botsPerTick));
+      // Classify LOD on stagger tick (refreshes once per rotation = ~1 second)
+      bot._isNearPlayer = this._isNearAnyPlayer(bot);
+      if (bot._isNearPlayer) {
+        this._updateAI(bot, dt * (this._botArray.length / botsPerTick));
+      }
     }
 
     this._aiUpdateIndex = endIdx >= this._botArray.length ? 0 : endIdx;
@@ -506,26 +516,22 @@ class ServerBotManager {
         continue;
       }
 
-      // 1. AI decides virtual keys
-      // Expensive separation + collision threat only on stagger ticks (30/tick)
-      const isStagger = (j >= startIdx && j < endIdx);
-      this._updateInput(bot, dt, isStagger);
-
-      // 2. Physics: apply keys to heading and speed
-      this._updatePhysics(bot, dt);
-
-      // 3. Movement on sphere with pole avoidance
-      this._moveOnSphere(bot, planetRotation, dt);
-
-      // 4. Terrain collision (5-probe wall-sliding)
-      // (handled inside _moveOnSphere)
-
-      // 5. Update cluster ID (O(1) grid lookup)
-      bot.currentClusterId = this.worldGen.getClusterIdAt(bot.theta + planetRotation, bot.phi);
-
-      // 6. Combat (staggered with AI updates)
-      if (isStagger) {
-        nextProjectileId = this._updateCombat(bot, dt, players, planetRotation, projectiles, nextProjectileId, now);
+      if (bot._isNearPlayer) {
+        // NEAR: Full AI — separation, collision avoidance, combat
+        const isStagger = (j >= startIdx && j < endIdx);
+        this._updateInput(bot, dt, isStagger);
+        this._updatePhysics(bot, dt);
+        this._moveOnSphere(bot, planetRotation, dt);
+        bot.currentClusterId = this.worldGen.getClusterIdAt(bot.theta + planetRotation, bot.phi);
+        if (isStagger) {
+          nextProjectileId = this._updateCombat(bot, dt, players, planetRotation, projectiles, nextProjectileId, now);
+        }
+      } else {
+        // FAR: Simplified — steer toward target, terrain collision only, no combat
+        this._updateInputSimple(bot, dt);
+        this._updatePhysics(bot, dt);
+        this._moveOnSphere(bot, planetRotation, dt);
+        bot.currentClusterId = this.worldGen.getClusterIdAt(bot.theta + planetRotation, bot.phi);
       }
     }
 
@@ -801,6 +807,69 @@ class ServerBotManager {
     if (Math.random() < 0.015) {
       bot.wanderDirection += (Math.random() - 0.5) * 1.2;
     }
+  }
+
+  // ========================
+  // SIMPLIFIED INPUT (for far-from-player bots)
+  // ========================
+
+  _updateInputSimple(bot, dt) {
+    bot.keys.w = false; bot.keys.a = false; bot.keys.s = false; bot.keys.d = false;
+
+    if (bot._terrainAvoidTimer > 0) {
+      bot._terrainAvoidTimer -= dt;
+    }
+
+    // Steer toward coordinator-assigned target or wander
+    let desiredHeading = bot.wanderDirection;
+    if (bot._terrainAvoidTimer <= 0 && bot.targetPosition) {
+      const h = this._computeDesiredHeadingTo(bot, bot.targetPosition);
+      if (h !== null) desiredHeading = h;
+    }
+
+    let diff = desiredHeading - bot.heading;
+    while (diff > Math.PI) diff -= Math.PI * 2;
+    while (diff < -Math.PI) diff += Math.PI * 2;
+
+    if (diff > 0.05) bot.keys.d = true;
+    else if (diff < -0.05) bot.keys.a = true;
+
+    if (Math.abs(diff) < 0.4) bot.keys.w = true;
+
+    // Occasional random direction change
+    if (Math.random() < 0.01) {
+      bot.wanderDirection += (Math.random() - 0.5) * 0.8;
+    }
+  }
+
+  // ========================
+  // LOD HELPERS (distance-based AI classification)
+  // ========================
+
+  _precomputePlayerVecs(players) {
+    if (!this._playerVecs) this._playerVecs = [];
+    this._playerVecs.length = 0;
+    for (const [, player] of players) {
+      if (player.isDead || player.waitingForPortal) continue;
+      const sinP = Math.sin(player.phi);
+      this._playerVecs.push(
+        sinP * Math.cos(player.theta),
+        Math.cos(player.phi),
+        sinP * Math.sin(player.theta)
+      );
+    }
+  }
+
+  _isNearAnyPlayer(bot) {
+    const sinP = Math.sin(bot.phi);
+    const bx = sinP * Math.cos(bot.theta);
+    const by = Math.cos(bot.phi);
+    const bz = sinP * Math.sin(bot.theta);
+    for (let i = 0; i < this._playerVecs.length; i += 3) {
+      const dot = bx * this._playerVecs[i] + by * this._playerVecs[i + 1] + bz * this._playerVecs[i + 2];
+      if (dot > BOT_LOD_NEAR_THRESHOLD) return true;
+    }
+    return false;
   }
 
   // ========================

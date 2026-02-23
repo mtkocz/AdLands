@@ -2725,7 +2725,7 @@ body.tip-dragging .chat-mention.tip-highlight {
 /* Toast notification */
 .dashboard-toast {
     position: fixed;
-    top: 40%;
+    top: 50%;
     left: 50%;
     transform: translateX(-50%) translateY(-20px);
     background: rgba(26, 26, 46, 0.95);

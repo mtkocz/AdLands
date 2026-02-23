@@ -3,6 +3,80 @@
  * Lighting, atmosphere, stars, moons, satellites, and background Earth
  */
 
+/**
+ * Apply pixel art filter to an image: downscale to 128px, 8-color palette,
+ * Bayer dithering, then upscale to 4x with nearest-neighbor.
+ * Returns a canvas element ready for THREE.Texture.
+ * @param {HTMLImageElement|HTMLCanvasElement} image
+ * @returns {HTMLCanvasElement}
+ */
+function _envPixelArtFilter(image) {
+  const targetShortSide = 128;
+  const maxColors = 8;
+  const ditherIntensity = 32;
+  const srcW = image.width || 256;
+  const srcH = image.height || 256;
+  const aspect = srcW / srcH;
+
+  let tw, th;
+  if (srcW <= srcH) { tw = targetShortSide; th = Math.round(targetShortSide / aspect); }
+  else { th = targetShortSide; tw = Math.round(targetShortSide * aspect); }
+
+  // Step 1: Downscale
+  const dc = document.createElement("canvas");
+  dc.width = tw; dc.height = th;
+  const dx = dc.getContext("2d");
+  dx.imageSmoothingEnabled = false;
+  dx.drawImage(image, 0, 0, tw, th);
+  const id = dx.getImageData(0, 0, tw, th);
+  const d = id.data;
+
+  // Step 2: Extract palette
+  const buckets = new Map();
+  for (let i = 0; i < d.length; i += 4) {
+    const qr = Math.floor(d[i] / 32) * 32;
+    const qg = Math.floor(d[i+1] / 32) * 32;
+    const qb = Math.floor(d[i+2] / 32) * 32;
+    const key = `${qr},${qg},${qb}`;
+    const b = buckets.get(key) || { count: 0, sumR: 0, sumG: 0, sumB: 0 };
+    b.count++; b.sumR += d[i]; b.sumG += d[i+1]; b.sumB += d[i+2];
+    buckets.set(key, b);
+  }
+  const palette = Array.from(buckets.values())
+    .sort((a, b) => b.count - a.count).slice(0, maxColors)
+    .map(b => [Math.round(b.sumR / b.count), Math.round(b.sumG / b.count), Math.round(b.sumB / b.count)]);
+  if (palette.length === 0) palette.push([128, 128, 128]);
+
+  // Step 3: Dithering
+  const bayer = [[0,8,2,10],[12,4,14,6],[3,11,1,9],[15,7,13,5]];
+  for (let y = 0; y < th; y++) {
+    for (let x = 0; x < tw; x++) {
+      const i = (y * tw + x) * 4;
+      const t = (bayer[y % 4][x % 4] / 16 - 0.5) * ditherIntensity;
+      const r = Math.max(0, Math.min(255, d[i] + t));
+      const g = Math.max(0, Math.min(255, d[i+1] + t));
+      const b2 = Math.max(0, Math.min(255, d[i+2] + t));
+      let minD = Infinity, closest = palette[0];
+      for (const c of palette) {
+        const dr = r-c[0], dg = g-c[1], db = b2-c[2];
+        const dist = dr*dr*0.299 + dg*dg*0.587 + db*db*0.114;
+        if (dist < minD) { minD = dist; closest = c; }
+      }
+      d[i] = closest[0]; d[i+1] = closest[1]; d[i+2] = closest[2];
+    }
+  }
+  dx.putImageData(id, 0, 0);
+
+  // Step 4: Upscale to 4x
+  const us = Math.ceil(512 / Math.min(tw, th));
+  const fc = document.createElement("canvas");
+  fc.width = tw * us; fc.height = th * us;
+  const fx = fc.getContext("2d");
+  fx.imageSmoothingEnabled = false;
+  fx.drawImage(dc, 0, 0, fc.width, fc.height);
+  return fc;
+}
+
 // Constant direction vectors for shadow camera (preallocated)
 const _envSunDir = new THREE.Vector3(1, 0, 0);
 const _envFillDir = new THREE.Vector3(-1, 0, 0);
@@ -556,18 +630,7 @@ class Environment {
     const img = new Image();
     img.crossOrigin = "anonymous";
     img.onload = () => {
-      // Upscale small (baked) textures so pixel art blocks are visible
-      let texSrc = img;
-      if (img.width < 512) {
-        const sf = Math.ceil(512 / img.width);
-        const c = document.createElement("canvas");
-        c.width = img.width * sf;
-        c.height = img.height * sf;
-        const ctx = c.getContext("2d");
-        ctx.imageSmoothingEnabled = false;
-        ctx.drawImage(img, 0, 0, c.width, c.height);
-        texSrc = c;
-      }
+      const texSrc = _envPixelArtFilter(img);
       const texture = new THREE.Texture(texSrc);
       texture.wrapS = texture.wrapT = THREE.ClampToEdgeWrapping;
       texture.generateMipmaps = false;
@@ -1505,18 +1568,7 @@ gl_FragColor = vec4( outgoingLight, diffuseColor.a );`
     const img = new Image();
     img.crossOrigin = "anonymous";
     img.onload = () => {
-      // Upscale small (baked) textures so pixel art blocks are visible
-      let texSrc = img;
-      if (img.width < 512) {
-        const sf = Math.ceil(512 / img.width);
-        const c = document.createElement("canvas");
-        c.width = img.width * sf;
-        c.height = img.height * sf;
-        const ctx = c.getContext("2d");
-        ctx.imageSmoothingEnabled = false;
-        ctx.drawImage(img, 0, 0, c.width, c.height);
-        texSrc = c;
-      }
+      const texSrc = _envPixelArtFilter(img);
       const texture = new THREE.Texture(texSrc);
       texture.wrapS = texture.wrapT = THREE.RepeatWrapping;
       texture.generateMipmaps = false;
