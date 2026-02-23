@@ -155,7 +155,7 @@ class TankDamageEffects {
 
             // Frame-rate independent emission using accumulator
             if (effects.smoke) {
-                effects.emitAccum += dt * 10; // 10 smoke particles per second
+                effects.emitAccum += dt * 12.5; // 12.5 smoke particles per second
                 const emitCount = Math.floor(effects.emitAccum);
                 if (emitCount > 0) {
                     effects.emitAccum -= emitCount;
@@ -163,7 +163,7 @@ class TankDamageEffects {
                 }
             }
             if (effects.fire) {
-                effects.fireAccum += dt * 10; // 10 fire particles per second
+                effects.fireAccum += dt * 12.5; // 12.5 fire particles per second
                 const emitCount = Math.floor(effects.fireAccum);
                 if (emitCount > 0) {
                     effects.fireAccum -= emitCount;
@@ -220,7 +220,7 @@ class TankDamageEffects {
     // ========================
 
     _createSmokeSystem() {
-        const maxParticles = 250;
+        const maxParticles = 313;
 
         this.smoke = {
             maxParticles,
@@ -285,7 +285,7 @@ class TankDamageEffects {
                     // Fade in quickly, stay visible longer, then fade out
                     float fadeIn = smoothstep(0.0, 0.05, lifeRatio);
                     float fadeOut = 1.0 - smoothstep(0.6, 1.0, lifeRatio);
-                    vAlpha = fadeIn * fadeOut * 0.6375 * aOpacity * distanceFade;
+                    vAlpha = fadeIn * fadeOut * 0.478 * aOpacity * distanceFade;
 
                     // Gray (0) or black (1) smoke - pass brightness to fragment
                     vBrightness = mix(0.45, 0.05, aColor);
@@ -498,7 +498,7 @@ class TankDamageEffects {
     // ========================
 
     _createFireSystem() {
-        const maxParticles = 60;
+        const maxParticles = 75;
 
         this.fire = {
             maxParticles,
@@ -553,7 +553,7 @@ class TankDamageEffects {
                     float sizeFactor = 1.0 - lifeRatio * 0.6;
 
                     // Fast fade
-                    vAlpha = (1.0 - lifeRatio) * 0.85 * distanceFade;
+                    vAlpha = (1.0 - lifeRatio) * 0.6375 * distanceFade;
 
                     // Darker flame colors to reduce bloom washout
                     // Yellow-orange core -> orange -> red-brown -> dark
