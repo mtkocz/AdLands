@@ -7,7 +7,7 @@ Browser-based multiplayer territorial warfare game. Three mercenary factions (Ru
 - **Frontend:** Vanilla JavaScript (ES6 classes, no framework/bundler), Three.js v0.128 for 3D rendering
 - **Backend:** Node.js 18+, Express, Socket.IO 4
 - **Database:** Firebase Firestore + Firebase Authentication
-- **Deployment:** Railway.app via Docker (Node 20-slim)
+- **Deployment:** VPS (root@adlands), deployed via GitHub. NOT Railway.
 
 ## Project Structure
 
