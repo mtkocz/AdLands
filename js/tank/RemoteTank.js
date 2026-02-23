@@ -281,7 +281,8 @@ class RemoteTank {
 
     if (!interpolated) {
       // Not enough snapshots or renderTime is ahead — fall back to
-      // dead-reckoning from latest known state + lerp (original approach)
+      // dead-reckoning: extrapolate position forward using current speed/heading,
+      // then smoothly blend state toward the latest server target.
       if (this.targetState.speed !== 0) {
         const heading = this.targetState.heading;
         const phi = this.targetState.phi;
@@ -296,13 +297,23 @@ class RemoteTank {
       while (this.targetState.theta < 0) this.targetState.theta += Math.PI * 2;
       while (this.targetState.theta >= Math.PI * 2) this.targetState.theta -= Math.PI * 2;
 
-      const lerpSpeed = 10;
-      const t = Math.min(1, lerpSpeed * deltaTime);
-      this.state.theta = MathUtils.lerpAngle2Pi(this.state.theta, this.targetState.theta, t);
-      this.state.phi = this.state.phi + (this.targetState.phi - this.state.phi) * t;
-      this.state.heading = MathUtils.lerpAngle(this.state.heading, this.targetState.heading, t);
-      this.state.speed = this.state.speed + (this.targetState.speed - this.state.speed) * t;
-      this.state.turretAngle = MathUtils.lerpAngle(this.state.turretAngle, this.targetState.turretAngle, t);
+      // Fresh spawn with <=1 snapshot: snap directly to target to avoid
+      // lerp-chase jitter (the state hasn't diverged yet, so snapping is seamless)
+      if (snapCount <= 1) {
+        this.state.theta = this.targetState.theta;
+        this.state.phi = this.targetState.phi;
+        this.state.heading = this.targetState.heading;
+        this.state.speed = this.targetState.speed;
+        this.state.turretAngle = this.targetState.turretAngle;
+      } else {
+        const lerpSpeed = 10;
+        const t = Math.min(1, lerpSpeed * deltaTime);
+        this.state.theta = MathUtils.lerpAngle2Pi(this.state.theta, this.targetState.theta, t);
+        this.state.phi = this.state.phi + (this.targetState.phi - this.state.phi) * t;
+        this.state.heading = MathUtils.lerpAngle(this.state.heading, this.targetState.heading, t);
+        this.state.speed = this.state.speed + (this.targetState.speed - this.state.speed) * t;
+        this.state.turretAngle = MathUtils.lerpAngle(this.state.turretAngle, this.targetState.turretAngle, t);
+      }
     }
 
     // Counter planet rotation for ALL remote tanks (they're scene children,
@@ -371,9 +382,9 @@ class RemoteTank {
     // Turn all meshes charred (dark gray)
     this._setDeadMaterial();
 
-    // Start 3-phase fade: smoke fades (3s), delay (1.5s), tank fades (3s)
+    // Start 3-phase fade: smoke fades (5s), delay (1.5s), tank fades (3s)
     this.fadeStartTime = performance.now();
-    this.smokeFadeDuration = 3000;
+    this.smokeFadeDuration = 5000;
     this.sinkDelay = 1500;
     this.fadeDuration = 3000;
     this.isFading = true;

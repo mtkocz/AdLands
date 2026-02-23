@@ -2589,8 +2589,8 @@ class BotTanks {
 
   _startBotFadeOut(bot, duration) {
     bot.fadeStartTime = performance.now();
-    // Three-phase: smoke fades (3s), delay (1.5s), then tank fades (3s)
-    bot.smokeFadeDuration = 3 * 1000; // 3 seconds for smoke to fade
+    // Three-phase: smoke fades (5s), delay (1.5s), then tank fades (3s)
+    bot.smokeFadeDuration = 5 * 1000; // 5 seconds for smoke to fade
     bot.sinkDelay = 1.5 * 1000; // 1.5 seconds delay before fading
     bot.fadeDuration = duration * 1000; // Duration for tank to fade out
     bot.isFading = true;

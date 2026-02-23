@@ -1148,6 +1148,7 @@ class GameRoom {
 
     this.players.delete(socketId);
     this.resignedPlayers.delete(socketId);
+    if (this._playerBotSets) this._playerBotSets.delete(socketId);
 
     // Stash session for authenticated players to allow seamless reconnect
     if (player.uid) {
@@ -3378,7 +3379,11 @@ class GameRoom {
     // Human players are always included; bots filtered by distance on the sphere.
     // Commanders (who see the whole planet) get all entities.
     // Uses unit vector dot product for O(1) distance check per entity pair.
-    const NEARBY_DOT_THRESHOLD = 0.65; // cos(~49°) — tighter radius to limit client rendering
+    const NEARBY_ENTER_THRESHOLD = 0.65; // cos(~49°) — enter radius
+    const NEARBY_LEAVE_THRESHOLD = 0.55; // cos(~57°) — wider leave radius (hysteresis prevents flicker)
+
+    // Per-player tracking of which bots were included last tick (for hysteresis)
+    if (!this._playerBotSets) this._playerBotSets = new Map();
 
     // Precompute unit vectors for bot states (theta/phi → xyz on unit sphere)
     if (!this._botUnitVecs) this._botUnitVecs = {};
@@ -3439,12 +3444,22 @@ class GameRoom {
         filtered[hid] = playerStates[hid];
       }
 
-      // Include bots: distance-filtered for all players (including commanders)
+      // Include bots: distance-filtered with hysteresis to prevent boundary flicker.
+      // Bots already included use the wider leave threshold; new bots use the tighter enter threshold.
+      let includedBots = this._playerBotSets.get(socketId);
+      if (!includedBots) {
+        includedBots = new Set();
+        this._playerBotSets.set(socketId, includedBots);
+      }
       for (const botId in botStates) {
         const bv = botUnitVecs[botId];
         const dot = px * bv.x + py * bv.y + pz * bv.z;
-        if (dot > NEARBY_DOT_THRESHOLD) {
+        const threshold = includedBots.has(botId) ? NEARBY_LEAVE_THRESHOLD : NEARBY_ENTER_THRESHOLD;
+        if (dot > threshold) {
           filtered[botId] = playerStates[botId];
+          includedBots.add(botId);
+        } else {
+          includedBots.delete(botId);
         }
       }
 

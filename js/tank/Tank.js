@@ -1319,8 +1319,8 @@ class Tank {
 
   _startFadeOut(duration) {
     this.fadeStartTime = performance.now();
-    // Three-phase: smoke fades (3s), delay (2s), then tank fades (3s)
-    this.smokeFadeDuration = 3 * 1000; // 3 seconds for smoke to fade
+    // Three-phase: smoke fades (5s), delay (2s), then tank fades (3s)
+    this.smokeFadeDuration = 5 * 1000; // 5 seconds for smoke to fade
     this.sinkDelay = 2 * 1000; // 2 seconds delay before fading
     this.fadeDuration = duration * 1000; // Duration for tank to fade out
     this.isFading = true;

@@ -144,6 +144,8 @@ class CannonSystem {
       lifetime: 30, // Stay visible for 30 seconds
       fadeOutDuration: 5, // Fade out over 5 seconds
     };
+    // Shared geometry for all oil puddles (simple quad instead of 24-seg blob)
+    this.oilPuddleGeometry = new THREE.PlaneGeometry(1, 1);
   }
 
   _createExplosionSystem() {
@@ -377,14 +379,65 @@ class CannonSystem {
   }
 
   /**
+   * Generate a pixelated oil blob texture on a small canvas
+   * @returns {THREE.CanvasTexture}
+   */
+  _generateOilPuddleTexture() {
+    const size = 16; // Small canvas = chunky pixels
+    const canvas = document.createElement("canvas");
+    canvas.width = size;
+    canvas.height = size;
+    const ctx = canvas.getContext("2d");
+
+    // Clear transparent
+    ctx.clearRect(0, 0, size, size);
+
+    const half = size / 2;
+    const imageData = ctx.createImageData(size, size);
+    const data = imageData.data;
+    const seed = Math.random() * 1000;
+
+    // Draw a pixelated blob: for each pixel, check distance from center
+    // with noise to create irregular edges
+    for (let y = 0; y < size; y++) {
+      for (let x = 0; x < size; x++) {
+        const dx = (x - half + 0.5) / half; // -1 to 1
+        const dy = (y - half + 0.5) / half;
+        const dist = Math.sqrt(dx * dx + dy * dy);
+
+        // Angle-based noise for irregular blob shape
+        const angle = Math.atan2(dy, dx);
+        const noise =
+          0.15 * Math.sin(angle * 2 + seed) +
+          0.1 * Math.sin(angle * 3 + seed * 1.7) +
+          0.08 * Math.sin(angle * 5 + seed * 2.3);
+
+        // Threshold with noise — pixels inside the blob are filled
+        const threshold = 0.72 + noise;
+        if (dist < threshold) {
+          const idx = (y * size + x) * 4;
+          data[idx] = 8; // R
+          data[idx + 1] = 8; // G
+          data[idx + 2] = 8; // B
+          data[idx + 3] = 255; // A — fully opaque
+        }
+      }
+    }
+
+    ctx.putImageData(imageData, 0, 0);
+
+    const texture = new THREE.CanvasTexture(canvas);
+    texture.minFilter = THREE.NearestFilter;
+    texture.magFilter = THREE.NearestFilter;
+    texture.generateMipmaps = false;
+    return texture;
+  }
+
+  /**
    * Spawn an oil puddle at a tank's death position
    * @param {THREE.Vector3} position - World position of the dead tank
    */
   spawnOilPuddle(position) {
-    if (!this.impactDecalTexture) {
-      console.warn("[OIL PUDDLE] Texture not loaded yet");
-      return;
-    }
     if (!this.planet) {
       console.warn("[OIL PUDDLE] Planet not set");
       return;
@@ -394,60 +447,26 @@ class CannonSystem {
     while (this.oilPuddles.length >= 10) {
       const oldest = this.oilPuddles.shift();
       this.planet.hexGroup.remove(oldest.mesh);
-      oldest.geometry.dispose();
+      oldest.material.map.dispose();
       oldest.material.dispose();
     }
 
     const cfg = this.oilPuddleConfig;
 
-    // Create irregular blob geometry for oil puddle
-    const segments = 24;
-    const geometry = new THREE.BufferGeometry();
-    const vertices = [];
-    const indices = [];
+    // Generate a unique pixelated blob texture for this puddle
+    const texture = this._generateOilPuddleTexture();
 
-    // Center vertex
-    vertices.push(0, 0, 0);
-
-    // Generate irregular edge vertices using noise
-    const baseRadius = 1;
-    const seed = Math.random() * 1000;
-    for (let i = 0; i < segments; i++) {
-      const angle = (i / segments) * Math.PI * 2;
-      // Use multiple sine waves for organic irregularity
-      const noise =
-        0.7 +
-        0.15 * Math.sin(angle * 2 + seed) +
-        0.1 * Math.sin(angle * 3 + seed * 1.7) +
-        0.08 * Math.sin(angle * 5 + seed * 2.3) +
-        0.05 * Math.random(); // Small random per-vertex variation
-      const radius = baseRadius * noise;
-      vertices.push(Math.cos(angle) * radius, Math.sin(angle) * radius, 0);
-    }
-
-    // Create triangles (fan from center)
-    for (let i = 1; i <= segments; i++) {
-      const next = i === segments ? 1 : i + 1;
-      indices.push(0, i, next);
-    }
-
-    geometry.setAttribute(
-      "position",
-      new THREE.Float32BufferAttribute(vertices, 3),
-    );
-    geometry.setIndex(indices);
-    geometry.computeVertexNormals();
-
-    // Create dark oil material
+    // Create dark oil material with pixelated texture
     const material = new THREE.MeshBasicMaterial({
-      color: 0x080808, // Almost black
+      map: texture,
       transparent: true,
       opacity: 1.0,
       side: THREE.DoubleSide,
       depthWrite: false,
     });
 
-    const mesh = new THREE.Mesh(geometry, material);
+    // Reuse shared plane geometry
+    const mesh = new THREE.Mesh(this.oilPuddleGeometry, material);
 
     // Project position onto sphere surface (raised to avoid z-fighting)
     const normal = position.clone().normalize();
@@ -461,14 +480,14 @@ class CannonSystem {
 
     // Skip oil puddles centered inside the pole hole
     if (this.planet.isInsidePolarHole(localPosition)) {
-      geometry.dispose();
+      texture.dispose();
       material.dispose();
       return;
     }
 
     mesh.position.copy(localPosition);
 
-    // Orient flat on surface (circle's default normal is +Z)
+    // Orient flat on surface (plane's default normal is +Z)
     const localNormal = localPosition.clone().normalize();
     mesh.quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, 1), localNormal);
 
@@ -485,7 +504,6 @@ class CannonSystem {
     this.oilPuddles.push({
       mesh,
       material,
-      geometry,
       age: 0,
       targetSize: cfg.maxSize * (0.8 + Math.random() * 0.4), // Some size variation
     });
@@ -504,7 +522,7 @@ class CannonSystem {
         if (this.planet) {
           this.planet.hexGroup.remove(puddle.mesh);
         }
-        puddle.geometry.dispose();
+        puddle.material.map.dispose();
         puddle.material.dispose();
         this.oilPuddles.splice(i, 1);
         continue;

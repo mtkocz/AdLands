@@ -458,10 +458,21 @@
         }
       }
 
-      // Cleanup bots that left the spatial filter (not seen in this tick)
+      // Cleanup bots that left the spatial filter — grace period prevents
+      // premature despawn from a single dropped packet or boundary flicker.
+      if (!mp._botMissCounts) mp._botMissCounts = new Map();
       for (const [id] of remoteTanks) {
-        if (id.startsWith("bot-") && !mp._seenBotIds.has(id)) {
-          despawnRemoteTank(id);
+        if (id.startsWith("bot-")) {
+          if (!mp._seenBotIds.has(id)) {
+            const misses = (mp._botMissCounts.get(id) || 0) + 1;
+            mp._botMissCounts.set(id, misses);
+            if (misses >= 10) { // 10 ticks (~1s) grace period
+              despawnRemoteTank(id);
+              mp._botMissCounts.delete(id);
+            }
+          } else {
+            mp._botMissCounts.delete(id);
+          }
         }
       }
 
