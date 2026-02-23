@@ -3544,10 +3544,13 @@ class Planet {
    */
   preloadSponsorTextures(sponsors, onProgress) {
     const toLoad = [];
+    const queued = new Set();
     for (const sponsor of sponsors) {
       const src = sponsor.patternImage || sponsor.patternUrl;
       if (!src) continue;
       if (this._sponsorTextureCache.has(src)) continue;
+      if (queued.has(src)) continue;
+      queued.add(src);
       toLoad.push({ sponsor, src });
     }
     if (toLoad.length === 0) {
@@ -3590,10 +3593,13 @@ class Planet {
    */
   lazyLoadSponsorTextures(sponsors) {
     const queue = [];
+    const queued = new Set();
     for (const sponsor of sponsors) {
       const src = sponsor.patternImage || sponsor.patternUrl;
       if (!src) continue;
       if (this._sponsorTextureCache.has(src)) continue;
+      if (queued.has(src)) continue;
+      queued.add(src);
       queue.push({ sponsor, src });
     }
     if (queue.length === 0) return;
