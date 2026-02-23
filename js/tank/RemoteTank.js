@@ -422,12 +422,12 @@ class RemoteTank {
     // Turn all meshes charred (dark gray)
     this._setDeadMaterial();
 
-    // Start fade (2s charred delay + 5s linear opacity fade)
+    // Start sink (2s charred delay + 5s sink into ground)
     this.fadeStartTime = performance.now();
-    this.fadeDelay = 2000;
-    this.fadeDuration = 5000;
+    this.sinkDelay = 2000;
+    this.sinkDuration = 5000;
+    this.sinkDepth = 3;
     this.isFading = true;
-    this.tankFadeStarted = false;
     this._smokeFadeDone = false;
   }
 
@@ -466,15 +466,15 @@ class RemoteTank {
   }
 
   /**
-   * Called every frame. Drives the fade sequence.
-   * Returns true when fade is fully complete.
+   * Called every frame. Drives the sink sequence.
+   * Returns true when sink is fully complete.
    */
   updateFade() {
     if (!this.isFading) return false;
 
     const elapsed = performance.now() - this.fadeStartTime;
 
-    // Fade smoke over the first 5 seconds (runs alongside charred delay + tank fade)
+    // Fade smoke over the first 5 seconds
     const smokeDuration = 5000;
     if (elapsed < smokeDuration) {
       const smokeOpacity = 1 - (elapsed / smokeDuration);
@@ -484,38 +484,24 @@ class RemoteTank {
       if (this.onSmokeFadeUpdate) this.onSmokeFadeUpdate(this, 0);
     }
 
-    // Wait for charred delay before starting tank opacity fade
-    if (elapsed < this.fadeDelay) return false;
+    // Wait for charred delay before sinking
+    if (elapsed < this.sinkDelay) return false;
 
-    const fadeElapsed = elapsed - this.fadeDelay;
-    const fadeProgress = Math.min(1, fadeElapsed / this.fadeDuration);
+    const sinkElapsed = elapsed - this.sinkDelay;
+    const sinkProgress = Math.min(1, sinkElapsed / this.sinkDuration);
 
-    if (fadeProgress >= 1) {
+    if (sinkProgress >= 1) {
       if (this.onFadeComplete) this.onFadeComplete(this);
       return true;
     }
 
-    // One-time transparent setup
-    if (!this.tankFadeStarted) {
-      this.tankFadeStarted = true;
-      this.group.traverse((child) => {
-        if (child.isMesh && child.material && child !== this.hitbox) {
-          if (child === this.lodMesh) return;
-          child.material = child.material.clone();
-          child.material.transparent = true;
-        }
-      });
+    // Ease-in: slow start, accelerates into ground
+    const eased = sinkProgress * sinkProgress;
+
+    // Sink bodyGroup in local Y (surface normal direction)
+    if (this.bodyGroup) {
+      this.bodyGroup.position.y = -eased * this.sinkDepth;
     }
-
-    // Linear fade
-    const opacity = 1 - fadeProgress;
-
-    this.group.traverse((child) => {
-      if (child.isMesh && child.material && child !== this.hitbox) {
-        if (child === this.lodMesh) return;
-        child.material.opacity = opacity;
-      }
-    });
 
     return false;
   }
@@ -532,6 +518,10 @@ class RemoteTank {
     this.damageState = "healthy";
     this.smokeFullyFaded = false;
     this.tankFadeStarted = false;
+    // Reset sink offset from death
+    if (this.bodyGroup) {
+      this.bodyGroup.position.y = 0;
+    }
     // Clear any lingering hit flash state before restoring materials
     this.group.traverse((child) => {
       if (child.isMesh && child.userData._hitFlashOrigColor !== undefined) {

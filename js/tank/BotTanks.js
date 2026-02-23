@@ -2589,10 +2589,10 @@ class BotTanks {
 
   _startBotFadeOut(bot) {
     bot.fadeStartTime = performance.now();
-    bot.fadeDelay = 2000; // 2s charred before fading
-    bot.fadeDuration = 5000; // 5s linear opacity fade
+    bot.sinkDelay = 2000; // 2s charred before sinking
+    bot.sinkDuration = 5000; // 5s to sink into ground
+    bot.sinkDepth = 3; // units to sink (roughly tank height)
     bot.isFading = true;
-    bot.tankFadeStarted = false;
     bot._smokeFadeDone = false;
   }
 
@@ -2601,7 +2601,7 @@ class BotTanks {
 
     const elapsed = performance.now() - bot.fadeStartTime;
 
-    // Fade smoke over the first 5 seconds (runs alongside charred delay + tank fade)
+    // Fade smoke over the first 5 seconds
     const smokeDuration = 5000;
     if (elapsed < smokeDuration) {
       const smokeOpacity = 1 - (elapsed / smokeDuration);
@@ -2615,38 +2615,26 @@ class BotTanks {
       }
     }
 
-    // Wait for charred delay before starting tank opacity fade
-    if (elapsed < bot.fadeDelay) return false;
+    // Wait for charred delay before sinking
+    if (elapsed < bot.sinkDelay) return false;
 
-    const fadeElapsed = elapsed - bot.fadeDelay;
-    const fadeProgress = Math.min(1, fadeElapsed / bot.fadeDuration);
+    const sinkElapsed = elapsed - bot.sinkDelay;
+    const sinkProgress = Math.min(1, sinkElapsed / bot.sinkDuration);
 
-    if (fadeProgress >= 1) {
+    if (sinkProgress >= 1) {
       if (this.onBotFadeComplete) {
         this.onBotFadeComplete(bot);
       }
       return true;
     }
 
-    // One-time transparent setup
-    if (!bot.tankFadeStarted) {
-      bot.tankFadeStarted = true;
-      bot.group.traverse((child) => {
-        if (child.isMesh && child.material && child !== bot.hitbox) {
-          child.material = child.material.clone();
-          child.material.transparent = true;
-        }
-      });
+    // Ease-in: slow start, accelerates into ground
+    const eased = sinkProgress * sinkProgress;
+
+    // Sink bodyGroup in local Y (surface normal direction)
+    if (bot.bodyGroup) {
+      bot.bodyGroup.position.y = -eased * bot.sinkDepth;
     }
-
-    // Linear fade
-    const opacity = 1 - fadeProgress;
-
-    bot.group.traverse((child) => {
-      if (child.isMesh && child.material && child !== bot.hitbox) {
-        child.material.opacity = opacity;
-      }
-    });
 
     return false;
   }
@@ -2897,6 +2885,11 @@ class BotTanks {
         child.material.opacity = 1;
       }
     });
+
+    // Reset sink offset from death
+    if (bot.bodyGroup) {
+      bot.bodyGroup.position.y = 0;
+    }
 
     // Enter deploy state — bot becomes visible after a short delay
     bot.isDeploying = true;

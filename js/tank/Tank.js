@@ -1319,10 +1319,10 @@ class Tank {
 
   _startFadeOut() {
     this.fadeStartTime = performance.now();
-    this.fadeDelay = 2000; // 2s charred before fading
-    this.fadeDuration = 5000; // 5s linear opacity fade
+    this.sinkDelay = 2000; // 2s charred before sinking
+    this.sinkDuration = 5000; // 5s to sink into ground
+    this.sinkDepth = 3; // units to sink (roughly tank height)
     this.isFading = true;
-    this.tankFadeStarted = false;
     this._smokeFadeDone = false;
   }
 
@@ -1331,7 +1331,7 @@ class Tank {
 
     const elapsed = performance.now() - this.fadeStartTime;
 
-    // Fade smoke over the first 5 seconds (runs alongside charred delay + tank fade)
+    // Fade smoke over the first 5 seconds
     const smokeDuration = 5000;
     if (elapsed < smokeDuration) {
       const smokeOpacity = 1 - (elapsed / smokeDuration);
@@ -1345,40 +1345,25 @@ class Tank {
       }
     }
 
-    // Wait for charred delay before starting tank opacity fade
-    if (elapsed < this.fadeDelay) return false;
+    // Wait for charred delay before sinking
+    if (elapsed < this.sinkDelay) return false;
 
-    const fadeElapsed = elapsed - this.fadeDelay;
-    const fadeProgress = Math.min(1, fadeElapsed / this.fadeDuration);
+    const sinkElapsed = elapsed - this.sinkDelay;
+    const sinkProgress = Math.min(1, sinkElapsed / this.sinkDuration);
 
-    if (fadeProgress >= 1) {
+    if (sinkProgress >= 1) {
       if (this.onFadeComplete) {
         this.onFadeComplete(this);
       }
       return true;
     }
 
-    // One-time transparent setup (skip commander trim)
-    if (!this.tankFadeStarted) {
-      this.tankFadeStarted = true;
-      this.group.traverse((child) => {
-        if (child.isMesh && child.material && child !== this.hitbox && !this._isCommanderTrim(child)) {
-          child.material.transparent = true;
-        }
-      });
-    }
+    // Ease-in: slow start, accelerates into ground
+    const eased = sinkProgress * sinkProgress;
 
-    // Linear fade
-    const opacity = 1 - fadeProgress;
-
-    this.group.traverse((child) => {
-      if (child.isMesh && child.material && child !== this.hitbox && !this._isCommanderTrim(child)) {
-        child.material.opacity = opacity;
-      }
-    });
-
-    if (this.onFadeUpdate) {
-      this.onFadeUpdate(this, opacity);
+    // Sink bodyGroup in local Y (surface normal direction)
+    if (this.bodyGroup) {
+      this.bodyGroup.position.y = -eased * this.sinkDepth;
     }
 
     return false;
@@ -1414,6 +1399,11 @@ class Tank {
         child.material.opacity = 1;
       }
     });
+
+    // Reset sink offset from death
+    if (this.bodyGroup) {
+      this.bodyGroup.position.y = 0;
+    }
 
     // Re-apply faction colors
     this.setFactionColors(this.faction);
