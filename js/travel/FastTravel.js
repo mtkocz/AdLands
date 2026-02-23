@@ -637,10 +637,17 @@ class FastTravel {
     }
 
     _showPreviewUI() {
+        const container = document.getElementById('fast-travel-ui');
         const fastTravelControls = document.getElementById('fast-travel-controls');
         const previewControls = document.getElementById('preview-controls');
         const travelBtn = document.getElementById('travel-btn');
 
+        // Restore parent container visibility (may have been hidden by _hideAllUI
+        // during a failed portal confirmation or server timeout)
+        if (container) {
+            container.classList.remove('hidden');
+            container.style.display = '';
+        }
         if (fastTravelControls) fastTravelControls.classList.add('hidden');
         if (previewControls) previewControls.classList.remove('hidden');
 

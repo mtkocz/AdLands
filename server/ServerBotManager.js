@@ -1208,47 +1208,64 @@ class ServerBotManager {
     if (bot.theta < 0) bot.theta += Math.PI * 2;
 
     // 5-probe terrain collision with wall-sliding
-    if (bot.speed !== 0) {
-      const blocked = this._isTerrainBlockedAt(bot.theta, bot.phi, bot.heading, bot.speed, planetRotation);
+    // Always check — planet rotation shifts theta even when speed is 0
+    const blocked = this._isTerrainBlockedAt(bot.theta, bot.phi, bot.heading, bot.speed || 0.001, planetRotation);
 
-      if (blocked) {
-        // Compensate planet rotation for revert
-        const rotDelta = (dt60 / 60) * 0.001;
+    if (blocked) {
+      // Compensate planet rotation for revert
+      const rotDelta = (dt60 / 60) * 0.001;
 
-        // Try theta-only slide (keep new theta, revert phi)
-        const thetaOnly = this._isTerrainBlockedAt(bot.theta, prevPhi, bot.heading, bot.speed, planetRotation);
-        // Try phi-only slide (revert theta, keep new phi)
-        const thetaRev = prevTheta - rotDelta;
-        const phiOnly = this._isTerrainBlockedAt(
-          thetaRev < 0 ? thetaRev + Math.PI * 2 : thetaRev,
-          bot.phi, bot.heading, bot.speed, planetRotation
-        );
+      // Try theta-only slide (keep new theta, revert phi)
+      const checkSpeed = bot.speed || 0.001;
+      const thetaOnly = this._isTerrainBlockedAt(bot.theta, prevPhi, bot.heading, checkSpeed, planetRotation);
+      // Try phi-only slide (revert theta, keep new phi)
+      const thetaRev = prevTheta - rotDelta;
+      const phiOnly = this._isTerrainBlockedAt(
+        thetaRev < 0 ? thetaRev + Math.PI * 2 : thetaRev,
+        bot.phi, bot.heading, checkSpeed, planetRotation
+      );
 
-        if (!thetaOnly) {
-          // Slide along theta (east-west)
-          bot.phi = prevPhi;
-          bot.speed *= 0.85;
-        } else if (!phiOnly) {
-          // Slide along phi (north-south)
-          bot.theta = thetaRev < 0 ? thetaRev + Math.PI * 2 : thetaRev;
-          bot.speed *= 0.85;
-        } else {
-          // Both axes blocked — full revert
-          bot.theta = thetaRev < 0 ? thetaRev + Math.PI * 2 : thetaRev;
-          bot.phi = prevPhi;
-          bot.speed *= BOT_COLLISION_SPEED_RETAIN;
+      if (!thetaOnly) {
+        // Slide along theta (east-west)
+        bot.phi = prevPhi;
+        bot.speed *= 0.85;
+      } else if (!phiOnly) {
+        // Slide along phi (north-south)
+        bot.theta = thetaRev < 0 ? thetaRev + Math.PI * 2 : thetaRev;
+        bot.speed *= 0.85;
+      } else {
+        // Both axes blocked — full revert
+        bot.theta = thetaRev < 0 ? thetaRev + Math.PI * 2 : thetaRev;
+        bot.phi = prevPhi;
+        bot.speed *= BOT_COLLISION_SPEED_RETAIN;
+
+        // If still stuck after revert (terrain rotated into us), push outward
+        if (this._isTerrainBlockedAt(bot.theta, bot.phi, bot.heading, checkSpeed, planetRotation)) {
+          const pushDist = 0.008;
+          // Try 8 directions to escape
+          for (let i = 0; i < 8; i++) {
+            const angle = i * (Math.PI / 4);
+            const safeSin = Math.max(0.1, Math.sin(bot.phi));
+            const tryTheta = bot.theta + Math.sin(angle) * pushDist / safeSin;
+            const tryPhi = bot.phi + Math.cos(angle) * pushDist;
+            if (!this._isTerrainBlockedAt(tryTheta, tryPhi, bot.heading, checkSpeed, planetRotation)) {
+              bot.theta = tryTheta;
+              bot.phi = tryPhi;
+              break;
+            }
+          }
         }
+      }
 
-        // Suppress target-seeking
-        bot._terrainAvoidTimer = BOT_TERRAIN_AVOID_COOLDOWN;
-        bot._terrainBounceCount++;
+      // Suppress target-seeking
+      bot._terrainAvoidTimer = BOT_TERRAIN_AVOID_COOLDOWN;
+      bot._terrainBounceCount++;
 
-        if (bot._terrainBounceCount >= BOT_TERRAIN_BOUNCE_LIMIT) {
-          bot.wanderDirection = bot.heading + Math.PI + (Math.random() - 0.5) * 0.5;
-          bot._terrainBounceCount = 0;
-        } else {
-          bot.wanderDirection = bot.heading + Math.PI * (0.5 + Math.random());
-        }
+      if (bot._terrainBounceCount >= BOT_TERRAIN_BOUNCE_LIMIT) {
+        bot.wanderDirection = bot.heading + Math.PI + (Math.random() - 0.5) * 0.5;
+        bot._terrainBounceCount = 0;
+      } else {
+        bot.wanderDirection = bot.heading + Math.PI * (0.5 + Math.random());
       }
     }
   }

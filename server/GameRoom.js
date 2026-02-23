@@ -2129,25 +2129,41 @@ class GameRoom {
       this.io.to(this.roomId).emit("commander-sync", this._getCommanderSnapshot());
     }
 
-    // 6.5. Kick inactive players (check every 5 seconds)
+    // 6.5. Kill inactive deployed players (check every 5 seconds)
     if (this.tick % (this.tickRate * 5) === 0) {
       const now2 = Date.now();
       for (const [socketId, player] of this.players) {
-        if (!player.uid) continue; // Only kick authenticated players
+        if (this._isUndeployed(player)) continue;
         if (now2 - player.lastActivityAt > INACTIVITY_TIMEOUT_MS) {
-          const sock = this.io.sockets.sockets.get(socketId);
-          if (sock) {
-            console.log(`[Room ${this.roomId}] Kicking ${player.name} (${socketId}) for inactivity`);
-            sock.emit("kicked", { reason: "inactivity" });
-            // Save profile before force-disconnecting so progression is not lost
-            if (player.uid) {
-              this.savePlayerProfile(socketId).catch(() => {}).finally(() => {
-                sock.disconnect(true);
-              });
-            } else {
-              sock.disconnect(true);
-            }
-          }
+          console.log(`[Room ${this.roomId}] Killing ${player.name} (${socketId}) for inactivity`);
+
+          player.hp = 0;
+          player.isDead = true;
+          player.speed = 0;
+          player._lastTicCluster = undefined;
+          player._lastTicCryptoTics = undefined;
+
+          this.io.to(this.roomId).emit("player-hit", {
+            targetId: socketId,
+            attackerId: socketId,
+            damage: 100,
+            hp: 0,
+          });
+
+          this.io.to(this.roomId).emit("player-killed", {
+            victimId: socketId,
+            killerId: socketId,
+            victimFaction: player.faction,
+            killerFaction: player.faction,
+            victimName: player.name,
+            killerName: player.name,
+          });
+
+          this._markRanksDirty();
+          player.killStreak = 0;
+          player.deathCount = (player.deathCount || 0) + 1;
+
+          setTimeout(() => this._respawnPlayer(socketId), 10300);
         }
       }
     }

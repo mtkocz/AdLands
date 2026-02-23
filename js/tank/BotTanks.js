@@ -2956,6 +2956,11 @@ class BotTanks {
     this._orbitalPhantomVisible = false;
     this._phantomsRegistered = false;
 
+    // Pre-allocated temp objects for phantom raycast (shared across all pool meshes)
+    const _rcWorldPos = new THREE.Vector3();
+    const _rcSphere = new THREE.Sphere(new THREE.Vector3(), hitRadius);
+    const _rcIntersectPoint = new THREE.Vector3();
+
     for (let i = 0; i < POOL_SIZE; i++) {
       const mesh = new THREE.Mesh(
         this._lodDotGeometry,
@@ -2967,17 +2972,15 @@ class BotTanks {
       mesh.frustumCulled = false;
       mesh.renderOrder = 10;
 
-      // Custom sphere-based raycast (identical to per-bot lodDot)
+      // Custom sphere-based raycast (identical to per-bot lodDot in Tank.js)
       mesh.raycast = function (raycaster, intersects) {
         if (!this.visible) return;
-        const worldPos = new THREE.Vector3();
-        this.getWorldPosition(worldPos);
-        const sphere = new THREE.Sphere(worldPos, hitRadius);
-        const intersectPoint = new THREE.Vector3();
-        if (raycaster.ray.intersectSphere(sphere, intersectPoint)) {
-          const distance = raycaster.ray.origin.distanceTo(worldPos);
+        this.getWorldPosition(_rcWorldPos);
+        _rcSphere.center.copy(_rcWorldPos);
+        if (raycaster.ray.intersectSphere(_rcSphere, _rcIntersectPoint)) {
+          const distance = raycaster.ray.origin.distanceTo(_rcWorldPos);
           if (distance >= (raycaster.near || 0) && distance <= (raycaster.far || Infinity)) {
-            intersects.push({ distance, point: intersectPoint.clone(), object: this });
+            intersects.push({ distance, point: _rcIntersectPoint.clone(), object: this });
           }
         }
       };
@@ -3031,8 +3034,8 @@ class BotTanks {
       for (const [id, rt] of remotes) {
         if (id.startsWith("bot-") && !rt.isDead) {
           // Use the server-reported theta from last state update
-          if (rt._targetState) {
-            knownBotThetas.add(Math.round(rt._targetState.t * 10000));
+          if (rt.targetState) {
+            knownBotThetas.add(Math.round(rt.targetState.theta * 10000));
           }
         }
       }
@@ -3093,6 +3096,15 @@ class BotTanks {
     // Hide unused pool entries
     for (let i = poolIdx; i < this._phantomPool.length; i++) {
       this._phantomPool[i].visible = false;
+    }
+
+    // Force world matrix update on active phantom dots so raycasting works
+    // immediately (hover check fires on mousemove between render frames)
+    if (poolIdx > 0) {
+      this.planet.hexGroup.updateWorldMatrix(true, false);
+      for (let i = 0; i < poolIdx; i++) {
+        this._phantomPool[i].updateWorldMatrix(false, false);
+      }
     }
 
     this._phantomActiveCount = poolIdx;
