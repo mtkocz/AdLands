@@ -8,9 +8,26 @@ const { Router } = require("express");
 const fs = require("fs");
 const fsp = require("fs").promises;
 const path = require("path");
+let applyPixelArtFilter;
+try { applyPixelArtFilter = require("./pixelArtFilter").applyPixelArtFilter; } catch (e) { /* optional — needs sharp */ }
+
+/** Find an existing file on disk matching a prefix. */
+function findExistingFile(texDir, prefix) {
+  try {
+    const files = fs.readdirSync(texDir);
+    return files.find(f => f.startsWith(prefix)) || null;
+  } catch (e) { return null; }
+}
+
+/** Append file mtime as cache-buster query param. */
+function withMtime(urlPath, filePath) {
+  try { return urlPath + "?v=" + Math.floor(fs.statSync(filePath).mtimeMs); }
+  catch (e) { return urlPath; }
+}
 
 /**
  * Extract base64 sponsor images to static PNG files on disk.
+ * Applies pixel art filter (128px, 8 colors, Bayer dithering) when sharp is available.
  * @param {Object} store - FixedSlotSponsorStore instance
  * @param {string} gameDir - Root game directory
  * @param {string} filePrefix - Filename prefix (e.g. "moon_", "billboard_")
@@ -24,16 +41,30 @@ async function extractSlotSponsorImages(store, gameDir, filePrefix) {
   const sponsors = store.getAll();
   for (let i = 0; i < sponsors.length; i++) {
     const s = sponsors[i];
-    if (!s || !s.patternImage) continue;
+    if (!s) continue;
 
-    const match = s.patternImage.match(/^data:image\/(\w+);base64,(.+)$/);
-    if (match) {
-      const ext = match[1] === "jpeg" ? "jpg" : match[1];
-      const filePath = path.join(texDir, `${filePrefix}${i}.${ext}`);
-      await fsp.writeFile(filePath, Buffer.from(match[2], "base64"));
-      // Append file mtime for cache busting
-      const mt = Math.floor(fs.statSync(filePath).mtimeMs);
-      urlMap[i] = { patternUrl: `/sponsor-textures/${filePrefix}${i}.${ext}?v=${mt}` };
+    if (s.patternImage) {
+      const match = s.patternImage.match(/^data:image\/(\w+);base64,(.+)$/);
+      if (match) {
+        const raw = Buffer.from(match[2], "base64");
+        if (applyPixelArtFilter) {
+          const baked = await applyPixelArtFilter(raw);
+          const pngPath = path.join(texDir, `${filePrefix}${i}.png`);
+          await fsp.writeFile(pngPath, baked);
+          urlMap[i] = { patternUrl: withMtime(`/sponsor-textures/${filePrefix}${i}.png`, pngPath) };
+        } else {
+          const ext = match[1] === "jpeg" ? "jpg" : match[1];
+          const filePath = path.join(texDir, `${filePrefix}${i}.${ext}`);
+          await fsp.writeFile(filePath, raw);
+          urlMap[i] = { patternUrl: withMtime(`/sponsor-textures/${filePrefix}${i}.${ext}`, filePath) };
+        }
+      }
+    } else {
+      // No base64 — find existing file on disk
+      const existing = findExistingFile(texDir, `${filePrefix}${i}.`);
+      if (existing) {
+        urlMap[i] = { patternUrl: withMtime(`/sponsor-textures/${existing}`, path.join(texDir, existing)) };
+      }
     }
   }
   return urlMap;

@@ -556,8 +556,21 @@ class Environment {
     const img = new Image();
     img.crossOrigin = "anonymous";
     img.onload = () => {
-      const texture = new THREE.Texture(img);
+      // Upscale small (baked) textures so pixel art blocks are visible
+      let texSrc = img;
+      if (img.width < 512) {
+        const sf = Math.ceil(512 / img.width);
+        const c = document.createElement("canvas");
+        c.width = img.width * sf;
+        c.height = img.height * sf;
+        const ctx = c.getContext("2d");
+        ctx.imageSmoothingEnabled = false;
+        ctx.drawImage(img, 0, 0, c.width, c.height);
+        texSrc = c;
+      }
+      const texture = new THREE.Texture(texSrc);
       texture.wrapS = texture.wrapT = THREE.ClampToEdgeWrapping;
+      texture.generateMipmaps = false;
       texture.minFilter = THREE.NearestFilter;
       texture.magFilter = THREE.NearestFilter;
       texture.needsUpdate = true;
@@ -1492,14 +1505,27 @@ gl_FragColor = vec4( outgoingLight, diffuseColor.a );`
     const img = new Image();
     img.crossOrigin = "anonymous";
     img.onload = () => {
-      const texture = new THREE.Texture(img);
+      // Upscale small (baked) textures so pixel art blocks are visible
+      let texSrc = img;
+      if (img.width < 512) {
+        const sf = Math.ceil(512 / img.width);
+        const c = document.createElement("canvas");
+        c.width = img.width * sf;
+        c.height = img.height * sf;
+        const ctx = c.getContext("2d");
+        ctx.imageSmoothingEnabled = false;
+        ctx.drawImage(img, 0, 0, c.width, c.height);
+        texSrc = c;
+      }
+      const texture = new THREE.Texture(texSrc);
       texture.wrapS = texture.wrapT = THREE.RepeatWrapping;
+      texture.generateMipmaps = false;
       texture.minFilter = THREE.NearestFilter;
       texture.magFilter = THREE.NearestFilter;
 
       // Aspect-correct "cover" mapping: fill panel without stretching
       const panelAspect = 57.6 / 38.4; // 1.5
-      const texAspect = img.width / img.height;
+      const texAspect = texSrc.width / texSrc.height;
       if (texAspect < panelAspect) {
         texture.repeat.set(1, texAspect / panelAspect);
         texture.offset.set(0, (1 - texAspect / panelAspect) / 2);
