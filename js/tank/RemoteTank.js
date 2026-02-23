@@ -424,7 +424,7 @@ class RemoteTank {
 
     // Start sink (2s charred delay + 5s sink into ground)
     this.fadeStartTime = performance.now();
-    this.sinkDelay = 2000;
+    this.sinkDelay = 3000;
     this.sinkDuration = 5000;
     this.sinkDepth = 3;
     this.isFading = true;
@@ -432,7 +432,7 @@ class RemoteTank {
     // Random tilt axis and direction for death sink rotation
     const angle = Math.random() * Math.PI * 2;
     this._sinkTiltAxis = new THREE.Vector3(Math.cos(angle), 0, Math.sin(angle)).normalize();
-    this._sinkTiltMax = (0.15 + Math.random() * 0.2) * (Math.random() < 0.5 ? 1 : -1);
+    this._sinkTiltMax = (0.3 + Math.random() * 0.4) * (Math.random() < 0.5 ? 1 : -1);
   }
 
   _setDeadMaterial() {

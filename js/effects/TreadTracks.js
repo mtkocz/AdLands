@@ -648,7 +648,7 @@ class TreadTracks {
 
       // Simple world-space distance check
       const dist = worldPos.distanceTo(puddleWorldPos);
-      const puddleRadius = puddle.mesh.scale.x * 1.5;
+      const puddleRadius = puddle.mesh.scale.x * 0.5;
 
       if (dist < puddleRadius) {
         return puddle;

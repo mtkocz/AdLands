@@ -2589,7 +2589,7 @@ class BotTanks {
 
   _startBotFadeOut(bot) {
     bot.fadeStartTime = performance.now();
-    bot.sinkDelay = 2000; // 2s charred before sinking
+    bot.sinkDelay = 3000; // 3s charred before sinking
     bot.sinkDuration = 5000; // 5s to sink into ground
     bot.sinkDepth = 3; // units to sink (roughly tank height)
     bot.isFading = true;
@@ -2597,7 +2597,7 @@ class BotTanks {
     // Random tilt axis and direction for death sink rotation
     const angle = Math.random() * Math.PI * 2;
     bot._sinkTiltAxis = new THREE.Vector3(Math.cos(angle), 0, Math.sin(angle)).normalize();
-    bot._sinkTiltMax = (0.15 + Math.random() * 0.2) * (Math.random() < 0.5 ? 1 : -1); // radians
+    bot._sinkTiltMax = (0.3 + Math.random() * 0.4) * (Math.random() < 0.5 ? 1 : -1); // radians
   }
 
   _updateBotFade(bot) {
