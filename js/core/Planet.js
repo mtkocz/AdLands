@@ -4074,9 +4074,10 @@ class Planet {
 
     downCtx.putImageData(imageData, 0, 0);
 
-    // Step 4: Scale up to at least 512px with nearest-neighbor (crisp pixel blocks)
-    const upWidth = Math.max(srcWidth, 512);
-    const upHeight = Math.max(srcHeight, 512);
+    // Step 4: Scale up to 4x intermediate (512px short side) — crisp pixel blocks
+    const upScale = Math.ceil(512 / Math.min(targetWidth, targetHeight));
+    const upWidth = targetWidth * upScale;
+    const upHeight = targetHeight * upScale;
     const finalCanvas = document.createElement("canvas");
     finalCanvas.width = upWidth;
     finalCanvas.height = upHeight;
