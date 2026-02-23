@@ -1276,8 +1276,8 @@ class Tank {
     // Turn tank dark gray
     this._setDeadMaterial();
 
-    // Start fade timer (3 seconds)
-    this._startFadeOut(3);
+    // Start fade (2s charred delay + 5s linear opacity fade)
+    this._startFadeOut();
 
     // Notify death callback (for explosion, respawn flow, etc.)
     if (this.onDeath) {
@@ -1317,14 +1317,11 @@ class Tank {
     });
   }
 
-  _startFadeOut(duration) {
+  _startFadeOut() {
     this.fadeStartTime = performance.now();
-    // Three-phase: smoke fades (5s), delay (2s), then tank fades (3s)
-    this.smokeFadeDuration = 5 * 1000; // 5 seconds for smoke to fade
-    this.sinkDelay = 2 * 1000; // 2 seconds delay before fading
-    this.fadeDuration = duration * 1000; // Duration for tank to fade out
+    this.fadeDelay = 2000; // 2s charred before fading
+    this.fadeDuration = 5000; // 5s linear opacity fade
     this.isFading = true;
-    this.smokeFullyFaded = false;
     this.tankFadeStarted = false;
   }
 
@@ -1333,76 +1330,57 @@ class Tank {
 
     const elapsed = performance.now() - this.fadeStartTime;
 
-    // Phase 1: Smoke fades first (0 to smokeFadeDuration)
-    if (elapsed < this.smokeFadeDuration) {
-      const smokeProgress = elapsed / this.smokeFadeDuration;
-      const smokeOpacity = 1 - smokeProgress;
-
-      // Notify callback for smoke opacity only (tank stays visible)
+    // Fade smoke over the first 5 seconds (runs alongside charred delay + tank fade)
+    const smokeDuration = 5000;
+    if (elapsed < smokeDuration) {
+      const smokeOpacity = 1 - (elapsed / smokeDuration);
       if (this.onSmokeFadeUpdate) {
         this.onSmokeFadeUpdate(this, smokeOpacity);
       }
-
-      return false;
-    }
-
-    // Mark smoke as fully faded (do this once)
-    if (!this.smokeFullyFaded) {
-      this.smokeFullyFaded = true;
-      // Ensure smoke is at 0 opacity
+    } else if (!this._smokeFadeDone) {
+      this._smokeFadeDone = true;
       if (this.onSmokeFadeUpdate) {
         this.onSmokeFadeUpdate(this, 0);
       }
     }
 
-    // Phase 2: Delay before fading (tank sits charred)
-    const delayElapsed = elapsed - this.smokeFadeDuration;
-    if (delayElapsed < this.sinkDelay) {
-      return false; // Still waiting
-    }
+    // Wait for charred delay before starting tank opacity fade
+    if (elapsed < this.fadeDelay) return false;
 
-    // Phase 3: Tank fades out (opacity reduces)
-    const fadeElapsed = delayElapsed - this.sinkDelay;
+    const fadeElapsed = elapsed - this.fadeDelay;
     const fadeProgress = Math.min(1, fadeElapsed / this.fadeDuration);
 
     if (fadeProgress >= 1) {
-      // Fully faded - notify for removal
       if (this.onFadeComplete) {
         this.onFadeComplete(this);
       }
-      return true; // Signal fade complete
+      return true;
     }
 
-    // Start fade setup (once)
+    // One-time transparent setup (skip commander trim)
     if (!this.tankFadeStarted) {
       this.tankFadeStarted = true;
-      // Make materials transparent for fading (including shadow)
-      // Skip commander trim — its shared material is managed by CommanderSkin
       this.group.traverse((child) => {
         if (child.isMesh && child.material && child !== this.hitbox && !this._isCommanderTrim(child)) {
           child.material.transparent = true;
-          child.castShadow = true; // Keep shadow, it will fade with opacity
         }
       });
     }
 
-    // Calculate opacity (ease-in for gradual start)
-    const easedProgress = fadeProgress * fadeProgress;
-    const opacity = 1 - easedProgress;
+    // Linear fade
+    const opacity = 1 - fadeProgress;
 
-    // Apply opacity to all tank meshes (skip commander trim)
     this.group.traverse((child) => {
       if (child.isMesh && child.material && child !== this.hitbox && !this._isCommanderTrim(child)) {
         child.material.opacity = opacity;
       }
     });
 
-    // Notify callback for fade progress
     if (this.onFadeUpdate) {
       this.onFadeUpdate(this, opacity);
     }
 
-    return false; // Still fading
+    return false;
   }
 
   /**

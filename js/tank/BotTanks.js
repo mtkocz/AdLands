@@ -2562,8 +2562,8 @@ class BotTanks {
     // Turn bot dark gray
     this._setBotDeadMaterial(bot);
 
-    // Start fade timer (3 seconds)
-    this._startBotFadeOut(bot, 3);
+    // Start fade (2s charred delay + 5s linear opacity fade)
+    this._startBotFadeOut(bot);
 
     // Notify callback for explosion effects
     if (this.onBotDeath) {
@@ -2587,14 +2587,11 @@ class BotTanks {
     });
   }
 
-  _startBotFadeOut(bot, duration) {
+  _startBotFadeOut(bot) {
     bot.fadeStartTime = performance.now();
-    // Three-phase: smoke fades (5s), delay (1.5s), then tank fades (3s)
-    bot.smokeFadeDuration = 5 * 1000; // 5 seconds for smoke to fade
-    bot.sinkDelay = 1.5 * 1000; // 1.5 seconds delay before fading
-    bot.fadeDuration = duration * 1000; // Duration for tank to fade out
+    bot.fadeDelay = 2000; // 2s charred before fading
+    bot.fadeDuration = 5000; // 5s linear opacity fade
     bot.isFading = true;
-    bot.smokeFullyFaded = false;
     bot.tankFadeStarted = false;
   }
 
@@ -2603,64 +2600,47 @@ class BotTanks {
 
     const elapsed = performance.now() - bot.fadeStartTime;
 
-    // Phase 1: Smoke fades first (0 to smokeFadeDuration)
-    if (elapsed < bot.smokeFadeDuration) {
-      const smokeProgress = elapsed / bot.smokeFadeDuration;
-      const smokeOpacity = 1 - smokeProgress;
-
-      // Notify callback for smoke opacity only (tank stays visible)
+    // Fade smoke over the first 5 seconds (runs alongside charred delay + tank fade)
+    const smokeDuration = 5000;
+    if (elapsed < smokeDuration) {
+      const smokeOpacity = 1 - (elapsed / smokeDuration);
       if (this.onBotFadeUpdate) {
         this.onBotFadeUpdate(bot, smokeOpacity, "smoke");
       }
-
-      return false;
-    }
-
-    // Mark smoke as fully faded (do this once)
-    if (!bot.smokeFullyFaded) {
-      bot.smokeFullyFaded = true;
-      // Ensure smoke is at 0 opacity
+    } else if (!bot._smokeFadeDone) {
+      bot._smokeFadeDone = true;
       if (this.onBotFadeUpdate) {
         this.onBotFadeUpdate(bot, 0, "smoke");
       }
     }
 
-    // Phase 2: Delay before fading (tank sits charred)
-    const delayElapsed = elapsed - bot.smokeFadeDuration;
-    if (delayElapsed < bot.sinkDelay) {
-      return false; // Still waiting
-    }
+    // Wait for charred delay before starting tank opacity fade
+    if (elapsed < bot.fadeDelay) return false;
 
-    // Phase 3: Tank fades out (opacity reduces)
-    const fadeElapsed = delayElapsed - bot.sinkDelay;
+    const fadeElapsed = elapsed - bot.fadeDelay;
     const fadeProgress = Math.min(1, fadeElapsed / bot.fadeDuration);
 
     if (fadeProgress >= 1) {
-      // Fully faded - notify for cleanup
       if (this.onBotFadeComplete) {
         this.onBotFadeComplete(bot);
       }
       return true;
     }
 
-    // Start fade setup (once) - clone materials so fading doesn't affect other tanks
+    // One-time transparent setup
     if (!bot.tankFadeStarted) {
       bot.tankFadeStarted = true;
       bot.group.traverse((child) => {
         if (child.isMesh && child.material && child !== bot.hitbox) {
-          // Clone material to avoid affecting other tanks using shared materials
           child.material = child.material.clone();
           child.material.transparent = true;
-          child.castShadow = true; // Keep shadow, it will fade with opacity
         }
       });
     }
 
-    // Calculate opacity (ease-in for gradual start)
-    const easedProgress = fadeProgress * fadeProgress;
-    const opacity = 1 - easedProgress;
+    // Linear fade
+    const opacity = 1 - fadeProgress;
 
-    // Apply opacity to all tank meshes
     bot.group.traverse((child) => {
       if (child.isMesh && child.material && child !== bot.hitbox) {
         child.material.opacity = opacity;
@@ -3072,8 +3052,10 @@ class BotTanks {
       }
 
       // Update userData for hover tooltip + right-click profile card
-      const botId = opn ? opn[opnIdx] : `phantom-${poolIdx}`;
-      const botName = opn ? opn[opnIdx + 1] : `Bot ${poolIdx}`;
+      // opn may be stale (sent every 100 ticks) while op updates every 10 ticks,
+      // so opn[opnIdx] can be undefined when bots spawn/despawn between syncs
+      const botId = (opn && opn[opnIdx]) || `phantom-${poolIdx}`;
+      const botName = (opn && opn[opnIdx + 1]) || `Bot ${poolIdx}`;
       mesh.userData.playerId = botId;
       mesh.userData.faction = faction;
       mesh.userData.username = botName;

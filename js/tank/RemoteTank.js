@@ -250,6 +250,11 @@ class RemoteTank {
 
     let interpolated = false;
 
+    // DEBUG: track interpolation success rate (remove after debugging)
+    if (!RemoteTank._dbgStats) {
+      RemoteTank._dbgStats = { ok: 0, fail: 0, lastLog: 0 };
+    }
+
     if (snapCount >= 2) {
       // Ring buffer index helper: i=0 is oldest, i=snapCount-1 is newest
       const oldest = (this._snapHead - snapCount + this._snapCap) % this._snapCap;
@@ -314,6 +319,17 @@ class RemoteTank {
         this.state.speed = this.state.speed + (this.targetState.speed - this.state.speed) * t;
         this.state.turretAngle = MathUtils.lerpAngle(this.state.turretAngle, this.targetState.turretAngle, t);
       }
+    }
+
+    // DEBUG: log interpolation stats (remove after debugging)
+    const _dbg = RemoteTank._dbgStats;
+    if (interpolated) _dbg.ok++; else _dbg.fail++;
+    const _now = performance.now();
+    if (_now - _dbg.lastLog > 3000) {
+      const total = _dbg.ok + _dbg.fail;
+      const pct = total > 0 ? ((_dbg.ok / total) * 100).toFixed(1) : 0;
+      console.log(`[RemoteTank interp] ${pct}% interpolated (${_dbg.ok}/${total}) | delay=${this.interpolationDelay.toFixed(0)}ms | snaps=${snapCount}`);
+      _dbg.ok = 0; _dbg.fail = 0; _dbg.lastLog = _now;
     }
 
     // Counter planet rotation: convert from planet-fixed coords to world coords.
@@ -384,13 +400,11 @@ class RemoteTank {
     // Turn all meshes charred (dark gray)
     this._setDeadMaterial();
 
-    // Start 3-phase fade: smoke fades (5s), delay (1.5s), tank fades (3s)
+    // Start fade (2s charred delay + 5s linear opacity fade)
     this.fadeStartTime = performance.now();
-    this.smokeFadeDuration = 5000;
-    this.sinkDelay = 1500;
-    this.fadeDuration = 3000;
+    this.fadeDelay = 2000;
+    this.fadeDuration = 5000;
     this.isFading = true;
-    this.smokeFullyFaded = false;
     this.tankFadeStarted = false;
   }
 
@@ -429,7 +443,7 @@ class RemoteTank {
   }
 
   /**
-   * Called every frame. Drives the 3-phase fade/sink sequence.
+   * Called every frame. Drives the fade sequence.
    * Returns true when fade is fully complete.
    */
   updateFade() {
@@ -437,25 +451,20 @@ class RemoteTank {
 
     const elapsed = performance.now() - this.fadeStartTime;
 
-    // Phase 1: Smoke fades (0 → smokeFadeDuration)
-    if (elapsed < this.smokeFadeDuration) {
-      const smokeOpacity = 1 - (elapsed / this.smokeFadeDuration);
+    // Fade smoke over the first 5 seconds (runs alongside charred delay + tank fade)
+    const smokeDuration = 5000;
+    if (elapsed < smokeDuration) {
+      const smokeOpacity = 1 - (elapsed / smokeDuration);
       if (this.onSmokeFadeUpdate) this.onSmokeFadeUpdate(this, smokeOpacity);
-      return false;
-    }
-
-    // Mark smoke fully faded (once)
-    if (!this.smokeFullyFaded) {
-      this.smokeFullyFaded = true;
+    } else if (!this._smokeFadeDone) {
+      this._smokeFadeDone = true;
       if (this.onSmokeFadeUpdate) this.onSmokeFadeUpdate(this, 0);
     }
 
-    // Phase 2: Delay — tank sits charred
-    const delayElapsed = elapsed - this.smokeFadeDuration;
-    if (delayElapsed < this.sinkDelay) return false;
+    // Wait for charred delay before starting tank opacity fade
+    if (elapsed < this.fadeDelay) return false;
 
-    // Phase 3: Tank fades + sinks
-    const fadeElapsed = delayElapsed - this.sinkDelay;
+    const fadeElapsed = elapsed - this.fadeDelay;
     const fadeProgress = Math.min(1, fadeElapsed / this.fadeDuration);
 
     if (fadeProgress >= 1) {
@@ -475,10 +484,9 @@ class RemoteTank {
       });
     }
 
-    const easedProgress = fadeProgress * fadeProgress;
-    const opacity = 1 - easedProgress;
+    // Linear fade
+    const opacity = 1 - fadeProgress;
 
-    // Apply opacity
     this.group.traverse((child) => {
       if (child.isMesh && child.material && child !== this.hitbox) {
         if (child === this.lodMesh) return;

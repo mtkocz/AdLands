@@ -443,12 +443,20 @@ class CannonSystem {
       return;
     }
 
-    // Cap puddles to limit draw calls — recycle oldest when full
-    while (this.oilPuddles.length >= 10) {
-      const oldest = this.oilPuddles.shift();
-      this.planet.hexGroup.remove(oldest.mesh);
-      oldest.material.map.dispose();
-      oldest.material.dispose();
+    // Cap active puddles — force oldest into fade-out instead of instant removal
+    const fadeStart = cfg.lifetime - cfg.fadeOutDuration;
+    let activeCount = 0;
+    for (const p of this.oilPuddles) {
+      if (p.age < fadeStart) activeCount++;
+    }
+    if (activeCount >= 10) {
+      // Force the oldest non-fading puddle into its fade phase
+      for (const p of this.oilPuddles) {
+        if (p.age < fadeStart) {
+          p.age = fadeStart;
+          break;
+        }
+      }
     }
 
     const cfg = this.oilPuddleConfig;
