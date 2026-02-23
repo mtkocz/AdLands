@@ -74,7 +74,6 @@ class CryptoVisuals {
   // ========================
 
   _onCryptoGain(amount, reason, worldPosition) {
-    console.log(`[CryptoVisuals] onCryptoGain: ¢${amount} reason=${reason} pos=${worldPosition ? `(${worldPosition.x.toFixed(1)}, ${worldPosition.y.toFixed(1)}, ${worldPosition.z.toFixed(1)})` : 'null'} enabled=${this.enabled}`);
     // Always update HUD bar regardless of popup setting
     this._updateHUDBar();
 
@@ -126,50 +125,15 @@ class CryptoVisuals {
     if (!worldPosition || !this.camera || !this.planet) return false;
 
     const cameraPos = this.camera.position;
-    const planetRadius = this.planet.radius;
 
-    // Ray from camera to crypto position (reuse preallocated vector)
-    const rayDir = _cryptoRayDir.copy(worldPosition).sub(cameraPos).normalize();
-
-    // Ray-sphere intersection: solve |cameraPos + t*rayDir|^2 = planetRadius^2
-    // Let oc = cameraPos (planet center is origin)
-    const a = 1; // rayDir is normalized
-    const b = 2.0 * cameraPos.dot(rayDir);
-    const c = cameraPos.dot(cameraPos) - planetRadius * planetRadius;
-    const discriminant = b * b - 4 * a * c;
-
-    if (discriminant < 0) {
-      // Ray misses planet sphere - position is visible
-      return false;
-    }
-
-    // Ray intersects sphere - find closest intersection
-    const sqrtDisc = Math.sqrt(discriminant);
-    const t1 = (-b - sqrtDisc) / 2;
-    const t2 = (-b + sqrtDisc) / 2;
-
-    // Get closest positive t (intersection in front of camera)
-    let tHit = -1;
-    if (t1 > 0.001 && t2 > 0.001) {
-      tHit = Math.min(t1, t2);
-    } else if (t1 > 0.001) {
-      tHit = t1;
-    } else if (t2 > 0.001) {
-      tHit = t2;
-    }
-
-    if (tHit < 0) {
-      // Both intersections behind camera - position is visible
-      return false;
-    }
-
-    // Compare intersection distance to crypto position distance
-    const distToCrypto = cameraPos.distanceTo(worldPosition);
-
-    // If planet intersection is closer than crypto position, it's occluded
-    // Buffer accounts for terrain elevation (up to ~10.5 units above base sphere)
-    // and tank body height above surface
-    return tHit < distToCrypto - 15;
+    // Hemisphere check: is the camera on the "outside" of the sphere at this point?
+    // surfaceNormal = normalize(worldPosition) points outward from planet center
+    // toCamera = cameraPos - worldPosition points from the hex toward the camera
+    // If dot(surfaceNormal, toCamera) > 0, camera sees the outer surface → visible
+    // If <= 0, the hex faces away from the camera → occluded
+    const toCamera = _cryptoRayDir.copy(cameraPos).sub(worldPosition);
+    const dot = worldPosition.x * toCamera.x + worldPosition.y * toCamera.y + worldPosition.z * toCamera.z;
+    return dot <= 0;
   }
 
   /**
@@ -190,7 +154,7 @@ class CryptoVisuals {
   }
 
   _spawnFloatingNumber(amount, worldPosition) {
-    if (amount === 0) { console.log('[CryptoVisuals] _spawnFloatingNumber: SKIP amount=0'); return; }
+    if (amount === 0) return;
 
     const isSpend = amount < 0;
 
@@ -205,12 +169,10 @@ class CryptoVisuals {
     }
 
     // Skip if no valid world position
-    if (!worldPosition) { console.log('[CryptoVisuals] _spawnFloatingNumber: SKIP no worldPosition'); return; }
+    if (!worldPosition) return;
 
     // Check if position is occluded by planet at spawn time
-    const occluded = this._isOccludedByPlanet(worldPosition);
-    console.log(`[CryptoVisuals] _spawnFloatingNumber: ¢${amount} occluded=${occluded} dist=${worldPosition.length().toFixed(1)} planetR=${this.planet?.radius}`);
-    if (occluded) {
+    if (this._isOccludedByPlanet(worldPosition)) {
       return;
     }
 
