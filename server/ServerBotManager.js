@@ -70,15 +70,15 @@ const BOT_AVOID_ANGLE = Math.PI / 2.5;
 const BOT_AVOID_STRENGTH = 1.0;
 
 // Omnidirectional separation (anti-bunching)
-const BOT_SEPARATION_RADIUS = 0.025;
-const BOT_SEPARATION_STRENGTH = 0.15;
+const BOT_SEPARATION_RADIUS = 0.035;
+const BOT_SEPARATION_STRENGTH = 0.35;
 
 // Terrain navigation
-const BOT_STUCK_CHECK_INTERVAL = 0.75;
+const BOT_STUCK_CHECK_INTERVAL = 0.5;
 const BOT_STUCK_THRESHOLD = 3;
-const BOT_TERRAIN_BOUNCE_LIMIT = 1;
+const BOT_TERRAIN_BOUNCE_LIMIT = 3;
 const BOT_COLLISION_SPEED_RETAIN = 0.15;
-const BOT_TERRAIN_AVOID_COOLDOWN = 2.5;
+const BOT_TERRAIN_AVOID_COOLDOWN = 1.5;
 
 // Terrain collision probes (half-dimensions of tank body)
 const HALF_LEN = 2.75;
@@ -608,14 +608,14 @@ class ServerBotManager {
           bot._stuckCounter = 0;
           bot._replanCount++;
           if (bot._replanCount >= 3) {
+            // Teleport to a valid position — break the jam
+            this._teleportToSafety(bot);
             bot._replanCount = 0;
             bot.pathWaypoints = [];
             bot.targetClusterId = null;
             bot.targetPosition = null;
-            bot.wanderDirection = bot.heading + Math.PI * (0.5 + Math.random());
             bot.aiState = BOT_STATES.WANDERING;
             bot.stateTimer = 0;
-            bot.speed = 0;
           } else {
             // Re-plan: reverse briefly
             bot.pathWaypoints = [];
@@ -645,13 +645,24 @@ class ServerBotManager {
         }
         // Stuck detection while capturing — re-path to target
         if (this._checkStuck(bot, dt)) {
+          bot._replanCount = (bot._replanCount || 0) + 1;
           bot._stuckCounter = 0;
-          bot.pathWaypoints = [];
-          bot.wanderDirection = bot.heading + Math.PI + (Math.random() - 0.5) * 1.0;
-          bot.speed = 0;
-          bot._terrainAvoidTimer = 0.5;
-          bot.aiState = BOT_STATES.MOVING;
-          bot.stateTimer = 0;
+          if (bot._replanCount >= 3) {
+            this._teleportToSafety(bot);
+            bot._replanCount = 0;
+            bot.pathWaypoints = [];
+            bot.targetClusterId = null;
+            bot.targetPosition = null;
+            bot.aiState = BOT_STATES.WANDERING;
+            bot.stateTimer = 0;
+          } else {
+            bot.pathWaypoints = [];
+            bot.wanderDirection = bot.heading + Math.PI + (Math.random() - 0.5) * 1.0;
+            bot.speed = 0;
+            bot._terrainAvoidTimer = 0.5;
+            bot.aiState = BOT_STATES.MOVING;
+            bot.stateTimer = 0;
+          }
         }
         break;
       }
@@ -674,10 +685,18 @@ class ServerBotManager {
         }
         // Stuck detection while wandering — pick new random direction
         if (this._checkStuck(bot, dt)) {
+          bot._replanCount = (bot._replanCount || 0) + 1;
           bot._stuckCounter = 0;
-          bot.wanderDirection = bot.heading + Math.PI + (Math.random() - 0.5) * 1.0;
-          bot.speed = 0;
-          bot._terrainAvoidTimer = 0.5;
+          if (bot._replanCount >= 3) {
+            this._teleportToSafety(bot);
+            bot._replanCount = 0;
+            bot.aiState = BOT_STATES.IDLE;
+            bot.stateTimer = 0;
+          } else {
+            bot.wanderDirection = bot.heading + Math.PI + (Math.random() - 0.5) * 1.0;
+            bot.speed = 0;
+            bot._terrainAvoidTimer = 0.5;
+          }
         }
         break;
       }
@@ -704,12 +723,6 @@ class ServerBotManager {
       bot._cachedSteer = threat.steerDirection;
     }
 
-    // Apply cached separation force
-    const separation = bot._cachedSeparation || 0;
-    if (separation !== 0) {
-      bot.wanderDirection += separation;
-    }
-
     // Target-directed steering (suppressed during terrain avoidance)
     if (bot._terrainAvoidTimer <= 0) {
       if (bot.aiState === BOT_STATES.MOVING) {
@@ -734,6 +747,12 @@ class ServerBotManager {
           bot.wanderDirection += targetDiff * 0.03;
         }
       }
+    }
+
+    // Apply separation AFTER target-seeking so it wins when bots are bunched
+    const separation = bot._cachedSeparation || 0;
+    if (separation !== 0) {
+      bot.wanderDirection += separation;
     }
 
     // Use cached collision avoidance
@@ -974,14 +993,8 @@ class ServerBotManager {
       }
     }
 
-    // Terrain threat (every 3rd frame equivalent — every 3rd tick per bot)
-    bot._terrainProbeFrame = (bot._terrainProbeFrame || 0) + 1;
-    if (bot._terrainProbeFrame >= 3) {
-      bot._terrainProbeFrame = 0;
-      const terrainThreat = this._detectTerrainThreat(bot);
-      bot._lastTerrainThreat = terrainThreat;
-    }
-    const cachedTerrain = bot._lastTerrainThreat;
+    // Terrain threat every tick (must react fast to avoid pileups)
+    const cachedTerrain = this._detectTerrainThreat(bot);
     const terrainThreat = cachedTerrain ? cachedTerrain.level : 0;
     const terrainSteer = cachedTerrain ? cachedTerrain.steerDirection : 0;
 
@@ -1570,6 +1583,22 @@ class ServerBotManager {
     bot.combatTarget = null;
     bot.isDeploying = true;
     bot.deployTimer = 0.5 + Math.random() * 2;
+  }
+
+  /**
+   * Teleport a stuck bot to a nearby valid position without resetting HP or deploy state.
+   */
+  _teleportToSafety(bot) {
+    const spawn = this._getValidSpawnPosition();
+    bot.theta = spawn.theta;
+    bot.phi = spawn.phi;
+    bot.heading = Math.random() * Math.PI * 2;
+    bot.speed = 0;
+    bot.pathWaypoints = [];
+    bot.currentWaypointIdx = 0;
+    bot._stuckCounter = 0;
+    bot._terrainBounceCount = 0;
+    bot._terrainAvoidTimer = 0;
   }
 
   // ========================
