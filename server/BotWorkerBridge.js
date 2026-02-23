@@ -439,6 +439,33 @@ class BotWorkerBridge {
   }
 
   // ========================
+  // FACTION COUNTS (main thread reads from Float32Array)
+  // ========================
+
+  /**
+   * Count alive (non-dead, non-deploying) bots per faction.
+   * @returns {{ rust: number, cobalt: number, viridian: number }}
+   */
+  getBotFactionCounts() {
+    const counts = { rust: 0, cobalt: 0, viridian: 0 };
+    const positions = this._positions;
+    const ids = this._botIds;
+    if (!positions || !ids) return counts;
+
+    for (let i = 0; i < ids.length; i++) {
+      const off = i * POS_STRIDE;
+      const flags = positions[off + 4];
+      const isDead = (flags & 1) !== 0;
+      const isDeploying = (flags & 2) !== 0;
+      if (isDead || isDeploying) continue;
+
+      const faction = FACTION_BY_INDEX[(flags >> 4) & 0x3];
+      counts[faction]++;
+    }
+    return counts;
+  }
+
+  // ========================
   // CAPTURE COUNTING (main thread reads from Float32Array)
   // ========================
 

@@ -347,6 +347,9 @@ class BotTanks {
     // Create InstancedMesh pools for LOD rendering (lodBox + shadowBlob)
     this._setupInstancedMeshes();
 
+    // Orbital phantom dots (server-reported positions for bots outside spatial filter)
+    this._setupOrbitalPhantoms();
+
     // Preallocated temp objects for visibility culling (avoid GC pressure)
     this._cullTemp = {
       botWorldPos: new THREE.Vector3(),
@@ -2932,5 +2935,145 @@ class BotTanks {
     if (this.onBotRespawn) {
       this.onBotRespawn(bot);
     }
+  }
+
+  // ========================
+  // ORBITAL PHANTOM DOTS
+  // ========================
+
+  /**
+   * Setup THREE.Points pools for orbital phantom dots.
+   * These represent server-reported bot positions outside the spatial filter radius.
+   * Visible only in orbital view — commanders see all factions, regular players see own faction.
+   */
+  _setupOrbitalPhantoms() {
+    const factionNames = ["rust", "cobalt", "viridian"];
+    const maxDots = 120; // Per faction
+
+    // Create a circle sprite texture (white circle with dark outline — tinted by material color)
+    const canvas = document.createElement("canvas");
+    canvas.width = 32;
+    canvas.height = 32;
+    const ctx = canvas.getContext("2d");
+    // Dark outline
+    ctx.beginPath();
+    ctx.arc(16, 16, 14, 0, Math.PI * 2);
+    ctx.fillStyle = "#111111";
+    ctx.fill();
+    // White inner circle (tinted by material color)
+    ctx.beginPath();
+    ctx.arc(16, 16, 11, 0, Math.PI * 2);
+    ctx.fillStyle = "#ffffff";
+    ctx.fill();
+    const dotTexture = new THREE.CanvasTexture(canvas);
+
+    this._orbitalPhantomPoints = {};
+    this._orbitalPhantomVisible = false;
+
+    for (const faction of factionNames) {
+      const geometry = new THREE.BufferGeometry();
+      // Pre-allocate position buffer
+      geometry.setAttribute("position", new THREE.BufferAttribute(new Float32Array(maxDots * 3), 3));
+      geometry.setDrawRange(0, 0);
+
+      const factionColor =
+        typeof FACTION_COLORS !== "undefined"
+          ? FACTION_COLORS[faction].hex
+          : this.factions[faction].primary;
+
+      const material = new THREE.PointsMaterial({
+        size: 10,
+        sizeAttenuation: true,
+        map: dotTexture,
+        color: factionColor,
+        transparent: true,
+        depthWrite: false,
+        alphaTest: 0.1,
+      });
+
+      const points = new THREE.Points(geometry, material);
+      points.visible = false;
+      points.frustumCulled = false;
+      points.renderOrder = 10;
+      this.planet.hexGroup.add(points);
+      this._orbitalPhantomPoints[faction] = points;
+    }
+  }
+
+  /**
+   * Update orbital phantom dots from server-reported positions.
+   * Called every frame from the render loop.
+   * @param {boolean} isOrbitalView - Whether camera is in orbital/fastTravel mode
+   * @param {boolean} isHumanCommander - Whether the local player is a commander
+   * @param {string} viewerFaction - The local player's faction
+   */
+  updateOrbitalPhantoms(isOrbitalView, isHumanCommander, viewerFaction) {
+    const mp = window._mpState;
+    if (!mp || !mp.orbitalPositions) {
+      this._hideOrbitalPhantoms();
+      return;
+    }
+
+    if (!isOrbitalView) {
+      this._hideOrbitalPhantoms();
+      return;
+    }
+
+    const op = mp.orbitalPositions;
+    const factionNames = ["rust", "cobalt", "viridian"];
+    const r = this.sphereRadius + 3; // Slightly above surface (like lodDot height)
+
+    // Build set of known bot positions (bots that already have full representation)
+    const knownBotThetas = new Set();
+    for (const bot of this.bots) {
+      if (bot.isDead || bot.isDeploying) continue;
+      knownBotThetas.add(Math.round(bot.theta * 10000));
+    }
+
+    // Write positions into each faction's buffer
+    const counts = { rust: 0, cobalt: 0, viridian: 0 };
+
+    for (let i = 0; i < op.length; i += 3) {
+      const theta = op[i];
+      const phi = op[i + 1];
+      const fi = op[i + 2];
+      const faction = factionNames[fi];
+
+      // Filter: commanders see all, regular players see own faction only
+      if (!isHumanCommander && faction !== viewerFaction) continue;
+
+      // Skip bots that already have full 3D representation (avoid doubling)
+      const thetaKey = Math.round(theta * 10000);
+      if (knownBotThetas.has(thetaKey)) continue;
+
+      const pts = this._orbitalPhantomPoints[faction];
+      const posAttr = pts.geometry.attributes.position;
+      const idx = counts[faction];
+      if (idx * 3 >= posAttr.array.length) continue;
+
+      // Spherical to Cartesian (local to hexGroup)
+      posAttr.array[idx * 3] = r * Math.sin(phi) * Math.cos(theta);
+      posAttr.array[idx * 3 + 1] = r * Math.cos(phi);
+      posAttr.array[idx * 3 + 2] = r * Math.sin(phi) * Math.sin(theta);
+      counts[faction]++;
+    }
+
+    // Update draw ranges and visibility
+    for (const faction of factionNames) {
+      const pts = this._orbitalPhantomPoints[faction];
+      pts.geometry.setDrawRange(0, counts[faction]);
+      pts.geometry.attributes.position.needsUpdate = true;
+      pts.visible = counts[faction] > 0;
+    }
+
+    this._orbitalPhantomVisible = true;
+  }
+
+  _hideOrbitalPhantoms() {
+    if (!this._orbitalPhantomVisible) return;
+    for (const faction of ["rust", "cobalt", "viridian"]) {
+      this._orbitalPhantomPoints[faction].visible = false;
+    }
+    this._orbitalPhantomVisible = false;
   }
 }

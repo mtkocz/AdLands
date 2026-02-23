@@ -1883,6 +1883,8 @@ class GameRoom {
     const player = this.players.get(socketId);
     if (!player || player.isDead || !player.waitingForPortal) {
       console.log(`[Room ${this.roomId}] choosePortal REJECTED — player:${!!player}, isDead:${player?.isDead}, waitingForPortal:${player?.waitingForPortal}`);
+      const socket = this.io.sockets.sockets.get(socketId);
+      if (socket) socket.emit("portal-rejected");
       return;
     }
     player.lastActivityAt = Date.now();
@@ -1890,6 +1892,8 @@ class GameRoom {
     // Validate portal tile index
     if (!this.portalPositionsByTile.has(portalTileIndex)) {
       console.log(`[Room ${this.roomId}] Invalid portal tile ${portalTileIndex} from ${player.name} (valid: ${[...this.portalPositionsByTile.keys()].join(',')})`);
+      const socket = this.io.sockets.sockets.get(socketId);
+      if (socket) socket.emit("portal-rejected");
       return;
     }
 
@@ -3272,11 +3276,29 @@ class GameRoom {
     }
 
     // -- Celestial data (shared by all clients — computed once) --
-    if (!this._statePayload) this._statePayload = { tick: 0, players: null, bg: null, pr: 0, ma: [], sa: [], ba: [] };
+    if (!this._statePayload) this._statePayload = { tick: 0, players: null, bg: null, pr: 0, ma: [], sa: [], ba: [], tc: 0, bfc: null };
     const statePayload = this._statePayload;
     statePayload.tick = this.tick;
     statePayload.bg = this.bodyguardManager.getStatesForBroadcast();
     statePayload.pr = this.planetRotation;
+    // Total population + bot faction breakdown (for chat panel headers)
+    statePayload.tc = this.players.size + this.botBridge.botCount;
+    statePayload.bfc = this.botBridge.getBotFactionCounts();
+
+    // Compact orbital positions for all bots (every 10 ticks ≈ 1/sec)
+    // Flat array: [theta, phi, factionIdx, theta, phi, factionIdx, ...]
+    // factionIdx: 0=rust, 1=cobalt, 2=viridian
+    if (this.tick % 10 === 0) {
+      const op = [];
+      for (const botId in botStates) {
+        const bs = botStates[botId];
+        if (bs.d) continue; // skip dead
+        op.push(bs.t, bs.p, bs.f === 'rust' ? 0 : bs.f === 'cobalt' ? 1 : 2);
+      }
+      statePayload.op = op;
+    } else {
+      delete statePayload.op;
+    }
 
     // Update moon angles in-place
     statePayload.ma.length = this.moons.length;

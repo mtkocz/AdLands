@@ -778,8 +778,33 @@
 
   // Player count display - counts are now shown in chat headers
   function updatePlayerCount() {
+    const mp = window._mpState;
+
+    // Use server-authoritative counts when available (includes all bots, not just nearby ones)
+    if (mp && mp.serverTotalCount !== undefined) {
+      const totalCount = mp.serverTotalCount;
+      const bfc = mp.serverBotFactionCounts || { rust: 0, cobalt: 0, viridian: 0 };
+
+      // Faction count = bot faction count + human faction count
+      let humanFactionCount = 1; // local player
+      const remotes = mp.remoteTanks;
+      if (remotes) {
+        remotes.forEach((rt) => {
+          if (rt.faction === playerFaction) humanFactionCount++;
+        });
+      }
+      const factionCount = humanFactionCount + (bfc[playerFaction] || 0);
+      const squadCount = 1;
+
+      if (chatWindow) {
+        chatWindow.updatePlayerCounts(squadCount, factionCount, totalCount);
+      }
+      return;
+    }
+
+    // Fallback: local counting (single-player / offline)
     const allBots = botTanks.bots;
-    const remotes = window._mpState?.remoteTanks;
+    const remotes = mp?.remoteTanks;
     const remoteCount = remotes ? remotes.size : 0;
 
     // Only count active bots (not deploying, not dead+fading)
@@ -3831,6 +3856,9 @@
 
     // Pass LOD options to botTanks for commander dot mode
     botTanks.setLODOptions(lodOptions);
+
+    // Update orbital phantom dots (distant bots from server, visible in orbital view)
+    botTanks.updateOrbitalPhantoms(isOrbitalView, isHumanCommander, playerFaction);
 
     // LOD dot interaction (hover/right-click) - always active for all players
     tankLODInteraction.setActive(true);

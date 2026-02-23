@@ -324,6 +324,14 @@ class FastTravel {
             this.onPortalChosen(this.previewPortalIndex);
             // Hide UI while waiting for server confirmation
             this._hideAllUI();
+
+            // Timeout: if server never responds, re-show UI so player can retry
+            this._portalTimeout = setTimeout(() => {
+                if (this.state === 'preview') {
+                    console.warn('[FastTravel] Portal confirmation timed out — re-showing UI');
+                    this._showPreviewUI();
+                }
+            }, 5000);
             return;
         }
 
@@ -417,6 +425,11 @@ class FastTravel {
     }
 
     _exitFastTravel() {
+        if (this._portalTimeout) {
+            clearTimeout(this._portalTimeout);
+            this._portalTimeout = null;
+        }
+
         // If respawning, reset the tank and notify callback
         const wasRespawning = this.isRespawning;
         if (wasRespawning) {

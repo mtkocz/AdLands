@@ -230,6 +230,11 @@ class NetworkManager {
       if (this.onPortalConfirmed) this.onPortalConfirmed(data);
     });
 
+    // Portal rejected (server denied our portal choice)
+    this.socket.on("portal-rejected", () => {
+      if (this.onPortalRejected) this.onPortalRejected();
+    });
+
     // Respawn: server tells us to choose a portal
     this.socket.on("respawn-choose-portal", (data) => {
       if (this.onRespawnChoosePortal) this.onRespawnChoosePortal(data);
