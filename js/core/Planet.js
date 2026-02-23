@@ -616,6 +616,16 @@ class Planet {
     this.clusterOwnership.clear();
     this._initializeCaptureState();
 
+    // Clear stale overlay meshes and animations from previous connection
+    for (const [, overlay] of this.clusterGlowOverlays) {
+      this.hexGroup.remove(overlay);
+      overlay.geometry.dispose();
+      overlay.material.dispose();
+    }
+    this.clusterGlowOverlays.clear();
+    this._overlayAnimations = [];
+    this._weakTerritories.clear();
+
   }
 
   /**
@@ -2483,7 +2493,7 @@ class Planet {
         temp.tileToCamera.copy(temp.cameraWorldPos).sub(temp.tileWorldPos).normalize();
         const dot = temp.tileNormal.dot(temp.tileToCamera);
 
-        child.visible = dot > -0.15;
+        child.visible = dot > -0.3;
         if (child.visible && frustum) {
           child.visible = frustum.intersectsObject(child);
         }
@@ -2538,7 +2548,7 @@ class Planet {
         .normalize();
       const dot = temp.tileNormal.dot(temp.tileToCamera);
 
-      child.visible = dot > 0.05;
+      child.visible = dot > -0.15;
 
       // Additional frustum culling for outlines (if still visible after backface culling)
       if (child.visible && frustum) {

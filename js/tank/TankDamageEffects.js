@@ -285,7 +285,7 @@ class TankDamageEffects {
                     // Fade in quickly, stay visible longer, then fade out
                     float fadeIn = smoothstep(0.0, 0.05, lifeRatio);
                     float fadeOut = 1.0 - smoothstep(0.6, 1.0, lifeRatio);
-                    vAlpha = fadeIn * fadeOut * 0.85 * aOpacity * distanceFade;
+                    vAlpha = fadeIn * fadeOut * 0.6375 * aOpacity * distanceFade;
 
                     // Gray (0) or black (1) smoke - pass brightness to fragment
                     vBrightness = mix(0.45, 0.05, aColor);
@@ -389,7 +389,7 @@ class TankDamageEffects {
             this.smoke.ages[idx] = 0;
             this.smoke.lifetimes[idx] = 1.1 + Math.random() * 0.75;  // 1.1-1.85 seconds
             this.smoke.colors[idx] = smokeType === 'black' ? 1.0 : 0.0;
-            this.smoke.sizes[idx] = 3.375 + Math.random() * 2.25;
+            this.smoke.sizes[idx] = 2.53 + Math.random() * 1.69;
             this.smoke.rotations[idx] = Math.random() * Math.PI * 2;
             this.smoke.rotationSpeeds[idx] = (Math.random() - 0.5) * 2.0;  // -1 to +1 radians/sec
             this.smoke.opacities[idx] = tankOpacity;  // Initial opacity from tank

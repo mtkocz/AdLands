@@ -1288,13 +1288,11 @@
       for (const change of changes) {
         planet.applyTerritoryState(change.clusterId, change.owner, change.tics);
 
-        // Update sponsor hold timers and visuals if this is a sponsor cluster
-        if (change.sponsorId) {
-          if (change.holdTimer) {
-            const timer = planet.sponsorHoldTimers.get(change.sponsorId);
-            if (timer) Object.assign(timer, change.holdTimer);
-          }
-          planet.updateSponsorClusterVisual?.(change.sponsorId);
+        // Update sponsor hold timers if this is a sponsor cluster
+        // (visual overlay is already handled by applyTerritoryState → updateClusterVisual)
+        if (change.sponsorId && change.holdTimer) {
+          const timer = planet.sponsorHoldTimers.get(change.sponsorId);
+          if (timer) Object.assign(timer, change.holdTimer);
         }
 
         // Immediately refresh ring HUD if this change affects player's cluster
@@ -1396,9 +1394,17 @@
         state.momentum.cobalt = (data.tics.cobalt - state.tics.cobalt) * 4;
         state.momentum.viridian = (data.tics.viridian - state.tics.viridian) * 4;
 
+        const previousOwner = state.owner;
         state.tics = data.tics;
         state.capacity = data.capacity;
         state.owner = data.owner;
+
+        // If ownership changed (capture-progress arrived before territory-update),
+        // apply the visual update so the overlay color stays in sync
+        if (data.owner !== previousOwner) {
+          planet.updateClusterVisual(data.clusterId);
+          planet.updateDirtyFactionOutlines?.();
+        }
       }
 
       // Server sends capture-progress only for the player's assigned cluster,

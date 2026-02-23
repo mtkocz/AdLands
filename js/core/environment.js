@@ -948,9 +948,9 @@ gl_FragColor = vec4( outgoingLight, diffuseColor.a );`
     const sw = 19.2;           // solar wing width
     const sh = 14.4;           // solar wing height
 
-    const frameMat = new THREE.MeshLambertMaterial({ color: 0x444444, emissive: 0x222222 });
-    const solarMat = new THREE.MeshLambertMaterial({ color: 0x1a1a3a, emissive: 0x0a0a2a, side: THREE.DoubleSide });
-    const hubMat = new THREE.MeshLambertMaterial({ color: 0x555555, emissive: 0x181818 });
+    const frameMat = new THREE.MeshLambertMaterial({ color: 0x444444, emissive: 0x080808 });
+    const solarMat = new THREE.MeshLambertMaterial({ color: 0x1a1a3a, emissive: 0x050510, side: THREE.DoubleSide });
+    const hubMat = new THREE.MeshLambertMaterial({ color: 0x555555 });
 
     // Apply planet shadow to shared materials
     this._applyPlanetShadow(frameMat);
@@ -1001,33 +1001,27 @@ gl_FragColor = vec4( outgoingLight, diffuseColor.a );`
         // Frame beams
         const topBeam = new THREE.Mesh(new THREE.BoxGeometry(panelWidth + bt * 2, bt, bd), frameMat);
         topBeam.position.set(0, panelHeight / 2 + bt / 2, 0);
-        topBeam.layers.enable(1);
         group.add(topBeam);
 
         const bottomBeam = new THREE.Mesh(new THREE.BoxGeometry(panelWidth + bt * 2, bt, bd), frameMat);
         bottomBeam.position.set(0, -panelHeight / 2 - bt / 2, 0);
-        bottomBeam.layers.enable(1);
         group.add(bottomBeam);
 
         const leftBeam = new THREE.Mesh(new THREE.BoxGeometry(bt, panelHeight, bd), frameMat);
         leftBeam.position.set(-panelWidth / 2 - bt / 2, 0, 0);
-        leftBeam.layers.enable(1);
         group.add(leftBeam);
 
         const rightBeam = new THREE.Mesh(new THREE.BoxGeometry(bt, panelHeight, bd), frameMat);
         rightBeam.position.set(panelWidth / 2 + bt / 2, 0, 0);
-        rightBeam.layers.enable(1);
         group.add(rightBeam);
 
         // Solar wings
         const leftSolar = new THREE.Mesh(new THREE.PlaneGeometry(sw, sh), solarMat);
         leftSolar.position.set(-panelWidth / 2 - bt - sw / 2 - 2.4, 0, 0);
-        leftSolar.layers.enable(1);
         group.add(leftSolar);
 
         const rightSolar = new THREE.Mesh(new THREE.PlaneGeometry(sw, sh), solarMat);
         rightSolar.position.set(panelWidth / 2 + bt + sw / 2 + 2.4, 0, 0);
-        rightSolar.layers.enable(1);
         group.add(rightSolar);
 
         // Hub connectors
@@ -1035,13 +1029,11 @@ gl_FragColor = vec4( outgoingLight, diffuseColor.a );`
         const leftHub = new THREE.Mesh(hubGeom, hubMat);
         leftHub.rotation.z = Math.PI / 2;
         leftHub.position.set(-panelWidth / 2 - bt - 0.96, 0, 0);
-        leftHub.layers.enable(1);
         group.add(leftHub);
 
         const rightHub = new THREE.Mesh(hubGeom, hubMat);
         rightHub.rotation.z = Math.PI / 2;
         rightHub.position.set(panelWidth / 2 + bt + 0.96, 0, 0);
-        rightHub.layers.enable(1);
         group.add(rightHub);
 
         // Zeroed defaults — server provides authoritative orbital params via welcome packet
@@ -1627,7 +1619,7 @@ gl_FragColor = vec4( outgoingLight, diffuseColor.a );`
       adPanel.material.color.setHex(0xffffff);
       adPanel.material.emissive.setHex(0xffffff);
       adPanel.material.emissiveMap = texture;
-      adPanel.material.emissiveIntensity = 0.85;
+      adPanel.material.emissiveIntensity = 1.5;
       adPanel.material.needsUpdate = true;
       adPanel.layers.enable(1);
     };
