@@ -2086,9 +2086,13 @@ class GameRoom {
     if (this._tickCount >= 100) {
       const n = this._tickCount;
       const p = this._phaseSum;
-      console.warn(`[Tick] avg=${(this._tickSum/n).toFixed(0)}ms max=${this._tickMax}ms | players=${(p[0]/n).toFixed(0)} guards=${(p[1]/n).toFixed(0)} bots=${(p[2]/n).toFixed(0)} collide=${(p[3]/n).toFixed(0)} proj=${(p[4]/n).toFixed(0)} broadcast=${(p[5]/n).toFixed(0)} | n=${this.botManager.bots.size}bots ${this.players.size}players`);
+      const avgBytes = this._payloadCount ? Math.round(this._payloadByteSum / this._payloadCount) : 0;
+      const avgEntities = this._payloadCount ? Math.round(this._payloadEntitySum / this._payloadCount) : 0;
+      const kbps = this._payloadCount ? Math.round(this._payloadByteSum / (n / 10) / 1024 * 10) / 10 : 0;
+      console.warn(`[Tick] avg=${(this._tickSum/n).toFixed(0)}ms max=${this._tickMax}ms | players=${(p[0]/n).toFixed(0)} guards=${(p[1]/n).toFixed(0)} bots=${(p[2]/n).toFixed(0)} collide=${(p[3]/n).toFixed(0)} proj=${(p[4]/n).toFixed(0)} broadcast=${(p[5]/n).toFixed(0)} | n=${this.botManager.bots.size}bots ${this.players.size}players | payload=${avgBytes}B ${avgEntities}ents ${kbps}KB/s`);
       this._tickSum = 0; this._tickMax = 0; this._tickCount = 0;
       this._phaseSum = [0,0,0,0,0,0];
+      this._payloadByteSum = 0; this._payloadEntitySum = 0; this._payloadCount = 0;
     }
   }
 
@@ -3076,11 +3080,11 @@ class GameRoom {
         state = {};
         playerStates[id] = state;
       }
-      state.t = p.theta;
-      state.p = p.phi;
-      state.h = p.heading;
+      state.t = Math.round(p.theta * 10000) / 10000;
+      state.p = Math.round(p.phi * 10000) / 10000;
+      state.h = Math.round(p.heading * 10000) / 10000;
       state.s = p.speed;
-      state.ta = p.turretAngle;
+      state.ta = Math.round(p.turretAngle * 10000) / 10000;
       state.hp = p.hp;
       state.d = p.waitingForPortal ? 2 : (p.isDead ? 1 : 0);
       state.seq = p.lastInputSeq;
@@ -3204,6 +3208,15 @@ class GameRoom {
       }
 
       statePayload.players = filtered;
+
+      // Track payload size for bandwidth monitoring
+      if (!this._payloadByteSum) this._payloadByteSum = 0;
+      if (!this._payloadEntitySum) this._payloadEntitySum = 0;
+      if (!this._payloadCount) this._payloadCount = 0;
+      const entityCount = Object.keys(filtered).length;
+      this._payloadByteSum += JSON.stringify(statePayload).length;
+      this._payloadEntitySum += entityCount;
+      this._payloadCount++;
 
       const socket = this.io.sockets.sockets.get(socketId);
       if (socket) socket.volatile.emit("state", statePayload);

@@ -3846,6 +3846,27 @@ class Planet {
         texture.image,
         adjustment,
       );
+
+      // Upscale small textures so pixel art blocks are visible in PBR shader.
+      // Server bakes pixel art at 128px; canvas nearest-neighbor scales up to 512px,
+      // making each texel a crisp 4x4 block (same as old _applyPixelArtFilter Step 4).
+      const PIXEL_ART_MIN = 512;
+      const src = finalTexture.image;
+      if (src && src.width < PIXEL_ART_MIN) {
+        const scaleFactor = Math.ceil(PIXEL_ART_MIN / src.width);
+        const upCanvas = document.createElement("canvas");
+        upCanvas.width = src.width * scaleFactor;
+        upCanvas.height = src.height * scaleFactor;
+        const upCtx = upCanvas.getContext("2d");
+        upCtx.imageSmoothingEnabled = false;
+        upCtx.drawImage(src, 0, 0, upCanvas.width, upCanvas.height);
+        finalTexture.dispose();
+        finalTexture = new THREE.CanvasTexture(upCanvas);
+        finalTexture.generateMipmaps = false;
+        finalTexture.minFilter = THREE.NearestFilter;
+        finalTexture.magFilter = THREE.NearestFilter;
+      }
+
       finalTexture.wrapS = texture.wrapS;
       finalTexture.wrapT = texture.wrapT;
     }
