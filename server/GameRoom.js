@@ -17,7 +17,7 @@ const WorldGenerator = require("./WorldGenerator");
 const TerrainElevation = require("./shared/TerrainElevation");
 const TuskGlobalChat = require("./TuskGlobalChat");
 const BodyguardManager = require("./BodyguardManager");
-const ServerBotManager = require("./ServerBotManager");
+const BotWorkerBridge = require("./BotWorkerBridge");
 const DEBUG_LOG = process.env.DEBUG_LOG === "1";
 
 // Bot name pool (same as client for consistency)
@@ -199,6 +199,8 @@ class GameRoom {
     if (this.sponsorStore) {
       this.sponsors = this.sponsorStore.getAll().filter(s => s.active !== false && !s.paused);
       this._applySponsorClusters(worldResult);
+      // Rebuild blocked grid now that sponsor tiles have been de-elevated
+      this.worldGen.buildBlockedGrid(this.terrain);
       DEBUG_LOG && console.log(`[Room ${roomId}] Applied ${this.sponsors.length} sponsor clusters`);
     }
 
@@ -229,9 +231,8 @@ class GameRoom {
     // Server-authoritative bodyguards (2 per commander, synced to all clients)
     this.bodyguardManager = new BodyguardManager(480, this.terrain, this.worldGen);
 
-    // Server-authoritative bots (population fills to 150, despawn as humans join)
-    this.botManager = new ServerBotManager(480, this.terrain, this.worldGen, this.clusterCaptureState);
-    this.botManager.setIO(io, roomId);
+    // Server-authoritative bots on worker thread (population fills to 300, despawn as humans join)
+    this.botBridge = new BotWorkerBridge(480, 22, 42, 73, this.players.size);
 
     // ---- All-profile faction ranking cache ----
     // Stores ALL profiles from Firestore (online + offline) for true faction ranking.
@@ -252,8 +253,7 @@ class GameRoom {
       await this.loadCaptureState();
     }
 
-    // Initialize server bots (pathfinder + initial population)
-    this.botManager.init(this.players.size);
+    // Bot worker initializes itself from seeds (no init call needed)
 
     this._tickRunning = true;
     this._nextTickTime = Date.now();
@@ -482,6 +482,8 @@ class GameRoom {
     // 3. Re-read and re-apply sponsors (exclude paused)
     this.sponsors = this.sponsorStore.getAll().filter(s => s.active !== false && !s.paused);
     this._applySponsorClusters(wr);
+    // Rebuild blocked grid now that sponsor tiles have been de-elevated
+    this.worldGen.buildBlockedGrid(this.terrain);
 
     // 4. Rebuild world payload
     this._worldPayload = this._buildWorldPayload(wr);
@@ -556,23 +558,6 @@ class GameRoom {
   // ========================
 
   /**
-   * Find a hex sponsor's baked patternUrl by name (case-insensitive).
-   * Used to deduplicate images: moon/billboard sponsors reuse the hex
-   * sponsor's image file instead of storing a separate copy.
-   */
-  _findHexSponsorPatternUrl(name) {
-    if (!name || !this.sponsors) return null;
-    const lower = name.toLowerCase();
-    for (const s of this.sponsors) {
-      if (s.name && s.name.toLowerCase() === lower) {
-        const urls = this.sponsorImageUrls[s.id];
-        if (urls?.patternUrl) return urls.patternUrl;
-      }
-    }
-    return null;
-  }
-
-  /**
    * Build moon sponsor payload for clients (URLs instead of base64).
    */
   _buildMoonSponsorPayload() {
@@ -583,14 +568,12 @@ class GameRoom {
       // Hide moon if its sponsor name is paused
       if (sponsor.name && pausedNames.has(sponsor.name.toLowerCase())) return null;
       const urls = this.moonSponsorImageUrls[i] || {};
-      // Reuse hex sponsor's image if same sponsor has hex territory (avoid duplicate files)
-      const hexUrl = this._findHexSponsorPatternUrl(sponsor.name);
       return {
         moonIndex: i,
         name: sponsor.name,
         tagline: sponsor.tagline,
         websiteUrl: sponsor.websiteUrl,
-        patternImage: hexUrl || urls.patternUrl || null,
+        patternImage: urls.patternUrl || null,
         patternAdjustment: sponsor.patternAdjustment,
         createdAt: sponsor.createdAt,
         logoImage: urls.logoUrl || null,
@@ -647,14 +630,12 @@ class GameRoom {
       // Hide billboard if its sponsor name is paused
       if (sponsor.name && pausedNames.has(sponsor.name.toLowerCase())) return null;
       const urls = this.billboardSponsorImageUrls[i] || {};
-      // Reuse hex sponsor's image if same sponsor has hex territory (avoid duplicate files)
-      const hexUrl = this._findHexSponsorPatternUrl(sponsor.name);
       return {
         billboardIndex: i,
         name: sponsor.name,
         tagline: sponsor.tagline,
         websiteUrl: sponsor.websiteUrl,
-        patternImage: hexUrl || urls.patternUrl || null,
+        patternImage: urls.patternUrl || null,
         patternAdjustment: sponsor.patternAdjustment,
         createdAt: sponsor.createdAt,
         logoImage: urls.logoUrl || null,
@@ -871,7 +852,7 @@ class GameRoom {
     });
 
     // Despawn a bot to maintain population balance
-    this.botManager.onHumanJoin(player);
+    this.botBridge.onHumanJoin(player);
 
     // Recompute ranks and commander for all factions
     this._recomputeRanks();
@@ -881,7 +862,7 @@ class GameRoom {
 
     DEBUG_LOG && console.log(
       `[Room ${this.roomId}] ${player.name} (${player.faction}) joined. ` +
-      `Players: ${this.players.size}, Bots: ${this.botManager.bots.size}`
+      `Players: ${this.players.size}, Bots: ${this.botBridge.botCount}`
     );
 
     return player;
@@ -1075,6 +1056,55 @@ class GameRoom {
     return saved;
   }
 
+  /**
+   * Link a player to the faction profile cache after late authentication.
+   * Called when a guest player sends refresh-token and becomes authenticated.
+   */
+  linkPlayerToProfileCache(socketId) {
+    const player = this.players.get(socketId);
+    if (!player || !player.uid || !this.profileCacheReady) return;
+
+    const cacheKey = `${player.uid}:${player.profileIndex}`;
+    let entry = this.profileCacheIndex.get(cacheKey);
+    if (entry) {
+      // If faction changed since cache was built, move entry to correct array
+      if (entry.faction !== player.faction) {
+        const oldArr = this.factionProfileCache[entry.faction];
+        const idx = oldArr.indexOf(entry);
+        if (idx !== -1) oldArr.splice(idx, 1);
+        const newArr = this.factionProfileCache[player.faction];
+        if (newArr.indexOf(entry) === -1) newArr.push(entry);
+        entry.faction = player.faction;
+      }
+      entry.isOnline = true;
+      entry.socketId = socketId;
+      entry.name = player.name;
+      entry.level = player.level || 1;
+      entry.totalCrypto = player.totalCrypto || 0;
+      entry.territoryCaptured = player.territoryCaptured || 0;
+      entry.avatarColor = player.avatarColor || entry.avatarColor;
+    } else {
+      // Player not yet in cache — add them
+      entry = {
+        uid: player.uid,
+        profileIndex: player.profileIndex,
+        name: player.name,
+        faction: player.faction,
+        level: player.level || 1,
+        totalCrypto: player.totalCrypto || 0,
+        territoryCaptured: player.territoryCaptured || 0,
+        lastPlayedAt: null,
+        avatarColor: player.avatarColor || null,
+        isOnline: true,
+        socketId: socketId,
+      };
+      this.factionProfileCache[player.faction].push(entry);
+      this.profileCacheIndex.set(cacheKey, entry);
+    }
+
+    this._markRanksDirty();
+  }
+
   removePlayer(socketId) {
     const player = this.players.get(socketId);
     if (!player) return;
@@ -1122,10 +1152,10 @@ class GameRoom {
     this.io.to(this.roomId).emit("player-left", { id: socketId });
 
     // Spawn a bot to maintain population balance
-    this.botManager.onHumanLeave(this.players.size);
+    this.botBridge.onHumanLeave(this.players.size);
 
     DEBUG_LOG && console.log(
-      `[Room ${this.roomId}] ${player.name} left. Players: ${this.players.size}, Bots: ${this.botManager.bots.size}`
+      `[Room ${this.roomId}] ${player.name} left. Players: ${this.players.size}, Bots: ${this.botBridge.botCount}`
     );
   }
 
@@ -2008,10 +2038,35 @@ class GameRoom {
     this.bodyguardManager.update(dt, this.players, this.planetRotation);
 
     const _t2 = Date.now();
-    // 1.6. Update server bots (AI + physics + terrain collision + combat)
-    this.nextProjectileId = this.botManager.update(
-      dt, this.players, this.projectiles, this.planetRotation, this.tick, this.nextProjectileId
-    );
+    // 1.6. Send tick to bot worker + process previous tick's output
+    const sendCaptureState = (this.tick % 50 === 0) ? this.clusterCaptureState : null;
+    this.botBridge.sendTickInput(dt, this.players, this.planetRotation, this.tick, this.nextProjectileId, sendCaptureState);
+    const botResult = this.botBridge.processPendingOutput();
+    this.nextProjectileId = botResult.nextProjectileId;
+    // Add bot-fired projectiles to shared array
+    for (const proj of botResult.newProjectiles) {
+      this.projectiles.push(proj);
+    }
+    // Replay buffered Socket.IO events from worker
+    for (const evt of botResult.events) {
+      if (evt.proximity) {
+        // Proximity chat — only send to nearby players
+        for (const [socketId, player] of this.players) {
+          if (player.isDead || player.waitingForPortal) continue;
+          let dTheta = evt.botTheta - player.theta;
+          while (dTheta > Math.PI) dTheta -= Math.PI * 2;
+          while (dTheta < -Math.PI) dTheta += Math.PI * 2;
+          const dPhi = evt.botPhi - player.phi;
+          const dist = Math.sqrt(dTheta * dTheta + dPhi * dPhi);
+          if (dist <= 0.20) {
+            const socket = this.io.sockets.sockets.get(socketId);
+            if (socket) socket.emit(evt.type, evt.data);
+          }
+        }
+      } else {
+        this.io.to(this.roomId).emit(evt.type, evt.data);
+      }
+    }
 
     const _t3 = Date.now();
     // 1.7. Tank-to-tank collision (player-player + player-bot)
@@ -2114,7 +2169,7 @@ class GameRoom {
       const avgBytes = this._payloadCount ? Math.round(this._payloadByteSum / this._payloadCount) : 0;
       const avgEntities = this._payloadCount ? Math.round(this._payloadEntitySum / this._payloadCount) : 0;
       const kbps = this._payloadCount ? Math.round(this._payloadByteSum / (n / 10) / 1024 * 10) / 10 : 0;
-      console.warn(`[Tick] avg=${(this._tickSum/n).toFixed(0)}ms max=${this._tickMax}ms | players=${(p[0]/n).toFixed(0)} guards=${(p[1]/n).toFixed(0)} bots=${(p[2]/n).toFixed(0)} collide=${(p[3]/n).toFixed(0)} proj=${(p[4]/n).toFixed(0)} broadcast=${(p[5]/n).toFixed(0)} | n=${this.botManager.bots.size}bots ${this.players.size}players | payload=${avgBytes}B ${avgEntities}ents ${kbps}KB/s`);
+      console.warn(`[Tick] avg=${(this._tickSum/n).toFixed(0)}ms max=${this._tickMax}ms | players=${(p[0]/n).toFixed(0)} guards=${(p[1]/n).toFixed(0)} bots=${(p[2]/n).toFixed(0)} collide=${(p[3]/n).toFixed(0)} proj=${(p[4]/n).toFixed(0)} broadcast=${(p[5]/n).toFixed(0)} | n=${this.botBridge.botCount}bots ${this.players.size}players | payload=${avgBytes}B ${avgEntities}ents ${kbps}KB/s`);
       this._tickSum = 0; this._tickMax = 0; this._tickCount = 0;
       this._phaseSum = [0,0,0,0,0,0];
       this._payloadByteSum = 0; this._payloadEntitySum = 0; this._payloadCount = 0;
@@ -2142,27 +2197,64 @@ class GameRoom {
       }
     }
 
-    // --- Player-Bot collisions (using bot spatial hash for efficiency) ---
-    const bm = this.botManager;
-    if (!bm || !bm._spatialHash) return;
+    // --- Player-Bot collisions (using bridge spatial hash, player-only push) ---
+    const bb = this.botBridge;
+    if (!bb || !bb._spatialHash || bb._spatialHash.size === 0) return;
 
     for (let i = 0; i < playerArray.length; i++) {
       const player = playerArray[i];
-      const cellKey = bm._getCellKey(player.theta, player.phi);
-      const neighborKeys = bm._getNeighborKeys(cellKey);
-      const nCount = bm._neighborKeysCount;
+      const cellKey = bb._getCellKey(player.theta, player.phi);
+      const neighborKeys = bb._getNeighborKeys(cellKey);
+      const nCount = bb._neighborKeysCount;
 
       for (let ni = 0; ni < nCount; ni++) {
-        const cellBots = bm._spatialHash.get(neighborKeys[ni]);
+        const cellBots = bb._spatialHash.get(neighborKeys[ni]);
         if (!cellBots) continue;
 
         for (let ci = 0; ci < cellBots.length; ci++) {
           const bot = cellBots[ci];
-          if (bot.isDead || bot.isDeploying) continue;
-          this._resolvePairCollision(player, bot, MIN_DIST, PUSH_BUFFER, SPEED_DAMPEN);
+          // Only push the player — bot is authoritative on worker thread
+          this._resolvePlayerBotCollision(player, bot, MIN_DIST, PUSH_BUFFER, SPEED_DAMPEN);
         }
       }
     }
+  }
+
+  /**
+   * Resolve player-bot collision by only pushing the player.
+   * Bot position is authoritative on the worker thread — we can't modify it here.
+   */
+  _resolvePlayerBotCollision(player, bot, minDist, pushBuffer, speedDampen) {
+    let dTheta = bot.theta - player.theta;
+    while (dTheta > Math.PI) dTheta -= Math.PI * 2;
+    while (dTheta < -Math.PI) dTheta += Math.PI * 2;
+    const dPhi = bot.phi - player.phi;
+    const dist = Math.sqrt(dTheta * dTheta + dPhi * dPhi);
+
+    if (dist >= minDist) return;
+
+    const overlap = minDist - dist;
+    const push = overlap + pushBuffer; // Full push on player only
+    const nx = dist > 0.0001 ? dTheta / dist : 1;
+    const ny = dist > 0.0001 ? dPhi / dist : 0;
+
+    const newTheta = player.theta - nx * push;
+    const newPhi = player.phi - ny * push;
+
+    if (!this._isTerrainBlockedAt(newTheta, newPhi, player.heading, player.speed)) {
+      player.theta = newTheta;
+      player.phi = newPhi;
+    } else {
+      // Try perpendicular push
+      const perpTheta = player.theta + ny * push;
+      const perpPhi = player.phi - nx * push;
+      if (!this._isTerrainBlockedAt(perpTheta, perpPhi, player.heading, player.speed)) {
+        player.theta = perpTheta;
+        player.phi = perpPhi;
+      }
+    }
+
+    player.speed *= speedDampen;
   }
 
   _resolvePairCollision(a, b, minDist, pushBuffer, speedDampen) {
@@ -2360,8 +2452,8 @@ class GameRoom {
             player._lastTicCryptoTics = undefined;
 
             const killer = this.players.get(p.ownerId);
-            const killerBot = this.botManager.bots.get(p.ownerId);
-            const killerName = killer ? killer.name : (killerBot ? killerBot.name : "Unknown");
+            const killerBotName = this.botBridge.getBotName(p.ownerId);
+            const killerName = killer ? killer.name : (killerBotName || "Unknown");
             const victimName = player.name;
 
             this.io.to(this.roomId).emit("player-killed", {
@@ -2373,10 +2465,7 @@ class GameRoom {
               killerName: killerName,
             });
 
-            // Bot killer trash talk (bot killed a human player)
-            if (killerBot) {
-              this.botManager.onBotKill(killerBot, id, this.players);
-            }
+            // Bot killer trash talk is handled by the worker thread via events
 
             // Track kill/death streaks for Tusk
             if (killer) {
@@ -2452,13 +2541,21 @@ class GameRoom {
       }
       // Check bot hits (after player checks)
       if (!hitPlayer) {
-        const botHit = this.botManager.checkProjectileHit(testTheta, testPhi, p.ownerFaction, p.ownerId);
+        const botHit = this.botBridge.checkProjectileHit(testTheta, testPhi, p.ownerFaction, p.ownerId);
         if (botHit) {
           const damage = p.damage || 25;
-          const died = this.botManager.applyDamage(botHit.id, damage, p.ownerId, this.players);
+          // Look up bot info from cached broadcast state
+          const botState = this.botBridge.getStatesForBroadcast()[botHit.id];
+          const botHp = botState ? botState.hp : 100;
+          const botFaction = botState ? botState.f : "rust";
+          const botName = this.botBridge.getBotName(botHit.id) || "Bot";
+
+          // Send damage to worker (it handles death, respawn, trash talk)
+          const attacker = this.players.get(p.ownerId);
+          const attackerName = attacker ? attacker.name : "Unknown";
+          this.botBridge.applyDamage(botHit.id, damage, p.ownerId, attackerName);
 
           // Award crypto to human attacker
-          const attacker = this.players.get(p.ownerId);
           if (attacker) {
             attacker.crypto += Math.floor(damage);
           }
@@ -2467,34 +2564,28 @@ class GameRoom {
             targetId: botHit.id,
             attackerId: p.ownerId,
             damage,
-            hp: botHit.hp,
+            hp: Math.max(0, botHp - damage),
             theta: p.theta,
             phi: p.phi,
           });
 
-          if (died) {
-            const killer = this.players.get(p.ownerId);
-            const killerBot = this.botManager.bots.get(p.ownerId);
-            const killerName = killer ? killer.name : (killerBot?.name || "Unknown");
+          // Check if this hit likely killed the bot (approximate — worker confirms next tick)
+          if (botHp - damage <= 0) {
+            const killerName = attacker ? attacker.name : "Unknown";
             this.io.to(this.roomId).emit("player-killed", {
               victimId: botHit.id,
               killerId: p.ownerId,
-              victimFaction: botHit.faction,
+              victimFaction: botFaction,
               killerFaction: p.ownerFaction,
-              victimName: botHit.name,
+              victimName: botName,
               killerName,
             });
 
-            // Award kill bounty to human attacker (no Tusk commentary for bot kills)
-            if (killer) {
-              if (killer.uid) killer.crypto += 500; // Authenticated only
-              killer.killStreak = (killer.killStreak || 0) + 1;
-              killer.totalKills = (killer.totalKills || 0) + 1;
-            }
-
-            // Bot killer trash talk
-            if (killerBot) {
-              this.botManager.onBotKill(killerBot, botHit.id, this.players);
+            // Award kill bounty to human attacker
+            if (attacker) {
+              if (attacker.uid) attacker.crypto += 500;
+              attacker.killStreak = (attacker.killStreak || 0) + 1;
+              attacker.totalKills = (attacker.totalKills || 0) + 1;
             }
           }
 
@@ -2788,6 +2879,11 @@ class GameRoom {
           // No current cluster — assign immediately (first entry / after respawn)
           player.currentClusterId = rawClusterId;
           player._clusterChangeTicks = 0;
+          // Prime tic-crypto tracking so the first 1-second check can fire
+          // (without this, sameCluster is false and gained is false for 2 seconds)
+          player._lastTicCluster = rawClusterId;
+          const primeState = this.clusterCaptureState.get(rawClusterId);
+          player._lastTicCryptoTics = primeState ? primeState.tics[player.faction] : 0;
         } else {
           player._clusterChangeTicks = (player._clusterChangeTicks || 0) + 1;
           if (player._clusterChangeTicks >= 3) {
@@ -2807,15 +2903,16 @@ class GameRoom {
       clusterTankCounts.get(player.currentClusterId)[player.faction]++;
     }
 
-    // 1b. Count server bots in clusters
-    for (const [id, bot] of this.botManager.bots) {
-      if (bot.isDead || bot.isDeploying) continue;
-      if (bot.currentClusterId === null) continue;
-
-      if (!clusterTankCounts.has(bot.currentClusterId)) {
-        clusterTankCounts.set(bot.currentClusterId, { rust: 0, cobalt: 0, viridian: 0 });
+    // 1b. Count server bots in clusters (from worker thread position data)
+    const botClusterCounts = this.botBridge.getBotClusterCounts();
+    for (const [clusterId, counts] of botClusterCounts) {
+      if (!clusterTankCounts.has(clusterId)) {
+        clusterTankCounts.set(clusterId, { rust: 0, cobalt: 0, viridian: 0 });
       }
-      clusterTankCounts.get(bot.currentClusterId)[bot.faction]++;
+      const c = clusterTankCounts.get(clusterId);
+      c.rust += counts.rust;
+      c.cobalt += counts.cobalt;
+      c.viridian += counts.viridian;
     }
 
     // 2. Process capture logic for each cluster with players in it
@@ -2931,15 +3028,17 @@ class GameRoom {
         player._lastTicCryptoTics = currentTics;
 
         if (gained) {
+          const cryptoAwarded = player.uid ? 10 : 0;
+          if (player.uid) {
+            player.crypto += 10; // Territory capture income (authenticated only)
+          }
           const ticPayload = {
             id: player.currentClusterId,
             t: { r: state.tics.rust, c: state.tics.cobalt, v: state.tics.viridian },
             cap: state.capacity,
+            crypto: cryptoAwarded,
           };
           this.io.to(id).emit("tic-crypto", ticPayload);
-          if (player.uid) {
-            player.crypto += 10; // Territory capture income (authenticated only)
-          }
           player.territoryCaptured += currentTics - lastTics; // Rank tiebreaker
         }
       }
@@ -3109,7 +3208,7 @@ class GameRoom {
     }
 
     // Remove stale bot entries
-    const botStates = this.botManager.getStatesForBroadcast();
+    const botStates = this.botBridge.getStatesForBroadcast();
     for (const id in playerStates) {
       if (id.startsWith("bot-") && !botStates[id]) delete playerStates[id];
     }
@@ -3278,9 +3377,27 @@ class GameRoom {
         avatarColor: p.avatarColor || null,
       };
     }
-    // Merge bot full states
-    const botStates = this.botManager.getFullStatesForWelcome();
-    Object.assign(states, botStates);
+    // Merge bot states from worker bridge (build full states from broadcast cache)
+    const broadcastStates = this.botBridge.getStatesForBroadcast();
+    for (const id in broadcastStates) {
+      const bs = broadcastStates[id];
+      states[id] = {
+        id,
+        name: bs.n,
+        faction: bs.f,
+        theta: bs.t,
+        phi: bs.p,
+        heading: bs.h,
+        turretAngle: bs.ta,
+        hp: bs.hp,
+        maxHp: 100,
+        isDead: bs.d === 1,
+        speed: bs.s,
+        level: 1,
+        crypto: 0,
+        isBot: true,
+      };
+    }
     return states;
   }
 

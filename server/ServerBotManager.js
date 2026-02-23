@@ -97,8 +97,8 @@ const BOT_HIT_HALF_LEN = 3.5;
 const BOT_HIT_HALF_WID = 3.0;
 const BOT_HIT_QUICK_REJECT = 0.012; // radians
 
-// LOD (distance-based AI simplification)
-const BOT_LOD_NEAR_THRESHOLD = 0.5; // cos(60°) — bots within ~60° of any player get full AI
+// Faction index lookup (for positions Float32Array flags encoding)
+const FACTION_INDEX = { rust: 0, cobalt: 1, viridian: 2 };
 
 // Trash talk
 const BOT_CHAT_COOLDOWN = 5000; // Per-bot cooldown between messages (ms)
@@ -191,11 +191,19 @@ class ServerBotManager {
    * @param {Object} worldGen - WorldGenerator instance
    * @param {Map} clusterCaptureState - Reference to GameRoom's capture state
    */
-  constructor(sphereRadius, terrain, worldGen, clusterCaptureState) {
+  /**
+   * @param {number} sphereRadius - Planet radius (480)
+   * @param {Object} terrain - TerrainElevation instance
+   * @param {Object} worldGen - WorldGenerator instance
+   * @param {Map} clusterCaptureState - Reference to GameRoom's capture state
+   * @param {boolean} [workerMode=false] - When true, buffers events instead of emitting via Socket.IO
+   */
+  constructor(sphereRadius, terrain, worldGen, clusterCaptureState, workerMode = false) {
     this.sphereRadius = sphereRadius;
     this.terrain = terrain;
     this.worldGen = worldGen;
     this.clusterCaptureState = clusterCaptureState;
+    this._workerMode = workerMode;
 
     this.TARGET_TOTAL = 300;
     this.bots = new Map(); // botId → bot state
@@ -222,9 +230,13 @@ class ServerBotManager {
     // Broadcast state cache (reuse objects to reduce GC)
     this._stateCache = {};
 
-    // IO reference (set by GameRoom after construction)
+    // IO reference (set by GameRoom after construction, unused in worker mode)
     this.io = null;
     this.roomId = null;
+
+    // Worker mode: buffered events + projectiles (replaces Socket.IO emission)
+    this._pendingEvents = [];
+    this._pendingProjectiles = [];
 
     // Trash talk state
     this._lastGlobalChatTime = 0;
@@ -359,8 +371,8 @@ class ServerBotManager {
     this._factionBots[faction].push(bot);
     this._usedNames.add(name);
 
-    if (!silent && this.io) {
-      this.io.to(this.roomId).emit("player-joined", {
+    if (!silent) {
+      this._emit("player-joined", {
         id: bot.id,
         name: bot.name,
         faction: bot.faction,
@@ -387,9 +399,7 @@ class ServerBotManager {
     // Clean from state cache
     delete this._stateCache[botId];
 
-    if (this.io) {
-      this.io.to(this.roomId).emit("player-left", { id: botId });
-    }
+    this._emit("player-left", { id: botId });
   }
 
   /**
@@ -482,9 +492,6 @@ class ServerBotManager {
       this.coordinators[faction].update(alive, this.coordinators, now);
     }
 
-    // Precompute player unit vectors for LOD classification
-    this._precomputePlayerVecs(players);
-
     // Staggered AI state updates (30 bots per tick for 300 bots = 10-tick rotation)
     const botsPerTick = Math.max(1, Math.ceil(this._botArray.length / 10));
     const startIdx = this._aiUpdateIndex;
@@ -493,16 +500,12 @@ class ServerBotManager {
     for (let i = startIdx; i < endIdx; i++) {
       const bot = this._botArray[i];
       if (bot.isDead || bot.isDeploying) continue;
-      // Classify LOD on stagger tick (refreshes once per rotation = ~1 second)
-      bot._isNearPlayer = this._isNearAnyPlayer(bot);
-      if (bot._isNearPlayer) {
-        this._updateAI(bot, dt * (this._botArray.length / botsPerTick));
-      }
+      this._updateAI(bot, dt * (this._botArray.length / botsPerTick));
     }
 
     this._aiUpdateIndex = endIdx >= this._botArray.length ? 0 : endIdx;
 
-    // Every-tick updates for all bots
+    // Every-tick updates for all bots — full AI for all (worker thread has dedicated CPU)
     for (let j = 0; j < this._botArray.length; j++) {
       const bot = this._botArray[j];
       if (bot.isDeploying) continue;
@@ -516,22 +519,13 @@ class ServerBotManager {
         continue;
       }
 
-      if (bot._isNearPlayer) {
-        // NEAR: Full AI — separation, collision avoidance, combat
-        const isStagger = (j >= startIdx && j < endIdx);
-        this._updateInput(bot, dt, isStagger);
-        this._updatePhysics(bot, dt);
-        this._moveOnSphere(bot, planetRotation, dt);
-        bot.currentClusterId = this.worldGen.getClusterIdAt(bot.theta + planetRotation, bot.phi);
-        if (isStagger) {
-          nextProjectileId = this._updateCombat(bot, dt, players, planetRotation, projectiles, nextProjectileId, now);
-        }
-      } else {
-        // FAR: Simplified — steer toward target, terrain collision only, no combat
-        this._updateInputSimple(bot, dt);
-        this._updatePhysics(bot, dt);
-        this._moveOnSphere(bot, planetRotation, dt);
-        bot.currentClusterId = this.worldGen.getClusterIdAt(bot.theta + planetRotation, bot.phi);
+      const isStagger = (j >= startIdx && j < endIdx);
+      this._updateInput(bot, dt, isStagger);
+      this._updatePhysics(bot, dt);
+      this._moveOnSphere(bot, planetRotation, dt);
+      bot.currentClusterId = this.worldGen.getClusterIdAt(bot.theta + planetRotation, bot.phi);
+      if (isStagger) {
+        nextProjectileId = this._updateCombat(bot, dt, players, planetRotation, projectiles, nextProjectileId, now);
       }
     }
 
@@ -810,66 +804,98 @@ class ServerBotManager {
   }
 
   // ========================
-  // SIMPLIFIED INPUT (for far-from-player bots)
+  // EVENT EMISSION (supports both direct Socket.IO and worker mode buffering)
   // ========================
 
-  _updateInputSimple(bot, dt) {
-    bot.keys.w = false; bot.keys.a = false; bot.keys.s = false; bot.keys.d = false;
-
-    if (bot._terrainAvoidTimer > 0) {
-      bot._terrainAvoidTimer -= dt;
-    }
-
-    // Steer toward coordinator-assigned target or wander
-    let desiredHeading = bot.wanderDirection;
-    if (bot._terrainAvoidTimer <= 0 && bot.targetPosition) {
-      const h = this._computeDesiredHeadingTo(bot, bot.targetPosition);
-      if (h !== null) desiredHeading = h;
-    }
-
-    let diff = desiredHeading - bot.heading;
-    while (diff > Math.PI) diff -= Math.PI * 2;
-    while (diff < -Math.PI) diff += Math.PI * 2;
-
-    if (diff > 0.05) bot.keys.d = true;
-    else if (diff < -0.05) bot.keys.a = true;
-
-    if (Math.abs(diff) < 0.4) bot.keys.w = true;
-
-    // Occasional random direction change
-    if (Math.random() < 0.01) {
-      bot.wanderDirection += (Math.random() - 0.5) * 0.8;
+  /**
+   * Emit a Socket.IO event. In worker mode, buffers for main thread replay.
+   * @param {string} type - Event type (e.g. 'player-joined', 'player-left', 'player-fired', 'chat')
+   * @param {Object} data - Event payload
+   * @param {Object} [opts] - Options: { proximity: true, botTheta, botPhi } for proximity chat
+   */
+  _emit(type, data, opts) {
+    if (this._workerMode) {
+      const evt = { type, data };
+      if (opts) Object.assign(evt, opts);
+      this._pendingEvents.push(evt);
+    } else if (this.io) {
+      if (opts && opts.proximity) {
+        // Proximity emit — only to nearby players
+        const players = this._players;
+        if (players) {
+          for (const [socketId, player] of players) {
+            if (player.isDead || player.waitingForPortal) continue;
+            const dist = this._angularDistance(opts.botTheta, opts.botPhi, player.theta, player.phi);
+            if (dist <= BOT_CHAT_PROXIMITY_RADIUS) {
+              const socket = this.io.sockets.sockets.get(socketId);
+              if (socket) socket.emit(type, data);
+            }
+          }
+        }
+      } else {
+        this.io.to(this.roomId).emit(type, data);
+      }
     }
   }
 
-  // ========================
-  // LOD HELPERS (distance-based AI classification)
-  // ========================
-
-  _precomputePlayerVecs(players) {
-    if (!this._playerVecs) this._playerVecs = [];
-    this._playerVecs.length = 0;
-    for (const [, player] of players) {
-      if (player.isDead || player.waitingForPortal) continue;
-      const sinP = Math.sin(player.phi);
-      this._playerVecs.push(
-        sinP * Math.cos(player.theta),
-        Math.cos(player.phi),
-        sinP * Math.sin(player.theta)
-      );
-    }
+  /**
+   * Drain buffered events (worker mode). Returns array and clears buffer.
+   */
+  drainEvents() {
+    const events = this._pendingEvents;
+    this._pendingEvents = [];
+    return events;
   }
 
-  _isNearAnyPlayer(bot) {
-    const sinP = Math.sin(bot.phi);
-    const bx = sinP * Math.cos(bot.theta);
-    const by = Math.cos(bot.phi);
-    const bz = sinP * Math.sin(bot.theta);
-    for (let i = 0; i < this._playerVecs.length; i += 3) {
-      const dot = bx * this._playerVecs[i] + by * this._playerVecs[i + 1] + bz * this._playerVecs[i + 2];
-      if (dot > BOT_LOD_NEAR_THRESHOLD) return true;
+  /**
+   * Drain buffered projectiles (worker mode). Returns array and clears buffer.
+   */
+  drainProjectiles() {
+    const projectiles = this._pendingProjectiles;
+    this._pendingProjectiles = [];
+    return projectiles;
+  }
+
+  /**
+   * Get flat Float32Array of bot positions + metadata for main-thread spatial hash.
+   * Stride: 6 floats per bot (theta, phi, heading, speed, flags, clusterId)
+   * Flags encoding: (factionIndex << 4) | (isDead ? 1 : 0) | (isDeploying ? 2 : 0)
+   */
+  getPositionsFlat() {
+    const stride = 6;
+    if (!this._positionsBuffer || this._positionsBuffer.length < this._botArray.length * stride) {
+      this._positionsBuffer = new Float32Array(this._botArray.length * stride);
     }
-    return false;
+    const buf = this._positionsBuffer;
+    for (let i = 0; i < this._botArray.length; i++) {
+      const bot = this._botArray[i];
+      const off = i * stride;
+      buf[off] = bot.theta;
+      buf[off + 1] = bot.phi;
+      buf[off + 2] = bot.heading;
+      buf[off + 3] = bot.speed;
+      buf[off + 4] = (FACTION_INDEX[bot.faction] << 4) | (bot.isDead ? 1 : 0) | (bot.isDeploying ? 2 : 0);
+      buf[off + 5] = bot.currentClusterId !== null ? bot.currentClusterId : -1;
+    }
+    return buf.subarray(0, this._botArray.length * stride);
+  }
+
+  /**
+   * Get array of bot IDs (matches Float32Array order). Only needed on spawn/despawn.
+   */
+  getBotIds() {
+    return this._botArray.map(b => b.id);
+  }
+
+  /**
+   * Get array of bot names keyed by ID (for main thread name resolution).
+   */
+  getBotNames() {
+    const names = {};
+    for (const [id, bot] of this.bots) {
+      names[id] = bot.name;
+    }
+    return names;
   }
 
   // ========================
@@ -1412,19 +1438,21 @@ class ServerBotManager {
       damage,
     };
 
-    projectiles.push(projectile);
+    if (this._workerMode) {
+      this._pendingProjectiles.push(projectile);
+    } else {
+      projectiles.push(projectile);
+    }
 
     // Broadcast fire event
-    if (this.io) {
-      this.io.to(this.roomId).emit("player-fired", {
-        id: bot.id,
-        turretAngle: bot.turretAngle,
-        theta: bot.theta,
-        phi: bot.phi,
-        projectileId: projectile.id,
-        power: chargePower,
-      });
-    }
+    this._emit("player-fired", {
+      id: bot.id,
+      turretAngle: bot.turretAngle,
+      theta: bot.theta,
+      phi: bot.phi,
+      projectileId: projectile.id,
+      power: chargePower,
+    });
 
     return nextProjectileId;
   }
@@ -1699,10 +1727,10 @@ class ServerBotManager {
    * @param {boolean} [guaranteed=false] - true to skip RNG chattiness gate
    */
   _botChat(bot, category, replacements, global = false, guaranteed = false) {
-    if (!this.io) { console.log("[BotChat] BLOCKED: no io"); return; }
+    if (!this._workerMode && !this.io) return;
     const now = Date.now();
 
-    // Global cooldown (prevents chat flood from all 150 bots)
+    // Global cooldown (prevents chat flood from all 300 bots)
     if (now - this._lastGlobalChatTime < BOT_GLOBAL_CHAT_COOLDOWN) return;
     // Per-bot cooldown
     if (now - bot.lastChatTime < BOT_CHAT_COOLDOWN) return;
@@ -1737,28 +1765,9 @@ class ServerBotManager {
     if (process.env.DEBUG_LOG === "1") console.log(`[BotChat] ${bot.name} (${category}, ${mode}${global ? ", global" : ""}): ${text}`);
 
     if (global) {
-      // Broadcast to entire room
-      this.io.to(this.roomId).emit("chat", chatData);
+      this._emit("chat", chatData);
     } else {
-      // Proximity: only send to human players within range
-      this._emitToNearbyPlayers(bot, chatData);
-    }
-  }
-
-  /**
-   * Emit a chat event only to human players within proximity of a bot.
-   */
-  _emitToNearbyPlayers(bot, chatData) {
-    const players = this._players;
-    if (!players) return;
-
-    for (const [socketId, player] of players) {
-      if (player.isDead || player.waitingForPortal) continue;
-      const dist = this._angularDistance(bot.theta, bot.phi, player.theta, player.phi);
-      if (dist <= BOT_CHAT_PROXIMITY_RADIUS) {
-        const socket = this.io.sockets.sockets.get(socketId);
-        if (socket) socket.emit("chat", chatData);
-      }
+      this._emit("chat", chatData, { proximity: true, botTheta: bot.theta, botPhi: bot.phi });
     }
   }
 
