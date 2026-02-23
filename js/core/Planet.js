@@ -3968,6 +3968,7 @@ class Planet {
    * @returns {THREE.CanvasTexture}
    */
   _applyPixelArtFilter(image) {
+    console.log("[PixelArt] _applyPixelArtFilter called, input:", image.width, "x", image.height, image.constructor.name);
     const targetShortSide = 128; // Doubled from 64 for higher resolution
     const maxColors = 8; // Limit to 8-color palette for retro look
     const ditherIntensity = 32;
@@ -4083,6 +4084,7 @@ class Planet {
     finalCtx.imageSmoothingEnabled = false;
     finalCtx.drawImage(downCanvas, 0, 0, upWidth, upHeight);
 
+    console.log("[PixelArt] output:", upWidth, "x", upHeight, "from", targetWidth, "x", targetHeight, "| palette:", palette.length, "colors");
     const processedTexture = new THREE.CanvasTexture(finalCanvas);
     processedTexture.generateMipmaps = false;
     processedTexture.magFilter = THREE.NearestFilter;

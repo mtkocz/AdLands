@@ -1859,6 +1859,9 @@ class GameRoom {
     );
     player.heading = Math.random() * Math.PI * 2;
     player.waitingForPortal = false;
+    player._lastTicCluster = undefined;
+    player._lastTicCryptoTics = undefined;
+    player._clusterChangeTicks = 0;
 
     // Spawn bodyguards now that commander is on the surface
     for (const faction of FACTIONS) {
@@ -1920,8 +1923,8 @@ class GameRoom {
 
     this.tick++;
 
-    // Update planet rotation
-    this.planetRotation += PLANET_ROTATION_SPEED * dt;
+    // Update planet rotation (normalize to [0, 2pi) to prevent float drift over long uptime)
+    this.planetRotation = (this.planetRotation + PLANET_ROTATION_SPEED * dt) % (Math.PI * 2);
 
     // Update celestial body orbits
     for (const moon of this.moons) moon.angle += moon.speed * dt;
@@ -2331,6 +2334,8 @@ class GameRoom {
             player.hp = 0;
             player.isDead = true;
             player.speed = 0;
+            player._lastTicCluster = undefined;
+            player._lastTicCryptoTics = undefined;
 
             const killer = this.players.get(p.ownerId);
             const killerBot = this.botManager.bots.get(p.ownerId);
@@ -2560,6 +2565,8 @@ class GameRoom {
       player.hp = 0;
       player.isDead = true;
       player.speed = 0;
+      player._lastTicCluster = undefined;
+      player._lastTicCryptoTics = undefined;
 
       this.io.to(this.roomId).emit("player-killed", {
         victimId: socketId,
@@ -2747,18 +2754,27 @@ class GameRoom {
       if (player.isDead || player.waitingForPortal) continue;
 
       // O(1) cluster ID lookup from precomputed grid
-      const clusterId = this.worldGen.getClusterIdAt(player.theta + this.planetRotation, player.phi);
-      if (clusterId === null) {
-        player.currentClusterId = null;
-        continue;
+      const rawClusterId = this.worldGen.getClusterIdAt(player.theta + this.planetRotation, player.phi);
+
+      // Hysteresis: require 3 consecutive capture ticks (~600ms) of a different
+      // cluster before switching. Prevents grid boundary flickering from
+      // disrupting tic-crypto tracking (sameCluster check).
+      if (rawClusterId !== player.currentClusterId) {
+        player._clusterChangeTicks = (player._clusterChangeTicks || 0) + 1;
+        if (player._clusterChangeTicks >= 3) {
+          player.currentClusterId = rawClusterId;
+          player._clusterChangeTicks = 0;
+        }
+      } else {
+        player._clusterChangeTicks = 0;
       }
 
-      player.currentClusterId = clusterId;
+      if (player.currentClusterId == null) continue;
 
-      if (!clusterTankCounts.has(clusterId)) {
-        clusterTankCounts.set(clusterId, { rust: 0, cobalt: 0, viridian: 0 });
+      if (!clusterTankCounts.has(player.currentClusterId)) {
+        clusterTankCounts.set(player.currentClusterId, { rust: 0, cobalt: 0, viridian: 0 });
       }
-      clusterTankCounts.get(clusterId)[player.faction]++;
+      clusterTankCounts.get(player.currentClusterId)[player.faction]++;
     }
 
     // 1b. Count server bots in clusters
