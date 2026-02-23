@@ -2942,70 +2942,56 @@ class BotTanks {
   // ========================
 
   /**
-   * Setup THREE.Points pools for orbital phantom dots.
-   * These represent server-reported bot positions outside the spatial filter radius.
-   * Visible only in orbital view — commanders see all factions, regular players see own faction.
+   * Pre-allocate a pool of billboard shader Mesh dots for distant bots.
+   * These are identical to the per-bot lodDot meshes: same geometry, same
+   * ShaderMaterial, same custom sphere raycast — so they look and interact
+   * identically. Registered with TankLODInteraction for hover/right-click.
    */
   _setupOrbitalPhantoms() {
-    const factionNames = ["rust", "cobalt", "viridian"];
-    const maxDots = 120; // Per faction
+    const POOL_SIZE = 300;
+    const hitRadius = this._lodDotRadius * 2;
 
-    // Create a circle sprite texture (white circle with dark outline — tinted by material color)
-    const canvas = document.createElement("canvas");
-    canvas.width = 32;
-    canvas.height = 32;
-    const ctx = canvas.getContext("2d");
-    // Dark outline
-    ctx.beginPath();
-    ctx.arc(16, 16, 14, 0, Math.PI * 2);
-    ctx.fillStyle = "#111111";
-    ctx.fill();
-    // White inner circle (tinted by material color)
-    ctx.beginPath();
-    ctx.arc(16, 16, 11, 0, Math.PI * 2);
-    ctx.fillStyle = "#ffffff";
-    ctx.fill();
-    const dotTexture = new THREE.CanvasTexture(canvas);
-
-    this._orbitalPhantomPoints = {};
+    this._phantomPool = [];
+    this._phantomActiveCount = 0;
     this._orbitalPhantomVisible = false;
+    this._phantomsRegistered = false;
 
-    for (const faction of factionNames) {
-      const geometry = new THREE.BufferGeometry();
-      // Pre-allocate position buffer
-      geometry.setAttribute("position", new THREE.BufferAttribute(new Float32Array(maxDots * 3), 3));
-      geometry.setDrawRange(0, 0);
+    for (let i = 0; i < POOL_SIZE; i++) {
+      const mesh = new THREE.Mesh(
+        this._lodDotGeometry,
+        this._lodDotMaterials["rust"],
+      );
+      mesh.visible = false;
+      mesh.castShadow = false;
+      mesh.receiveShadow = false;
+      mesh.frustumCulled = false;
+      mesh.renderOrder = 10;
 
-      const factionColor =
-        typeof FACTION_COLORS !== "undefined"
-          ? FACTION_COLORS[faction].hex
-          : this.factions[faction].primary;
+      // Custom sphere-based raycast (identical to per-bot lodDot)
+      mesh.raycast = function (raycaster, intersects) {
+        if (!this.visible) return;
+        const worldPos = new THREE.Vector3();
+        this.getWorldPosition(worldPos);
+        const sphere = new THREE.Sphere(worldPos, hitRadius);
+        const intersectPoint = new THREE.Vector3();
+        if (raycaster.ray.intersectSphere(sphere, intersectPoint)) {
+          const distance = raycaster.ray.origin.distanceTo(worldPos);
+          if (distance >= (raycaster.near || 0) && distance <= (raycaster.far || Infinity)) {
+            intersects.push({ distance, point: intersectPoint.clone(), object: this });
+          }
+        }
+      };
 
-      const material = new THREE.PointsMaterial({
-        size: 7,
-        sizeAttenuation: true,
-        map: dotTexture,
-        color: factionColor,
-        transparent: true,
-        depthWrite: false,
-        alphaTest: 0.1,
-      });
+      mesh.userData = { playerId: "", faction: "", username: "", squad: null, isCommander: false };
 
-      const points = new THREE.Points(geometry, material);
-      points.visible = false;
-      points.frustumCulled = false;
-      points.renderOrder = 10;
-      this.planet.hexGroup.add(points);
-      this._orbitalPhantomPoints[faction] = points;
+      this.planet.hexGroup.add(mesh);
+      this._phantomPool.push(mesh);
     }
   }
 
   /**
    * Update orbital phantom dots from server-reported positions.
    * Called every frame from the render loop.
-   * @param {boolean} isOrbitalView - Whether camera is in orbital/fastTravel mode
-   * @param {boolean} isHumanCommander - Whether the local player is a commander
-   * @param {string} viewerFaction - The local player's faction
    */
   updateOrbitalPhantoms(isOrbitalView, isHumanCommander, viewerFaction) {
     const mp = window._mpState;
@@ -3019,21 +3005,42 @@ class BotTanks {
       return;
     }
 
-    const op = mp.orbitalPositions;
-    const factionNames = ["rust", "cobalt", "viridian"];
-    const r = this.sphereRadius + 3; // Slightly above surface (like lodDot height)
+    // Lazy-register all pool meshes with TankLODInteraction (once)
+    if (!this._phantomsRegistered && window.tankLODInteraction) {
+      for (const mesh of this._phantomPool) {
+        window.tankLODInteraction.registerDot(mesh);
+      }
+      this._phantomsRegistered = true;
+    }
 
-    // Build set of known bot positions (bots that already have full representation)
+    const op = mp.orbitalPositions;
+    const opn = mp.orbitalPositionNames;
+    const factionNames = ["rust", "cobalt", "viridian"];
+    const r = this.sphereRadius + 3;
+    const hoveredMesh = window.tankLODInteraction?.hoveredDot;
+
+    // Build set of known bot thetas (bots with full 3D representation)
     const knownBotThetas = new Set();
     for (const bot of this.bots) {
       if (bot.isDead || bot.isDeploying) continue;
       knownBotThetas.add(Math.round(bot.theta * 10000));
     }
+    // Also exclude remoteTanks (human players + nearby bots already rendered)
+    const remotes = mp.remoteTanks;
+    if (remotes) {
+      for (const [id, rt] of remotes) {
+        if (id.startsWith("bot-") && !rt.isDead) {
+          // Use the server-reported theta from last state update
+          if (rt._targetState) {
+            knownBotThetas.add(Math.round(rt._targetState.t * 10000));
+          }
+        }
+      }
+    }
 
-    // Write positions into each faction's buffer
-    const counts = { rust: 0, cobalt: 0, viridian: 0 };
+    let poolIdx = 0;
 
-    for (let i = 0; i < op.length; i += 3) {
+    for (let i = 0, opnIdx = 0; i < op.length; i += 3, opnIdx += 2) {
       const theta = op[i];
       const phi = op[i + 1];
       const fi = op[i + 2];
@@ -3042,38 +3049,62 @@ class BotTanks {
       // Filter: commanders see all, regular players see own faction only
       if (!isHumanCommander && faction !== viewerFaction) continue;
 
-      // Skip bots that already have full 3D representation (avoid doubling)
-      const thetaKey = Math.round(theta * 10000);
-      if (knownBotThetas.has(thetaKey)) continue;
+      // Skip bots with full 3D representation
+      if (knownBotThetas.has(Math.round(theta * 10000))) continue;
 
-      const pts = this._orbitalPhantomPoints[faction];
-      const posAttr = pts.geometry.attributes.position;
-      const idx = counts[faction];
-      if (idx * 3 >= posAttr.array.length) continue;
+      if (poolIdx >= this._phantomPool.length) break;
+      const mesh = this._phantomPool[poolIdx];
 
-      // Spherical to Cartesian (local to hexGroup)
-      posAttr.array[idx * 3] = r * Math.sin(phi) * Math.cos(theta);
-      posAttr.array[idx * 3 + 1] = r * Math.cos(phi);
-      posAttr.array[idx * 3 + 2] = r * Math.sin(phi) * Math.sin(theta);
-      counts[faction]++;
+      // Position in hexGroup local space
+      mesh.position.set(
+        r * Math.sin(phi) * Math.cos(theta),
+        r * Math.cos(phi),
+        r * Math.sin(phi) * Math.sin(theta),
+      );
+
+      // Swap faction material (skip if this dot is currently hovered to preserve hover effect)
+      if (mesh !== hoveredMesh) {
+        const targetMat = this._lodDotMaterials[faction];
+        if (mesh.material !== targetMat) mesh.material = targetMat;
+      }
+
+      // Update userData for hover tooltip + right-click profile card
+      const botId = opn ? opn[opnIdx] : `phantom-${poolIdx}`;
+      const botName = opn ? opn[opnIdx + 1] : `Bot ${poolIdx}`;
+      mesh.userData.playerId = botId;
+      mesh.userData.faction = faction;
+      mesh.userData.username = botName;
+
+      // Register in ProfileCard cache for right-click support
+      if (window.profileCard && botId.startsWith("bot-") && !window.profileCard.playerCache.has(botId)) {
+        window.profileCard.playerCache.set(botId, {
+          id: botId, name: botName, faction,
+          level: 1, crypto: 0, cryptoToNext: 15000,
+          title: "Contractor", rank: null, squad: null,
+          isOnline: true, badges: [], avatarColor: null,
+          socialLinks: {}, isSelf: false,
+        });
+      }
+
+      mesh.visible = true;
+      poolIdx++;
     }
 
-    // Update draw ranges and visibility
-    for (const faction of factionNames) {
-      const pts = this._orbitalPhantomPoints[faction];
-      pts.geometry.setDrawRange(0, counts[faction]);
-      pts.geometry.attributes.position.needsUpdate = true;
-      pts.visible = counts[faction] > 0;
+    // Hide unused pool entries
+    for (let i = poolIdx; i < this._phantomPool.length; i++) {
+      this._phantomPool[i].visible = false;
     }
 
+    this._phantomActiveCount = poolIdx;
     this._orbitalPhantomVisible = true;
   }
 
   _hideOrbitalPhantoms() {
     if (!this._orbitalPhantomVisible) return;
-    for (const faction of ["rust", "cobalt", "viridian"]) {
-      this._orbitalPhantomPoints[faction].visible = false;
+    for (let i = 0; i < this._phantomPool.length; i++) {
+      this._phantomPool[i].visible = false;
     }
+    this._phantomActiveCount = 0;
     this._orbitalPhantomVisible = false;
   }
 }

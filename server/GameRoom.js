@@ -3290,14 +3290,24 @@ class GameRoom {
     // factionIdx: 0=rust, 1=cobalt, 2=viridian
     if (this.tick % 10 === 0) {
       const op = [];
+      const opn = [];
       for (const botId in botStates) {
         const bs = botStates[botId];
         if (bs.d) continue; // skip dead
         op.push(bs.t, bs.p, bs.f === 'rust' ? 0 : bs.f === 'cobalt' ? 1 : 2);
+        opn.push(botId, bs.n || botId);
       }
       statePayload.op = op;
+      // Send name map every 100 ticks (~10s) to keep bandwidth low
+      if (this.tick % 100 === 0 || !this._opNamesSent) {
+        statePayload.opn = opn;
+        this._opNamesSent = true;
+      } else {
+        delete statePayload.opn;
+      }
     } else {
       delete statePayload.op;
+      delete statePayload.opn;
     }
 
     // Update moon angles in-place

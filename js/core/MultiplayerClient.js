@@ -325,6 +325,7 @@
         if (data.tc !== undefined) mpState.serverTotalCount = data.tc;
         if (data.bfc) mpState.serverBotFactionCounts = data.bfc;
         if (data.op) mpState.orbitalPositions = data.op;
+        if (data.opn) mpState.orbitalPositionNames = data.opn;
       }
 
       // Track which bots were seen this tick (for cleanup)

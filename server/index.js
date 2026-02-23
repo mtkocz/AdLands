@@ -168,7 +168,7 @@ let inquiryRouter;
   await reconcilePlayerTerritories();
 
   // Await image extraction so URL maps are ready for routes and GameRoom
-  const sponsorImageUrls = await extractSponsorImages(sponsorStore, gameDir);
+  const { urlMap: sponsorImageUrls, contentHashes: sponsorContentHashes } = await extractSponsorImages(sponsorStore, gameDir);
   const moonSponsorImageUrls = await extractMoonSponsorImages(moonSponsorStore, gameDir);
   const billboardSponsorImageUrls = await extractBillboardSponsorImages(billboardSponsorStore, gameDir);
 
@@ -179,6 +179,7 @@ let inquiryRouter;
   // Mount sponsor API routes (after GameRoom so live reload can broadcast)
   app.use("/api/sponsors", createSponsorRoutes(sponsorStore, mainRoom, {
     imageUrls: sponsorImageUrls,
+    contentHashes: sponsorContentHashes,
     gameDir,
     moonSponsorStore,
     billboardSponsorStore,

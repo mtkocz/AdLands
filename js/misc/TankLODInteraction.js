@@ -12,6 +12,7 @@ class TankLODInteraction {
     this.hoveredDot = null;
     this.active = false;
     this.dotMeshes = [];
+    this._dotMeshSet = new Set();
 
     this._mouseX = 0;
     this._mouseY = 0;
@@ -111,7 +112,8 @@ class TankLODInteraction {
    * @param {THREE.Mesh} dot - The LOD dot mesh with userData
    */
   registerDot(dot) {
-    if (dot && !this.dotMeshes.includes(dot)) {
+    if (dot && !this._dotMeshSet.has(dot)) {
+      this._dotMeshSet.add(dot);
       this.dotMeshes.push(dot);
     }
   }
@@ -121,9 +123,13 @@ class TankLODInteraction {
    * @param {THREE.Mesh} dot - The LOD dot mesh to remove
    */
   unregisterDot(dot) {
+    if (!this._dotMeshSet.has(dot)) return;
+    this._dotMeshSet.delete(dot);
     const index = this.dotMeshes.indexOf(dot);
     if (index !== -1) {
-      this.dotMeshes.splice(index, 1);
+      // Swap-remove for O(1)
+      this.dotMeshes[index] = this.dotMeshes[this.dotMeshes.length - 1];
+      this.dotMeshes.pop();
     }
   }
 

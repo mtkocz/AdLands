@@ -3,7 +3,8 @@
     "allow": [
       "Bash(for commit in f7b7a4f 441f4ab 40c0dfc 7f162ec adb2a41 36bc3e8 dc6fb9f)",
       "Bash(do echo \"=== $commit ===\")",
-      "Bash(done)"
+      "Bash(done)",
+      "Bash(node -c:*)"
     ]
   }
 }

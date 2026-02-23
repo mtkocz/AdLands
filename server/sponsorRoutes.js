@@ -139,10 +139,11 @@ async function extractSponsorImages(sponsorStore, gameDir, onlyId) {
 
   // Deduplicate: sponsors with byte-identical textures share one URL.
   // This cuts ~44 client HTTP requests down to ~20 (one per unique brand image).
+  // Returns { urlMap, contentHashes } so single-sponsor edits can dedup cheaply.
   if (!onlyId) {
-    const dedup = (urlKey) => {
-      // hash → first sponsor's URL for this content
-      const hashToUrl = new Map();
+    const contentHashes = { patternUrl: new Map(), logoUrl: new Map() };
+    for (const urlKey of ["patternUrl", "logoUrl"]) {
+      const hashToUrl = contentHashes[urlKey];
       for (const [, urls] of Object.entries(urlMap)) {
         const urlPath = urls[urlKey];
         if (!urlPath) continue;
@@ -157,12 +158,11 @@ async function extractSponsorImages(sponsorStore, gameDir, onlyId) {
           }
         } catch (e) { /* file missing — skip */ }
       }
-    };
-    dedup("patternUrl");
-    dedup("logoUrl");
+    }
+    return { urlMap, contentHashes };
   }
 
-  return urlMap;
+  return { urlMap, contentHashes: null };
 }
 
 /**
@@ -184,7 +184,7 @@ async function cleanupSponsorImageFiles(sponsorId, texDir) {
   }
 }
 
-function createSponsorRoutes(sponsorStore, gameRoom, { imageUrls, gameDir, moonSponsorStore, billboardSponsorStore } = {}) {
+function createSponsorRoutes(sponsorStore, gameRoom, { imageUrls, contentHashes, gameDir, moonSponsorStore, billboardSponsorStore } = {}) {
   const router = Router();
 
   // Resend email config (reuses SMTP_PASS as API key)
@@ -193,6 +193,8 @@ function createSponsorRoutes(sponsorStore, gameRoom, { imageUrls, gameDir, moonS
 
   // Mutable reference so we can update after re-extraction
   let _imageUrls = imageUrls || {};
+  // hash→url maps for O(1) dedup on single-sponsor edits (built at startup, updated incrementally)
+  let _contentHashes = contentHashes || { patternUrl: new Map(), logoUrl: new Map() };
 
   function reloadIfLive() {
     if (gameRoom && typeof gameRoom.reloadSponsors === "function") {
@@ -210,14 +212,30 @@ function createSponsorRoutes(sponsorStore, gameRoom, { imageUrls, gameDir, moonS
    */
   async function reExtractImages(onlyId) {
     if (!gameDir) return;
-    const newUrls = await extractSponsorImages(sponsorStore, gameDir, onlyId);
+    const { urlMap: newUrls, contentHashes: newHashes } = await extractSponsorImages(sponsorStore, gameDir, onlyId);
     if (onlyId) {
-      // Merge single sponsor's URLs into the map
+      // Merge single sponsor's URLs, deduplicating via the cached hash→url maps
       if (newUrls[onlyId]) {
-        _imageUrls[onlyId] = newUrls[onlyId];
+        const urls = newUrls[onlyId];
+        for (const urlKey of ["patternUrl", "logoUrl"]) {
+          const urlPath = urls[urlKey];
+          if (!urlPath) continue;
+          try {
+            const buf = fs.readFileSync(path.join(gameDir, urlPath.split("?")[0]));
+            const hash = crypto.createHash("md5").update(buf).digest("hex");
+            const existing = _contentHashes[urlKey].get(hash);
+            if (existing) {
+              urls[urlKey] = existing;
+            } else {
+              _contentHashes[urlKey].set(hash, urlPath);
+            }
+          } catch (e) { /* skip */ }
+        }
+        _imageUrls[onlyId] = urls;
       }
     } else {
       _imageUrls = newUrls;
+      _contentHashes = newHashes || { patternUrl: new Map(), logoUrl: new Map() };
     }
   }
 
