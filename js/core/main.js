@@ -1550,7 +1550,7 @@
     onFire: null,
 
     // Called by MultiplayerClient to report sponsor texture loading progress (0-1)
-    setSponsorLoadProgress: (p) => { sponsorLoadProgress = p; },
+    setSponsorLoadProgress: (p) => { sponsorLoadActive = true; sponsorLoadProgress = p; },
     // Called by MultiplayerClient after sponsor textures are preloaded
     setSponsorTexturesReady: () => { sponsorLoadProgress = 1; sponsorTexturesReady = true; },
   };
@@ -3999,21 +3999,21 @@
         stableFrameCount = 0;
       }
 
-      // Progress bar: weighted sum of loading phases (never decreases)
-      // Sponsors actively loading:   warmup 40% + sponsors 40% + stability 20%
-      // Waiting for connection / no sponsors: warmup 80% + stability 20%
+      // Progress bar: 3 clean phases (never decreases)
+      //   Phase 1: warmup frames fill 0-90% (fast, ~0.5s)
+      //   Phase 2: waiting for server connection, stuck at 90%
+      //   Phase 3: sponsors downloading, 90-100% (fast with baked images)
       const warmupRatio = Math.min(1, warmupFrames / WARMUP_FRAMES_MIN);
       const stabilityRatio = Math.min(1, stableFrameCount / STABLE_FRAMES_NEEDED);
       let newProgress;
-      const sponsorsLoading = sponsorLoadActive || (sponsorLoadProgress > 0 && !sponsorTexturesReady);
-      if (sponsorsLoading) {
-        newProgress = warmupRatio * 40 + sponsorLoadProgress * 40 + stabilityRatio * 20;
+      if (sponsorTexturesReady) {
+        newProgress = 100;
+      } else if (sponsorLoadProgress > 0 || sponsorLoadActive) {
+        // Sponsors actively loading: fill 90% → 100%
+        newProgress = 90 + sponsorLoadProgress * 10;
       } else {
-        newProgress = warmupRatio * 80 + stabilityRatio * 20;
-      }
-      // Cap at 90% while waiting for connection (sponsorTexturesReady is still false)
-      if (!sponsorTexturesReady && !sponsorsLoading) {
-        newProgress = Math.min(90, newProgress);
+        // Warmup + waiting for connection: fill to 90%
+        newProgress = Math.min(90, warmupRatio * 80 + stabilityRatio * 20);
       }
       loadingProgress = Math.max(loadingProgress, Math.min(100, newProgress));
 
@@ -4026,20 +4026,18 @@
 
       // Update loading text based on progress
       if (loadingText) {
-        if (!sponsorTexturesReady && sponsorLoadProgress > 0 && sponsorLoadProgress < 0.9) {
+        if (sponsorTexturesReady) {
+          loadingText.textContent = "ready";
+        } else if (sponsorLoadProgress > 0 || sponsorLoadActive) {
           loadingText.textContent = "loading sponsors...";
-        } else if (!sponsorTexturesReady && sponsorLoadProgress >= 0.9) {
-          loadingText.textContent = "finalizing...";
-        } else if (!sponsorTexturesReady && loadingProgress >= 80) {
+        } else if (loadingProgress >= 80) {
           loadingText.textContent = "connecting...";
         } else if (loadingProgress < 30) {
           loadingText.textContent = "initializing...";
         } else if (loadingProgress < 60) {
           loadingText.textContent = "loading terrain...";
-        } else if (loadingProgress < 90) {
-          loadingText.textContent = "preparing systems...";
         } else {
-          loadingText.textContent = "ready";
+          loadingText.textContent = "preparing systems...";
         }
       }
 

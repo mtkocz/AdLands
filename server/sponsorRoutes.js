@@ -33,6 +33,17 @@ function findExistingFile(texDir, prefix) {
  */
 async function extractSponsorImage(sponsor, texDir) {
   const urls = {};
+
+  /** Append file mtime as cache-buster query param so browsers re-fetch after re-baking. */
+  function withMtime(urlPath, filePath) {
+    try {
+      const mt = fs.statSync(filePath).mtimeMs;
+      return urlPath + "?v=" + Math.floor(mt);
+    } catch (e) {
+      return urlPath;
+    }
+  }
+
   if (sponsor.patternImage) {
     const match = sponsor.patternImage.match(/^data:image\/(\w+);base64,(.+)$/);
     if (match) {
@@ -44,17 +55,17 @@ async function extractSponsorImage(sponsor, texDir) {
         const baked = await applyPixelArtFilter(raw);
         const pngPath = path.join(texDir, `${sponsor.id}.png`);
         await fsp.writeFile(pngPath, baked);
-        urls.patternUrl = `/sponsor-textures/${sponsor.id}.png`;
+        urls.patternUrl = withMtime(`/sponsor-textures/${sponsor.id}.png`, pngPath);
       } else {
         await fsp.writeFile(filePath, raw);
-        urls.patternUrl = `/sponsor-textures/${sponsor.id}.${ext}`;
+        urls.patternUrl = withMtime(`/sponsor-textures/${sponsor.id}.${ext}`, filePath);
       }
     }
   } else {
     // No base64 data — check for previously extracted file on disk
     const existing = findExistingFile(texDir, sponsor.id + ".");
     if (existing && !existing.includes("_logo")) {
-      urls.patternUrl = `/sponsor-textures/${existing}`;
+      urls.patternUrl = withMtime(`/sponsor-textures/${existing}`, path.join(texDir, existing));
     }
   }
   if (sponsor.logoImage) {
@@ -73,13 +84,13 @@ async function extractSponsorImage(sponsor, texDir) {
       } else {
         await fsp.writeFile(pngPath, raw);
       }
-      urls.logoUrl = `/sponsor-textures/${sponsor.id}_logo.png`;
+      urls.logoUrl = withMtime(`/sponsor-textures/${sponsor.id}_logo.png`, pngPath);
     }
   } else {
     // No base64 data — check for previously extracted logo file on disk
     const existing = findExistingFile(texDir, sponsor.id + "_logo.");
     if (existing) {
-      urls.logoUrl = `/sponsor-textures/${existing}`;
+      urls.logoUrl = withMtime(`/sponsor-textures/${existing}`, path.join(texDir, existing));
     }
   }
   return urls;

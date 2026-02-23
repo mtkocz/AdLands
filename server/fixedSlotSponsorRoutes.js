@@ -31,7 +31,9 @@ async function extractSlotSponsorImages(store, gameDir, filePrefix) {
       const ext = match[1] === "jpeg" ? "jpg" : match[1];
       const filePath = path.join(texDir, `${filePrefix}${i}.${ext}`);
       await fsp.writeFile(filePath, Buffer.from(match[2], "base64"));
-      urlMap[i] = { patternUrl: `/sponsor-textures/${filePrefix}${i}.${ext}` };
+      // Append file mtime for cache busting
+      const mt = Math.floor(fs.statSync(filePath).mtimeMs);
+      urlMap[i] = { patternUrl: `/sponsor-textures/${filePrefix}${i}.${ext}?v=${mt}` };
     }
   }
   return urlMap;

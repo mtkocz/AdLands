@@ -3526,6 +3526,7 @@ class Planet {
       img.onload = () => {
         const texture = new THREE.Texture(img);
         texture.wrapS = texture.wrapT = THREE.RepeatWrapping;
+        texture.generateMipmaps = false;
         texture.minFilter = THREE.NearestFilter;
         texture.magFilter = THREE.NearestFilter;
         texture.needsUpdate = true;
@@ -3574,6 +3575,7 @@ class Planet {
         img.onload = () => {
           const texture = new THREE.Texture(img);
           texture.wrapS = texture.wrapT = THREE.RepeatWrapping;
+          texture.generateMipmaps = false;
           texture.minFilter = THREE.NearestFilter;
           texture.magFilter = THREE.NearestFilter;
           texture.needsUpdate = true;
@@ -3624,6 +3626,7 @@ class Planet {
       img.onload = () => {
         const texture = new THREE.Texture(img);
         texture.wrapS = texture.wrapT = THREE.RepeatWrapping;
+        texture.generateMipmaps = false;
         texture.minFilter = THREE.NearestFilter;
         texture.magFilter = THREE.NearestFilter;
         texture.needsUpdate = true;
@@ -3880,13 +3883,15 @@ class Planet {
       outputWhite === 1 &&
       saturation === 1.0
     ) {
-      // Return a canvas texture of the original
+      // Return a canvas texture of the original (pixel-perfect, no smoothing)
       const canvas = document.createElement("canvas");
       canvas.width = image.width || 256;
       canvas.height = image.height || 256;
       const ctx = canvas.getContext("2d");
+      ctx.imageSmoothingEnabled = false;
       ctx.drawImage(image, 0, 0);
       const tex = new THREE.CanvasTexture(canvas);
+      tex.generateMipmaps = false;
       tex.minFilter = THREE.NearestFilter;
       tex.magFilter = THREE.NearestFilter;
       return tex;
@@ -3949,6 +3954,7 @@ class Planet {
     ctx.putImageData(imageData, 0, 0);
 
     const processedTexture = new THREE.CanvasTexture(canvas);
+    processedTexture.generateMipmaps = false;
     processedTexture.minFilter = THREE.NearestFilter;
     processedTexture.magFilter = THREE.NearestFilter;
     processedTexture.needsUpdate = true;

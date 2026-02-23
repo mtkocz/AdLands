@@ -566,16 +566,15 @@ class GameRoom {
       // Hide moon if its sponsor name is paused
       if (sponsor.name && pausedNames.has(sponsor.name.toLowerCase())) return null;
       const urls = this.moonSponsorImageUrls[i] || {};
-      const cacheBust = sponsor.updatedAt ? `?v=${encodeURIComponent(sponsor.updatedAt)}` : '';
       return {
         moonIndex: i,
         name: sponsor.name,
         tagline: sponsor.tagline,
         websiteUrl: sponsor.websiteUrl,
-        patternImage: urls.patternUrl ? urls.patternUrl + cacheBust : null,
+        patternImage: urls.patternUrl || null,
         patternAdjustment: sponsor.patternAdjustment,
         createdAt: sponsor.createdAt,
-        logoImage: urls.logoUrl ? urls.logoUrl + cacheBust : null,
+        logoImage: urls.logoUrl || null,
       };
     });
   }
@@ -629,16 +628,15 @@ class GameRoom {
       // Hide billboard if its sponsor name is paused
       if (sponsor.name && pausedNames.has(sponsor.name.toLowerCase())) return null;
       const urls = this.billboardSponsorImageUrls[i] || {};
-      const cacheBust = sponsor.updatedAt ? `?v=${encodeURIComponent(sponsor.updatedAt)}` : '';
       return {
         billboardIndex: i,
         name: sponsor.name,
         tagline: sponsor.tagline,
         websiteUrl: sponsor.websiteUrl,
-        patternImage: urls.patternUrl ? urls.patternUrl + cacheBust : null,
+        patternImage: urls.patternUrl || null,
         patternAdjustment: sponsor.patternAdjustment,
         createdAt: sponsor.createdAt,
-        logoImage: urls.logoUrl ? urls.logoUrl + cacheBust : null,
+        logoImage: urls.logoUrl || null,
       };
     });
   }
@@ -3946,18 +3944,16 @@ class GameRoom {
     }
 
     // Serialize sponsor data for clients (with image URLs instead of base64)
-    // Append updatedAt as cache-busting query param so browsers and texture
-    // caches serve fresh images after admin edits.
+    // URLs already include ?v=<mtime> cache busters from extractSponsorImage()
     const sponsors = this.sponsors.map(s => {
       const urls = this.sponsorImageUrls[s.id] || {};
-      const cacheBust = s.updatedAt ? `?v=${encodeURIComponent(s.updatedAt)}` : '';
       const entry = {
         id: s.id,
         name: s.name,
         tagline: s.tagline,
         websiteUrl: s.websiteUrl,
-        patternImage: urls.patternUrl ? urls.patternUrl + cacheBust : null,
-        logoImage: urls.logoUrl ? urls.logoUrl + cacheBust : null,
+        patternImage: urls.patternUrl || null,
+        logoImage: urls.logoUrl || null,
         patternAdjustment: s.patternAdjustment,
         cluster: { tileIndices: s.cluster.tileIndices },
         rewards: s.rewards,
