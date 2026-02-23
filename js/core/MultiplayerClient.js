@@ -319,12 +319,13 @@
     };
 
     net.onStateUpdate = (data) => {
-      // Store server-authoritative population counts (for chat panel headers)
-      if (data.tc !== undefined) mp.serverTotalCount = data.tc;
-      if (data.bfc) mp.serverBotFactionCounts = data.bfc;
-
-      // Store compact orbital positions for all bots (sent every 10 ticks)
-      if (data.op) mp.orbitalPositions = data.op;
+      // Store server-authoritative population counts on _mpState (read by main.js)
+      const mpState = window._mpState;
+      if (mpState) {
+        if (data.tc !== undefined) mpState.serverTotalCount = data.tc;
+        if (data.bfc) mpState.serverBotFactionCounts = data.bfc;
+        if (data.op) mpState.orbitalPositions = data.op;
+      }
 
       // Track which bots were seen this tick (for cleanup)
       if (!mp._seenBotIds) mp._seenBotIds = new Set();
