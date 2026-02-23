@@ -870,7 +870,7 @@ class Tank {
         ? FACTION_COLORS[this.faction].hex
         : this.colors?.primary || 0x888888;
 
-    const dotSize = 11.25; // Visual size (50% larger than original 7.5)
+    const dotSize = 8.44; // Visual size (75% of 11.25, shrunk 25% for orbital view)
     const dotRadius = dotSize / 2; // For outline calculations
     const dotGeometry = new THREE.PlaneGeometry(dotSize, dotSize);
     const dotMaterial = this._createLODDotMaterial(pureFactionColor);

@@ -1835,14 +1835,32 @@ class ServerBotManager {
     const PHI_MIN = 0.35;
     const PHI_MAX = Math.PI - 0.35;
     const planetRotation = this._planetRotation || 0;
+    const R = this.sphereRadius;
+    // Buffer distance around the spawn point to keep bots away from terrain edges
+    const SPAWN_BUFFER = 8 / R; // ~8 world units clearance
 
     for (let attempt = 0; attempt < 50; attempt++) {
       const theta = Math.random() * Math.PI * 2;
       const phi = PHI_MIN + Math.random() * (PHI_MAX - PHI_MIN);
-      const heading = Math.random() * Math.PI * 2;
+      const safeSinPhi = Math.max(0.1, Math.sin(phi));
+      const rotTheta = theta + planetRotation;
 
-      // Use the full 5-probe box check so bots don't spawn overlapping terrain
-      if (!this._isTerrainBlockedAt(theta, phi, heading, 1, planetRotation)) {
+      // Check center + 8 points in a ring around spawn for terrain clearance
+      let blocked = false;
+      if (this.worldGen.isTerrainBlocked(rotTheta, phi)) { blocked = true; }
+      if (!blocked) {
+        for (let i = 0; i < 8; i++) {
+          const angle = i * (Math.PI / 4);
+          const probePhi = phi + Math.cos(angle) * SPAWN_BUFFER;
+          const probeTheta = theta + (Math.sin(angle) * SPAWN_BUFFER) / safeSinPhi;
+          if (this.worldGen.isTerrainBlocked(probeTheta + planetRotation, probePhi)) {
+            blocked = true;
+            break;
+          }
+        }
+      }
+
+      if (!blocked) {
         return { theta, phi };
       }
     }
