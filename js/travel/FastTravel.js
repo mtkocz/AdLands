@@ -47,6 +47,9 @@ class FastTravel {
         // Multiplayer callback: when set, portal selection goes through server
         this.onPortalChosen = null;
 
+        // Called when entering/leaving portal preview (so server can send nearby bots)
+        this.onPreviewPortal = null;
+
         // Called when entering fast travel (commander leaves planet surface)
         this.onEnterFastTravel = null;
 
@@ -261,6 +264,9 @@ class FastTravel {
         this.state = 'preview';
         this.previewPortalIndex = portalIndex;
 
+        // Notify server so it sends bots near this portal
+        if (this.onPreviewPortal) this.onPreviewPortal(portalIndex);
+
         // Get portal position in local space
         const portalPosLocal = this.planet.getPortalPosition(portalIndex);
         if (!portalPosLocal) {
@@ -291,6 +297,9 @@ class FastTravel {
     _returnToFastTravel() {
         this.state = 'fastTravel';
         this.previewPortalIndex = null;
+
+        // Clear preview so server stops sending bots for that portal
+        if (this.onPreviewPortal) this.onPreviewPortal(null);
 
         // Re-extend beams with shoot-up animation (excluding origin portal if any)
         // Use 1.5 second delay when returning from preview

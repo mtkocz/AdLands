@@ -1879,6 +1879,22 @@ class GameRoom {
     }
   }
 
+  handlePreviewPortal(socketId, portalTileIndex) {
+    const player = this.players.get(socketId);
+    if (!player || !player.waitingForPortal) return;
+
+    if (portalTileIndex === null) {
+      // Leaving preview — clear override
+      player._previewPortalTile = null;
+      return;
+    }
+
+    // Validate and store the portal tile index for spatial filtering
+    if (this.portalPositionsByTile.has(portalTileIndex)) {
+      player._previewPortalTile = portalTileIndex;
+    }
+  }
+
   handleChoosePortal(socketId, portalTileIndex) {
     const player = this.players.get(socketId);
     if (!player || player.isDead || !player.waitingForPortal) {
@@ -1937,6 +1953,7 @@ class GameRoom {
     );
     player.heading = Math.random() * Math.PI * 2;
     player.waitingForPortal = false;
+    player._previewPortalTile = null;
     player.currentClusterId = null;
     player._lastTicCluster = undefined;
     player._lastTicCryptoTics = undefined;
@@ -3388,11 +3405,24 @@ class GameRoom {
     const filteredPayloads = this._filteredPayloads;
 
     for (const [socketId, player] of this.players) {
-      // Compute this player's unit vector
-      const pSinP = Math.sin(player.phi);
-      const px = pSinP * Math.cos(player.theta);
-      const py = Math.cos(player.phi);
-      const pz = pSinP * Math.sin(player.theta);
+      // When previewing a portal, use the portal's position for spatial filtering
+      // so the client receives bots near the destination (to check for campers)
+      let filterTheta = player.theta;
+      let filterPhi = player.phi;
+      if (player._previewPortalTile != null) {
+        const portalPos = this.portalPositionsByTile.get(player._previewPortalTile);
+        if (portalPos) {
+          // Portal positions are local space; convert to world by subtracting planetRotation
+          filterTheta = portalPos.theta - this.planetRotation;
+          filterPhi = portalPos.phi;
+        }
+      }
+
+      // Compute unit vector for spatial filtering
+      const pSinP = Math.sin(filterPhi);
+      const px = pSinP * Math.cos(filterTheta);
+      const py = Math.cos(filterPhi);
+      const pz = pSinP * Math.sin(filterTheta);
 
       // Build filtered players object: all humans + nearby bots
       let filtered = filteredPayloads.get(socketId);

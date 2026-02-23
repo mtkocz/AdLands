@@ -486,6 +486,11 @@ class NetworkManager {
     this.socket.emit("choose-portal", { portalTileIndex });
   }
 
+  sendPreviewPortal(portalTileIndex) {
+    if (!this.connected) return;
+    this.socket.emit("preview-portal", { portalTileIndex });
+  }
+
   /** Request a level-up purchase from the server */
   sendLevelUp() {
     if (!this.connected) return;

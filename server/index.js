@@ -354,6 +354,11 @@ io.on("connection", (socket) => {
     mainRoom.handleEnterFastTravel(socket.id);
   });
 
+  // ---- Portal Preview (client looking at a portal before deploying) ----
+  socket.on("preview-portal", (data) => {
+    mainRoom.handlePreviewPortal(socket.id, data?.portalTileIndex ?? null);
+  });
+
   // ---- Portal Selection ----
   socket.on("choose-portal", (data) => {
     if (typeof data?.portalTileIndex !== "number") return;

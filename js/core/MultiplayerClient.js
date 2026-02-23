@@ -1987,6 +1987,11 @@
           console.warn('[MP] NOT sending choose-portal — isMultiplayer is false');
         }
       };
+      mp.fastTravel.onPreviewPortal = (portalTileIndex) => {
+        if (net.isMultiplayer) {
+          net.sendPreviewPortal(portalTileIndex);
+        }
+      };
     }
 
     // Connect with Firebase auth token if available

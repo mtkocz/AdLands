@@ -523,6 +523,12 @@ class ServerBotManager {
       this._updateInput(bot, dt, isStagger);
       this._updatePhysics(bot, dt);
       this._moveOnSphere(bot, planetRotation, dt);
+
+      // Safety net: if bot center is inside terrain, teleport immediately
+      if (this.worldGen.isTerrainBlocked(bot.theta + planetRotation, bot.phi)) {
+        this._teleportToSafety(bot);
+      }
+
       bot.currentClusterId = this.worldGen.getClusterIdAt(bot.theta + planetRotation, bot.phi);
       if (isStagger) {
         nextProjectileId = this._updateCombat(bot, dt, players, planetRotation, projectiles, nextProjectileId, now);
@@ -1252,21 +1258,9 @@ class ServerBotManager {
         bot.phi = prevPhi;
         bot.speed *= BOT_COLLISION_SPEED_RETAIN;
 
-        // If still stuck after revert (terrain rotated into us), push outward
+        // If still stuck after revert (terrain rotated into us), teleport out
         if (this._isTerrainBlockedAt(bot.theta, bot.phi, bot.heading, checkSpeed, planetRotation)) {
-          const pushDist = 0.008;
-          // Try 8 directions to escape
-          for (let i = 0; i < 8; i++) {
-            const angle = i * (Math.PI / 4);
-            const safeSin = Math.max(0.1, Math.sin(bot.phi));
-            const tryTheta = bot.theta + Math.sin(angle) * pushDist / safeSin;
-            const tryPhi = bot.phi + Math.cos(angle) * pushDist;
-            if (!this._isTerrainBlockedAt(tryTheta, tryPhi, bot.heading, checkSpeed, planetRotation)) {
-              bot.theta = tryTheta;
-              bot.phi = tryPhi;
-              break;
-            }
-          }
+          this._teleportToSafety(bot);
         }
       }
 
@@ -1885,6 +1879,7 @@ class ServerBotManager {
     // Buffer distance around the spawn point to keep bots away from terrain edges
     const SPAWN_BUFFER = 8 / R; // ~8 world units clearance
 
+    // First pass: strict (with buffer ring)
     for (let attempt = 0; attempt < 50; attempt++) {
       const theta = Math.random() * Math.PI * 2;
       const phi = PHI_MIN + Math.random() * (PHI_MAX - PHI_MIN);
@@ -1911,11 +1906,17 @@ class ServerBotManager {
       }
     }
 
-    // Fallback: mid-latitude
-    return {
-      theta: Math.random() * Math.PI * 2,
-      phi: Math.PI / 4 + Math.random() * (Math.PI / 2),
-    };
+    // Fallback: center-only check (no buffer) — still guaranteed not inside terrain
+    for (let attempt = 0; attempt < 50; attempt++) {
+      const theta = Math.random() * Math.PI * 2;
+      const phi = PHI_MIN + Math.random() * (PHI_MAX - PHI_MIN);
+      if (!this.worldGen.isTerrainBlocked(theta + planetRotation, phi)) {
+        return { theta, phi };
+      }
+    }
+
+    // Last resort: equator (very unlikely to be fully blocked)
+    return { theta: Math.random() * Math.PI * 2, phi: Math.PI / 2 };
   }
 
   _pickName() {
