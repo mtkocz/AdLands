@@ -2941,12 +2941,17 @@ class GameRoom {
       // O(1) cluster ID lookup from precomputed grid
       const rawClusterId = this.worldGen.getClusterIdAt(player.theta + this.planetRotation, player.phi);
 
+      // Neutral carve-out: if player is on neutral territory (portal/pole),
+      // immediately stop contributing to any capture — no hysteresis delay.
+      if (rawClusterId == null) {
+        player.currentClusterId = null;
+        player._clusterChangeTicks = 0;
       // Hysteresis: require 3 consecutive capture ticks (~600ms) of a different
       // cluster before switching. Prevents grid boundary flickering from
       // disrupting tic-crypto tracking (sameCluster check).
       // Exception: assign immediately when player has no cluster yet (first
       // entry after spawn/respawn) to avoid dead time with no capture credit.
-      if (rawClusterId !== player.currentClusterId) {
+      } else if (rawClusterId !== player.currentClusterId) {
         if (player.currentClusterId == null) {
           // No current cluster — assign immediately (first entry / after respawn)
           player.currentClusterId = rawClusterId;

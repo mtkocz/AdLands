@@ -243,17 +243,13 @@ class RemoteTank {
     }
 
     // Snapshot interpolation: render at a fixed delay behind real-time.
-    // This decouples network jitter from visual movement — remote tanks
-    // move at a perfectly smooth rate regardless of packet arrival timing.
+    // Uses Hermite (cubic) interpolation for position — this produces smooth
+    // velocity transitions at tick boundaries, eliminating the visible "kinks"
+    // that linear interpolation creates at 10Hz update rate.
     const renderTime = performance.now() - this.interpolationDelay;
     const snapCount = this._snapCount;
 
     let interpolated = false;
-
-    // DEBUG: track interpolation success rate (remove after debugging)
-    if (!RemoteTank._dbgStats) {
-      RemoteTank._dbgStats = { ok: 0, fail: 0, lastLog: 0 };
-    }
 
     if (snapCount >= 2) {
       // Ring buffer index helper: i=0 is oldest, i=snapCount-1 is newest
@@ -273,13 +269,50 @@ class RemoteTank {
 
       if (fromSnap && toSnap) {
         const span = toSnap.t - fromSnap.t;
-        const progress = span > 0 ? Math.min(1, (renderTime - fromSnap.t) / span) : 1;
+        const t = span > 0 ? Math.min(1, (renderTime - fromSnap.t) / span) : 1;
 
-        this.state.theta = MathUtils.lerpAngle2Pi(fromSnap.theta, toSnap.theta, progress);
-        this.state.phi = fromSnap.phi + (toSnap.phi - fromSnap.phi) * progress;
-        this.state.heading = MathUtils.lerpAngle(fromSnap.heading, toSnap.heading, progress);
-        this.state.speed = fromSnap.speed + (toSnap.speed - fromSnap.speed) * progress;
-        this.state.turretAngle = MathUtils.lerpAngle(fromSnap.turretAngle, toSnap.turretAngle, progress);
+        // Hermite basis functions for cubic interpolation
+        const t2 = t * t;
+        const t3 = t2 * t;
+        const h00 = 2 * t3 - 3 * t2 + 1;  // from position weight
+        const h10 = t3 - 2 * t2 + t;       // from tangent weight
+        const h01 = -2 * t3 + 3 * t2;      // to position weight
+        const h11 = t3 - t2;               // to tangent weight
+
+        // Compute tangent vectors from each snapshot's speed + heading.
+        // Tangent = velocity * span (Hermite tangent is scaled by the interval).
+        const spanScale = span / 1000 * 60; // convert ms → dt60-equivalent
+        const fromSinPhi = Math.max(0.01, Math.sin(fromSnap.phi));
+        const toSinPhi = Math.max(0.01, Math.sin(toSnap.phi));
+
+        const fromTanPhi = -Math.cos(fromSnap.heading) * fromSnap.speed * spanScale;
+        const toTanPhi = -Math.cos(toSnap.heading) * toSnap.speed * spanScale;
+        const fromTanTheta = -Math.sin(fromSnap.heading) * fromSnap.speed / fromSinPhi * spanScale;
+        const toTanTheta = -Math.sin(toSnap.heading) * toSnap.speed / toSinPhi * spanScale;
+
+        // Hermite interpolation for phi (no wrapping needed, bounded [0, π])
+        this.state.phi = h00 * fromSnap.phi + h10 * fromTanPhi
+                       + h01 * toSnap.phi + h11 * toTanPhi;
+
+        // For theta: compute Hermite delta from fromSnap.theta, then wrap
+        let thetaDelta = toSnap.theta - fromSnap.theta;
+        while (thetaDelta > Math.PI) thetaDelta -= Math.PI * 2;
+        while (thetaDelta < -Math.PI) thetaDelta += Math.PI * 2;
+        // Hermite on the delta: h01*delta replaces h00*from + h01*to
+        let thetaResult = fromSnap.theta
+          + h10 * fromTanTheta
+          + h01 * thetaDelta
+          + h11 * toTanTheta;
+        while (thetaResult < 0) thetaResult += Math.PI * 2;
+        while (thetaResult >= Math.PI * 2) thetaResult -= Math.PI * 2;
+        this.state.theta = thetaResult;
+
+        // Smoothstep for speed/heading/turret — eliminates acceleration
+        // discontinuities at tick boundaries that cause lean spring jitter
+        const st = t * t * (3 - 2 * t);
+        this.state.heading = MathUtils.lerpAngle(fromSnap.heading, toSnap.heading, st);
+        this.state.speed = fromSnap.speed + (toSnap.speed - fromSnap.speed) * st;
+        this.state.turretAngle = MathUtils.lerpAngle(fromSnap.turretAngle, toSnap.turretAngle, st);
         interpolated = true;
       }
     }
@@ -319,17 +352,6 @@ class RemoteTank {
         this.state.speed = this.state.speed + (this.targetState.speed - this.state.speed) * t;
         this.state.turretAngle = MathUtils.lerpAngle(this.state.turretAngle, this.targetState.turretAngle, t);
       }
-    }
-
-    // DEBUG: log interpolation stats (remove after debugging)
-    const _dbg = RemoteTank._dbgStats;
-    if (interpolated) _dbg.ok++; else _dbg.fail++;
-    const _now = performance.now();
-    if (_now - _dbg.lastLog > 3000) {
-      const total = _dbg.ok + _dbg.fail;
-      const pct = total > 0 ? ((_dbg.ok / total) * 100).toFixed(1) : 0;
-      console.log(`[RemoteTank interp] ${pct}% interpolated (${_dbg.ok}/${total}) | delay=${this.interpolationDelay.toFixed(0)}ms | snaps=${snapCount}`);
-      _dbg.ok = 0; _dbg.fail = 0; _dbg.lastLog = _now;
     }
 
     // Counter planet rotation: convert from planet-fixed coords to world coords.
@@ -406,6 +428,7 @@ class RemoteTank {
     this.fadeDuration = 5000;
     this.isFading = true;
     this.tankFadeStarted = false;
+    this._smokeFadeDone = false;
   }
 
   _setDeadMaterial() {

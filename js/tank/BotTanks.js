@@ -2593,6 +2593,7 @@ class BotTanks {
     bot.fadeDuration = 5000; // 5s linear opacity fade
     bot.isFading = true;
     bot.tankFadeStarted = false;
+    bot._smokeFadeDone = false;
   }
 
   _updateBotFade(bot) {

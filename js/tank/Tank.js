@@ -1323,6 +1323,7 @@ class Tank {
     this.fadeDuration = 5000; // 5s linear opacity fade
     this.isFading = true;
     this.tankFadeStarted = false;
+    this._smokeFadeDone = false;
   }
 
   updateFade() {

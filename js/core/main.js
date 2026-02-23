@@ -1886,15 +1886,20 @@
   ];
 
   function updateTerritoryChart() {
-    const totalClusters = planet.clusterData.length;
     const ownership = planet.clusterOwnership;
+    const captureState = planet.clusterCaptureState;
 
-    // Count clusters per faction (reuse preallocated object)
+    // Count only contestable clusters (those with capture state).
+    // Neutral territory (pole holes, portal tiles) has no capture state
+    // and must not inflate the total or the unclaimed slice.
     _territoryCounts.rust = 0;
     _territoryCounts.cobalt = 0;
     _territoryCounts.viridian = 0;
     _territoryCounts.unclaimed = 0;
-    for (let i = 0; i < totalClusters; i++) {
+    let totalClusters = 0;
+    for (let i = 0; i < planet.clusterData.length; i++) {
+      if (!captureState.has(i)) continue; // skip non-contestable
+      totalClusters++;
       const faction = ownership.get(i);
       if (faction) {
         _territoryCounts[faction]++;
@@ -1994,12 +1999,15 @@
     const cy = canvas.height / 2;
     const radius = size / 2;
 
-    // Reuse existing data calculation logic
-    const totalClusters = planet.clusterData.length;
+    // Count only contestable clusters (with capture state) — neutral territory excluded
     const ownership = planet.clusterOwnership;
+    const captureState = planet.clusterCaptureState;
+    let totalClusters = 0;
 
     const counts = { rust: 0, cobalt: 0, viridian: 0, unclaimed: 0 };
-    for (let i = 0; i < totalClusters; i++) {
+    for (let i = 0; i < planet.clusterData.length; i++) {
+      if (!captureState.has(i)) continue; // skip neutral
+      totalClusters++;
       const faction = ownership.get(i);
       if (faction) {
         counts[faction]++;

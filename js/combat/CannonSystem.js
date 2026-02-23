@@ -443,6 +443,8 @@ class CannonSystem {
       return;
     }
 
+    const cfg = this.oilPuddleConfig;
+
     // Cap active puddles — force oldest into fade-out instead of instant removal
     const fadeStart = cfg.lifetime - cfg.fadeOutDuration;
     let activeCount = 0;
@@ -458,8 +460,6 @@ class CannonSystem {
         }
       }
     }
-
-    const cfg = this.oilPuddleConfig;
 
     // Generate a unique pixelated blob texture for this puddle
     const texture = this._generateOilPuddleTexture();

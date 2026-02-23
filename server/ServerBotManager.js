@@ -1232,7 +1232,7 @@ class ServerBotManager {
 
     if (blocked) {
       // Compensate planet rotation for revert
-      const rotDelta = (dt60 / 60) * 0.001;
+      const rotDelta = (dt60 / 60) * PLANET_ROTATION_SPEED;
 
       // Try theta-only slide (keep new theta, revert phi)
       const checkSpeed = bot.speed || 0.001;
