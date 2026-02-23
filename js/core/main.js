@@ -2440,14 +2440,15 @@
 
   // Set new target values (called when cluster data updates)
   function setRingTargets(state, clusterId) {
-    // In single-player, trigger flash + advance stepped targets here (runs 1/sec from updateCapture).
-    // In multiplayer, flash + stepped are triggered by onTicCrypto for 1/sec sync with pulse + shockwave.
-    if (!isMultiplayer && clusterId === ringAnimState.lastClusterId) {
+    // Advance stepped targets so the ring tracks server tic values.
+    // In single-player this also triggers the flash (runs 1/sec from updateCapture).
+    // In multiplayer, flash is triggered separately by onTicCrypto (1/sec sync with pulse + shockwave).
+    if (clusterId === ringAnimState.lastClusterId) {
       for (const faction of ["rust", "cobalt", "viridian"]) {
         const newStepped = Math.floor(state.tics[faction]);
         if (newStepped > ringAnimState.stepped[faction]) {
           ringAnimState.stepped[faction] = newStepped;
-          ringAnimState.tickFlash[faction] = 1;
+          if (!isMultiplayer) ringAnimState.tickFlash[faction] = 1;
           ringAnimState.isDirty = true;
         } else if (newStepped < ringAnimState.stepped[faction]) {
           ringAnimState.stepped[faction] = newStepped;
