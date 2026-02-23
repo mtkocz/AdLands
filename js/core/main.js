@@ -659,6 +659,7 @@
 
   // Commander leaves the planet surface — despawn bodyguards
   fastTravel.onEnterFastTravel = () => {
+    if (window.badgeSystem) window.badgeSystem.deployed = false;
     commanderBodyguards.onCommanderLeaveSurface();
   };
 
@@ -666,6 +667,7 @@
   fastTravel.onExitFastTravel = () => {
     cryptoSystem.enabled = true;
     hasSpawnedIn = true;
+    if (window.badgeSystem) window.badgeSystem.deployed = true;
 
     // Notify bodyguards that commander is on the surface.
     // If a spawn was deferred (became commander while in fast travel), this triggers it.
@@ -894,6 +896,7 @@
     const lifespan = (Date.now() - (tank.lastSpawnTime || Date.now())) / 1000;
     titleSystem.trackDeath(lifespan);
     badgeSystem.trackDeath();
+    badgeSystem.deployed = false;
 
     // Elon global chat: reset kill streak, track death streak
     playerKillStreak = 0;
@@ -1525,6 +1528,7 @@
     setSpawnedIn: () => {
       hasSpawnedIn = true;
       cryptoSystem.enabled = true;
+      if (window.badgeSystem) window.badgeSystem.deployed = true;
     },
 
     // Planet rotation sync
@@ -1660,6 +1664,7 @@
       // so it resets player.crypto and broadcasts to all clients
       if (isProfileSwitch && window.networkManager.connected) {
         window.networkManager.sendSetProfile(profileIndex, profileData);
+        if (window.badgeSystem) window.badgeSystem.deployed = false;
 
         // Reset tank to fresh state (full HP, no smoke/fire effects)
         tank.resetForRespawn();

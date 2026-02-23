@@ -499,6 +499,9 @@ io.on("connection", (socket) => {
           player.badges = [];
           player.loadout = {};
           player.profileIndex = 0;
+          // Account change → undeployed until they choose a portal
+          player.waitingForPortal = true;
+          player._portalReason = 'deploy';
         }
       } else {
         const wasGuest = !socket.uid;
@@ -546,6 +549,10 @@ io.on("connection", (socket) => {
                 player.tankUpgrades = profileData.tankUpgrades || { armor: 0, speed: 0, fireRate: 0, damage: 0 };
                 player.unlockedSlots = profileData.unlockedSlots || ['offense-1'];
               }
+
+              // Account change → undeployed until they choose a portal
+              player.waitingForPortal = true;
+              player._portalReason = 'deploy';
 
               // Link to profile cache so roster dedup works correctly
               mainRoom.linkPlayerToProfileCache(socket.id);

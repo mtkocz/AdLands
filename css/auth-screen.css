@@ -350,7 +350,7 @@
 .auth-profile-slot {
   display: flex;
   align-items: center;
-  justify-content: space-between;
+  gap: 16px;
   padding: var(--space-md) var(--space-lg);
   background: var(--bg-panel-light);
   border: var(--border-width) solid var(--border-dark);
@@ -429,6 +429,7 @@
   display: flex;
   gap: var(--space-sm);
   align-items: center;
+  margin-left: auto;
 }
 
 .profile-slot-play {

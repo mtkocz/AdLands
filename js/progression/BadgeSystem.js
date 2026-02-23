@@ -6,6 +6,10 @@
 
 class BadgeSystem {
     constructor() {
+        // Whether the player is deployed on the battlefield (not dead, not in portal selection)
+        // Combat/territory badge tracking is gated behind this flag
+        this.deployed = false;
+
         // Badge definitions - conditions hidden from player until unlocked
         this.badges = {
             // ===== COMBAT BADGES =====
@@ -727,6 +731,7 @@ class BadgeSystem {
      * Track a kill event
      */
     trackKill(victimId) {
+        if (!this.deployed) return;
         this.progress.kills++;
         this.progress.currentSessionKills++;
         this.progress.lastKillTime = Date.now();
@@ -761,6 +766,7 @@ class BadgeSystem {
      * Track a kill streak
      */
     trackKillstreak(streak) {
+        if (!this.deployed) return;
         if (streak > this.progress.maxKillstreak) {
             this.progress.maxKillstreak = streak;
             this._checkBadgeUnlock('untouchable');
@@ -814,6 +820,7 @@ class BadgeSystem {
      * Track damage taken
      */
     trackDamageTaken(amount, currentHP, maxHP) {
+        if (!this.deployed) return;
         this.progress.damageTakenThisLife += amount;
 
         // Check close call (survived at 1 HP)
@@ -828,6 +835,7 @@ class BadgeSystem {
      * Track a kill at low HP
      */
     trackLowHPKill(hpPercent) {
+        if (!this.deployed) return;
         if (hpPercent <= 0.1) {
             this.progress.lowHPKills++;
             this._checkBadgeUnlock('phoenix');
@@ -839,6 +847,7 @@ class BadgeSystem {
      * Track hex capture
      */
     trackHexCapture() {
+        if (!this.deployed) return;
         this.progress.hexesCaptured++;
         this._checkBadgeUnlock('landlord');
         this._checkBadgeUnlock('real_estate_mogul');
@@ -850,6 +859,7 @@ class BadgeSystem {
      * Track cluster capture
      */
     trackClusterCapture() {
+        if (!this.deployed) return;
         this.progress.clustersCaptured++;
         this._checkBadgeUnlock('hostile_takeover');
         this._checkBadgeUnlock('corporate_raider');
@@ -860,6 +870,7 @@ class BadgeSystem {
      * Track reconquest (recapturing lost hex quickly)
      */
     trackReconquest() {
+        if (!this.deployed) return;
         this.progress.reconquests++;
         this._checkBadgeUnlock('reconquista');
         this._saveData();
@@ -1005,6 +1016,7 @@ class BadgeSystem {
      * Track killing a commander
      */
     trackRegicide() {
+        if (!this.deployed) return;
         this.progress.regicideKills = (this.progress.regicideKills || 0) + 1;
         this._checkBadgeUnlock('regicide');
         this._saveData();

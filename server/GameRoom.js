@@ -1674,7 +1674,7 @@ class GameRoom {
 
   handleInput(socketId, input) {
     const player = this.players.get(socketId);
-    if (!player || player.isDead || player.waitingForPortal) return;
+    if (!player || this._isUndeployed(player)) return;
 
     // Validate and apply input (don't trust client positions, only keys)
     if (input.keys) {
@@ -1703,7 +1703,7 @@ class GameRoom {
 
   handleFire(socketId, power, fireTurretAngle) {
     const player = this.players.get(socketId);
-    if (!player || player.isDead || player.waitingForPortal) return;
+    if (!player || this._isUndeployed(player)) return;
 
     // Enforce server-side cooldown (2 seconds between shots)
     const now = Date.now();
@@ -1835,7 +1835,7 @@ class GameRoom {
 
   handleEnterFastTravel(socketId) {
     const player = this.players.get(socketId);
-    if (!player || player.isDead || player.waitingForPortal) return;
+    if (!player || this._isUndeployed(player)) return;
 
     // Economy: check if player can afford fast travel
     if (player.crypto < this.costs.fastTravel) {
@@ -1989,8 +1989,8 @@ class GameRoom {
     const _t0 = Date.now();
     // 1. Apply inputs and simulate all player tanks
     for (const [id, player] of this.players) {
-      if (player.waitingForPortal || player.isDead) {
-        // Dead/waiting players still need planet rotation countered
+      if (this._isUndeployed(player)) {
+        // Undeployed players still need planet rotation countered
         // so they stay fixed on the surface (client may still render them)
         const dt60 = dt * 60;
         player.theta -= (PLANET_ROTATION_SPEED * dt60) / 60;
@@ -2052,7 +2052,7 @@ class GameRoom {
       if (evt.proximity) {
         // Proximity chat — only send to nearby players
         for (const [socketId, player] of this.players) {
-          if (player.isDead || player.waitingForPortal) continue;
+          if (this._isUndeployed(player)) continue;
           let dTheta = evt.botTheta - player.theta;
           while (dTheta > Math.PI) dTheta -= Math.PI * 2;
           while (dTheta < -Math.PI) dTheta += Math.PI * 2;
@@ -2189,7 +2189,7 @@ class GameRoom {
     // --- Player-Player collisions (brute force, max ~1225 pairs) ---
     const playerArray = [];
     for (const [id, p] of this.players) {
-      if (!p.isDead && !p.waitingForPortal) playerArray.push(p);
+      if (!this._isUndeployed(p)) playerArray.push(p);
     }
     for (let i = 0; i < playerArray.length; i++) {
       for (let j = i + 1; j < playerArray.length; j++) {
@@ -2397,7 +2397,7 @@ class GameRoom {
 
         // Check for hits against all players
         for (const [id, player] of this.players) {
-          if (id === p.ownerId || player.isDead || player.waitingForPortal) continue;
+          if (id === p.ownerId || this._isUndeployed(player)) continue;
 
           // No friendly fire — skip same-faction targets
           if (player.faction === p.ownerFaction) continue;
@@ -2662,7 +2662,7 @@ class GameRoom {
 
   handleSelfDamage(socketId, amount) {
     const player = this.players.get(socketId);
-    if (!player || player.isDead || player.waitingForPortal) return;
+    if (!player || this._isUndeployed(player)) return;
 
     const dmg = Math.min(Math.max(1, amount), player.hp);
     player.hp -= dmg;
@@ -2706,7 +2706,7 @@ class GameRoom {
 
   handleTip(socketId, data) {
     const tipper = this.players.get(socketId);
-    if (!tipper || tipper.isDead || tipper.waitingForPortal) return;
+    if (!tipper || this._isUndeployed(tipper)) return;
 
     // Validate tipper is the commander of their faction
     const commander = this.commanders[tipper.faction];
@@ -2732,6 +2732,12 @@ class GameRoom {
     const target = this.players.get(targetId);
     if (!target) {
       this._emitToSocket(socketId, "tip-failed", { reason: "Player not found" });
+      return;
+    }
+
+    // Cannot tip undeployed players (dead or in portal selection)
+    if (this._isUndeployed(target)) {
+      this._emitToSocket(socketId, "tip-failed", { reason: "Player is not deployed" });
       return;
     }
 
@@ -2864,7 +2870,7 @@ class GameRoom {
     const clusterTankCounts = new Map();
 
     for (const [id, player] of this.players) {
-      if (player.isDead || player.waitingForPortal) continue;
+      if (this._isUndeployed(player)) continue;
 
       // O(1) cluster ID lookup from precomputed grid
       const rawClusterId = this.worldGen.getClusterIdAt(player.theta + this.planetRotation, player.phi);
@@ -3012,7 +3018,7 @@ class GameRoom {
     if (this.captureSecondCounter >= this.tickRate / 2) {
       this.captureSecondCounter = 0;
       for (const [id, player] of this.players) {
-        if (player.isDead || player.waitingForPortal) continue;
+        if (this._isUndeployed(player)) continue;
         if (player.currentClusterId == null) continue;
 
         const state = this.clusterCaptureState.get(player.currentClusterId);
@@ -3082,7 +3088,7 @@ class GameRoom {
           let capturerName = change.owner.charAt(0).toUpperCase() + change.owner.slice(1);
           let capturerSocketId = null;
           for (const [sid, player] of this.players) {
-            if (player.faction === change.owner && !player.isDead && !player.waitingForPortal) {
+            if (player.faction === change.owner && !this._isUndeployed(player)) {
               capturerName = player.name;
               capturerSocketId = sid;
               break;
@@ -3102,7 +3108,7 @@ class GameRoom {
       // Group players by cluster
       const clusterPlayers = new Map();
       for (const [id, player] of this.players) {
-        if (player.isDead || player.waitingForPortal) continue;
+        if (this._isUndeployed(player)) continue;
         if (player.currentClusterId == null) continue;
         if (!clusterPlayers.has(player.currentClusterId)) {
           clusterPlayers.set(player.currentClusterId, []);
@@ -3178,7 +3184,7 @@ class GameRoom {
 
     // Award to each alive player and emit event (include cluster IDs for client visuals)
     for (const [id, player] of this.players) {
-      if (player.isDead || player.waitingForPortal) continue;
+      if (this._isUndeployed(player)) continue;
       if (!player.uid) continue; // Guests don't earn crypto
 
       const amount = factionCrypto[player.faction];
@@ -3529,6 +3535,16 @@ class GameRoom {
   }
 
   /**
+   * Check if a player is "undeployed" — not active on the battlefield.
+   * Undeployed players cannot be killed, earn/spend crypto (except shop),
+   * earn badges, or contribute to territory capture.
+   * Covers: initial login, fast travel, profile/account switch, death.
+   */
+  _isUndeployed(player) {
+    return player.isDead || player.waitingForPortal;
+  }
+
+  /**
    * Recompute faction ranks for all factions and update commanders.
    * When profileCacheReady, ranks include ALL profiles (online + offline).
    * Falls back to connected-only ranking if Firestore cache isn't loaded.
@@ -3760,7 +3776,7 @@ class GameRoom {
 
         // Only spawn bodyguards if new commander is on the planet surface
         const player = this.players.get(newId);
-        if (player && !player.isDead && !player.waitingForPortal) {
+        if (player && !this._isUndeployed(player)) {
           this.bodyguardManager.scheduleRespawn(faction, newId, 4);
         }
 
@@ -3787,7 +3803,7 @@ class GameRoom {
       } else {
         // Same commander, same acting status — handle bodyguard respawn
         const player = this.players.get(newId);
-        if (player && !player.isDead && !player.waitingForPortal) {
+        if (player && !this._isUndeployed(player)) {
           if (!this.bodyguardManager.hasPendingRespawn(faction)) {
             const hasDead = this.bodyguardManager.hasDeadBodyguards(faction);
             const hasBg = this.bodyguardManager.hasBodyguards(faction);
@@ -4196,7 +4212,7 @@ class GameRoom {
     const tankPositions = [];
     for (const [sid, p] of this.players) {
       if (sid === excludeSocketId) continue;
-      if (p.isDead || p.waitingForPortal) continue;
+      if (this._isUndeployed(p)) continue;
       tankPositions.push({ theta: p.theta, phi: p.phi });
     }
 
