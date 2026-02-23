@@ -85,6 +85,11 @@
     let lastHUDUpdateTime = 0;
     const HUD_UPDATE_INTERVAL = 250; // 4x/sec
     let lastPlayerClusterId = undefined;
+
+    // Server-authoritative cluster ID for ring display.
+    // Set by capture-progress and tic-crypto events. Prevents mismatch between
+    // the server's grid-based cluster lookup and the client's nearest-neighbor detection.
+    let serverClusterId = undefined;
     mp.onFrameUpdate = (deltaTime, camera, frustum, lodOptions) => {
       if (!net.isMultiplayer) return;
 
@@ -117,7 +122,8 @@
       const hasSpawned = mp.getHasSpawnedIn?.();
       if (now - lastHUDUpdateTime >= HUD_UPDATE_INTERVAL && hasSpawned) {
         lastHUDUpdateTime = now;
-        const clusterId = tank.getCurrentClusterId(planet);
+        // Use server-authoritative cluster when available (prevents grid vs nearest-neighbor mismatch)
+        const clusterId = serverClusterId !== undefined ? serverClusterId : tank.getCurrentClusterId(planet);
 
         if (clusterId !== undefined) {
           const state = planet.clusterCaptureState.get(clusterId);
@@ -1308,6 +1314,7 @@
     net.onTicCrypto = (data) => {
       // Update capture state from payload BEFORE flash (avoids race with capture-progress)
       if (data && data.id) {
+        serverClusterId = data.id; // Keep ring in sync with tic-crypto cluster
         const capState = planet.clusterCaptureState.get(data.id);
         if (capState) {
           capState.tics.rust = data.t.r;
@@ -1322,10 +1329,12 @@
       // Visual effects require cryptoSystem
       if (!window.cryptoSystem) return;
       tank.group.getWorldPosition(_ticCryptoPos);
-      window.cryptoSystem.awardTicCrypto(_ticCryptoPos);
+      // Only award crypto if server confirmed it (guests get crypto: 0)
+      if (data.crypto > 0) {
+        window.cryptoSystem.awardTicCrypto(_ticCryptoPos);
+      }
       if (mp.capturePulse) {
-        const clusterId = tank.getCurrentClusterId(planet);
-        mp.capturePulse.emit(_ticCryptoPos, tank.faction, clusterId);
+        mp.capturePulse.emit(_ticCryptoPos, tank.faction, serverClusterId);
       }
     };
 
@@ -1390,10 +1399,13 @@
         state.owner = data.owner;
       }
 
-      // Refresh ring HUD if this is the player's current cluster
+      // Server sends capture-progress only for the player's assigned cluster,
+      // so it's always the right one — track it as the authoritative cluster ID
+      serverClusterId = data.clusterId;
+
+      // Always refresh ring HUD (no client-side cluster check — server is authoritative)
       const hasSpawned = mp.getHasSpawnedIn?.();
-      const playerCluster = hasSpawned ? tank.getCurrentClusterId(planet) : undefined;
-      if (data.clusterId === playerCluster && mp.updateTugOfWarUI) {
+      if (hasSpawned && mp.updateTugOfWarUI) {
         const counts = { rust: 0, cobalt: 0, viridian: 0 };
         if (!tank.isDead) counts[tank.faction]++;
         for (const [, rt] of remoteTanks) {

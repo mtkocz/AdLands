@@ -501,8 +501,59 @@ io.on("connection", (socket) => {
           player.profileIndex = 0;
         }
       } else {
+        const wasGuest = !socket.uid;
         socket.uid = decoded.uid;
         socket.isGuest = false;
+
+        // If player was a guest and is now authenticated, load their profile
+        // and upgrade the GameRoom player so they appear correctly in the roster
+        if (wasGuest) {
+          try {
+            const db = getFirestore();
+            const accountDoc = await db.collection("accounts").doc(decoded.uid).get();
+            let profileIndex = 0;
+            let profileData = null;
+            if (accountDoc.exists) {
+              const account = accountDoc.data();
+              profileIndex = account.activeProfileIndex || 0;
+              const profileDoc = await db
+                .collection("accounts").doc(decoded.uid)
+                .collection("profiles").doc(String(profileIndex))
+                .get();
+              profileData = profileDoc.exists ? profileDoc.data() : null;
+            }
+            socket.profileData = profileData;
+            socket.profileIndex = profileIndex;
+
+            // Update the GameRoom player object
+            const player = mainRoom.players.get(socket.id);
+            if (player) {
+              player.uid = decoded.uid;
+              player.profileIndex = profileIndex;
+              player.isAuthenticated = true;
+              player.isGuest = false;
+              if (profileData) {
+                player.name = profileData.name || player.name;
+                player.faction = profileData.faction || player.faction;
+                player.level = profileData.level || 1;
+                player.totalCrypto = profileData.totalCrypto || 0;
+                player.crypto = profileData.totalCrypto || 0;
+                player.badges = profileData.unlockedBadges?.map(b => b.id) || [];
+                player.title = profileData.titleStats?.currentTitle || "Contractor";
+                player.profilePicture = profileData.profilePicture || null;
+                player.avatarColor = profileData.profilePicture || null;
+                player.loadout = profileData.loadout || {};
+                player.tankUpgrades = profileData.tankUpgrades || { armor: 0, speed: 0, fireRate: 0, damage: 0 };
+                player.unlockedSlots = profileData.unlockedSlots || ['offense-1'];
+              }
+
+              // Link to profile cache so roster dedup works correctly
+              mainRoom.linkPlayerToProfileCache(socket.id);
+            }
+          } catch (err) {
+            console.warn(`[Auth] Failed to load profile on late auth for ${decoded.uid}:`, err.message);
+          }
+        }
       }
     } else {
       console.warn(`[Auth] Token refresh failed for ${socket.id}`);

@@ -2449,12 +2449,14 @@
       for (const faction of ["rust", "cobalt", "viridian"]) {
         const newStepped = Math.floor(state.tics[faction]);
         if (newStepped > ringAnimState.stepped[faction]) {
-          if (!isMultiplayer) {
+          if (!isMultiplayer || faction !== tank.faction) {
+            // Single-player: all factions advance + flash
+            // Multiplayer non-player factions: advance immediately (no sync needed)
             ringAnimState.stepped[faction] = newStepped;
-            ringAnimState.tickFlash[faction] = 1;
+            if (!isMultiplayer) ringAnimState.tickFlash[faction] = 1;
             ringAnimState.isDirty = true;
           }
-          // In multiplayer, upward steps are deferred to triggerTickFlash
+          // Player's own faction in MP: deferred to triggerTickFlash (synced with crypto/pulse)
         } else if (newStepped < ringAnimState.stepped[faction]) {
           ringAnimState.stepped[faction] = newStepped;
           ringAnimState.isDirty = true;
