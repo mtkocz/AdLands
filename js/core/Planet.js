@@ -3839,34 +3839,14 @@ class Planet {
     roughness = 0.8,
     metalness = 0.1,
   ) {
-    // Apply levels adjustment (pixel art filter is pre-baked server-side)
+    // Apply levels adjustment then pixel art filter (downscale, palette, dither, upscale)
     let finalTexture = texture;
     if (texture.image) {
       finalTexture = this._applyLevelsAdjustment(
         texture.image,
         adjustment,
       );
-
-      // Upscale small textures so pixel art blocks are visible in PBR shader.
-      // Server bakes pixel art at 128px; canvas nearest-neighbor scales up to 512px,
-      // making each texel a crisp 4x4 block (same as old _applyPixelArtFilter Step 4).
-      const PIXEL_ART_MIN = 512;
-      const src = finalTexture.image;
-      if (src && src.width < PIXEL_ART_MIN) {
-        const scaleFactor = Math.ceil(PIXEL_ART_MIN / src.width);
-        const upCanvas = document.createElement("canvas");
-        upCanvas.width = src.width * scaleFactor;
-        upCanvas.height = src.height * scaleFactor;
-        const upCtx = upCanvas.getContext("2d");
-        upCtx.imageSmoothingEnabled = false;
-        upCtx.drawImage(src, 0, 0, upCanvas.width, upCanvas.height);
-        finalTexture.dispose();
-        finalTexture = new THREE.CanvasTexture(upCanvas);
-        finalTexture.generateMipmaps = false;
-        finalTexture.minFilter = THREE.NearestFilter;
-        finalTexture.magFilter = THREE.NearestFilter;
-      }
-
+      finalTexture = this._applyPixelArtFilter(finalTexture.image);
       finalTexture.wrapS = texture.wrapS;
       finalTexture.wrapT = texture.wrapT;
     }
@@ -4093,15 +4073,18 @@ class Planet {
 
     downCtx.putImageData(imageData, 0, 0);
 
-    // Step 4: Scale back up to original size with nearest-neighbor (crisp pixels)
+    // Step 4: Scale up to at least 512px with nearest-neighbor (crisp pixel blocks)
+    const upWidth = Math.max(srcWidth, 512);
+    const upHeight = Math.max(srcHeight, 512);
     const finalCanvas = document.createElement("canvas");
-    finalCanvas.width = srcWidth;
-    finalCanvas.height = srcHeight;
+    finalCanvas.width = upWidth;
+    finalCanvas.height = upHeight;
     const finalCtx = finalCanvas.getContext("2d");
     finalCtx.imageSmoothingEnabled = false;
-    finalCtx.drawImage(downCanvas, 0, 0, srcWidth, srcHeight);
+    finalCtx.drawImage(downCanvas, 0, 0, upWidth, upHeight);
 
     const processedTexture = new THREE.CanvasTexture(finalCanvas);
+    processedTexture.generateMipmaps = false;
     processedTexture.magFilter = THREE.NearestFilter;
     processedTexture.minFilter = THREE.NearestFilter;
     processedTexture.needsUpdate = true;
