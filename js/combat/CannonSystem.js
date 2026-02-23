@@ -139,7 +139,7 @@ class CannonSystem {
     this.oilPuddles = [];
     this.oilPuddleConfig = {
       color: 0x0a0a0a, // Very dark (almost black) oil
-      maxSize: 6, // Final size after spreading
+      maxSize: 12, // Final size after spreading
       spreadDuration: 4, // Time to spread to full size (seconds) - slow ooze
       lifetime: 30, // Stay visible for 30 seconds
       fadeOutDuration: 5, // Fade out over 5 seconds
