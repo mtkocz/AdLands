@@ -1834,13 +1834,15 @@ class ServerBotManager {
   _getValidSpawnPosition() {
     const PHI_MIN = 0.35;
     const PHI_MAX = Math.PI - 0.35;
+    const planetRotation = this._planetRotation || 0;
 
-    for (let attempt = 0; attempt < 20; attempt++) {
+    for (let attempt = 0; attempt < 50; attempt++) {
       const theta = Math.random() * Math.PI * 2;
       const phi = PHI_MIN + Math.random() * (PHI_MAX - PHI_MIN);
+      const heading = Math.random() * Math.PI * 2;
 
-      // Check not on elevated terrain or in polar hole
-      if (!this._isPositionBlocked(theta, phi)) {
+      // Use the full 5-probe box check so bots don't spawn overlapping terrain
+      if (!this._isTerrainBlockedAt(theta, phi, heading, 1, planetRotation)) {
         return { theta, phi };
       }
     }

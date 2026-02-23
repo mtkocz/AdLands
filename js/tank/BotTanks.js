@@ -443,7 +443,7 @@ class BotTanks {
     });
 
     // LOD dot assets (billboarded planes with shader-based outline)
-    const dotSize = 11.25; // Visual size (50% larger than original 7.5)
+    const dotSize = 8.44; // Visual size (75% of 11.25, shrunk 25% for orbital view)
     this._lodDotRadius = dotSize / 2; // For commander outline and raycasting
     this._lodDotGeometry = new THREE.PlaneGeometry(dotSize, dotSize);
     // 3D torus ring for commander outline
