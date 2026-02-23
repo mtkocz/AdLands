@@ -5,24 +5,25 @@
  */
 
 const { Router } = require("express");
-const fs = require("fs");
 const fsp = require("fs").promises;
 const path = require("path");
 let applyPixelArtFilter;
 try { applyPixelArtFilter = require("./pixelArtFilter").applyPixelArtFilter; } catch (e) { /* optional — needs sharp */ }
 
 /** Find an existing file on disk matching a prefix. */
-function findExistingFile(texDir, prefix) {
+async function findExistingFile(texDir, prefix) {
   try {
-    const files = fs.readdirSync(texDir);
+    const files = await fsp.readdir(texDir);
     return files.find(f => f.startsWith(prefix)) || null;
   } catch (e) { return null; }
 }
 
 /** Append file mtime as cache-buster query param. */
-function withMtime(urlPath, filePath) {
-  try { return urlPath + "?v=" + Math.floor(fs.statSync(filePath).mtimeMs); }
-  catch (e) { return urlPath; }
+async function withMtime(urlPath, filePath) {
+  try {
+    const stat = await fsp.stat(filePath);
+    return urlPath + "?v=" + Math.floor(stat.mtimeMs);
+  } catch (e) { return urlPath; }
 }
 
 /**
@@ -35,7 +36,7 @@ function withMtime(urlPath, filePath) {
  */
 async function extractSlotSponsorImages(store, gameDir, filePrefix) {
   const texDir = path.join(gameDir, "sponsor-textures");
-  if (!fs.existsSync(texDir)) await fsp.mkdir(texDir, { recursive: true });
+  await fsp.mkdir(texDir, { recursive: true });
 
   const urlMap = {};
   const sponsors = store.getAll();
@@ -51,36 +52,36 @@ async function extractSlotSponsorImages(store, gameDir, filePrefix) {
           const baked = await applyPixelArtFilter(raw);
           const pngPath = path.join(texDir, `${filePrefix}${i}.png`);
           await fsp.writeFile(pngPath, baked);
-          urlMap[i] = { patternUrl: withMtime(`/sponsor-textures/${filePrefix}${i}.png`, pngPath) };
+          urlMap[i] = { patternUrl: await withMtime(`/sponsor-textures/${filePrefix}${i}.png`, pngPath) };
         } else {
           const ext = match[1] === "jpeg" ? "jpg" : match[1];
           const filePath = path.join(texDir, `${filePrefix}${i}.${ext}`);
           await fsp.writeFile(filePath, raw);
-          urlMap[i] = { patternUrl: withMtime(`/sponsor-textures/${filePrefix}${i}.${ext}`, filePath) };
+          urlMap[i] = { patternUrl: await withMtime(`/sponsor-textures/${filePrefix}${i}.${ext}`, filePath) };
         }
       }
     } else {
       // No base64 — find existing file on disk, re-bake if oversized
-      const existing = findExistingFile(texDir, `${filePrefix}${i}.`);
+      const existing = await findExistingFile(texDir, `${filePrefix}${i}.`);
       if (existing) {
         const filePath = path.join(texDir, existing);
         if (applyPixelArtFilter) {
           try {
-            const stat = fs.statSync(filePath);
+            const stat = await fsp.stat(filePath);
             if (stat.size > 5000) {
-              const raw = fs.readFileSync(filePath);
+              const raw = await fsp.readFile(filePath);
               const baked = await applyPixelArtFilter(raw);
               const pngPath = path.join(texDir, `${filePrefix}${i}.png`);
               await fsp.writeFile(pngPath, baked);
-              urlMap[i] = { patternUrl: withMtime(`/sponsor-textures/${filePrefix}${i}.png`, pngPath) };
+              urlMap[i] = { patternUrl: await withMtime(`/sponsor-textures/${filePrefix}${i}.png`, pngPath) };
             } else {
-              urlMap[i] = { patternUrl: withMtime(`/sponsor-textures/${existing}`, filePath) };
+              urlMap[i] = { patternUrl: await withMtime(`/sponsor-textures/${existing}`, filePath) };
             }
           } catch (e) {
-            urlMap[i] = { patternUrl: withMtime(`/sponsor-textures/${existing}`, filePath) };
+            urlMap[i] = { patternUrl: await withMtime(`/sponsor-textures/${existing}`, filePath) };
           }
         } else {
-          urlMap[i] = { patternUrl: withMtime(`/sponsor-textures/${existing}`, filePath) };
+          urlMap[i] = { patternUrl: await withMtime(`/sponsor-textures/${existing}`, filePath) };
         }
       }
     }

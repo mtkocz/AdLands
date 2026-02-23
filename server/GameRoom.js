@@ -2237,7 +2237,7 @@ class GameRoom {
       console.warn(`[Tick] avg=${(this._tickSum/n).toFixed(0)}ms max=${this._tickMax}ms | players=${(p[0]/n).toFixed(0)} guards=${(p[1]/n).toFixed(0)} bots=${(p[2]/n).toFixed(0)} collide=${(p[3]/n).toFixed(0)} proj=${(p[4]/n).toFixed(0)} broadcast=${(p[5]/n).toFixed(0)} | n=${this.botBridge.botCount}bots ${this.players.size}players | payload=${avgBytes}B ${avgEntities}ents ${kbps}KB/s`);
       this._tickSum = 0; this._tickMax = 0; this._tickCount = 0;
       this._phaseSum = [0,0,0,0,0,0];
-      this._payloadByteSum = 0; this._payloadEntitySum = 0; this._payloadCount = 0;
+      this._payloadByteSum = 0; this._payloadEntitySum = 0; this._payloadCount = 0; this._payloadEmitCount = 0;
     }
   }
 
@@ -2409,12 +2409,13 @@ class GameRoom {
   }
 
   _updateProjectiles(dt) {
-    for (let i = this.projectiles.length - 1; i >= 0; i--) {
-      const p = this.projectiles[i];
+    const projs = this.projectiles;
+    for (let i = projs.length - 1; i >= 0; i--) {
+      const p = projs[i];
       p.age += dt;
 
       if (p.age >= p.maxAge) {
-        this.projectiles.splice(i, 1);
+        projs[i] = projs[projs.length - 1]; projs.pop();
         continue;
       }
 
@@ -2429,7 +2430,7 @@ class GameRoom {
       if (p.maxDistanceRad) {
         const distTraveled = sphericalDistance(p.startTheta, p.startPhi, p.theta, p.phi);
         if (distTraveled > p.maxDistanceRad) {
-          this.projectiles.splice(i, 1);
+          projs[i] = projs[projs.length - 1]; projs.pop();
           continue;
         }
       }
@@ -2599,7 +2600,7 @@ class GameRoom {
           }
 
           // Remove projectile on hit
-          this.projectiles.splice(i, 1);
+          projs[i] = projs[projs.length - 1]; projs.pop();
           hitPlayer = true;
           break;
         }
@@ -2654,7 +2655,7 @@ class GameRoom {
             }
           }
 
-          this.projectiles.splice(i, 1);
+          projs[i] = projs[projs.length - 1]; projs.pop();
           hitPlayer = true;
           break;
         }
@@ -2687,7 +2688,7 @@ class GameRoom {
             // No crypto award for killing bodyguards
           }
 
-          this.projectiles.splice(i, 1);
+          projs[i] = projs[projs.length - 1]; projs.pop();
           hitPlayer = true;
           break;
         }
@@ -3465,14 +3466,18 @@ class GameRoom {
 
       statePayload.players = filtered;
 
-      // Track payload size for bandwidth monitoring
+      // Track payload size for bandwidth monitoring (sample every 50th emit to avoid expensive stringify)
       if (!this._payloadByteSum) this._payloadByteSum = 0;
       if (!this._payloadEntitySum) this._payloadEntitySum = 0;
       if (!this._payloadCount) this._payloadCount = 0;
+      if (!this._payloadEmitCount) this._payloadEmitCount = 0;
+      this._payloadEmitCount++;
       const entityCount = Object.keys(filtered).length;
-      this._payloadByteSum += JSON.stringify(statePayload).length;
-      this._payloadEntitySum += entityCount;
-      this._payloadCount++;
+      if (this._payloadEmitCount % 50 === 0) {
+        this._payloadByteSum += JSON.stringify(statePayload).length;
+        this._payloadEntitySum += entityCount;
+        this._payloadCount++;
+      }
 
       const socket = this.io.sockets.sockets.get(socketId);
       if (socket) socket.volatile.emit("state", statePayload);

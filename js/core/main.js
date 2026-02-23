@@ -978,7 +978,7 @@
     }
   };
 
-  // Bot fade complete callback - clean up effects when fully faded
+  // Bot fade complete callback - clean up effects and respawn when fully faded
   botTanks.onBotFadeComplete = (bot) => {
     if (bot.playerId) {
       // Remove damage effects
@@ -988,8 +988,9 @@
     if (bot.lodDot && window.tankLODInteraction) {
       window.tankLODInteraction.unregisterDot(bot.lodDot);
     }
-    // Hide the bot (keep in array for potential respawn)
+    // Hide the bot and respawn at a random portal
     bot.group.visible = false;
+    botTanks.respawnBot(bot);
   };
 
   // Elon global chat kill/death tracking
@@ -1057,10 +1058,7 @@
       tuskCommentary.onCommanderDeath(victimName, bot.faction);
     }
 
-    // Schedule bot respawn at random portal (5 seconds, same as player)
-    setTimeout(() => {
-      botTanks.respawnBot(bot);
-    }, 5000);
+    // Respawn is triggered by onBotFadeComplete (after full fade-out)
   };
 
   // Bot respawn callback - recreate tag

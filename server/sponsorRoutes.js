@@ -6,7 +6,6 @@
 
 const { Router } = require("express");
 const crypto = require("crypto");
-const fs = require("fs");
 const fsp = require("fs").promises;
 const path = require("path");
 let applyPixelArtFilter;
@@ -18,9 +17,9 @@ const { sendViaResend } = require("./inquiryRoutes");
  * Find an existing file on disk matching a prefix (e.g. "sponsor_123." or "sponsor_123_logo.").
  * Returns the filename if found, null otherwise.
  */
-function findExistingFile(texDir, prefix) {
+async function findExistingFile(texDir, prefix) {
   try {
-    const files = fs.readdirSync(texDir);
+    const files = await fsp.readdir(texDir);
     return files.find(f => f.startsWith(prefix)) || null;
   } catch (e) {
     return null;
@@ -36,10 +35,10 @@ async function extractSponsorImage(sponsor, texDir) {
   const urls = {};
 
   /** Append file mtime as cache-buster query param so browsers re-fetch after re-baking. */
-  function withMtime(urlPath, filePath) {
+  async function withMtime(urlPath, filePath) {
     try {
-      const mt = fs.statSync(filePath).mtimeMs;
-      return urlPath + "?v=" + Math.floor(mt);
+      const stat = await fsp.stat(filePath);
+      return urlPath + "?v=" + Math.floor(stat.mtimeMs);
     } catch (e) {
       return urlPath;
     }
@@ -56,35 +55,35 @@ async function extractSponsorImage(sponsor, texDir) {
         const baked = await applyPixelArtFilter(raw);
         const pngPath = path.join(texDir, `${sponsor.id}.png`);
         await fsp.writeFile(pngPath, baked);
-        urls.patternUrl = withMtime(`/sponsor-textures/${sponsor.id}.png`, pngPath);
+        urls.patternUrl = await withMtime(`/sponsor-textures/${sponsor.id}.png`, pngPath);
       } else {
         await fsp.writeFile(filePath, raw);
-        urls.patternUrl = withMtime(`/sponsor-textures/${sponsor.id}.${ext}`, filePath);
+        urls.patternUrl = await withMtime(`/sponsor-textures/${sponsor.id}.${ext}`, filePath);
       }
     }
   } else {
     // No base64 data — check for previously extracted file on disk
-    const existing = findExistingFile(texDir, sponsor.id + ".");
+    const existing = await findExistingFile(texDir, sponsor.id + ".");
     if (existing && !existing.includes("_logo")) {
       const filePath = path.join(texDir, existing);
       // Re-bake oversized files through pixel art filter on startup
       if (applyPixelArtFilter) {
         try {
-          const stat = fs.statSync(filePath);
+          const stat = await fsp.stat(filePath);
           if (stat.size > 5000) {
-            const raw = fs.readFileSync(filePath);
+            const raw = await fsp.readFile(filePath);
             const baked = await applyPixelArtFilter(raw);
             const pngPath = path.join(texDir, `${sponsor.id}.png`);
             await fsp.writeFile(pngPath, baked);
-            urls.patternUrl = withMtime(`/sponsor-textures/${sponsor.id}.png`, pngPath);
+            urls.patternUrl = await withMtime(`/sponsor-textures/${sponsor.id}.png`, pngPath);
           } else {
-            urls.patternUrl = withMtime(`/sponsor-textures/${existing}`, filePath);
+            urls.patternUrl = await withMtime(`/sponsor-textures/${existing}`, filePath);
           }
         } catch (e) {
-          urls.patternUrl = withMtime(`/sponsor-textures/${existing}`, filePath);
+          urls.patternUrl = await withMtime(`/sponsor-textures/${existing}`, filePath);
         }
       } else {
-        urls.patternUrl = withMtime(`/sponsor-textures/${existing}`, filePath);
+        urls.patternUrl = await withMtime(`/sponsor-textures/${existing}`, filePath);
       }
     }
   }
@@ -104,13 +103,13 @@ async function extractSponsorImage(sponsor, texDir) {
       } else {
         await fsp.writeFile(pngPath, raw);
       }
-      urls.logoUrl = withMtime(`/sponsor-textures/${sponsor.id}_logo.png`, pngPath);
+      urls.logoUrl = await withMtime(`/sponsor-textures/${sponsor.id}_logo.png`, pngPath);
     }
   } else {
     // No base64 data — check for previously extracted logo file on disk
-    const existing = findExistingFile(texDir, sponsor.id + "_logo.");
+    const existing = await findExistingFile(texDir, sponsor.id + "_logo.");
     if (existing) {
-      urls.logoUrl = withMtime(`/sponsor-textures/${existing}`, path.join(texDir, existing));
+      urls.logoUrl = await withMtime(`/sponsor-textures/${existing}`, path.join(texDir, existing));
     }
   }
   return urls;
@@ -123,7 +122,7 @@ async function extractSponsorImage(sponsor, texDir) {
  */
 async function extractSponsorImages(sponsorStore, gameDir, onlyId) {
   const texDir = path.join(gameDir, "sponsor-textures");
-  if (!fs.existsSync(texDir)) await fsp.mkdir(texDir, { recursive: true });
+  await fsp.mkdir(texDir, { recursive: true });
 
   const urlMap = {};
   const sponsors = onlyId
@@ -149,7 +148,7 @@ async function extractSponsorImages(sponsorStore, gameDir, onlyId) {
         if (!urlPath) continue;
         const filePath = path.join(gameDir, urlPath.split("?")[0]);
         try {
-          const buf = fs.readFileSync(filePath);
+          const buf = await fsp.readFile(filePath);
           const hash = crypto.createHash("md5").update(buf).digest("hex");
           if (hashToUrl.has(hash)) {
             urls[urlKey] = hashToUrl.get(hash);
@@ -221,7 +220,7 @@ function createSponsorRoutes(sponsorStore, gameRoom, { imageUrls, contentHashes,
           const urlPath = urls[urlKey];
           if (!urlPath) continue;
           try {
-            const buf = fs.readFileSync(path.join(gameDir, urlPath.split("?")[0]));
+            const buf = await fsp.readFile(path.join(gameDir, urlPath.split("?")[0]));
             const hash = crypto.createHash("md5").update(buf).digest("hex");
             const existing = _contentHashes[urlKey].get(hash);
             if (existing) {
