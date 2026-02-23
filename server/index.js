@@ -395,7 +395,7 @@ io.on("connection", (socket) => {
     if (!data || typeof data.name !== "string") return;
     const validFactions = ["rust", "cobalt", "viridian"];
     if (!validFactions.includes(data.faction)) return;
-    mainRoom.handleSetIdentity(socket.id, data.name, data.faction);
+    mainRoom.handleSetIdentity(socket.id, data.name, data.faction, data.profileIndex);
   });
 
   // ---- Faction Change ----
@@ -481,6 +481,8 @@ io.on("connection", (socket) => {
       const isAnonymous = decoded.firebase?.sign_in_provider === "anonymous";
       if (isAnonymous) {
         // Switched to guest mid-session — null UID so player becomes independent
+        // Mark old profile cache entry offline BEFORE clearing uid
+        mainRoom.unlinkPlayerFromProfileCache(socket.id);
         socket.uid = null;
         socket.isGuest = true;
         socket.profileData = null;
@@ -505,12 +507,19 @@ io.on("connection", (socket) => {
         }
       } else {
         const wasGuest = !socket.uid;
+        const uidChanged = socket.uid && socket.uid !== decoded.uid;
+
+        // Unlink old profile cache entry if switching accounts
+        if (uidChanged) {
+          mainRoom.unlinkPlayerFromProfileCache(socket.id);
+        }
+
         socket.uid = decoded.uid;
         socket.isGuest = false;
 
-        // If player was a guest and is now authenticated, load their profile
+        // If player was a guest (or switched accounts), load their profile
         // and upgrade the GameRoom player so they appear correctly in the roster
-        if (wasGuest) {
+        if (wasGuest || uidChanged) {
           try {
             const db = getFirestore();
             const accountDoc = await db.collection("accounts").doc(decoded.uid).get();
@@ -592,7 +601,7 @@ io.on("connection", (socket) => {
     }
 
     // Reset player in GameRoom with new profile data
-    mainRoom.handleProfileSwitch(socket.id, profileData);
+    mainRoom.handleProfileSwitch(socket.id, profileIndex, profileData);
   });
 
   // ---- Territory Claim (server-authoritative, persists to Firestore) ----

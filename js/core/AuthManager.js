@@ -33,6 +33,13 @@ class AuthManager {
         // Get initial token
         user.getIdToken().then((token) => {
           this.idToken = token;
+          // Send token to server immediately so it can upgrade guest → authenticated.
+          // Without this, if the user authenticates after the initial 10s token poll,
+          // the server never learns they're authenticated and creates a duplicate
+          // leaderboard entry (guest + offline Firestore cache entry).
+          if (window.networkManager && window.networkManager.connected) {
+            window.networkManager.sendRefreshToken(token);
+          }
           if (this.onAuthStateChanged) this.onAuthStateChanged(user);
         });
       } else {

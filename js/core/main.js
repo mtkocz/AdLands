@@ -1647,7 +1647,7 @@
 
     // Send chosen identity to server (token already sent via Socket.IO handshake)
     if (window.networkManager) {
-      window.networkManager.sendIdentity(name, faction);
+      window.networkManager.sendIdentity(name, faction, profileIndex);
 
       // Resend profile with correct avatarColor (initial sendProfile fires before
       // auth confirms, so window.avatarColor was still a random HSL fallback)

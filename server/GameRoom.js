@@ -1105,6 +1105,28 @@ class GameRoom {
     this._markRanksDirty();
   }
 
+  /**
+   * Mark a player's profile cache entry as offline (e.g. when they sign out mid-session).
+   * Called before the player's uid is cleared so we can look up the correct cache key.
+   */
+  unlinkPlayerFromProfileCache(socketId) {
+    const player = this.players.get(socketId);
+    if (!player || !player.uid || !this.profileCacheReady) return;
+
+    const cacheKey = `${player.uid}:${player.profileIndex}`;
+    const entry = this.profileCacheIndex.get(cacheKey);
+    if (entry) {
+      entry.isOnline = false;
+      entry.socketId = null;
+      entry.level = player.level || entry.level;
+      entry.totalCrypto = player.totalCrypto || entry.totalCrypto;
+      entry.territoryCaptured = player.territoryCaptured || entry.territoryCaptured;
+      entry.avatarColor = player.avatarColor || entry.avatarColor;
+    }
+
+    this._markRanksDirty();
+  }
+
   removePlayer(socketId) {
     const player = this.players.get(socketId);
     if (!player) return;
@@ -1372,12 +1394,16 @@ class GameRoom {
   /**
    * Handle a player switching their active profile mid-game.
    * Resets player state with new profile data and broadcasts to all clients.
+   * @param {string} socketId
+   * @param {number} newProfileIndex - The profile slot index (0-2)
+   * @param {Object} profileData - Full profile data from Firestore
    */
-  handleProfileSwitch(socketId, profileData) {
+  handleProfileSwitch(socketId, newProfileIndex, profileData) {
     const player = this.players.get(socketId);
     if (!player) return;
 
     const oldFaction = player.faction;
+    const oldProfileIndex = player.profileIndex;
 
     // Update player data from new profile
     player.name = profileData.name || player.name;
@@ -1392,6 +1418,7 @@ class GameRoom {
     player.loadout = profileData.loadout || {};
     player.tankUpgrades = profileData.tankUpgrades || { armor: 0, speed: 0, fireRate: 0, damage: 0 };
     player.unlockedSlots = profileData.unlockedSlots || ['offense-1'];
+    player.profileIndex = newProfileIndex;
 
     // Reset session stats
     player._sessionKills = 0;
@@ -1426,16 +1453,12 @@ class GameRoom {
     // Update faction profile cache for profile switch
     if (player.uid && this.profileCacheReady) {
       // Mark old cache entry offline
-      const oldCacheKey = `${player.uid}:${player._prevProfileIndex ?? player.profileIndex}`;
+      const oldCacheKey = `${player.uid}:${oldProfileIndex}`;
       const oldEntry = this.profileCacheIndex.get(oldCacheKey);
       if (oldEntry) {
         oldEntry.isOnline = false;
         oldEntry.socketId = null;
       }
-
-      // Update or create entry for new profile
-      const newProfileIndex = profileData.profileIndex ?? player.profileIndex;
-      player.profileIndex = newProfileIndex;
       const newCacheKey = `${player.uid}:${newProfileIndex}`;
       let newEntry = this.profileCacheIndex.get(newCacheKey);
       if (newEntry) {
@@ -3468,10 +3491,10 @@ class GameRoom {
   }
 
   /**
-   * Server-authoritative identity update from onboarding screen.
-   * Sanitizes name, handles duplicates, updates faction if changed.
+   * Server-authoritative identity update from onboarding/auth screen.
+   * Sanitizes name, handles duplicates, updates faction and profileIndex if changed.
    */
-  handleSetIdentity(socketId, name, faction) {
+  handleSetIdentity(socketId, name, faction, profileIndex) {
     const player = this.players.get(socketId);
     if (!player) return;
 
@@ -3488,8 +3511,14 @@ class GameRoom {
     }
 
     const oldFaction = player.faction;
+    const oldProfileIndex = player.profileIndex;
     player.name = sanitized;
     player.faction = faction;
+
+    // Update profileIndex if provided (authenticated user selected a profile)
+    if (player.uid && typeof profileIndex === "number" && [0, 1, 2].includes(profileIndex)) {
+      player.profileIndex = profileIndex;
+    }
 
     // Broadcast identity update to all clients
     this.io.to(this.roomId).emit("player-identity-updated", {
@@ -3497,6 +3526,20 @@ class GameRoom {
       name: sanitized,
       faction: faction,
     });
+
+    // Re-link profile cache if profileIndex changed (user selected a different profile
+    // than the one loaded by the auth middleware)
+    if (player.uid && this.profileCacheReady && player.profileIndex !== oldProfileIndex) {
+      // Mark old entry offline
+      const oldCacheKey = `${player.uid}:${oldProfileIndex}`;
+      const oldEntry = this.profileCacheIndex.get(oldCacheKey);
+      if (oldEntry) {
+        oldEntry.isOnline = false;
+        oldEntry.socketId = null;
+      }
+      // Link to new profile's cache entry
+      this.linkPlayerToProfileCache(socketId);
+    }
 
     // Update name in profile cache regardless of faction change
     if (player.uid && this.profileCacheReady) {

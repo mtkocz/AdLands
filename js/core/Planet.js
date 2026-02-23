@@ -2702,6 +2702,17 @@ class Planet {
 
     // Regenerate outlines for all clusters
     this._createClusterOutlines(this._tiles, this._adjacencyMap);
+
+    // Re-mark all factions that own territory as dirty so faction outlines
+    // get rebuilt. Without this, faction outlines are destroyed but never
+    // regenerated (the dirty set was just cleared above).
+    for (const [, state] of this.clusterCaptureState) {
+      if (state.owner) this._dirtyFactionOutlines.add(state.owner);
+    }
+    // Reset debounce so the rebuild isn't skipped (the synchronous territory
+    // restoration may have triggered updateDirtyFactionOutlines recently).
+    this._lastOutlineUpdate = 0;
+    this.updateDirtyFactionOutlines();
   }
 
   // ========================
@@ -3499,6 +3510,19 @@ class Planet {
 
     // Rebuild cliff walls with updated elevation data
     this.terrainElevation.rebuildCliffWalls(this._tiles, this._adjacencyMap);
+
+    // Rebuild any existing faction overlays for sponsor clusters.
+    // Overlays may have been created (via applyTerritoryState) before de-elevation,
+    // so their geometry still references the old elevated vertex positions.
+    for (const [, data] of this.sponsorClusters) {
+      const clusterId = data.clusterId;
+      const existingOverlay = this.clusterGlowOverlays.get(clusterId);
+      if (existingOverlay) {
+        const color = this._getOverlayColor(existingOverlay.material);
+        this._removeClusterColorOverlay(clusterId);
+        this._createClusterColorOverlay(clusterId, color);
+      }
+    }
 
   }
 

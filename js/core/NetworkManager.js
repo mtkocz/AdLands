@@ -455,13 +455,16 @@ class NetworkManager {
   }
 
   /**
-   * Send player-chosen name and faction from onboarding screen.
+   * Send player-chosen name and faction from onboarding/auth screen.
    * @param {string} name - Chosen player name
    * @param {string} faction - Chosen faction: 'rust', 'cobalt', or 'viridian'
+   * @param {number} [profileIndex] - Active profile slot (0-2), if authenticated
    */
-  sendIdentity(name, faction) {
+  sendIdentity(name, faction, profileIndex) {
     if (!this.connected) return;
-    this.socket.emit("set-identity", { name, faction });
+    const data = { name, faction };
+    if (profileIndex !== undefined) data.profileIndex = profileIndex;
+    this.socket.emit("set-identity", data);
   }
 
   /**
