@@ -2594,6 +2594,10 @@ class BotTanks {
     bot.sinkDepth = 3; // units to sink (roughly tank height)
     bot.isFading = true;
     bot._smokeFadeDone = false;
+    // Random tilt axis and direction for death sink rotation
+    const angle = Math.random() * Math.PI * 2;
+    bot._sinkTiltAxis = new THREE.Vector3(Math.cos(angle), 0, Math.sin(angle)).normalize();
+    bot._sinkTiltMax = (0.15 + Math.random() * 0.2) * (Math.random() < 0.5 ? 1 : -1); // radians
   }
 
   _updateBotFade(bot) {
@@ -2631,9 +2635,10 @@ class BotTanks {
     // Ease-in: slow start, accelerates into ground
     const eased = sinkProgress * sinkProgress;
 
-    // Sink bodyGroup in local Y (surface normal direction)
+    // Sink bodyGroup in local Y + tilt on random axis
     if (bot.bodyGroup) {
       bot.bodyGroup.position.y = -eased * bot.sinkDepth;
+      bot.bodyGroup.quaternion.setFromAxisAngle(bot._sinkTiltAxis, eased * bot._sinkTiltMax);
     }
 
     return false;
@@ -2886,9 +2891,10 @@ class BotTanks {
       }
     });
 
-    // Reset sink offset from death
+    // Reset sink offset and tilt from death
     if (bot.bodyGroup) {
       bot.bodyGroup.position.y = 0;
+      bot.bodyGroup.quaternion.identity();
     }
 
     // Enter deploy state — bot becomes visible after a short delay

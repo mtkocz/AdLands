@@ -1324,6 +1324,10 @@ class Tank {
     this.sinkDepth = 3; // units to sink (roughly tank height)
     this.isFading = true;
     this._smokeFadeDone = false;
+    // Random tilt axis and direction for death sink rotation
+    const angle = Math.random() * Math.PI * 2;
+    this._sinkTiltAxis = new THREE.Vector3(Math.cos(angle), 0, Math.sin(angle)).normalize();
+    this._sinkTiltMax = (0.15 + Math.random() * 0.2) * (Math.random() < 0.5 ? 1 : -1);
   }
 
   updateFade() {
@@ -1361,9 +1365,10 @@ class Tank {
     // Ease-in: slow start, accelerates into ground
     const eased = sinkProgress * sinkProgress;
 
-    // Sink bodyGroup in local Y (surface normal direction)
+    // Sink bodyGroup in local Y + tilt on random axis
     if (this.bodyGroup) {
       this.bodyGroup.position.y = -eased * this.sinkDepth;
+      this.bodyGroup.quaternion.setFromAxisAngle(this._sinkTiltAxis, eased * this._sinkTiltMax);
     }
 
     return false;
@@ -1400,9 +1405,10 @@ class Tank {
       }
     });
 
-    // Reset sink offset from death
+    // Reset sink offset and tilt from death
     if (this.bodyGroup) {
       this.bodyGroup.position.y = 0;
+      this.bodyGroup.quaternion.identity();
     }
 
     // Re-apply faction colors
