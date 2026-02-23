@@ -28,7 +28,7 @@
 /* Panel */
 .auth-panel {
   position: relative;
-  width: 320px;
+  width: 480px;
   max-height: 90vh;
   overflow-y: auto;
   padding: var(--space-3xl) var(--space-2xl);

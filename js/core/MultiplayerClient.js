@@ -119,18 +119,20 @@
       }
 
       // Update territory ring HUD (throttled — server data only changes at tick rate)
+      // Only show ring when player is alive and on the planet surface (not in fast travel, orbital, or dead)
       const hasSpawned = mp.getHasSpawnedIn?.();
+      const onSurface = hasSpawned && !tank.isDead && !(mp.fastTravel && mp.fastTravel.active);
       if (now - lastHUDUpdateTime >= HUD_UPDATE_INTERVAL && hasSpawned) {
         lastHUDUpdateTime = now;
         // Use server-authoritative cluster when available (prevents grid vs nearest-neighbor mismatch)
         const clusterId = serverClusterId !== undefined ? serverClusterId : tank.getCurrentClusterId(planet);
 
-        if (clusterId !== undefined) {
+        if (clusterId !== undefined && onSurface) {
           const state = planet.clusterCaptureState.get(clusterId);
           if (state) {
             // Build tank counts for this cluster (local player + remote tanks)
             const counts = { rust: 0, cobalt: 0, viridian: 0 };
-            if (!tank.isDead) counts[tank.faction]++;
+            counts[tank.faction]++;
             for (const [, rt] of remoteTanks) {
               if (!rt.isDead && rt.faction && rt.group) {
                 const rtCluster = planet.getClusterIdAtPosition(rt.group.position);
