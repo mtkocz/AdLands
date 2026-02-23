@@ -556,6 +556,23 @@ class GameRoom {
   // ========================
 
   /**
+   * Find a hex sponsor's baked patternUrl by name (case-insensitive).
+   * Used to deduplicate images: moon/billboard sponsors reuse the hex
+   * sponsor's image file instead of storing a separate copy.
+   */
+  _findHexSponsorPatternUrl(name) {
+    if (!name || !this.sponsors) return null;
+    const lower = name.toLowerCase();
+    for (const s of this.sponsors) {
+      if (s.name && s.name.toLowerCase() === lower) {
+        const urls = this.sponsorImageUrls[s.id];
+        if (urls?.patternUrl) return urls.patternUrl;
+      }
+    }
+    return null;
+  }
+
+  /**
    * Build moon sponsor payload for clients (URLs instead of base64).
    */
   _buildMoonSponsorPayload() {
@@ -566,12 +583,14 @@ class GameRoom {
       // Hide moon if its sponsor name is paused
       if (sponsor.name && pausedNames.has(sponsor.name.toLowerCase())) return null;
       const urls = this.moonSponsorImageUrls[i] || {};
+      // Reuse hex sponsor's image if same sponsor has hex territory (avoid duplicate files)
+      const hexUrl = this._findHexSponsorPatternUrl(sponsor.name);
       return {
         moonIndex: i,
         name: sponsor.name,
         tagline: sponsor.tagline,
         websiteUrl: sponsor.websiteUrl,
-        patternImage: urls.patternUrl || null,
+        patternImage: hexUrl || urls.patternUrl || null,
         patternAdjustment: sponsor.patternAdjustment,
         createdAt: sponsor.createdAt,
         logoImage: urls.logoUrl || null,
@@ -628,12 +647,14 @@ class GameRoom {
       // Hide billboard if its sponsor name is paused
       if (sponsor.name && pausedNames.has(sponsor.name.toLowerCase())) return null;
       const urls = this.billboardSponsorImageUrls[i] || {};
+      // Reuse hex sponsor's image if same sponsor has hex territory (avoid duplicate files)
+      const hexUrl = this._findHexSponsorPatternUrl(sponsor.name);
       return {
         billboardIndex: i,
         name: sponsor.name,
         tagline: sponsor.tagline,
         websiteUrl: sponsor.websiteUrl,
-        patternImage: urls.patternUrl || null,
+        patternImage: hexUrl || urls.patternUrl || null,
         patternAdjustment: sponsor.patternAdjustment,
         createdAt: sponsor.createdAt,
         logoImage: urls.logoUrl || null,
@@ -1859,6 +1880,7 @@ class GameRoom {
     );
     player.heading = Math.random() * Math.PI * 2;
     player.waitingForPortal = false;
+    player.currentClusterId = null;
     player._lastTicCluster = undefined;
     player._lastTicCryptoTics = undefined;
     player._clusterChangeTicks = 0;
@@ -2759,11 +2781,19 @@ class GameRoom {
       // Hysteresis: require 3 consecutive capture ticks (~600ms) of a different
       // cluster before switching. Prevents grid boundary flickering from
       // disrupting tic-crypto tracking (sameCluster check).
+      // Exception: assign immediately when player has no cluster yet (first
+      // entry after spawn/respawn) to avoid dead time with no capture credit.
       if (rawClusterId !== player.currentClusterId) {
-        player._clusterChangeTicks = (player._clusterChangeTicks || 0) + 1;
-        if (player._clusterChangeTicks >= 3) {
+        if (player.currentClusterId == null) {
+          // No current cluster — assign immediately (first entry / after respawn)
           player.currentClusterId = rawClusterId;
           player._clusterChangeTicks = 0;
+        } else {
+          player._clusterChangeTicks = (player._clusterChangeTicks || 0) + 1;
+          if (player._clusterChangeTicks >= 3) {
+            player.currentClusterId = rawClusterId;
+            player._clusterChangeTicks = 0;
+          }
         }
       } else {
         player._clusterChangeTicks = 0;
@@ -3173,13 +3203,6 @@ class GameRoom {
     const humanIds = [];
     for (const [id] of this.players) humanIds.push(id);
 
-    // Check which player IDs are commanders
-    const commanderIds = new Set();
-    for (const faction of FACTIONS) {
-      const cmdr = this.commanders[faction];
-      if (cmdr && cmdr.id) commanderIds.add(cmdr.id);
-    }
-
     // Per-player filtered broadcast
     if (!this._filteredPayloads) this._filteredPayloads = new Map();
     const filteredPayloads = this._filteredPayloads;
@@ -3190,8 +3213,6 @@ class GameRoom {
       const px = pSinP * Math.cos(player.theta);
       const py = Math.cos(player.phi);
       const pz = pSinP * Math.sin(player.theta);
-
-      const isCommander = commanderIds.has(socketId);
 
       // Build filtered players object: all humans + nearby bots
       let filtered = filteredPayloads.get(socketId);
@@ -3208,18 +3229,12 @@ class GameRoom {
         filtered[hid] = playerStates[hid];
       }
 
-      // Include bots: all for commanders, distance-filtered for others
-      if (isCommander) {
-        for (const botId in botStates) {
+      // Include bots: distance-filtered for all players (including commanders)
+      for (const botId in botStates) {
+        const bv = botUnitVecs[botId];
+        const dot = px * bv.x + py * bv.y + pz * bv.z;
+        if (dot > NEARBY_DOT_THRESHOLD) {
           filtered[botId] = playerStates[botId];
-        }
-      } else {
-        for (const botId in botStates) {
-          const bv = botUnitVecs[botId];
-          const dot = px * bv.x + py * bv.y + pz * bv.z;
-          if (dot > NEARBY_DOT_THRESHOLD) {
-            filtered[botId] = playerStates[botId];
-          }
         }
       }
 
