@@ -2982,7 +2982,7 @@ class BotTanks {
           : this.factions[faction].primary;
 
       const material = new THREE.PointsMaterial({
-        size: 10,
+        size: 7,
         sizeAttenuation: true,
         map: dotTexture,
         color: factionColor,

@@ -5,6 +5,7 @@
  */
 
 const { Router } = require("express");
+const crypto = require("crypto");
 const fs = require("fs");
 const fsp = require("fs").promises;
 const path = require("path");
@@ -135,6 +136,32 @@ async function extractSponsorImages(sponsorStore, gameDir, onlyId) {
       urlMap[s.id] = urls;
     }
   }
+
+  // Deduplicate: sponsors with byte-identical textures share one URL.
+  // This cuts ~44 client HTTP requests down to ~20 (one per unique brand image).
+  if (!onlyId) {
+    const dedup = (urlKey) => {
+      // hash → first sponsor's URL for this content
+      const hashToUrl = new Map();
+      for (const [, urls] of Object.entries(urlMap)) {
+        const urlPath = urls[urlKey];
+        if (!urlPath) continue;
+        const filePath = path.join(gameDir, urlPath.split("?")[0]);
+        try {
+          const buf = fs.readFileSync(filePath);
+          const hash = crypto.createHash("md5").update(buf).digest("hex");
+          if (hashToUrl.has(hash)) {
+            urls[urlKey] = hashToUrl.get(hash);
+          } else {
+            hashToUrl.set(hash, urlPath);
+          }
+        } catch (e) { /* file missing — skip */ }
+      }
+    };
+    dedup("patternUrl");
+    dedup("logoUrl");
+  }
+
   return urlMap;
 }
 
