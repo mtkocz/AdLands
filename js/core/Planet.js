@@ -1256,17 +1256,17 @@ class Planet {
 
       shader.vertexShader = shader.vertexShader.replace(
         "#include <common>",
-        "#include <common>\nvarying vec3 vTriWorldPos;",
+        "#include <common>\nvarying vec3 vTriObjPos;",
       );
       shader.vertexShader = shader.vertexShader.replace(
         "#include <begin_vertex>",
-        "#include <begin_vertex>\nvTriWorldPos = (modelMatrix * vec4(transformed, 1.0)).xyz;",
+        "#include <begin_vertex>\nvTriObjPos = position;",
       );
 
       shader.fragmentShader = shader.fragmentShader.replace(
         "#include <common>",
         `#include <common>
-        varying vec3 vTriWorldPos;
+        varying vec3 vTriObjPos;
         uniform sampler2D triNoiseRoughMap;
         uniform float triNoiseScale;`,
       );
@@ -1274,11 +1274,11 @@ class Planet {
         "#include <roughnessmap_fragment>",
         `float roughnessFactor = roughness;
         {
-          vec3 bf = abs(normalize(vTriWorldPos));
+          vec3 bf = abs(normalize(vTriObjPos));
           bf = bf / (bf.x + bf.y + bf.z);
-          float rXY = texture2D(triNoiseRoughMap, vTriWorldPos.xy * triNoiseScale).g;
-          float rXZ = texture2D(triNoiseRoughMap, vTriWorldPos.xz * triNoiseScale).g;
-          float rYZ = texture2D(triNoiseRoughMap, vTriWorldPos.yz * triNoiseScale).g;
+          float rXY = texture2D(triNoiseRoughMap, vTriObjPos.xy * triNoiseScale).g;
+          float rXZ = texture2D(triNoiseRoughMap, vTriObjPos.xz * triNoiseScale).g;
+          float rYZ = texture2D(triNoiseRoughMap, vTriObjPos.yz * triNoiseScale).g;
           roughnessFactor *= rXY * bf.z + rXZ * bf.y + rYZ * bf.x;
         }`,
       );
@@ -1383,9 +1383,9 @@ class Planet {
         uNoiseScale: { value: this._noiseScale },
       },
       vertexShader: `
-        varying vec3 vWorldPos;
+        varying vec3 vObjPos;
         void main() {
-          vWorldPos = (modelMatrix * vec4(position, 1.0)).xyz;
+          vObjPos = position;
           gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
         }
       `,
@@ -1393,13 +1393,13 @@ class Planet {
         uniform sampler2D noiseMap;
         uniform float uFade;
         uniform float uNoiseScale;
-        varying vec3 vWorldPos;
+        varying vec3 vObjPos;
         void main() {
-          vec3 bf = abs(normalize(vWorldPos));
+          vec3 bf = abs(normalize(vObjPos));
           bf = bf / (bf.x + bf.y + bf.z);
-          vec3 nXY = texture2D(noiseMap, vWorldPos.xy * uNoiseScale).rgb;
-          vec3 nXZ = texture2D(noiseMap, vWorldPos.xz * uNoiseScale).rgb;
-          vec3 nYZ = texture2D(noiseMap, vWorldPos.yz * uNoiseScale).rgb;
+          vec3 nXY = texture2D(noiseMap, vObjPos.xy * uNoiseScale).rgb;
+          vec3 nXZ = texture2D(noiseMap, vObjPos.xz * uNoiseScale).rgb;
+          vec3 nYZ = texture2D(noiseMap, vObjPos.yz * uNoiseScale).rgb;
           vec3 noise = nXY * bf.z + nXZ * bf.y + nYZ * bf.x;
           gl_FragColor = vec4(mix(vec3(0.5), noise, uFade), 1.0);
         }
