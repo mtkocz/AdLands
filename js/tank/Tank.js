@@ -464,7 +464,7 @@ class Tank {
         cy + fwd_y * f + rgt_y * rgt,
         cz + fwd_z * f + rgt_z * rgt,
       );
-      this.planet.hexGroup.worldToLocal(t.testPos);
+      // Position is already in hexGroup local-space (theta is local-space)
 
       const inPolar = this.planet.isInsidePolarHole
         ? this.planet.isInsidePolarHole(t.testPos)

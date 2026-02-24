@@ -17,9 +17,13 @@ class RemoteTank {
     this.faction = playerData.faction;
     this.avatarColor = playerData.avatarColor || null;
 
+    // Convert server world-space theta to hexGroup local-space
+    const pR = this.hexGroup.rotation ? this.hexGroup.rotation.y : 0;
+    const localTheta = (playerData.theta || 0) + pR;
+
     // Current interpolated state (what we render)
     this.state = {
-      theta: playerData.theta || 0,
+      theta: localTheta,
       phi: playerData.phi || Math.PI / 2,
       heading: playerData.heading || 0,
       speed: 0,
@@ -180,8 +184,12 @@ class RemoteTank {
       return;
     }
 
+    // Convert server world-space theta to hexGroup local-space
+    const pR = this.hexGroup.rotation ? this.hexGroup.rotation.y : 0;
+    const localTheta = serverState.t + pR;
+
     // Update targetState as fallback for dead-reckoning when buffer runs dry
-    this.targetState.theta = serverState.t;
+    this.targetState.theta = localTheta;
     this.targetState.phi = serverState.p;
     this.targetState.heading = serverState.h;
     this.targetState.speed = serverState.s;
@@ -190,7 +198,7 @@ class RemoteTank {
     // Push timestamped snapshot into ring buffer
     this._snapBuf[this._snapHead] = {
       t: performance.now(),
-      theta: serverState.t,
+      theta: localTheta,
       phi: serverState.p,
       heading: serverState.h,
       speed: serverState.s,

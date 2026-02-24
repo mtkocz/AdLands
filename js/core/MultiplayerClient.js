@@ -54,6 +54,7 @@
     } = mp;
 
     const net = new NetworkManager();
+    net.getPlanetRotation = mp.getPlanetRotation;
     window.networkManager = net; // Expose for debugging
     mp.net = net; // Expose on _mp so Dashboard can access socket
 
@@ -340,8 +341,9 @@
 
           if (tank.isDead) {
             // Dead: snap to server position directly (no reconcile replay —
-            // replay would double-apply planet rotation counter)
-            tank.state.theta = state.t;
+            // replay would double-apply planet rotation counter).
+            // Convert server world-space theta to hexGroup local-space.
+            tank.state.theta = state.t + mp.getPlanetRotation();
             tank.state.phi = state.p;
           } else {
             // Alive: full reconcile with input replay
