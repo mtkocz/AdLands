@@ -4047,18 +4047,10 @@ class Planet {
     // Scale factor: at scale=1, texture fills the cluster once
     const uvScale = 1.0 / scale;
 
-    // Generate randomized material properties once for the entire cluster
-    // Roughness: 50% - 100%, Metalness: 0% - 30%
-    // Use seeded random for reproducibility (same as procedural clusters)
-    const clusterRoughness = 0.5 + this.random() * 0.5;
-    const clusterMetalness = this.random() * 0.3;
-
     // Create a single shared material for all tiles in this cluster
     const sharedMaterial = this._createHSVMaterial(
       texture,
       adjustment,
-      clusterRoughness,
-      clusterMetalness,
       tileIndices.length,
     );
 
@@ -4170,15 +4162,12 @@ class Planet {
    * Pre-processes the texture on a canvas to apply input/output levels + gamma
    * @param {THREE.Texture} texture
    * @param {Object} adjustment - { inputBlack, inputGamma, inputWhite, outputBlack, outputWhite }
-   * @param {number} roughness - Material roughness (0.5-1.0)
-   * @param {number} metalness - Material metalness (0-0.3)
+   * @param {number} tileCount - Number of tiles in the cluster (for pixel art resolution)
    * @returns {THREE.MeshStandardMaterial}
    */
   _createHSVMaterial(
     texture,
     adjustment = {},
-    roughness = 0.95,
-    metalness = 0.02,
     tileCount = 20,
   ) {
     // Apply levels adjustment then pixel art filter (downscale, palette, dither, upscale)
@@ -4196,8 +4185,8 @@ class Planet {
     const mat = new THREE.MeshStandardMaterial({
       map: finalTexture,
       flatShading: true,
-      roughness: roughness,
-      metalness: metalness,
+      roughness: 1,
+      metalness: 0,
       side: THREE.FrontSide,
     });
     this._patchIgnoreSpotLights(mat);
