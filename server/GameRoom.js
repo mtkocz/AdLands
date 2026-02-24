@@ -4286,6 +4286,7 @@ class GameRoom {
         entry.imageStatus = s.imageStatus || null;
         entry.tierName = s.tierName || null;
         entry._territoryId = s._territoryId || null;
+        if (s.title) entry.title = s.title;
       }
       return entry;
     });

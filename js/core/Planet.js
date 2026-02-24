@@ -396,7 +396,7 @@ class Planet {
     const gray = 112;
     this.clusterColors.set(0, (gray << 16) | (gray << 8) | gray);
     this.clusterPatterns.set(0, {
-      type: "solid",
+      type: "noise",
       grayValue: gray,
       roughness: 0.7,
       metalness: 0.1,
@@ -725,6 +725,25 @@ class Planet {
           }
         }
         break;
+      case "noise": {
+        // Random pixel noise — no repeating structure so tiling is invisible
+        const imgData = ctx.getImageData(0, 0, size, size);
+        const d = imgData.data;
+        const pixelSize = 4; // Chunky 4x4 blocks for pixel-art look
+        for (let by = 0; by < size; by += pixelSize) {
+          for (let bx = 0; bx < size; bx += pixelSize) {
+            const v = Math.floor(baseGray + (Math.random() - 0.5) * 30);
+            for (let py = 0; py < pixelSize && by + py < size; py++) {
+              for (let px = 0; px < pixelSize && bx + px < size; px++) {
+                const i = ((by + py) * size + (bx + px)) * 4;
+                d[i] = d[i + 1] = d[i + 2] = v;
+              }
+            }
+          }
+        }
+        ctx.putImageData(imgData, 0, 0);
+        break;
+      }
       case "solid":
         // No pattern - just base color
         break;
@@ -1152,6 +1171,150 @@ class Planet {
         }
       }
     }
+
+    // Create noise grain overlay on top of entire planet surface
+    this._createNoiseOverlay();
+  }
+
+  /**
+   * Create a planet-wide noise grain overlay that sits on top of all tiles.
+   * Uses multiply blending so the underlying textures (sponsor logos, patterns) show through
+   * with a subtle pixel-noise grain on top.
+   */
+  _createNoiseOverlay() {
+    // Clean up previous overlay
+    if (this._noiseOverlayMesh) {
+      this.hexGroup.remove(this._noiseOverlayMesh);
+      this._noiseOverlayMesh.geometry.dispose();
+      this._noiseOverlayMesh.material.dispose();
+      if (this._noiseOverlayTexture) this._noiseOverlayTexture.dispose();
+      this._noiseOverlayMesh = null;
+    }
+
+    // Create noise texture centered at gray 128 (neutral for overlay blend)
+    const texSize = 128;
+    const canvas = document.createElement("canvas");
+    canvas.width = texSize;
+    canvas.height = texSize;
+    const ctx = canvas.getContext("2d");
+    const imgData = ctx.getImageData(0, 0, texSize, texSize);
+    const d = imgData.data;
+    const pixelSize = 4; // 4x4 chunky pixel blocks
+    for (let by = 0; by < texSize; by += pixelSize) {
+      for (let bx = 0; bx < texSize; bx += pixelSize) {
+        const v = Math.floor(128 + (Math.random() - 0.5) * 50);
+        for (let py = 0; py < pixelSize && by + py < texSize; py++) {
+          for (let px = 0; px < pixelSize && bx + px < texSize; px++) {
+            const i = ((by + py) * texSize + (bx + px)) * 4;
+            d[i] = d[i + 1] = d[i + 2] = v;
+            d[i + 3] = 255;
+          }
+        }
+      }
+    }
+    ctx.putImageData(imgData, 0, 0);
+
+    const texture = new THREE.CanvasTexture(canvas);
+    texture.wrapS = texture.wrapT = THREE.RepeatWrapping;
+    texture.minFilter = THREE.NearestFilter;
+    texture.magFilter = THREE.NearestFilter;
+    this._noiseOverlayTexture = texture;
+
+    // Collect geometry from all visible surface meshes
+    const allPositions = [];
+    const allUvs = [];
+    const allIndices = [];
+    let vertexOffset = 0;
+    const radialOffset = 0.04;
+    const uvScale = 8.0; // Texture tiling frequency across planet
+
+    const collectMesh = (pos, idx) => {
+      for (let i = 0; i < pos.length; i += 3) {
+        const x = pos[i], y = pos[i + 1], z = pos[i + 2];
+        const len = Math.sqrt(x * x + y * y + z * z);
+        // Push vertices slightly outward to avoid z-fighting
+        allPositions.push(
+          x + (x / len) * radialOffset,
+          y + (y / len) * radialOffset,
+          z + (z / len) * radialOffset,
+        );
+        // Spherical UV for consistent noise mapping across planet
+        const theta = Math.atan2(z, x);
+        const phi = Math.acos(Math.max(-1, Math.min(1, y / len)));
+        allUvs.push(
+          (theta / (2 * Math.PI) + 0.5) * uvScale,
+          (phi / Math.PI) * uvScale,
+        );
+      }
+
+      if (idx) {
+        for (let i = 0; i < idx.length; i++) {
+          allIndices.push(idx[i] + vertexOffset);
+        }
+      } else {
+        const vertCount = pos.length / 3;
+        for (let i = 1; i < vertCount - 1; i++) {
+          allIndices.push(vertexOffset, vertexOffset + i, vertexOffset + i + 1);
+        }
+      }
+      vertexOffset += pos.length / 3;
+    };
+
+    this.hexGroup.children.forEach((mesh) => {
+      if (!mesh.isMesh) return;
+      if (!mesh.geometry || !mesh.geometry.attributes.position) return;
+
+      // Collect from merged cluster meshes
+      if (mesh.userData?.isMergedCluster) {
+        const pos = mesh.geometry.attributes.position.array;
+        const idx = mesh.geometry.index ? mesh.geometry.index.array : null;
+        collectMesh(pos, idx);
+        return;
+      }
+
+      // Skip hidden tiles (already covered by merged meshes)
+      if (mesh.userData?._merged) return;
+      if (mesh.userData?.tileIndex === undefined) return;
+
+      // Skip portals and polar tiles
+      const tileIndex = mesh.userData.tileIndex;
+      if (this.portalCenterIndices.has(tileIndex)) return;
+      if (this.polarTileIndices.has(tileIndex)) return;
+
+      // Collect from visible individual tiles (sponsor tiles etc.)
+      const pos = mesh.geometry.attributes.position.array;
+      const idx = mesh.geometry.index ? mesh.geometry.index.array : null;
+      collectMesh(pos, idx);
+    });
+
+    if (allPositions.length === 0) return;
+
+    const geometry = new THREE.BufferGeometry();
+    geometry.setAttribute("position", new THREE.Float32BufferAttribute(allPositions, 3));
+    geometry.setAttribute("uv", new THREE.Float32BufferAttribute(allUvs, 2));
+    geometry.setIndex(allIndices);
+
+    // Overlay blend: Result = 2 × Src × Dst
+    // Gray 128 (0.5) = no change, darker = darkens, lighter = brightens
+    const material = new THREE.MeshBasicMaterial({
+      map: texture,
+      depthWrite: false,
+      polygonOffset: true,
+      polygonOffsetFactor: -2,
+      polygonOffsetUnits: -2,
+      blending: THREE.CustomBlending,
+      blendEquation: THREE.AddEquation,
+      blendSrc: THREE.DstColorFactor,
+      blendDst: THREE.SrcColorFactor,
+    });
+
+    const overlayMesh = new THREE.Mesh(geometry, material);
+    overlayMesh.frustumCulled = false;
+    overlayMesh.renderOrder = 0.5;
+    overlayMesh.userData = { isNoiseOverlay: true };
+    overlayMesh.raycast = () => {}; // Don't interfere with tile picking
+    this.hexGroup.add(overlayMesh);
+    this._noiseOverlayMesh = overlayMesh;
   }
 
   /**
@@ -1178,6 +1341,16 @@ class Planet {
 
     this._mergedClusterMeshes = [];
     this._mergedClusterCentroids = null;
+
+    // Remove noise overlay (will be recreated when mergeClusterTiles is called again)
+    if (this._noiseOverlayMesh) {
+      this.hexGroup.remove(this._noiseOverlayMesh);
+      this._noiseOverlayMesh.geometry.dispose();
+      this._noiseOverlayMesh.material.dispose();
+      if (this._noiseOverlayTexture) this._noiseOverlayTexture.dispose();
+      this._noiseOverlayMesh = null;
+      this._noiseOverlayTexture = null;
+    }
   }
 
   _createRockWallTexture() {

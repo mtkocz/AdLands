@@ -2012,16 +2012,21 @@
     const cy = canvas.height / 2;
     const radius = size / 2;
 
-    // Count only contestable clusters (with capture state) — neutral territory excluded
+    // Count only sponsored clusters — unsponsored territory excluded from global control
     const ownership = planet.clusterOwnership;
-    const captureState = planet.clusterCaptureState;
+    const sponsorClusters = planet.getAllSponsorClusters();
     let totalClusters = 0;
 
+    // Build set of sponsored cluster IDs
+    const sponsoredClusterIds = new Set();
+    for (const [, data] of sponsorClusters) {
+      sponsoredClusterIds.add(data.clusterId);
+    }
+
     const counts = { rust: 0, cobalt: 0, viridian: 0, unclaimed: 0 };
-    for (let i = 0; i < planet.clusterData.length; i++) {
-      if (!captureState.has(i)) continue; // skip neutral
+    for (const clusterId of sponsoredClusterIds) {
       totalClusters++;
-      const faction = ownership.get(i);
+      const faction = ownership.get(clusterId);
       if (faction) {
         counts[faction]++;
       } else {
@@ -3287,7 +3292,7 @@
     }
 
     document.getElementById("intel-name").textContent =
-      sponsor.name || "Unknown Sponsor";
+      (sponsor.ownerType === "player" && sponsor.title) ? sponsor.title : (sponsor.name || "Unknown Sponsor");
     document.getElementById("intel-tagline").textContent =
       sponsor.tagline || "";
 
