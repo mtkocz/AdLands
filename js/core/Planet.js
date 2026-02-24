@@ -256,9 +256,6 @@ class Planet {
       );
     }
 
-    // Generate shared rock texture for cliff walls, polar walls, and elevated terrain tops
-    this._createRockWallTexture();
-
     this._createTileMeshes(hexasphere.tiles);
 
     // Create cliff wall geometry for terrain elevation transitions
@@ -957,7 +954,6 @@ class Planet {
             new THREE.Float32BufferAttribute(colors, 3),
           );
           material = new THREE.MeshStandardMaterial({
-            map: this._rockWallTexture,
             vertexColors: true,
             flatShading: true,
             roughness: 0.95,
@@ -1088,7 +1084,6 @@ class Planet {
       let material;
       if (materialType === "elevated") {
         material = new THREE.MeshStandardMaterial({
-          map: this._rockWallTexture,
           vertexColors: true,
           flatShading: true,
           roughness: 0.95,
@@ -1351,33 +1346,6 @@ class Planet {
       this._noiseOverlayMesh = null;
       this._noiseOverlayTexture = null;
     }
-  }
-
-  _createRockWallTexture() {
-    const size = 8;
-    const canvas = document.createElement("canvas");
-    canvas.width = size;
-    canvas.height = size;
-    const ctx = canvas.getContext("2d");
-
-    const rng = this._createSeededRandom(999);
-
-    // Per-pixel random noise — each pixel gets an independent gray value
-    for (let y = 0; y < size; y++) {
-      for (let x = 0; x < size; x++) {
-        const v = Math.floor(150 + rng() * 105);
-        ctx.fillStyle = `rgb(${v}, ${v}, ${v})`;
-        ctx.fillRect(x, y, 1, 1);
-      }
-    }
-
-    const texture = new THREE.CanvasTexture(canvas);
-    texture.wrapS = THREE.RepeatWrapping;
-    texture.wrapT = THREE.RepeatWrapping;
-    texture.minFilter = THREE.NearestFilter;
-    texture.magFilter = THREE.NearestFilter;
-
-    this._rockWallTexture = texture;
   }
 
   _findPolarBoundaryEdges(tiles) {
@@ -1668,7 +1636,6 @@ class Planet {
       metalness: 0.05,
       flatShading: true,
       side: THREE.FrontSide,
-      map: this._rockWallTexture,
     });
 
     const wallMesh = new THREE.Mesh(wallGeometry, wallMaterial);
@@ -3357,8 +3324,8 @@ class Planet {
 
       // Restore correct material based on elevation
       let material;
-      if (isElevated && this._rockWallTexture) {
-        // Elevated tiles use rock wall texture with desaturated vertex colors
+      if (isElevated) {
+        // Elevated tiles use desaturated vertex colors
         const variation = (this.random() - 0.5) * 0.06;
         const gray = 0.42 + variation;
         const vertColors = [];
@@ -3370,7 +3337,6 @@ class Planet {
           new THREE.Float32BufferAttribute(vertColors, 3),
         );
         material = new THREE.MeshStandardMaterial({
-          map: this._rockWallTexture,
           vertexColors: true,
           flatShading: true,
           roughness: 0.95,
