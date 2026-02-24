@@ -3886,7 +3886,7 @@
 
     // Update bot AI (skip in multiplayer — no bots)
     if (!isMultiplayer) {
-      botTanks.update(deltaTime, now, dayNightSpeed, camera);
+      botTanks.update(deltaTime, now, 0, camera);
       botTanks.updateHumanPlayerPosition("player", tank.group.position);
       botTanks.updateChat(now);
     }
