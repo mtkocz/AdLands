@@ -897,11 +897,15 @@ class TerrainElevation {
         new THREE.MeshBasicMaterial({
           color: 0x050505,
           side: THREE.DoubleSide,
+          // Push apron behind ground tiles in depth so sponsor/tile
+          // textures always win where they overlap
+          polygonOffset: true,
+          polygonOffsetFactor: 1,
+          polygonOffsetUnits: 1,
         }),
       );
       apronMesh.castShadow = false;
       apronMesh.receiveShadow = false;
-      apronMesh.renderOrder = 0.1;
       apronMesh.raycast = () => {};
       apronMesh.userData = { isCliffApron: true };
       this.planet.hexGroup.add(apronMesh);
