@@ -396,7 +396,7 @@ class Planet {
     const gray = 112;
     this.clusterColors.set(0, (gray << 16) | (gray << 8) | gray);
     this.clusterPatterns.set(0, {
-      type: "noise",
+      type: "solid",
       grayValue: gray,
       roughness: 0.7,
       metalness: 0.1,
