@@ -3014,24 +3014,42 @@ class BotTanks {
       }
     }
 
+    // Detect new orbital data from server (reference changes on each broadcast)
+    if (op !== this._lastOpRef) {
+      this._lastOpRef = op;
+      this._opArriveTime = performance.now();
+    }
+    // Time elapsed since last server orbital update — used for dead-reckoning
+    const opAge = (performance.now() - (this._opArriveTime || 0)) / 1000;
+    // Scale dt to 60fps convention used by server physics (speed * dt60)
+    const drAge = opAge * 60;
+
     let poolIdx = 0;
 
-    for (let i = 0, opnIdx = 0; i < op.length; i += 3, opnIdx += 2) {
-      const theta = op[i];
-      const phi = op[i + 1];
-      const fi = op[i + 2];
+    for (let i = 0, opnIdx = 0; i < op.length; i += 5, opnIdx += 2) {
+      const baseTheta = op[i];
+      const basePhi = op[i + 1];
+      const heading = op[i + 2];
+      const speed = op[i + 3];
+      const fi = op[i + 4];
       const faction = factionNames[fi];
 
       // Filter: commanders see all, regular players see own faction only
       if (!isHumanCommander && faction !== viewerFaction) continue;
 
       // Skip bots with full 3D representation
-      if (knownBotThetas.has(Math.round(theta * 10000))) continue;
+      if (knownBotThetas.has(Math.round(baseTheta * 10000))) continue;
 
       if (poolIdx >= this._phantomPool.length) break;
       const mesh = this._phantomPool[poolIdx];
 
-      // Position in hexGroup local space — interpolate for smooth movement
+      // Dead-reckon: project position forward using heading + speed
+      const sinPhi = Math.sin(basePhi);
+      const safeSinPhi = Math.abs(sinPhi) < 0.01 ? 0.01 : sinPhi;
+      const phi = basePhi + (-Math.cos(heading) * speed * drAge);
+      const theta = baseTheta + (-Math.sin(heading) * speed * drAge) / safeSinPhi;
+
+      // Convert to hexGroup local-space Cartesian
       const tx = r * Math.sin(phi) * Math.cos(theta);
       const ty = r * Math.cos(phi);
       const tz = r * Math.sin(phi) * Math.sin(theta);
@@ -3041,7 +3059,7 @@ class BotTanks {
         mesh.position.set(tx, ty, tz);
         this._phantomHasTarget[poolIdx] = 1;
       } else {
-        // Smooth exponential lerp toward target
+        // Smooth lerp toward dead-reckoned position
         const dx = tx - mesh.position.x;
         const dy = ty - mesh.position.y;
         const dz = tz - mesh.position.z;

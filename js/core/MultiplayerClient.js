@@ -1368,8 +1368,12 @@
         if (hasSpawned && change.clusterId === playerCluster && mp.updateTugOfWarUI) {
           const state = planet.clusterCaptureState.get(change.clusterId);
           if (state) {
-            const counts = { rust: 0, cobalt: 0, viridian: 0 };
-            if (!tank.isDead) counts[tank.faction]++;
+            // Use server-authoritative tank counts when available.
+            // Building local-only counts here misses enemy tanks (nearest-tile
+            // mismatch), causing dots to flicker to player-only on ownership changes.
+            const counts = (serverTankCounts && change.clusterId === serverClusterId)
+              ? serverTankCounts
+              : { rust: 0, cobalt: 0, viridian: 0 };
             mp.updateTugOfWarUI(change.clusterId, state, counts);
           }
         }

@@ -3314,7 +3314,8 @@ class GameRoom {
     statePayload.bfc = this.botBridge.getBotFactionCounts();
 
     // Compact orbital positions for all bots (every 10 ticks ≈ 1/sec)
-    // Flat array: [theta, phi, factionIdx, theta, phi, factionIdx, ...]
+    // Flat array: [theta, phi, heading, speed, factionIdx, ...]
+    // Heading + speed allow client-side dead-reckoning between updates
     // factionIdx: 0=rust, 1=cobalt, 2=viridian
     if (this.tick % 10 === 0) {
       const op = [];
@@ -3322,7 +3323,7 @@ class GameRoom {
       for (const botId in botStates) {
         const bs = botStates[botId];
         if (bs.d) continue; // skip dead
-        op.push(bs.t, bs.p, bs.f === 'rust' ? 0 : bs.f === 'cobalt' ? 1 : 2);
+        op.push(bs.t, bs.p, bs.h, bs.s, bs.f === 'rust' ? 0 : bs.f === 'cobalt' ? 1 : 2);
         opn.push(botId, bs.n || botId);
       }
       statePayload.op = op;
