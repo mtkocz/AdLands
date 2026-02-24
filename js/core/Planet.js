@@ -3862,6 +3862,7 @@ class Planet {
       adjustment,
       clusterRoughness,
       clusterMetalness,
+      tileIndices.length,
     );
 
     let tilesUpdated = 0;
@@ -3981,6 +3982,7 @@ class Planet {
     adjustment = {},
     roughness = 0.8,
     metalness = 0.1,
+    tileCount = 20,
   ) {
     // Apply levels adjustment then pixel art filter (downscale, palette, dither, upscale)
     let finalTexture = texture;
@@ -3989,7 +3991,7 @@ class Planet {
         texture.image,
         adjustment,
       );
-      finalTexture = this._applyPixelArtFilter(finalTexture.image);
+      finalTexture = this._applyPixelArtFilter(finalTexture.image, tileCount);
       finalTexture.wrapS = texture.wrapS;
       finalTexture.wrapT = texture.wrapT;
     }
@@ -4111,8 +4113,14 @@ class Planet {
    * @param {HTMLImageElement|HTMLCanvasElement} image
    * @returns {THREE.CanvasTexture}
    */
-  _applyPixelArtFilter(image) {
-    const targetShortSide = 128; // Doubled from 64 for higher resolution
+  _applyPixelArtFilter(image, tileCount = 20) {
+    // Scale resolution with territory size so pixel blocks appear the same physical size
+    // Reference: 20 tiles = 128px. Sqrt because pixel dimension scales with sqrt(area)
+    const baseShortSide = 128;
+    const referenceTileCount = 20;
+    const targetShortSide = Math.round(
+      Math.max(64, Math.min(256, baseShortSide * Math.sqrt(tileCount / referenceTileCount)))
+    );
     const maxColors = 8; // Limit to 8-color palette for retro look
     const ditherIntensity = 32;
 
