@@ -492,8 +492,9 @@ class ServerBotManager {
       this.coordinators[faction].update(alive, this.coordinators, now);
     }
 
-    // Staggered AI state updates (30 bots per tick for 300 bots = 10-tick rotation)
-    const botsPerTick = Math.max(1, Math.ceil(this._botArray.length / 10));
+    // Staggered AI state updates (100 bots per tick for 300 bots = 3-tick rotation)
+    // Worker thread has ~98ms headroom per tick, so this is comfortably affordable
+    const botsPerTick = Math.max(1, Math.ceil(this._botArray.length / 3));
     const startIdx = this._aiUpdateIndex;
     const endIdx = Math.min(startIdx + botsPerTick, this._botArray.length);
 
@@ -686,9 +687,7 @@ class ServerBotManager {
           bot.aiState = BOT_STATES.MOVING;
           bot.stateTimer = 0;
         }
-        if (Math.random() < 0.01) {
-          bot.wanderDirection += (Math.random() - 0.5) * 0.8;
-        }
+        // Wander drift now handled by continuous sinusoidal noise in _updateInput
         // Stuck detection while wandering — pick new random direction
         if (this._checkStuck(bot, dt)) {
           bot._replanCount = (bot._replanCount || 0) + 1;
@@ -739,7 +738,9 @@ class ServerBotManager {
             let targetDiff = desiredHeading - bot.wanderDirection;
             while (targetDiff > Math.PI) targetDiff -= Math.PI * 2;
             while (targetDiff < -Math.PI) targetDiff += Math.PI * 2;
-            const blendRate = 0.08 + bot.personality * 0.12;
+            // dt-scaled exponential decay: smooth and frame-rate-independent
+            const k = 1.0 + bot.personality * 1.5;
+            const blendRate = 1 - Math.exp(-k * dt);
             bot.wanderDirection += targetDiff * blendRate;
             bot.wanderDirection += bot.driftOffset * 0.06;
           }
@@ -750,7 +751,8 @@ class ServerBotManager {
           let targetDiff = desiredHeading - bot.wanderDirection;
           while (targetDiff > Math.PI) targetDiff -= Math.PI * 2;
           while (targetDiff < -Math.PI) targetDiff += Math.PI * 2;
-          bot.wanderDirection += targetDiff * 0.03;
+          const captureBlend = 1 - Math.exp(-0.3 * dt);
+          bot.wanderDirection += targetDiff * captureBlend;
         }
       }
     }
@@ -823,9 +825,11 @@ class ServerBotManager {
       }
     }
 
-    if (Math.random() < 0.015) {
-      bot.wanderDirection += (Math.random() - 0.5) * 1.2;
-    }
+    // Gentle continuous wander drift — smooth sinusoidal noise replaces
+    // the old 1.5%-chance-of-big-jerk that caused visible heading snaps
+    if (bot._wanderNoise === undefined) bot._wanderNoise = Math.random() * Math.PI * 2;
+    bot._wanderNoise += dt * (0.3 + bot.personality * 0.5);
+    bot.wanderDirection += Math.sin(bot._wanderNoise) * 0.15 * dt;
   }
 
   // ========================

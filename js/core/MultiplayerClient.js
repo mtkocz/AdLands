@@ -92,7 +92,6 @@
     let serverClusterId = undefined;
     let lastCaptureProgressTime = 0;
     let serverTankCounts = null; // Cached server-authoritative tank counts from capture-progress
-    let clusterMismatchCount = 0; // Consecutive frames where local != server cluster
     mp.onFrameUpdate = (deltaTime, camera, frustum, lodOptions) => {
       if (!net.isMultiplayer) return;
 
@@ -132,24 +131,13 @@
         // player has physically moved to a different sponsor cluster (hysteresis lag).
         const localClusterId = tank.getCurrentClusterId(planet);
         if (serverClusterId !== undefined) {
-          const localOnSponsor = localClusterId !== undefined && planet.clusterCaptureState.has(localClusterId);
-          if (!localOnSponsor || now - lastCaptureProgressTime > 1500) {
-            // Player left sponsor territory or server stopped sending — clear immediately
+          // Only clear server data on staleness — server sends capture-progress 1/sec,
+          // so >2s without data means the player left the cluster or server stopped sending.
+          // Do NOT clear based on local cluster detection (nearest-tile-center is unreliable
+          // near boundaries due to the 0.4-unit radial offset between tile centers and tanks).
+          if (now - lastCaptureProgressTime > 2000) {
             serverClusterId = undefined;
             serverTankCounts = null;
-            clusterMismatchCount = 0;
-          } else if (localClusterId !== serverClusterId && localOnSponsor) {
-            // Player physically moved to a different sponsor cluster but server
-            // hasn't caught up yet (hysteresis). After 3 consecutive mismatches
-            // (~750ms, matching server's 600ms hysteresis), override to local.
-            clusterMismatchCount++;
-            if (clusterMismatchCount >= 3) {
-              serverClusterId = undefined;
-              serverTankCounts = null;
-              clusterMismatchCount = 0;
-            }
-          } else {
-            clusterMismatchCount = 0;
           }
         }
         // Use server-authoritative cluster when available (prevents grid vs nearest-neighbor mismatch)

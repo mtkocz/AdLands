@@ -5,7 +5,8 @@
       "Bash(do echo \"=== $commit ===\")",
       "Bash(done)",
       "Bash(node -c:*)",
-      "WebFetch(domain:raw.githubusercontent.com)"
+      "WebFetch(domain:raw.githubusercontent.com)",
+      "Bash(git status:*)"
     ]
   }
 }
