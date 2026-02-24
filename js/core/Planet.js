@@ -1259,7 +1259,8 @@ class Planet {
       );
       shader.fragmentShader = shader.fragmentShader.replace(
         "#include <roughnessmap_fragment>",
-        `{
+        `float roughnessFactor = roughness;
+        {
           float noiseScale = 0.02;
           vec3 bf = abs(normalize(vTriWorldPos));
           bf = bf / (bf.x + bf.y + bf.z);

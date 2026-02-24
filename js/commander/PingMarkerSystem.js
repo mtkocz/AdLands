@@ -429,8 +429,15 @@ class PingMarkerSystem {
       }
 
       // Get ping world position for arrow and occlusion
-      const pingWorldPos = this._tempVec3.copy(ping.position);
-      this.planet.hexGroup.localToWorld(pingWorldPos);
+      // In surface view, project at tank height (surface level) instead of elevated
+      if (!this.markersVisible) {
+        const lowPos = this._tempVec3.copy(ping.position).normalize().multiplyScalar(this.sphereRadius);
+        this.planet.hexGroup.localToWorld(lowPos);
+        var pingWorldPos = lowPos;
+      } else {
+        var pingWorldPos = this._tempVec3.copy(ping.position);
+        this.planet.hexGroup.localToWorld(pingWorldPos);
+      }
 
       // Update indicator (always, in all camera modes)
       const isOccluded = this._isOccluded(pingWorldPos);
