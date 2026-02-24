@@ -141,6 +141,10 @@
             }
             mp.updateTugOfWarUI?.(clusterId, state, counts);
             mp.setTerritoryRingVisible?.(true);
+          } else {
+            // Non-sponsor cluster — hide ring
+            mp.clearTugOfWarUI?.();
+            mp.setTerritoryRingVisible?.(false);
           }
         } else {
           if (lastPlayerClusterId !== undefined) {
