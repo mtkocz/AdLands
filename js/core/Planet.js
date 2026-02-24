@@ -280,8 +280,8 @@ class Planet {
     const material = new THREE.MeshStandardMaterial({
       color: 0x808080,
       flatShading: true,
-      roughness: 0.8,
-      metalness: 0.2,
+      roughness: 0.95,
+      metalness: 0.02,
       side: THREE.FrontSide,
     });
     const mesh = new THREE.Mesh(geometry, material);
@@ -396,8 +396,8 @@ class Planet {
     this.clusterPatterns.set(0, {
       type: "solid",
       grayValue: gray,
-      roughness: 0.7,
-      metalness: 0.1,
+      roughness: 0.95,
+      metalness: 0.02,
     });
 
     return adjacencyMap;
@@ -933,8 +933,8 @@ class Planet {
         material = new THREE.MeshStandardMaterial({
           map: this._neutralTexture,
           flatShading: true,
-          roughness: 0.8,
-          metalness: 0.1,
+          roughness: 0.95,
+          metalness: 0.02,
           side: THREE.FrontSide,
         });
         this._patchTriplanarNoise(material);
@@ -962,7 +962,7 @@ class Planet {
             vertexColors: true,
             flatShading: true,
             roughness: 0.95,
-            metalness: 0.05,
+            metalness: 0.02,
             side: THREE.FrontSide,
           });
           this._patchTriplanarNoise(material);
@@ -1095,7 +1095,7 @@ class Planet {
           vertexColors: true,
           flatShading: true,
           roughness: 0.95,
-          metalness: 0.05,
+          metalness: 0.02,
           side: THREE.FrontSide,
         });
       } else {
@@ -1279,12 +1279,12 @@ class Planet {
         "#include <roughnessmap_fragment>",
         `float roughnessFactor = roughness;
         {
-          vec3 bf = abs(normalize(vTriObjPos));
-          bf = bf / (bf.x + bf.y + bf.z);
-          float rXY = texture2D(triNoiseRoughMap, vTriObjPos.xy * triNoiseScale).g;
-          float rXZ = texture2D(triNoiseRoughMap, vTriObjPos.xz * triNoiseScale).g;
-          float rYZ = texture2D(triNoiseRoughMap, vTriObjPos.yz * triNoiseScale).g;
-          roughnessFactor *= rXY * bf.z + rXZ * bf.y + rYZ * bf.x;
+          float r = length(vTriObjPos);
+          vec3 n = vTriObjPos / r;
+          float theta = atan(n.z, n.x);
+          float phi = acos(clamp(n.y, -1.0, 1.0));
+          vec2 uv = vec2(theta, phi) * triNoiseScale * r;
+          roughnessFactor *= texture2D(triNoiseRoughMap, uv).g;
         }`,
       );
     };
@@ -1431,12 +1431,12 @@ class Planet {
         uniform float uNoiseScale;
         varying vec3 vObjPos;
         void main() {
-          vec3 bf = abs(normalize(vObjPos));
-          bf = bf / (bf.x + bf.y + bf.z);
-          vec3 nXY = texture2D(noiseMap, vObjPos.xy * uNoiseScale).rgb;
-          vec3 nXZ = texture2D(noiseMap, vObjPos.xz * uNoiseScale).rgb;
-          vec3 nYZ = texture2D(noiseMap, vObjPos.yz * uNoiseScale).rgb;
-          vec3 noise = nXY * bf.z + nXZ * bf.y + nYZ * bf.x;
+          float r = length(vObjPos);
+          vec3 n = vObjPos / r;
+          float theta = atan(n.z, n.x);
+          float phi = acos(clamp(n.y, -1.0, 1.0));
+          vec2 uv = vec2(theta, phi) * uNoiseScale * r;
+          vec3 noise = texture2D(noiseMap, uv).rgb;
           gl_FragColor = vec4(mix(vec3(0.5), noise, uFade), 1.0);
         }
       `,
@@ -1780,7 +1780,7 @@ class Planet {
     const wallMaterial = new THREE.MeshStandardMaterial({
       vertexColors: true,
       roughness: 0.95,
-      metalness: 0.05,
+      metalness: 0.02,
       flatShading: true,
       side: THREE.FrontSide,
     });
@@ -2852,8 +2852,8 @@ class Planet {
       mesh.material = new THREE.MeshStandardMaterial({
         map: this.clusterTextures.get(clusterId),
         flatShading: true,
-        roughness: 0.8,
-        metalness: 0.1,
+        roughness: 0.95,
+        metalness: 0.02,
         side: THREE.FrontSide,
       });
       this._patchTriplanarNoise(mesh.material);
@@ -3178,7 +3178,7 @@ class Planet {
               vertexColors: true,
               flatShading: true,
               roughness: 0.95,
-              metalness: 0.05,
+              metalness: 0.02,
               side: THREE.FrontSide,
             });
           } else {
@@ -3186,8 +3186,8 @@ class Planet {
             mesh.material = new THREE.MeshStandardMaterial({
               map: tex || null,
               flatShading: true,
-              roughness: pattern ? pattern.roughness : 0.8,
-              metalness: pattern ? pattern.metalness : 0.1,
+              roughness: pattern ? pattern.roughness : 0.95,
+              metalness: pattern ? pattern.metalness : 0.02,
               side: THREE.FrontSide,
             });
           }
@@ -3529,7 +3529,7 @@ class Planet {
           vertexColors: true,
           flatShading: true,
           roughness: 0.95,
-          metalness: 0.05,
+          metalness: 0.02,
           side: THREE.FrontSide,
         });
       } else if (newClusterId !== undefined) {
@@ -4122,8 +4122,8 @@ class Planet {
   _createHSVMaterial(
     texture,
     adjustment = {},
-    roughness = 0.8,
-    metalness = 0.1,
+    roughness = 0.95,
+    metalness = 0.02,
     tileCount = 20,
   ) {
     // Apply levels adjustment then pixel art filter (downscale, palette, dither, upscale)

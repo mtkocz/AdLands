@@ -221,8 +221,8 @@ class WorldGenerator {
     this.clusterPatterns.set(0, {
       type: "solid",
       grayValue: gray,
-      roughness: 0.7,
-      metalness: 0.1,
+      roughness: 0.95,
+      metalness: 0.02,
     });
 
     return adjacencyMap;

@@ -840,7 +840,7 @@ class TerrainElevation {
     const material = new THREE.MeshStandardMaterial({
       vertexColors: true,
       roughness: 0.95,
-      metalness: 0.05,
+      metalness: 0.02,
       flatShading: true,
       side: THREE.DoubleSide,
       shadowSide: THREE.FrontSide,
