@@ -1203,6 +1203,9 @@ class Planet {
     texture.wrapS = texture.wrapT = THREE.RepeatWrapping;
     texture.minFilter = THREE.NearestFilter;
     texture.magFilter = THREE.NearestFilter;
+    // Match overlay UV mapping: overlay uses uvScale=16 with U doubled (32),
+    // tile materials use spherical UVs with scale=60 in both axes
+    texture.repeat.set(32 / 60, 16 / 60);
     this._noiseRoughnessMap = texture;
   }
 
