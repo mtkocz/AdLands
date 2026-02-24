@@ -1486,6 +1486,15 @@
       lastCaptureProgressTime = performance.now();
       serverTankCounts = data.counts || null;
 
+      // DEBUG: Log server-authoritative tank counts (remove after verifying fix)
+      if (data.counts) {
+        const c = data.counts;
+        const total = c.rust + c.cobalt + c.viridian;
+        if (total > 1) {
+          console.log(`[ring] capture-progress cluster=${data.clusterId} counts: R=${c.rust} C=${c.cobalt} V=${c.viridian}`);
+        }
+      }
+
       // Always refresh ring HUD (no client-side cluster check — server is authoritative)
       // Use server-provided tank counts — avoids nearest-tile-center vs grid mismatch
       // and interpolation-delay errors that caused inconsistent enemy presence detection.

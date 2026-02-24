@@ -1387,7 +1387,15 @@ class Planet {
     const offset = 0.04;
     const ns = this._noiseScale;
 
-    const collectMesh = (pos, idx, isWall) => {
+    const collectMesh = (pos, idx, isWall, tileIndex) => {
+      // Per-tile tangent basis for square pixels everywhere
+      let tanU, tanV;
+      if (!isWall && tileIndex !== undefined && this._tiles && this._tiles[tileIndex]) {
+        const cp = this._tiles[tileIndex].centerPoint;
+        const center = new THREE.Vector3(parseFloat(cp.x), parseFloat(cp.y), parseFloat(cp.z));
+        ({ tanU, tanV } = this._calculateClusterTangentBasis(center));
+      }
+
       for (let i = 0; i < pos.length; i += 3) {
         const x = pos[i], y = pos[i + 1], z = pos[i + 2];
         const len = Math.sqrt(x * x + y * y + z * z);
@@ -1402,8 +1410,13 @@ class Planet {
           const horizR = Math.sqrt(x * x + z * z);
           const theta = Math.atan2(z, x);
           allUVs.push(theta * horizR * ns, len * ns);
+        } else if (tanU && tanV) {
+          // Tangent-plane projection: square pixels at any latitude
+          const u = (x * tanU.x + y * tanU.y + z * tanU.z) * ns;
+          const v = (x * tanV.x + y * tanV.y + z * tanV.z) * ns;
+          allUVs.push(u, v);
         } else {
-          // Spherical mapping for flat surfaces
+          // Fallback: spherical mapping
           const nx = x / len, ny = y / len, nz = z / len;
           const theta = Math.atan2(nz, nx);
           const phi = Math.acos(Math.max(-1, Math.min(1, ny)));
@@ -1431,13 +1444,8 @@ class Planet {
       // Skip inner crust — too dark for visible noise, and uses MeshBasicMaterial
       if (mesh.userData?.isInnerCrust) return;
 
-      // Collect from merged cluster meshes (non-sponsor, computed UVs)
-      if (mesh.userData?.isMergedCluster) {
-        const pos = mesh.geometry.attributes.position.array;
-        const idx = mesh.geometry.index ? mesh.geometry.index.array : null;
-        collectMesh(pos, idx, false);
-        return;
-      }
+      // Skip merged cluster meshes — we process individual tiles for per-tile tangent UVs
+      if (mesh.userData?.isMergedCluster) return;
 
       // Collect from cliff walls and polar walls — cylindrical mapping
       if (mesh.userData?.isCliffWall || mesh.userData?.isPolarWall) {
@@ -1447,8 +1455,7 @@ class Planet {
         return;
       }
 
-      // Skip hidden tiles (already covered by merged meshes)
-      if (mesh.userData?._merged) return;
+      // Process all individual tiles (visible or hidden/_merged)
       if (mesh.userData?.tileIndex === undefined) return;
 
       // Skip portals and polar tiles
@@ -1459,10 +1466,10 @@ class Planet {
       // Skip sponsor tiles — noise only applies to neutral territory
       if (this.sponsorTileIndices.has(tileIndex)) return;
 
-      // Collect from visible non-sponsor individual tiles
+      // Collect with per-tile tangent-plane projection
       const pos = mesh.geometry.attributes.position.array;
       const idx = mesh.geometry.index ? mesh.geometry.index.array : null;
-      collectMesh(pos, idx, false);
+      collectMesh(pos, idx, false, tileIndex);
     });
 
     if (allPositions.length === 0) return;
@@ -1473,7 +1480,7 @@ class Planet {
     geometry.setIndex(allIndices);
 
     // Overlay blend with distance fade
-    // UVs pre-computed: spherical for flat tiles, cylindrical for walls
+    // UVs pre-computed: per-tile tangent-plane for flat tiles, cylindrical for walls
     const material = new THREE.ShaderMaterial({
       uniforms: {
         noiseMap: { value: texture },
