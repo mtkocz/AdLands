@@ -731,7 +731,9 @@ class TerrainElevation {
       const lowElev = Math.min(elevA, elevB);
 
       const highScale = this.getExtrusion(highElev);
-      const lowScale = this.getExtrusion(lowElev);
+      // Extend cliff bottom slightly below the adjacent ground tile to
+      // eliminate the z-fighting seam where cliff wall meets tile surface.
+      const lowScale = this.getExtrusion(lowElev) - 0.0015;
 
       const v1x = parseFloat(high.v1.x);
       const v1y = parseFloat(high.v1.y);

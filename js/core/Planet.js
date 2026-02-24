@@ -1322,15 +1322,15 @@ class Planet {
                  texture2D(tex, pos.yz * triNoiseScale).rgb * blend.x;
         }`,
       );
-      // Diffuse noise: multiply base color by 2×noise (same as overlay blend)
+      // Diffuse noise: apply after lighting (same as overlay's post-lit blend)
       shader.fragmentShader = shader.fragmentShader.replace(
-        "#include <color_fragment>",
-        `#include <color_fragment>
+        "#include <output_fragment>",
+        `#include <output_fragment>
         {
           vec3 bf = abs(normalize(vTriObjPos));
           bf = bf / (bf.x + bf.y + bf.z);
           vec3 noiseDiff = triplanarSample(triNoiseDiffuseMap, vTriObjPos, bf);
-          diffuseColor.rgb *= noiseDiff * 2.0;
+          gl_FragColor.rgb *= noiseDiff * 2.0;
         }`,
       );
       // Roughness noise
@@ -1370,25 +1370,15 @@ class Planet {
     let vertexOffset = 0;
     const offset = 0.04;
 
-    const collectMesh = (pos, idx, nrm) => {
+    const collectMesh = (pos, idx) => {
       for (let i = 0; i < pos.length; i += 3) {
         const x = pos[i], y = pos[i + 1], z = pos[i + 2];
-        if (nrm) {
-          // Use geometry normal for offset (correct for walls)
-          allPositions.push(
-            x + nrm[i] * offset,
-            y + nrm[i + 1] * offset,
-            z + nrm[i + 2] * offset,
-          );
-        } else {
-          // Radial offset for surface tiles
-          const len = Math.sqrt(x * x + y * y + z * z);
-          allPositions.push(
-            x + (x / len) * offset,
-            y + (y / len) * offset,
-            z + (z / len) * offset,
-          );
-        }
+        const len = Math.sqrt(x * x + y * y + z * z);
+        allPositions.push(
+          x + (x / len) * offset,
+          y + (y / len) * offset,
+          z + (z / len) * offset,
+        );
       }
 
       if (idx) {
@@ -1408,14 +1398,9 @@ class Planet {
       if (!mesh.isMesh) return;
       if (!mesh.geometry || !mesh.geometry.attributes.position) return;
 
-      // Collect from cliff walls and polar walls (use geometry normals for offset)
-      if (mesh.userData?.isCliffWall || mesh.userData?.isPolarWall) {
-        const pos = mesh.geometry.attributes.position.array;
-        const idx = mesh.geometry.index ? mesh.geometry.index.array : null;
-        const nrm = mesh.geometry.attributes.normal ? mesh.geometry.attributes.normal.array : null;
-        collectMesh(pos, idx, nrm);
-        return;
-      }
+      // Skip cliff walls and polar walls — they use _patchTriplanarNoiseFull
+      // which bakes both diffuse and roughness noise into the material directly
+      if (mesh.userData?.isCliffWall || mesh.userData?.isPolarWall) return;
 
       // Collect from merged cluster meshes
       if (mesh.userData?.isMergedCluster) {
