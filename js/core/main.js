@@ -2796,6 +2796,12 @@
     document.getElementById("tanks-rust").textContent = counts.rust;
     document.getElementById("tanks-cobalt").textContent = counts.cobalt;
     document.getElementById("tanks-viridian").textContent = counts.viridian;
+    // Mark ring dirty when tank counts change (drives dots + minimum presence arcs)
+    if (ringAnimState.tankCounts.rust !== counts.rust ||
+        ringAnimState.tankCounts.cobalt !== counts.cobalt ||
+        ringAnimState.tankCounts.viridian !== counts.viridian) {
+      ringAnimState.isDirty = true;
+    }
     ringAnimState.tankCounts.rust = counts.rust;
     ringAnimState.tankCounts.cobalt = counts.cobalt;
     ringAnimState.tankCounts.viridian = counts.viridian;
@@ -2812,6 +2818,7 @@
     const isContested = factionsWithTanksCount > 1;
 
     // Update ring animation state for contested pulse overlay
+    if (ringAnimState.isContested !== isContested) ringAnimState.isDirty = true;
     ringAnimState.isContested = isContested;
 
     if (state.owner) {
