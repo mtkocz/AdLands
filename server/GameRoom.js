@@ -3178,11 +3178,13 @@ class GameRoom {
       const state = this.clusterCaptureState.get(clusterId);
       if (!state) continue;
 
+      const counts = clusterTankCounts.get(clusterId);
       const progressData = {
         clusterId,
         tics: { ...state.tics },
         capacity: state.capacity,
         owner: state.owner,
+        counts: counts ? { ...counts } : { rust: 0, cobalt: 0, viridian: 0 },
       };
 
       for (const pid of playerIds) {

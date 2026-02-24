@@ -731,9 +731,7 @@ class TerrainElevation {
       const lowElev = Math.min(elevA, elevB);
 
       const highScale = this.getExtrusion(highElev);
-      // Extend cliff bottom slightly below the adjacent ground tile to
-      // eliminate the z-fighting seam where cliff wall meets tile surface.
-      const lowScale = this.getExtrusion(lowElev) - 0.0015;
+      const lowScale = this.getExtrusion(lowElev);
 
       const v1x = parseFloat(high.v1.x);
       const v1y = parseFloat(high.v1.y);
@@ -847,7 +845,7 @@ class TerrainElevation {
       side: THREE.DoubleSide,
       shadowSide: THREE.FrontSide,
     });
-    this.planet._patchTriplanarNoiseFull(material);
+    this.planet._patchTriplanarNoise(material);
 
     this.cliffWallMesh = new THREE.Mesh(geometry, material);
     this.cliffWallMesh.castShadow = true;

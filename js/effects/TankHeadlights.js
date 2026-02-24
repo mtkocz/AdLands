@@ -184,7 +184,9 @@ class TankHeadlights {
       spotL.visible = false;
       spotR.visible = false;
 
-      // Layer 1: spotlights only illuminate objects that opt in (not hex ground)
+      // Layer 1 for bloom pass visibility. Note: Three.js r128 does NOT filter
+      // lighting per-object by layer — ground tile exclusion is handled via
+      // onBeforeCompile shader patching in Planet._patchIgnoreSpotLights().
       spotL.layers.set(1);
       spotR.layers.set(1);
 

@@ -91,6 +91,7 @@
     // the server's grid-based cluster lookup and the client's nearest-neighbor detection.
     let serverClusterId = undefined;
     let lastCaptureProgressTime = 0;
+    let serverTankCounts = null; // Cached server-authoritative tank counts from capture-progress
     mp.onFrameUpdate = (deltaTime, camera, frustum, lodOptions) => {
       if (!net.isMultiplayer) return;
 
@@ -132,6 +133,7 @@
           const localOnSponsor = localClusterId !== undefined && planet.clusterCaptureState.has(localClusterId);
           if (!localOnSponsor || now - lastCaptureProgressTime > 1500) {
             serverClusterId = undefined;
+            serverTankCounts = null;
           }
         }
         // Use server-authoritative cluster when available (prevents grid vs nearest-neighbor mismatch)
@@ -140,15 +142,11 @@
         if (clusterId !== undefined && onSurface) {
           const state = planet.clusterCaptureState.get(clusterId);
           if (state) {
-            // Build tank counts for this cluster (local player + remote tanks)
-            const counts = { rust: 0, cobalt: 0, viridian: 0 };
-            counts[tank.faction]++;
-            for (const [, rt] of remoteTanks) {
-              if (!rt.isDead && rt.faction && rt.group) {
-                const rtCluster = planet.getClusterIdAtLocalPosition(rt.group.position);
-                if (rtCluster === clusterId) counts[rt.faction]++;
-              }
-            }
+            // Use server-authoritative tank counts (cached from capture-progress).
+            // Falls back to counting local player only if server counts not yet received.
+            const counts = (serverTankCounts && clusterId === serverClusterId)
+              ? serverTankCounts
+              : { rust: 0, cobalt: 0, viridian: 0, [tank.faction]: 1 };
             mp.updateTugOfWarUI?.(clusterId, state, counts);
             mp.setTerritoryRingVisible?.(true);
           } else {
@@ -1467,18 +1465,14 @@
       // so it's always the right one — track it as the authoritative cluster ID
       serverClusterId = data.clusterId;
       lastCaptureProgressTime = performance.now();
+      serverTankCounts = data.counts || null;
 
       // Always refresh ring HUD (no client-side cluster check — server is authoritative)
+      // Use server-provided tank counts — avoids nearest-tile-center vs grid mismatch
+      // and interpolation-delay errors that caused inconsistent enemy presence detection.
       const hasSpawned = mp.getHasSpawnedIn?.();
       if (hasSpawned && mp.updateTugOfWarUI) {
-        const counts = { rust: 0, cobalt: 0, viridian: 0 };
-        if (!tank.isDead) counts[tank.faction]++;
-        for (const [, rt] of remoteTanks) {
-          if (!rt.isDead && rt.faction && rt.group) {
-            const rtCluster = planet.getClusterIdAtLocalPosition(rt.group.position);
-            if (rtCluster === data.clusterId) counts[rt.faction]++;
-          }
-        }
+        const counts = data.counts || { rust: 0, cobalt: 0, viridian: 0 };
         mp.updateTugOfWarUI(data.clusterId, state || { tics: data.tics, capacity: data.capacity, owner: data.owner, momentum: { rust: 0, cobalt: 0, viridian: 0 } }, counts);
       }
     };

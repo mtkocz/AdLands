@@ -938,6 +938,7 @@ class Planet {
           side: THREE.FrontSide,
         });
         this._patchTriplanarNoise(material);
+        this._patchIgnoreSpotLights(material);
       } else {
         const pattern = this.clusterPatterns.get(clusterId);
         const isElevated = this.terrainElevation && this.terrainElevation.getElevationAtTileIndex(index) > 0;
@@ -980,6 +981,7 @@ class Planet {
             side: THREE.FrontSide,
           });
           this._patchTriplanarNoise(material);
+          this._patchIgnoreSpotLights(material);
         }
       }
 
@@ -1110,6 +1112,9 @@ class Planet {
         });
       }
       this._patchTriplanarNoise(material);
+      if (materialType !== "elevated") {
+        this._patchIgnoreSpotLights(material);
+      }
 
       const mergedMesh = new THREE.Mesh(mergedGeom, material);
       mergedMesh.receiveShadow = true;
@@ -1286,63 +1291,30 @@ class Planet {
   }
 
   /**
-   * Full triplanar noise patch — diffuse + roughness baked into the material.
-   * Used for cliff walls and polar walls where the separate overlay mesh can't
-   * reliably render (z-fighting at steep angles, face culling issues).
-   * @param {THREE.MeshStandardMaterial} material
+   * Patch a MeshStandardMaterial to ignore SpotLight illumination.
+   * Three.js r128 doesn't filter lights per-object by layer, so we strip the
+   * spot light loop from the compiled fragment shader. Chains with any existing
+   * onBeforeCompile (e.g. triplanar noise patch).
+   *
+   * Applied to ground-level hex tile materials only — elevated terrain, cliff
+   * walls, and tanks still receive spotlight illumination.
+   *
+   * Call sites: _createTileMeshes (neutral + ground faction), mergeClusterTiles
+   * (ground), _updateProceduralTileMaterials, clearHighlightedTiles,
+   * removeSponsorCluster, _createHSVMaterial (sponsors).
    */
-  _patchTriplanarNoiseFull(material) {
-    const noiseDiffuseMap = this._noiseDiffuseMap;
-    const noiseRoughMap = this._noiseRoughnessMap;
-    const noiseScale = this._noiseScale;
-    material.onBeforeCompile = (shader) => {
-      shader.uniforms.triNoiseDiffuseMap = { value: noiseDiffuseMap };
-      shader.uniforms.triNoiseRoughMap = { value: noiseRoughMap };
-      shader.uniforms.triNoiseScale = { value: noiseScale };
-
-      shader.vertexShader = shader.vertexShader.replace(
-        "#include <common>",
-        "#include <common>\nvarying vec3 vTriObjPos;",
+  _patchIgnoreSpotLights(material) {
+    const originalCompile = material.onBeforeCompile;
+    material.onBeforeCompile = (shader, renderer) => {
+      if (originalCompile) originalCompile.call(material, shader, renderer);
+      const chunk = THREE.ShaderChunk['lights_fragment_begin'];
+      const noSpotChunk = chunk.replace(
+        /#if\s*\(\s*NUM_SPOT_LIGHTS\s*>\s*0\s*\)[\s\S]*?#pragma\s+unroll_loop_end\s*\n\s*#endif/,
+        ''
       );
-      shader.vertexShader = shader.vertexShader.replace(
-        "#include <begin_vertex>",
-        "#include <begin_vertex>\nvTriObjPos = position;",
-      );
-
       shader.fragmentShader = shader.fragmentShader.replace(
-        "#include <common>",
-        `#include <common>
-        varying vec3 vTriObjPos;
-        uniform sampler2D triNoiseDiffuseMap;
-        uniform sampler2D triNoiseRoughMap;
-        uniform float triNoiseScale;
-        vec3 triplanarSample(sampler2D tex, vec3 pos, vec3 blend) {
-          return texture2D(tex, pos.xy * triNoiseScale).rgb * blend.z +
-                 texture2D(tex, pos.xz * triNoiseScale).rgb * blend.y +
-                 texture2D(tex, pos.yz * triNoiseScale).rgb * blend.x;
-        }`,
-      );
-      // Diffuse noise: apply after lighting (same as overlay's post-lit blend)
-      shader.fragmentShader = shader.fragmentShader.replace(
-        "#include <output_fragment>",
-        `#include <output_fragment>
-        {
-          vec3 bf = abs(normalize(vTriObjPos));
-          bf = bf / (bf.x + bf.y + bf.z);
-          vec3 noiseDiff = triplanarSample(triNoiseDiffuseMap, vTriObjPos, bf);
-          gl_FragColor.rgb *= noiseDiff * 2.0;
-        }`,
-      );
-      // Roughness noise
-      shader.fragmentShader = shader.fragmentShader.replace(
-        "#include <roughnessmap_fragment>",
-        `float roughnessFactor = roughness;
-        {
-          vec3 bf = abs(normalize(vTriObjPos));
-          bf = bf / (bf.x + bf.y + bf.z);
-          vec3 noiseRough = triplanarSample(triNoiseRoughMap, vTriObjPos, bf);
-          roughnessFactor *= noiseRough.g;
-        }`,
+        '#include <lights_fragment_begin>',
+        noSpotChunk
       );
     };
   }
@@ -1368,7 +1340,7 @@ class Planet {
     const allPositions = [];
     const allIndices = [];
     let vertexOffset = 0;
-    const offset = 0.04;
+    const offset = 0.003;
 
     const collectMesh = (pos, idx) => {
       for (let i = 0; i < pos.length; i += 3) {
@@ -1398,12 +1370,19 @@ class Planet {
       if (!mesh.isMesh) return;
       if (!mesh.geometry || !mesh.geometry.attributes.position) return;
 
-      // Skip cliff walls and polar walls — they use _patchTriplanarNoiseFull
-      // which bakes both diffuse and roughness noise into the material directly
-      if (mesh.userData?.isCliffWall || mesh.userData?.isPolarWall) return;
+      // Skip inner crust — too dark for visible noise, and uses MeshBasicMaterial
+      if (mesh.userData?.isInnerCrust) return;
 
       // Collect from merged cluster meshes
       if (mesh.userData?.isMergedCluster) {
+        const pos = mesh.geometry.attributes.position.array;
+        const idx = mesh.geometry.index ? mesh.geometry.index.array : null;
+        collectMesh(pos, idx);
+        return;
+      }
+
+      // Collect from cliff walls and polar walls
+      if (mesh.userData?.isCliffWall || mesh.userData?.isPolarWall) {
         const pos = mesh.geometry.attributes.position.array;
         const idx = mesh.geometry.index ? mesh.geometry.index.array : null;
         collectMesh(pos, idx);
@@ -1463,6 +1442,7 @@ class Planet {
       `,
       transparent: true,
       depthWrite: false,
+      side: THREE.DoubleSide,
       polygonOffset: true,
       polygonOffsetFactor: -2,
       polygonOffsetUnits: -2,
@@ -1804,7 +1784,7 @@ class Planet {
       flatShading: true,
       side: THREE.FrontSide,
     });
-    this._patchTriplanarNoiseFull(wallMaterial);
+    this._patchTriplanarNoise(wallMaterial);
 
     const wallMesh = new THREE.Mesh(wallGeometry, wallMaterial);
     wallMesh.castShadow = true;
@@ -1867,7 +1847,7 @@ class Planet {
     });
 
     const innerMesh = new THREE.Mesh(innerGeometry, innerMaterial);
-    innerMesh.userData = { isPolarWall: true };
+    innerMesh.userData = { isInnerCrust: true };
     this.hexGroup.add(innerMesh);
     this._innerCrustMesh = innerMesh;
   }
@@ -2877,6 +2857,11 @@ class Planet {
         side: THREE.FrontSide,
       });
       this._patchTriplanarNoise(mesh.material);
+      const isElevated = this.terrainElevation &&
+        this.terrainElevation.getElevationAtTileIndex(tileIndex) > 0;
+      if (!isElevated) {
+        this._patchIgnoreSpotLights(mesh.material);
+      }
       mesh.userData.clusterId = clusterId;
     });
   }
@@ -3207,6 +3192,9 @@ class Planet {
             });
           }
           this._patchTriplanarNoise(mesh.material);
+          if (!isElevated) {
+            this._patchIgnoreSpotLights(mesh.material);
+          }
           mesh.material.color.setHex(mesh.userData._highlightOriginalColor);
           if (mesh.material.emissive) {
             mesh.material.emissive.setHex(mesh.userData._highlightOriginalEmissive || 0x000000);
@@ -3571,6 +3559,9 @@ class Planet {
         });
       }
       this._patchTriplanarNoise(material);
+      if (!isElevated) {
+        this._patchIgnoreSpotLights(material);
+      }
 
       const newMesh = new THREE.Mesh(geometry, material);
       newMesh.userData = oldUserData;
@@ -4153,6 +4144,7 @@ class Planet {
       side: THREE.FrontSide,
     });
     this._patchTriplanarNoise(mat);
+    this._patchIgnoreSpotLights(mat);
     return mat;
   }
 
