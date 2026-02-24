@@ -265,8 +265,8 @@ class Environment {
 
     // Scale normalBias with frustum to maintain consistent texel-space offset
     const biasScale = frustumSize / 200;
-    this.sunLight.shadow.normalBias = 0.03 * biasScale;
-    if (this.fillLight) this.fillLight.shadow.normalBias = 0.05 * biasScale;
+    this.sunLight.shadow.normalBias = 0.005 * biasScale;
+    if (this.fillLight) this.fillLight.shadow.normalBias = 0.01 * biasScale;
 
     const sunCam = this.sunLight.shadow.camera;
     const fillCam = this.fillLight ? this.fillLight.shadow.camera : null;

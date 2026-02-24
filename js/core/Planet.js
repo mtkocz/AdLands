@@ -1387,14 +1387,7 @@ class Planet {
     const offset = 0.04;
     const ns = this._noiseScale;
 
-    // Build tileIndex → sponsor cluster tile count for UV scaling
-    const sponsorTileCounts = new Map();
-    for (const { tileIndices } of this.sponsorClusters.values()) {
-      const count = tileIndices.length;
-      for (const ti of tileIndices) sponsorTileCounts.set(ti, count);
-    }
-
-    const collectMesh = (pos, idx, srcUVs, isWall, uvScale) => {
+    const collectMesh = (pos, idx, isWall) => {
       for (let i = 0; i < pos.length; i += 3) {
         const x = pos[i], y = pos[i + 1], z = pos[i + 2];
         const len = Math.sqrt(x * x + y * y + z * z);
@@ -1404,11 +1397,7 @@ class Planet {
           z + (z / len) * offset,
         );
 
-        if (srcUVs) {
-          // Copy UVs from source geometry, scaled to match sponsor pixel density
-          const vi = (i / 3) * 2;
-          allUVs.push(srcUVs[vi] * uvScale, srcUVs[vi + 1] * uvScale);
-        } else if (isWall) {
+        if (isWall) {
           // Cylindrical mapping for walls: azimuthal arc length + radial height
           const horizR = Math.sqrt(x * x + z * z);
           const theta = Math.atan2(z, x);
@@ -1442,19 +1431,19 @@ class Planet {
       // Skip inner crust — too dark for visible noise, and uses MeshBasicMaterial
       if (mesh.userData?.isInnerCrust) return;
 
-      // Collect from merged cluster meshes (non-sponsor, use computed UVs)
+      // Collect from merged cluster meshes (non-sponsor, computed UVs)
       if (mesh.userData?.isMergedCluster) {
         const pos = mesh.geometry.attributes.position.array;
         const idx = mesh.geometry.index ? mesh.geometry.index.array : null;
-        collectMesh(pos, idx, null, false);
+        collectMesh(pos, idx, false);
         return;
       }
 
-      // Collect from cliff walls and polar walls — use cylindrical mapping
+      // Collect from cliff walls and polar walls — cylindrical mapping
       if (mesh.userData?.isCliffWall || mesh.userData?.isPolarWall) {
         const pos = mesh.geometry.attributes.position.array;
         const idx = mesh.geometry.index ? mesh.geometry.index.array : null;
-        collectMesh(pos, idx, null, true);
+        collectMesh(pos, idx, true);
         return;
       }
 
@@ -1467,19 +1456,13 @@ class Planet {
       if (this.portalCenterIndices.has(tileIndex)) return;
       if (this.polarTileIndices.has(tileIndex)) return;
 
-      // Collect from visible individual tiles
+      // Skip sponsor tiles — noise only applies to neutral territory
+      if (this.sponsorTileIndices.has(tileIndex)) return;
+
+      // Collect from visible non-sponsor individual tiles
       const pos = mesh.geometry.attributes.position.array;
       const idx = mesh.geometry.index ? mesh.geometry.index.array : null;
-      // Sponsor tiles: copy tangent-plane UVs scaled to match pixel art filter resolution
-      const tileCount = sponsorTileCounts.get(tileIndex);
-      if (tileCount && mesh.geometry.attributes.uv) {
-        const targetShortSide = Math.round(
-          Math.max(64, Math.min(256, 128 * Math.sqrt(tileCount / 20)))
-        );
-        collectMesh(pos, idx, mesh.geometry.attributes.uv.array, false, targetShortSide / 128);
-      } else {
-        collectMesh(pos, idx, null, false, 1);
-      }
+      collectMesh(pos, idx, false);
     });
 
     if (allPositions.length === 0) return;
@@ -4217,7 +4200,6 @@ class Planet {
       metalness: metalness,
       side: THREE.FrontSide,
     });
-    this._patchTriplanarNoise(mat);
     this._patchIgnoreSpotLights(mat);
     return mat;
   }

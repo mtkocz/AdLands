@@ -3313,10 +3313,10 @@ class GameRoom {
     statePayload.tc = this.players.size + this.botBridge.botCount;
     statePayload.bfc = this.botBridge.getBotFactionCounts();
 
-    // Compact orbital positions for all bots (every 3 ticks ≈ 333ms)
+    // Compact orbital positions for all bots (every 5 ticks ≈ 500ms)
     // Flat array: [theta, phi, factionIdx, theta, phi, factionIdx, ...]
     // factionIdx: 0=rust, 1=cobalt, 2=viridian
-    if (this.tick % 3 === 0) {
+    if (this.tick % 5 === 0) {
       const op = [];
       const opn = [];
       for (const botId in botStates) {
@@ -3326,8 +3326,8 @@ class GameRoom {
         opn.push(botId, bs.n || botId);
       }
       statePayload.op = op;
-      // Send name map every 30 ticks (~3s) to keep bandwidth low
-      if (this.tick % 30 === 0 || !this._opNamesSent) {
+      // Send name map every 50 ticks (~5s) to keep bandwidth low
+      if (this.tick % 50 === 0 || !this._opNamesSent) {
         statePayload.opn = opn;
         this._opNamesSent = true;
       } else {
