@@ -843,7 +843,7 @@ class TerrainElevation {
       metalness: 0.05,
       flatShading: true,
       side: THREE.DoubleSide,
-      shadowSide: THREE.FrontSide,
+      shadowSide: THREE.BackSide,
     });
     this.planet._patchTriplanarNoise(material);
 

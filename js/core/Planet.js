@@ -1196,7 +1196,7 @@ class Planet {
       randomValues[i] = Math.random();
     }
 
-    // Diffuse noise: centered at gray 128 ±10 (used by overlay shader)
+    // Diffuse noise: centered at gray 128 ±30 (used by overlay shader)
     const diffuseCanvas = document.createElement("canvas");
     diffuseCanvas.width = size;
     diffuseCanvas.height = size;
@@ -1204,7 +1204,7 @@ class Planet {
     const diffuseImg = diffuseCtx.getImageData(0, 0, size, size);
     const dd = diffuseImg.data;
     for (let i = 0; i < randomValues.length; i++) {
-      const v = Math.floor(128 + (randomValues[i] - 0.5) * 20);
+      const v = Math.floor(128 + (randomValues[i] - 0.5) * 60);
       dd[i * 4] = dd[i * 4 + 1] = dd[i * 4 + 2] = v;
       dd[i * 4 + 3] = 255;
     }
