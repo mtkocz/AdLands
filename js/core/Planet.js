@@ -1230,9 +1230,6 @@ class Planet {
     roughTex.wrapS = roughTex.wrapT = THREE.RepeatWrapping;
     roughTex.minFilter = THREE.NearestFilter;
     roughTex.magFilter = THREE.NearestFilter;
-    // Tile UVs use spherical scale=60, overlay uses uvScale=16 (V) with U doubled (32)
-    // repeat = overlay_scale / tile_scale per axis
-    roughTex.repeat.set(32 / 60, 16 / 60);
     this._noiseRoughnessMap = roughTex;
   }
 
@@ -1259,7 +1256,6 @@ class Planet {
     const allIndices = [];
     let vertexOffset = 0;
     const radialOffset = 0.04;
-    const uvScale = 16.0; // Texture tiling frequency across planet
 
     const collectMesh = (pos, idx) => {
       for (let i = 0; i < pos.length; i += 3) {
@@ -1271,12 +1267,12 @@ class Planet {
           y + (y / len) * radialOffset,
           z + (z / len) * radialOffset,
         );
-        // Spherical UV — double U scale to compensate for equator being 2x pole-to-pole arc
+        // Same spherical UV formula as tile materials (scale=60)
         const theta = Math.atan2(z, x);
         const phi = Math.acos(Math.max(-1, Math.min(1, y / len)));
         allUvs.push(
-          (theta / (2 * Math.PI) + 0.5) * uvScale * 2,
-          (phi / Math.PI) * uvScale,
+          (theta / Math.PI + 1) * 0.5 * 60.0,
+          (phi / Math.PI) * 60.0,
         );
       }
 
@@ -1336,6 +1332,7 @@ class Planet {
     geometry.setIndex(allIndices);
 
     // Overlay blend with distance fade — fades to neutral (no effect) at 260+ units
+    // UVs match tile materials (scale=60); same mapping as roughnessMap
     const material = new THREE.ShaderMaterial({
       uniforms: {
         noiseMap: { value: texture },
