@@ -5,7 +5,7 @@
  * No Three.js dependency — pure math.
  */
 
-const { PLANET_ROTATION_SPEED, moveOnSphere } = require("./shared/physics");
+const { moveOnSphere } = require("./shared/physics");
 
 const BODYGUARD_CONFIG = {
   count: 2,
@@ -213,32 +213,25 @@ class BodyguardManager {
       const prevTheta = bg.theta;
       const prevPhi = bg.phi;
       this._moveOnSphere(bg, dt);
-      // Counter planet rotation (same as shared/physics.js moveOnSphere)
-      const dt60 = dt * 60;
-      bg.theta -= (PLANET_ROTATION_SPEED * dt60) / 60;
-      if (bg.theta < 0) bg.theta += Math.PI * 2;
 
       // 5. Terrain collision with wall sliding
-      if (this._checkTerrainCollision(bg, planetRotation)) {
+      if (this._checkTerrainCollision(bg)) {
         const newTheta = bg.theta;
         const newPhi = bg.phi;
-        let thetaRev = prevTheta - (PLANET_ROTATION_SPEED * dt60) / 60;
-        if (thetaRev < 0) thetaRev += Math.PI * 2;
-        if (thetaRev >= Math.PI * 2) thetaRev -= Math.PI * 2;
 
         // Try theta-only slide (keep phi from before)
         bg.phi = prevPhi;
-        if (!this._checkTerrainCollision(bg, planetRotation)) {
+        if (!this._checkTerrainCollision(bg)) {
           bg.speed *= 0.85;
         } else {
           // Try phi-only slide (theta reverted, phi moved)
-          bg.theta = thetaRev;
+          bg.theta = prevTheta;
           bg.phi = newPhi;
-          if (!this._checkTerrainCollision(bg, planetRotation)) {
+          if (!this._checkTerrainCollision(bg)) {
             bg.speed *= 0.85;
           } else {
             // Both axes blocked — full revert
-            bg.theta = thetaRev;
+            bg.theta = prevTheta;
             bg.phi = prevPhi;
             bg.speed *= 0.3;
           }
@@ -261,14 +254,6 @@ class BodyguardManager {
     }
     if (bg.speed !== 0) {
       this._moveOnSphere(bg, dt);
-      const dt60b = dt * 60;
-      bg.theta -= (PLANET_ROTATION_SPEED * dt60b) / 60;
-      if (bg.theta < 0) bg.theta += Math.PI * 2;
-    } else {
-      // Still counter planet rotation even when stopped
-      const dt60b = dt * 60;
-      bg.theta -= (PLANET_ROTATION_SPEED * dt60b) / 60;
-      if (bg.theta < 0) bg.theta += Math.PI * 2;
     }
   }
 
@@ -572,7 +557,7 @@ class BodyguardManager {
    * Same 5-probe approach as GameRoom._gameTick player terrain collision.
    * @returns {boolean} true if blocked
    */
-  _checkTerrainCollision(bg, planetRotation) {
+  _checkTerrainCollision(bg) {
     const R = this.sphereRadius;
     const sinPhi = Math.sin(bg.phi);
     const safeSinPhi =
@@ -598,7 +583,7 @@ class BodyguardManager {
     for (const [fwd, rgt] of probes) {
       const pPhi = bg.phi + (fwdPhi * fwd + rgtPhi * rgt) / R;
       const pTh = bg.theta + (fwdTh * fwd + rgtTh * rgt) / R;
-      if (this.worldGen.isTerrainBlocked(pTh + planetRotation, pPhi)) return true;
+      if (this.worldGen.isTerrainBlocked(pTh, pPhi)) return true;
     }
     return false;
   }

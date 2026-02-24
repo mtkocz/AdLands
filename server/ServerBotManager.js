@@ -10,7 +10,7 @@
 
 const ServerBotPathfinder = require("./ServerBotPathfinder");
 const ServerFactionCoordinator = require("./ServerFactionCoordinator");
-const { FACTIONS, sphericalDistance, PLANET_ROTATION_SPEED } = require("./shared/physics");
+const { FACTIONS, sphericalDistance } = require("./shared/physics");
 
 // Bot AI states
 const BOT_STATES = {
@@ -522,16 +522,16 @@ class ServerBotManager {
       const isStagger = (j >= startIdx && j < endIdx);
       this._updateInput(bot, dt, isStagger);
       this._updatePhysics(bot, dt);
-      this._moveOnSphere(bot, planetRotation, dt);
+      this._moveOnSphere(bot, dt);
 
       // Safety net: if bot center is inside terrain, teleport immediately
-      if (this.worldGen.isTerrainBlocked(bot.theta + planetRotation, bot.phi)) {
+      if (this.worldGen.isTerrainBlocked(bot.theta, bot.phi)) {
         this._teleportToSafety(bot);
       }
 
-      bot.currentClusterId = this.worldGen.getClusterIdAt(bot.theta + planetRotation, bot.phi);
+      bot.currentClusterId = this.worldGen.getClusterIdAt(bot.theta, bot.phi);
       if (isStagger) {
-        nextProjectileId = this._updateCombat(bot, dt, players, planetRotation, projectiles, nextProjectileId, now);
+        nextProjectileId = this._updateCombat(bot, dt, players, projectiles, nextProjectileId, now);
       }
     }
 
@@ -1121,7 +1121,7 @@ class ServerBotManager {
    * Uses WorldGenerator's spatial hash (server-side).
    */
   _isPositionBlocked(theta, phi) {
-    const rotTheta = theta + (this._planetRotation || 0);
+    const rotTheta = theta;
     return this.worldGen.isTerrainBlocked(rotTheta, phi);
   }
 
@@ -1178,7 +1178,7 @@ class ServerBotManager {
   // MOVEMENT (with 5-probe wall-sliding)
   // ========================
 
-  _moveOnSphere(bot, planetRotation, dt) {
+  _moveOnSphere(bot, dt) {
     const prevTheta = bot.theta;
     const prevPhi = bot.phi;
 
@@ -1222,27 +1222,15 @@ class ServerBotManager {
     while (bot.theta > Math.PI * 2) bot.theta -= Math.PI * 2;
     while (bot.theta < 0) bot.theta += Math.PI * 2;
 
-    // Counter planet rotation
-    bot.theta -= (dt60 / 60) * PLANET_ROTATION_SPEED;
-    if (bot.theta < 0) bot.theta += Math.PI * 2;
-
     // 5-probe terrain collision with wall-sliding
-    // Always check — planet rotation shifts theta even when speed is 0
-    const blocked = this._isTerrainBlockedAt(bot.theta, bot.phi, bot.heading, bot.speed || 0.001, planetRotation);
+    const blocked = this._isTerrainBlockedAt(bot.theta, bot.phi, bot.heading, bot.speed || 0.001);
 
     if (blocked) {
-      // Compensate planet rotation for revert
-      const rotDelta = (dt60 / 60) * PLANET_ROTATION_SPEED;
-
       // Try theta-only slide (keep new theta, revert phi)
       const checkSpeed = bot.speed || 0.001;
-      const thetaOnly = this._isTerrainBlockedAt(bot.theta, prevPhi, bot.heading, checkSpeed, planetRotation);
+      const thetaOnly = this._isTerrainBlockedAt(bot.theta, prevPhi, bot.heading, checkSpeed);
       // Try phi-only slide (revert theta, keep new phi)
-      const thetaRev = prevTheta - rotDelta;
-      const phiOnly = this._isTerrainBlockedAt(
-        thetaRev < 0 ? thetaRev + Math.PI * 2 : thetaRev,
-        bot.phi, bot.heading, checkSpeed, planetRotation
-      );
+      const phiOnly = this._isTerrainBlockedAt(prevTheta, bot.phi, bot.heading, checkSpeed);
 
       if (!thetaOnly) {
         // Slide along theta (east-west)
@@ -1250,16 +1238,16 @@ class ServerBotManager {
         bot.speed *= 0.85;
       } else if (!phiOnly) {
         // Slide along phi (north-south)
-        bot.theta = thetaRev < 0 ? thetaRev + Math.PI * 2 : thetaRev;
+        bot.theta = prevTheta;
         bot.speed *= 0.85;
       } else {
         // Both axes blocked — full revert
-        bot.theta = thetaRev < 0 ? thetaRev + Math.PI * 2 : thetaRev;
+        bot.theta = prevTheta;
         bot.phi = prevPhi;
         bot.speed *= BOT_COLLISION_SPEED_RETAIN;
 
         // If still stuck after revert (terrain rotated into us), teleport out
-        if (this._isTerrainBlockedAt(bot.theta, bot.phi, bot.heading, checkSpeed, planetRotation)) {
+        if (this._isTerrainBlockedAt(bot.theta, bot.phi, bot.heading, checkSpeed)) {
           this._teleportToSafety(bot);
         }
       }
@@ -1281,7 +1269,7 @@ class ServerBotManager {
    * 5-probe oriented-box terrain check.
    * Matches GameRoom._isTerrainBlockedAt pattern.
    */
-  _isTerrainBlockedAt(theta, phi, heading, speed, planetRotation) {
+  _isTerrainBlockedAt(theta, phi, heading, speed) {
     const R = this.sphereRadius;
     const sinPhi = Math.sin(phi);
     const safeSinPhi = Math.abs(sinPhi) < 0.01 ? 0.01 * Math.sign(sinPhi || 1) : sinPhi;
@@ -1305,7 +1293,7 @@ class ServerBotManager {
     for (const [fwd, rgt] of probes) {
       const pPhi = phi + (fwdPhi * fwd + rgtPhi * rgt) / R;
       const pTh = theta + (fwdTh * fwd + rgtTh * rgt) / R;
-      if (this.worldGen.isTerrainBlocked(pTh + planetRotation, pPhi)) return true;
+      if (this.worldGen.isTerrainBlocked(pTh, pPhi)) return true;
     }
     return false;
   }
@@ -1333,7 +1321,7 @@ class ServerBotManager {
   // COMBAT
   // ========================
 
-  _updateCombat(bot, dt, players, planetRotation, projectiles, nextProjectileId, now) {
+  _updateCombat(bot, dt, players, projectiles, nextProjectileId, now) {
     // Scan for targets periodically
     bot.combatScanTimer -= dt * 1000;
     if (bot.combatScanTimer <= 0 || !bot.combatTarget) {
@@ -1881,7 +1869,6 @@ class ServerBotManager {
   _getValidSpawnPosition() {
     const PHI_MIN = 0.35;
     const PHI_MAX = Math.PI - 0.35;
-    const planetRotation = this._planetRotation || 0;
     const R = this.sphereRadius;
     // Buffer distance around the spawn point to keep bots away from terrain edges
     const SPAWN_BUFFER = 8 / R; // ~8 world units clearance
@@ -1891,17 +1878,15 @@ class ServerBotManager {
       const theta = Math.random() * Math.PI * 2;
       const phi = PHI_MIN + Math.random() * (PHI_MAX - PHI_MIN);
       const safeSinPhi = Math.max(0.1, Math.sin(phi));
-      const rotTheta = theta + planetRotation;
-
       // Check center + 8 points in a ring around spawn for terrain clearance
       let blocked = false;
-      if (this.worldGen.isTerrainBlocked(rotTheta, phi)) { blocked = true; }
+      if (this.worldGen.isTerrainBlocked(theta, phi)) { blocked = true; }
       if (!blocked) {
         for (let i = 0; i < 8; i++) {
           const angle = i * (Math.PI / 4);
           const probePhi = phi + Math.cos(angle) * SPAWN_BUFFER;
           const probeTheta = theta + (Math.sin(angle) * SPAWN_BUFFER) / safeSinPhi;
-          if (this.worldGen.isTerrainBlocked(probeTheta + planetRotation, probePhi)) {
+          if (this.worldGen.isTerrainBlocked(probeTheta, probePhi)) {
             blocked = true;
             break;
           }
@@ -1917,7 +1902,7 @@ class ServerBotManager {
     for (let attempt = 0; attempt < 50; attempt++) {
       const theta = Math.random() * Math.PI * 2;
       const phi = PHI_MIN + Math.random() * (PHI_MAX - PHI_MIN);
-      if (!this.worldGen.isTerrainBlocked(theta + planetRotation, phi)) {
+      if (!this.worldGen.isTerrainBlocked(theta, phi)) {
         return { theta, phi };
       }
     }

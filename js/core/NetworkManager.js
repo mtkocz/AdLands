@@ -33,7 +33,6 @@ class NetworkManager {
 
     // Callback to get current planet rotation (set by MultiplayerClient).
     // Used to convert server world-space theta to hexGroup local-space.
-    this.getPlanetRotation = null;
 
     // Ping measurement
     this.ping = 0;           // latest raw round-trip time in ms
@@ -632,9 +631,8 @@ class NetworkManager {
     const clientPhi = localTank.state.phi;
     const clientHeading = localTank.state.heading;
 
-    // Snap to server state (convert world-space theta to hexGroup local-space)
-    const pR = this.getPlanetRotation ? this.getPlanetRotation() : 0;
-    localTank.state.theta = serverPlayerState.t + pR;
+    // Snap to server state (server sends local-space theta directly)
+    localTank.state.theta = serverPlayerState.t;
     localTank.state.phi = serverPlayerState.p;
     localTank.state.heading = serverPlayerState.h;
     localTank.state.speed = serverPlayerState.s;
@@ -654,18 +652,10 @@ class NetworkManager {
 
       // Re-run physics for this input using its original frame delta
       SharedPhysics.applyInput(localTank.state, replayDt);
-      SharedPhysics.moveOnSphere(
-        localTank.state,
-        0,
-        replayDt
-      );
+      SharedPhysics.moveOnSphere(localTank.state, replayDt);
 
       // Enforce terrain collision (server doesn't check elevation)
-      localTank.checkTerrainCollision(
-        prevTheta, prevPhi,
-        0,
-        replayDt
-      );
+      localTank.checkTerrainCollision(prevTheta, prevPhi, replayDt);
 
       localTank.state.keys = prevKeys;
     }

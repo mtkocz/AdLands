@@ -54,7 +54,6 @@
     } = mp;
 
     const net = new NetworkManager();
-    net.getPlanetRotation = mp.getPlanetRotation;
     window.networkManager = net; // Expose for debugging
     mp.net = net; // Expose on _mp so Dashboard can access socket
 
@@ -340,10 +339,8 @@
           if (mp.fastTravel && mp.fastTravel.active) continue;
 
           if (tank.isDead) {
-            // Dead: snap to server position directly (no reconcile replay —
-            // replay would double-apply planet rotation counter).
-            // Convert server world-space theta to hexGroup local-space.
-            tank.state.theta = state.t + mp.getPlanetRotation();
+            // Dead: snap to server position directly (no reconcile replay)
+            tank.state.theta = state.t;
             tank.state.phi = state.p;
           } else {
             // Alive: full reconcile with input replay
@@ -889,6 +886,8 @@
         tank.hp = 0;
         // Clear prediction buffer (dead players don't process inputs on server)
         net.pendingInputs = [];
+        // Pass idle kill flag so onDeath can skip terminal sequence
+        tank._idleKill = !!data.idleKill;
         if (tank._die) {
           tank._die(data.killerFaction);
         } else {
@@ -963,8 +962,11 @@
         clearTimeout(mp.fastTravel._portalTimeout);
         mp.fastTravel._portalTimeout = null;
       }
-      if (mp.fastTravel && mp.fastTravel.state === 'preview') {
-        mp.fastTravel._showPreviewUI();
+      if (mp.fastTravel) {
+        mp.fastTravel._awaitingConfirmation = false;
+        if (mp.fastTravel.state === 'preview') {
+          mp.fastTravel._showPreviewUI();
+        }
       }
     };
 
@@ -975,6 +977,7 @@
         clearTimeout(mp.fastTravel._portalTimeout);
         mp.fastTravel._portalTimeout = null;
       }
+      // _exitFastTravel clears _awaitingConfirmation
       // Clear stale prediction inputs accumulated during fast travel
       net.pendingInputs = [];
 
@@ -1995,6 +1998,13 @@
       mp.fastTravel.onPortalChosen = (portalTileIndex) => {
         console.log('[MP] onPortalChosen — portalTileIndex:', portalTileIndex, 'isMultiplayer:', net.isMultiplayer, 'connected:', net.connected, 'playerId:', net.playerId);
         if (net.isMultiplayer) {
+          if (!net.connected) {
+            // Socket disconnected — re-show UI immediately instead of waiting for timeout
+            console.warn('[MP] Cannot send choose-portal — not connected');
+            mp.fastTravel._awaitingConfirmation = false;
+            mp.fastTravel._showPreviewUI();
+            return;
+          }
           net.sendChoosePortal(portalTileIndex);
         } else {
           console.warn('[MP] NOT sending choose-portal — isMultiplayer is false');

@@ -82,7 +82,6 @@
   var POLAR_PHI_LIMIT = (3 * Math.PI) / 180; // 3° safety net (polygon collision is primary boundary)
   function moveOnSphere(
     entity,
-    planetRotationSpeed,
     deltaTime,
     minPhi,
     maxPhi
@@ -120,10 +119,6 @@
     // Wrap longitude
     while (entity.theta > Math.PI * 2) entity.theta -= Math.PI * 2;
     while (entity.theta < 0) entity.theta += Math.PI * 2;
-
-    // Counter planet rotation
-    entity.theta -= (planetRotationSpeed * dt60) / 60;
-    if (entity.theta < 0) entity.theta += Math.PI * 2;
   }
 
   /**

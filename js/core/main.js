@@ -869,28 +869,33 @@
 
   // Player death callback
   tank.onDeath = (deadTank, killerFaction) => {
+    const isIdleKill = !!deadTank._idleKill;
+    deadTank._idleKill = false;
+
     const pos = deadTank.getWorldPosition().clone();
 
-    // Vignette death overlay
-    try {
-      visualEffects.onDeath();
-    } catch (e) {
-      console.error("[onDeath] visualEffects error:", e);
-    }
+    if (!isIdleKill) {
+      // Vignette death overlay + terminal sequence
+      try {
+        visualEffects.onDeath();
+      } catch (e) {
+        console.error("[onDeath] visualEffects error:", e);
+      }
 
-    // Spawn death explosion + shockwave/dustwave (same scale as bots)
-    try {
-      cannonSystem._spawnExplosion(pos, deadTank.faction, 1.5);
-      dustShockwave.emit(pos, 1.5);
-    } catch (e) {
-      console.error("[onDeath] explosion error:", e);
-    }
+      // Spawn death explosion + shockwave/dustwave (same scale as bots)
+      try {
+        cannonSystem._spawnExplosion(pos, deadTank.faction, 1.5);
+        dustShockwave.emit(pos, 1.5);
+      } catch (e) {
+        console.error("[onDeath] explosion error:", e);
+      }
 
-    // Spawn oil puddle beneath the tank
-    try {
-      cannonSystem.spawnOilPuddle(pos);
-    } catch (e) {
-      console.error("[onDeath] oil puddle error:", e);
+      // Spawn oil puddle beneath the tank
+      try {
+        cannonSystem.spawnOilPuddle(pos);
+      } catch (e) {
+        console.error("[onDeath] oil puddle error:", e);
+      }
     }
 
     // Cancel any active charge (prevents lingering camera shake/pullback)
@@ -948,14 +953,22 @@
       tuskCommentary.onCommanderDeath(playerName, playerFaction);
     }
 
-    // Respawn triggered by signal lost terminal sequence completing
-    visualEffects.onSignalLostComplete = () => {
+    if (isIdleKill) {
+      // Skip terminal sequence — go straight to respawn
       tuskCommentary.setSuppressed(!uiVisible);
       pingMarkerSystem.suppressed = false;
-      // Resume crypto counter (was frozen during terminal)
       if (window.dashboard) window.dashboard.resumeCrypto();
       fastTravel.startRespawn();
-    };
+    } else {
+      // Respawn triggered by signal lost terminal sequence completing
+      visualEffects.onSignalLostComplete = () => {
+        tuskCommentary.setSuppressed(!uiVisible);
+        pingMarkerSystem.suppressed = false;
+        // Resume crypto counter (was frozen during terminal)
+        if (window.dashboard) window.dashboard.resumeCrypto();
+        fastTravel.startRespawn();
+      };
+    }
   };
 
   // Bot damage state callback - update smoke/fire effects
@@ -3823,7 +3836,7 @@
 
     // Update all systems
     tank.isSurfaceView = gameCamera.mode === "surface" && !gameCamera.transitioning;
-    tank.update(camera, 0, deltaTime);
+    tank.update(camera, deltaTime);
     tank.updateFade();
     environment.update(camera, deltaTime);
     environment.updateAtmosphere(gameCamera.getEffectiveDistance());
@@ -3886,7 +3899,7 @@
 
     // Update bot AI (skip in multiplayer — no bots)
     if (!isMultiplayer) {
-      botTanks.update(deltaTime, now, 0, camera);
+      botTanks.update(deltaTime, now, camera);
       botTanks.updateHumanPlayerPosition("player", tank.group.position);
       botTanks.updateChat(now);
     }

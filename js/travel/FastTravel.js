@@ -56,6 +56,9 @@ class FastTravel {
         // Minimum spawn distance from other tanks (in radians on sphere surface)
         this.minSpawnDistance = 0.03;  // ~3 degrees apart
 
+        // Guard against double-sends while waiting for server confirmation
+        this._awaitingConfirmation = false;
+
         // Setup click handler
         this._setupEventListeners();
     }
@@ -329,6 +332,9 @@ class FastTravel {
 
         // Multiplayer: send portal choice to server, wait for confirmation
         if (this.onPortalChosen) {
+            if (this._awaitingConfirmation) return; // Already waiting for server
+            this._awaitingConfirmation = true;
+
             console.log('[FastTravel] Sending portal choice to server:', this.previewPortalIndex);
             this.onPortalChosen(this.previewPortalIndex);
             // Hide UI while waiting for server confirmation
@@ -336,11 +342,12 @@ class FastTravel {
 
             // Timeout: if server never responds, re-show UI so player can retry
             this._portalTimeout = setTimeout(() => {
+                this._awaitingConfirmation = false;
                 if (this.state === 'preview') {
                     console.warn('[FastTravel] Portal confirmation timed out — re-showing UI');
                     this._showPreviewUI();
                 }
-            }, 5000);
+            }, 3000);
             return;
         }
 
@@ -429,6 +436,7 @@ class FastTravel {
     }
 
     _exitFastTravel() {
+        this._awaitingConfirmation = false;
         if (this._portalTimeout) {
             clearTimeout(this._portalTimeout);
             this._portalTimeout = null;

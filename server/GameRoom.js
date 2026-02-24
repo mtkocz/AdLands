@@ -1943,8 +1943,7 @@ class GameRoom {
     const offsetAngle = Math.random() * Math.PI * 2;
     const offsetMag = 0.001 + Math.random() * 0.002;
 
-    // Positions are in local (unrotated) space; subtract planetRotation for world space
-    let spawnTheta = spawnPos.theta - this.planetRotation + Math.cos(offsetAngle) * offsetMag;
+    let spawnTheta = spawnPos.theta + Math.cos(offsetAngle) * offsetMag;
     while (spawnTheta < 0) spawnTheta += Math.PI * 2;
     while (spawnTheta >= Math.PI * 2) spawnTheta -= Math.PI * 2;
     player.theta = spawnTheta;
@@ -2035,11 +2034,6 @@ class GameRoom {
     // 1. Apply inputs and simulate all player tanks
     for (const [id, player] of this.players) {
       if (this._isUndeployed(player)) {
-        // Undeployed players still need planet rotation countered
-        // so they stay fixed on the surface (client may still render them)
-        const dt60 = dt * 60;
-        player.theta -= (PLANET_ROTATION_SPEED * dt60) / 60;
-        if (player.theta < 0) player.theta += Math.PI * 2;
         continue;
       }
 
@@ -2051,27 +2045,22 @@ class GameRoom {
       applyInput(player, dt);
 
       // Move on sphere
-      moveOnSphere(player, PLANET_ROTATION_SPEED, dt);
+      moveOnSphere(player, dt);
 
       // Terrain collision with wall sliding
       if (this._isTerrainBlockedAt(player.theta, player.phi, player.heading, player.speed)) {
-        const rotDelta = PLANET_ROTATION_SPEED * dt;
-        let thetaRev = prevTheta - rotDelta;
-        if (thetaRev < 0) thetaRev += Math.PI * 2;
-        if (thetaRev >= Math.PI * 2) thetaRev -= Math.PI * 2;
-
         // Wall sliding: try each axis independently before full revert
         if (!this._isTerrainBlockedAt(player.theta, prevPhi, player.heading, player.speed)) {
           // Slide along latitude (theta moved, phi reverted)
           player.phi = prevPhi;
           player.speed *= 0.85;
-        } else if (!this._isTerrainBlockedAt(thetaRev, player.phi, player.heading, player.speed)) {
+        } else if (!this._isTerrainBlockedAt(prevTheta, player.phi, player.heading, player.speed)) {
           // Slide along longitude (theta reverted, phi moved)
-          player.theta = thetaRev;
+          player.theta = prevTheta;
           player.speed *= 0.85;
         } else {
           // Both axes blocked — full revert with speed decay
-          player.theta = thetaRev;
+          player.theta = prevTheta;
           player.phi = prevPhi;
           player.speed *= 0.3;
         }
@@ -2175,13 +2164,15 @@ class GameRoom {
             killerFaction: player.faction,
             victimName: player.name,
             killerName: player.name,
+            idleKill: true,
           });
 
           this._markRanksDirty();
           player.killStreak = 0;
           player.deathCount = (player.deathCount || 0) + 1;
 
-          setTimeout(() => this._respawnPlayer(socketId), 10300);
+          // Shorter delay — client skips terminal sequence for idle kills
+          setTimeout(() => this._respawnPlayer(socketId), 2000);
         }
       }
     }
@@ -2403,7 +2394,7 @@ class GameRoom {
     for (const [fwd, rgt] of probes) {
       const pPhi = phi + (fwdPhi * fwd + rgtPhi * rgt) / R;
       const pTh  = theta + (fwdTh * fwd + rgtTh * rgt) / R;
-      if (this.worldGen.isTerrainBlocked(pTh + this.planetRotation, pPhi)) return true;
+      if (this.worldGen.isTerrainBlocked(pTh, pPhi)) return true;
     }
     return false;
   }
@@ -2424,7 +2415,7 @@ class GameRoom {
       const prevPhi = p.phi;
 
       // Move projectile on sphere
-      moveOnSphere(p, PLANET_ROTATION_SPEED, dt);
+      moveOnSphere(p, dt);
 
       // Distance-based despawn: cap range to match client visual range
       if (p.maxDistanceRad) {
@@ -2939,7 +2930,7 @@ class GameRoom {
       if (this._isUndeployed(player)) continue;
 
       // O(1) cluster ID lookup from precomputed grid
-      const rawClusterId = this.worldGen.getClusterIdAt(player.theta + this.planetRotation, player.phi);
+      const rawClusterId = this.worldGen.getClusterIdAt(player.theta, player.phi);
 
       // Neutral carve-out: if player is on neutral territory (portal/pole),
       // immediately stop contributing to any capture — no hysteresis delay.
@@ -3423,8 +3414,7 @@ class GameRoom {
       if (player._previewPortalTile != null) {
         const portalPos = this.portalPositionsByTile.get(player._previewPortalTile);
         if (portalPos) {
-          // Portal positions are local space; convert to world by subtracting planetRotation
-          filterTheta = portalPos.theta - this.planetRotation;
+          filterTheta = portalPos.theta;
           filterPhi = portalPos.phi;
         }
       }
@@ -4335,8 +4325,7 @@ class GameRoom {
 
       const offsetAngle = Math.random() * Math.PI * 2;
       const offsetMag = 0.001 + Math.random() * 0.002;
-      // Positions are local-space; subtract planetRotation for world-space
-      let theta = spawnPos.theta - this.planetRotation + Math.cos(offsetAngle) * offsetMag;
+      let theta = spawnPos.theta + Math.cos(offsetAngle) * offsetMag;
       while (theta < 0) theta += Math.PI * 2;
       while (theta >= Math.PI * 2) theta -= Math.PI * 2;
       return {
@@ -4380,10 +4369,7 @@ class GameRoom {
     let bestMinDist = -1;
 
     for (const n of neighbors) {
-      // Convert neighbor to world space for comparison
-      let nTheta = n.theta - this.planetRotation;
-      while (nTheta < 0) nTheta += Math.PI * 2;
-      while (nTheta >= Math.PI * 2) nTheta -= Math.PI * 2;
+      let nTheta = n.theta;
       const nPhi = n.phi;
 
       // Find minimum angular distance to any active tank

@@ -128,11 +128,9 @@ class Tank {
   // PUBLIC METHODS
   // ========================
 
-  update(camera, planetRotationSpeed, deltaTime = 1 / 60) {
+  update(camera, deltaTime = 1 / 60) {
     if (this.isDead) {
-      // Counter planet rotation so dead tank stays fixed on surface
-      // (in MP, server also counter-rotates; next state snap corrects any drift)
-      this._moveOnSphere(planetRotationSpeed, deltaTime);
+      this._moveOnSphere(deltaTime);
       // Always update visual from theta/phi so dead tank tracks planet rotation
       this._updateVisual(deltaTime);
       if (this.ghostReticle) this.ghostReticle.style.display = "none";
@@ -144,7 +142,7 @@ class Tank {
     // Local physics + terrain collision run in both SP and MP.
     // In MP, server reconciliation corrects any prediction drift each tick.
     this._updatePhysics(deltaTime);
-    this._moveOnSphere(planetRotationSpeed, deltaTime);
+    this._moveOnSphere(deltaTime);
     // Visual + turret always run
     this._updateVisual(deltaTime);
     this._updateTurret(camera);
@@ -174,20 +172,15 @@ class Tank {
    * Used by MP reconciliation replay to enforce terrain collision.
    * @param {number} prevTheta - theta before the move
    * @param {number} prevPhi - phi before the move
-   * @param {number} planetRotationSpeed - for rotation compensation on revert
    * @param {number} deltaTime - frame delta
    * @returns {boolean} true if collision detected and position reverted
    */
-  checkTerrainCollision(prevTheta, prevPhi, planetRotationSpeed, deltaTime) {
+  checkTerrainCollision(prevTheta, prevPhi, deltaTime) {
     if (!this.planet?.terrainElevation) {
       // Fallback: phi-based polar check when no terrain system
       const fallbackLimit = (10 * Math.PI) / 180; // 10° hard limit
       if (this.state.phi < fallbackLimit || this.state.phi > Math.PI - fallbackLimit) {
-        const dt60 = deltaTime * 60;
-        const rotDelta = (planetRotationSpeed * dt60) / 60;
-        this.state.theta = prevTheta - rotDelta;
-        if (this.state.theta < 0) this.state.theta += Math.PI * 2;
-        if (this.state.theta > Math.PI * 2) this.state.theta -= Math.PI * 2;
+        this.state.theta = prevTheta;
         this.state.phi = prevPhi;
         this.state.speed *= 0.3;
         return true;
@@ -201,23 +194,17 @@ class Tank {
     }
 
     // Wall-sliding — must match server logic exactly
-    const dt60 = deltaTime * 60;
-    const rotDelta = (planetRotationSpeed * dt60) / 60;
-    let thetaRev = prevTheta - rotDelta;
-    if (thetaRev < 0) thetaRev += Math.PI * 2;
-    if (thetaRev > Math.PI * 2) thetaRev -= Math.PI * 2;
-
     if (!this._isTerrainBlocked(this.state.theta, prevPhi)) {
       // Slide along latitude
       this.state.phi = prevPhi;
       this.state.speed *= 0.85;
-    } else if (!this._isTerrainBlocked(thetaRev, this.state.phi)) {
+    } else if (!this._isTerrainBlocked(prevTheta, this.state.phi)) {
       // Slide along longitude
-      this.state.theta = thetaRev;
+      this.state.theta = prevTheta;
       this.state.speed *= 0.85;
     } else {
       // Both blocked — full revert
-      this.state.theta = thetaRev;
+      this.state.theta = prevTheta;
       this.state.phi = prevPhi;
       this.state.speed *= 0.3;
     }
@@ -386,7 +373,7 @@ class Tank {
     }
   }
 
-  _moveOnSphere(planetRotationSpeed, deltaTime) {
+  _moveOnSphere(deltaTime) {
     // Save previous position for terrain collision rollback
     const prevTheta = this.state.theta;
     const prevPhi = this.state.phi;
@@ -400,7 +387,6 @@ class Tank {
     };
     Tank.moveEntityOnSphere(
       entity,
-      planetRotationSpeed,
       deltaTime,
     );
     this.state.theta = entity.theta;
@@ -409,24 +395,18 @@ class Tank {
     // Collision with wall sliding
     if (this.planet && this.state.speed !== 0) {
       if (this._isTerrainBlocked(this.state.theta, this.state.phi)) {
-        const dt60 = deltaTime * 60;
-        const rotDelta = (planetRotationSpeed * dt60) / 60;
-        let thetaRev = prevTheta - rotDelta;
-        if (thetaRev < 0) thetaRev += Math.PI * 2;
-        if (thetaRev > Math.PI * 2) thetaRev -= Math.PI * 2;
-
         // Wall sliding: try each axis independently before full revert
         if (!this._isTerrainBlocked(this.state.theta, prevPhi)) {
           // Slide along latitude (theta moved, phi reverted)
           this.state.phi = prevPhi;
           this.state.speed *= 0.85;
-        } else if (!this._isTerrainBlocked(thetaRev, this.state.phi)) {
+        } else if (!this._isTerrainBlocked(prevTheta, this.state.phi)) {
           // Slide along longitude (theta reverted, phi moved)
-          this.state.theta = thetaRev;
+          this.state.theta = prevTheta;
           this.state.speed *= 0.85;
         } else {
           // Both axes blocked — full revert with speed decay
-          this.state.theta = thetaRev;
+          this.state.theta = prevTheta;
           this.state.phi = prevPhi;
           this.state.speed *= 0.3;
         }
@@ -1492,7 +1472,6 @@ class Tank {
 /**
  * Move an entity on a sphere using spherical coordinates
  * @param {Object} entity - Must have: state.speed, heading, theta, phi
- * @param {number} planetRotationSpeed - Planet rotation speed (per second)
  * @param {number} deltaTime - Time since last frame in seconds
  * @param {number} minPhi - Minimum latitude (polar opening boundary)
  * @param {number} maxPhi - Maximum latitude (polar opening boundary)
@@ -1500,7 +1479,6 @@ class Tank {
 Tank.POLAR_PHI_LIMIT = (3 * Math.PI) / 180; // 3° safety net (polygon collision is primary boundary)
 Tank.moveEntityOnSphere = function (
   entity,
-  planetRotationSpeed,
   deltaTime = 1 / 60,
   minPhi = Tank.POLAR_PHI_LIMIT,
   maxPhi = Math.PI - Tank.POLAR_PHI_LIMIT,
@@ -1539,10 +1517,6 @@ Tank.moveEntityOnSphere = function (
   while (entity.theta > Math.PI * 2) entity.theta -= Math.PI * 2;
   while (entity.theta < 0) entity.theta += Math.PI * 2;
 
-  // Counter planet rotation (entity stays fixed in world space)
-  // planetRotationSpeed is per-frame at 60fps, so scale by dt60
-  entity.theta -= (planetRotationSpeed * dt60) / 60;
-  if (entity.theta < 0) entity.theta += Math.PI * 2;
 };
 
 /**

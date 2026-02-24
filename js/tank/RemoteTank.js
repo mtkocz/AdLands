@@ -17,13 +17,9 @@ class RemoteTank {
     this.faction = playerData.faction;
     this.avatarColor = playerData.avatarColor || null;
 
-    // Convert server world-space theta to hexGroup local-space
-    const pR = this.hexGroup.rotation ? this.hexGroup.rotation.y : 0;
-    const localTheta = (playerData.theta || 0) + pR;
-
     // Current interpolated state (what we render)
     this.state = {
-      theta: localTheta,
+      theta: playerData.theta || 0,
       phi: playerData.phi || Math.PI / 2,
       heading: playerData.heading || 0,
       speed: 0,
@@ -168,6 +164,9 @@ class RemoteTank {
   /**
    * Set the target state from a server update.
    * Pushes a timestamped snapshot into the interpolation buffer.
+   * @param {Object} serverState - Per-entity state from server tick
+   * @param {number} [serverPR] - Server planet rotation at tick time (data.pr).
+   *   Used for stable theta conversion. Falls back to hexGroup.rotation.y.
    */
   setTargetState(serverState) {
     const wasDead = this.isDead;
@@ -184,12 +183,8 @@ class RemoteTank {
       return;
     }
 
-    // Convert server world-space theta to hexGroup local-space
-    const pR = this.hexGroup.rotation ? this.hexGroup.rotation.y : 0;
-    const localTheta = serverState.t + pR;
-
-    // Update targetState as fallback for dead-reckoning when buffer runs dry
-    this.targetState.theta = localTheta;
+    // Server sends local-space theta directly — no conversion needed
+    this.targetState.theta = serverState.t;
     this.targetState.phi = serverState.p;
     this.targetState.heading = serverState.h;
     this.targetState.speed = serverState.s;
@@ -198,7 +193,7 @@ class RemoteTank {
     // Push timestamped snapshot into ring buffer
     this._snapBuf[this._snapHead] = {
       t: performance.now(),
-      theta: localTheta,
+      theta: serverState.t,
       phi: serverState.p,
       heading: serverState.h,
       speed: serverState.s,
@@ -248,11 +243,11 @@ class RemoteTank {
     }
 
     // Snapshot interpolation: render at a fixed delay behind real-time.
-    // Uses smoothstep between snapshots — zero-derivative at tick boundaries
-    // prevents acceleration discontinuities that lean springs would amplify.
-    // NOTE: Snapshots store theta WITH planet counter-rotation already applied
-    // by the server physics. Interpolation between them naturally provides
-    // smooth counter-rotation. Do NOT apply additional per-frame counter-rotation.
+    // Position uses LINEAR interpolation for constant-velocity visual motion.
+    // Speed/heading/turret use SMOOTHSTEP so the lean springs don't jitter
+    // from acceleration discontinuities at tick boundaries.
+    // Server sends local-space theta directly. No per-frame counter-rotation
+    // needed — the tank is a child of hexGroup and rotates with the planet.
     const renderTime = performance.now() - this.interpolationDelay;
     const snapCount = this._snapCount;
 
@@ -278,16 +273,13 @@ class RemoteTank {
         const span = toSnap.t - fromSnap.t;
         const t = span > 0 ? Math.min(1, (renderTime - fromSnap.t) / span) : 1;
 
-        // Smoothstep — zero velocity at tick boundaries for jitter-free lean springs
+        // LINEAR for position — constant velocity between ticks (no pulsing)
+        this.state.phi = fromSnap.phi + (toSnap.phi - fromSnap.phi) * t;
+        this.state.theta = MathUtils.lerpAngle2Pi(fromSnap.theta, toSnap.theta, t);
+
+        // SMOOTHSTEP for lean-spring inputs — zero derivative at tick boundaries
+        // prevents acceleration spikes that the underdamped lean springs amplify
         const st = t * t * (3 - 2 * t);
-
-        // Phi (latitude) — bounded [0, π], no wrapping needed
-        this.state.phi = fromSnap.phi + (toSnap.phi - fromSnap.phi) * st;
-
-        // Theta (longitude) — needs angle wrapping
-        this.state.theta = MathUtils.lerpAngle2Pi(fromSnap.theta, toSnap.theta, st);
-
-        // Speed, heading, turret
         this.state.heading = MathUtils.lerpAngle(fromSnap.heading, toSnap.heading, st);
         this.state.speed = fromSnap.speed + (toSnap.speed - fromSnap.speed) * st;
         this.state.turretAngle = MathUtils.lerpAngle(fromSnap.turretAngle, toSnap.turretAngle, st);

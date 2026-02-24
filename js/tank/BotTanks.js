@@ -1059,7 +1059,7 @@ class BotTanks {
   // MAIN UPDATE LOOP
   // ========================
 
-  update(deltaTime, timestamp, planetRotationSpeed, camera = null) {
+  update(deltaTime, timestamp, camera = null) {
     // Deploy bots whose timers have expired
     for (const bot of this.bots) {
       if (!bot.isDeploying) continue;
@@ -1133,7 +1133,7 @@ class BotTanks {
       this._updateBotPhysics(bot, deltaTime);
 
       // 3. Movement: move on sphere (like player's _moveOnSphere)
-      this._moveOnSphere(bot, planetRotationSpeed, deltaTime);
+      this._moveOnSphere(bot, deltaTime);
 
       // 4. Visual: update position and orientation (like player's _updateVisual)
       Tank.updateLeanState(bot.state.lean, bot.state.speed, bot.heading, deltaTime, bot.isDead);
@@ -2057,7 +2057,7 @@ class BotTanks {
   // MOVEMENT (custom pole-aware movement for bots)
   // ========================
 
-  _moveOnSphere(bot, planetRotationSpeed, deltaTime = 1 / 60) {
+  _moveOnSphere(bot, deltaTime = 1 / 60) {
     const prevTheta = bot.theta;
     const prevPhi = bot.phi;
 
@@ -2122,25 +2122,15 @@ class BotTanks {
     while (bot.theta > Math.PI * 2) bot.theta -= Math.PI * 2;
     while (bot.theta < 0) bot.theta += Math.PI * 2;
 
-    // Counter planet rotation
-    bot.theta -= (planetRotationSpeed * dt60) / 60;
-    if (bot.theta < 0) bot.theta += Math.PI * 2;
-
     // 5-probe terrain collision with wall-sliding
-    // Matches Tank._moveOnSphere and GameRoom._gameTick player terrain collision
     if (this.planet.terrainElevation && bot.state.speed !== 0) {
       const blocked = this._isBotTerrainBlocked(bot.theta, bot.phi, heading, bot.state.speed);
 
       if (blocked) {
-        const rotDelta = (planetRotationSpeed * dt60) / 60;
-
         // Try theta-only slide (keep new theta, revert phi)
         const thetaOnlyBlocked = this._isBotTerrainBlocked(bot.theta, prevPhi, heading, bot.state.speed);
         // Try phi-only slide (revert theta, keep new phi)
-        let thetaRev = prevTheta - rotDelta;
-        if (thetaRev < 0) thetaRev += Math.PI * 2;
-        if (thetaRev > Math.PI * 2) thetaRev -= Math.PI * 2;
-        const phiOnlyBlocked = this._isBotTerrainBlocked(thetaRev, bot.phi, heading, bot.state.speed);
+        const phiOnlyBlocked = this._isBotTerrainBlocked(prevTheta, bot.phi, heading, bot.state.speed);
 
         if (!thetaOnlyBlocked) {
           // Slide along theta (east-west)
@@ -2148,11 +2138,11 @@ class BotTanks {
           bot.state.speed *= 0.85;
         } else if (!phiOnlyBlocked) {
           // Slide along phi (north-south)
-          bot.theta = thetaRev;
+          bot.theta = prevTheta;
           bot.state.speed *= 0.85;
         } else {
           // Both axes blocked — full revert with speed decay
-          bot.theta = thetaRev;
+          bot.theta = prevTheta;
           bot.phi = prevPhi;
           bot.state.speed *= this.BOT_COLLISION_SPEED_RETAIN;
         }
