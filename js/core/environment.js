@@ -175,7 +175,7 @@ class Environment {
     sunLight.shadow.camera.top = 200;
     sunLight.shadow.camera.bottom = -200;
     sunLight.shadow.bias = -0.0005;
-    sunLight.shadow.normalBias = 0.005; // Minimal to prevent peter-panning at cliff bases
+    sunLight.shadow.normalBias = 0; // Zero to eliminate peter-panning at cliff bases
     this.sunLight = sunLight;
     this.scene.add(sunLight);
     this.scene.add(sunLight.target);
@@ -214,7 +214,7 @@ class Environment {
     fillLight.shadow.camera.top = 200;
     fillLight.shadow.camera.bottom = -200;
     fillLight.shadow.bias = -0.0005;
-    fillLight.shadow.normalBias = 0.01;
+    fillLight.shadow.normalBias = 0;
     this.fillLight = fillLight;
     this.scene.add(fillLight);
     this.scene.add(fillLight.target);
@@ -263,10 +263,9 @@ class Environment {
     if (this._currentFrustumSize !== undefined && Math.abs(this._currentFrustumSize - frustumSize) < 5) return;
     this._currentFrustumSize = frustumSize;
 
-    // Scale normalBias with frustum to maintain consistent texel-space offset
     const biasScale = frustumSize / 200;
-    this.sunLight.shadow.normalBias = 0.005 * biasScale;
-    if (this.fillLight) this.fillLight.shadow.normalBias = 0.01 * biasScale;
+    this.sunLight.shadow.normalBias = 0;
+    if (this.fillLight) this.fillLight.shadow.normalBias = 0;
 
     const sunCam = this.sunLight.shadow.camera;
     const fillCam = this.fillLight ? this.fillLight.shadow.camera : null;
