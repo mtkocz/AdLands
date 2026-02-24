@@ -763,12 +763,6 @@ class TerrainElevation {
         .sub(t.midpoint)
         .normalize();
 
-      // Extend cliff base outward (away from cliff) to cover shadow
-      // peter-panning at the cliff-ground junction
-      const CLIFF_LIP = 0.15;
-      t.lowA.addScaledVector(t.tileCenterDir, -CLIFF_LIP);
-      t.lowB.addScaledVector(t.tileCenterDir, -CLIFF_LIP);
-
       const baseIndex = positions.length / 3;
 
       positions.push(
