@@ -1213,7 +1213,7 @@ class Planet {
     const allIndices = [];
     let vertexOffset = 0;
     const radialOffset = 0.04;
-    const uvScale = 64.0; // Texture tiling frequency across planet
+    const uvScale = 32.0; // Texture tiling frequency across planet
 
     const collectMesh = (pos, idx) => {
       for (let i = 0; i < pos.length; i += 3) {
@@ -1225,11 +1225,11 @@ class Planet {
           y + (y / len) * radialOffset,
           z + (z / len) * radialOffset,
         );
-        // Spherical UV for consistent noise mapping across planet
+        // Spherical UV — double U scale to compensate for equator being 2x pole-to-pole arc
         const theta = Math.atan2(z, x);
         const phi = Math.acos(Math.max(-1, Math.min(1, y / len)));
         allUvs.push(
-          (theta / (2 * Math.PI) + 0.5) * uvScale,
+          (theta / (2 * Math.PI) + 0.5) * uvScale * 2,
           (phi / Math.PI) * uvScale,
         );
       }
@@ -1281,10 +1281,29 @@ class Planet {
     geometry.setAttribute("uv", new THREE.Float32BufferAttribute(allUvs, 2));
     geometry.setIndex(allIndices);
 
-    // Overlay blend: Result = 2 × Src × Dst
-    // Gray 128 (0.5) = no change, darker = darkens, lighter = brightens
-    const material = new THREE.MeshBasicMaterial({
-      map: texture,
+    // Overlay blend with distance fade — fades to neutral (no effect) at 260+ units
+    const material = new THREE.ShaderMaterial({
+      uniforms: {
+        noiseMap: { value: texture },
+        uFade: { value: 1.0 },
+      },
+      vertexShader: `
+        varying vec2 vUv;
+        void main() {
+          vUv = uv;
+          gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+        }
+      `,
+      fragmentShader: `
+        uniform sampler2D noiseMap;
+        uniform float uFade;
+        varying vec2 vUv;
+        void main() {
+          vec3 noise = texture2D(noiseMap, vUv).rgb;
+          // Lerp toward 0.5 (neutral for overlay blend) as fade decreases
+          gl_FragColor = vec4(mix(vec3(0.5), noise, uFade), 1.0);
+        }
+      `,
       depthWrite: false,
       polygonOffset: true,
       polygonOffsetFactor: -2,
@@ -2496,6 +2515,16 @@ class Planet {
     // Use preallocated temp objects to avoid GC pressure
     const temp = this._cullTemp;
     camera.getWorldPosition(temp.cameraWorldPos);
+
+    // Fade noise overlay based on camera distance (fully gone at 260+)
+    if (this._noiseOverlayMesh) {
+      const dist = temp.cameraWorldPos.length();
+      const fadeStart = 200;
+      const fadeEnd = 260;
+      const fade = 1 - Math.min(1, Math.max(0, (dist - fadeStart) / (fadeEnd - fadeStart)));
+      this._noiseOverlayMesh.material.uniforms.uFade.value = fade;
+      this._noiseOverlayMesh.visible = fade > 0;
+    }
 
     // Pre-compute hexGroup world matrix for transforming tile positions
     this.hexGroup.updateMatrixWorld();
