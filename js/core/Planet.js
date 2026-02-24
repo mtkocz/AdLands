@@ -1387,7 +1387,14 @@ class Planet {
     const offset = 0.04;
     const ns = this._noiseScale;
 
-    const collectMesh = (pos, idx, srcUVs, isWall) => {
+    // Build tileIndex → sponsor cluster tile count for UV scaling
+    const sponsorTileCounts = new Map();
+    for (const { tileIndices } of this.sponsorClusters.values()) {
+      const count = tileIndices.length;
+      for (const ti of tileIndices) sponsorTileCounts.set(ti, count);
+    }
+
+    const collectMesh = (pos, idx, srcUVs, isWall, uvScale) => {
       for (let i = 0; i < pos.length; i += 3) {
         const x = pos[i], y = pos[i + 1], z = pos[i + 2];
         const len = Math.sqrt(x * x + y * y + z * z);
@@ -1398,9 +1405,9 @@ class Planet {
         );
 
         if (srcUVs) {
-          // Copy UVs from source geometry (sponsor tangent-plane projection)
+          // Copy UVs from source geometry, scaled to match sponsor pixel density
           const vi = (i / 3) * 2;
-          allUVs.push(srcUVs[vi], srcUVs[vi + 1]);
+          allUVs.push(srcUVs[vi] * uvScale, srcUVs[vi + 1] * uvScale);
         } else if (isWall) {
           // Cylindrical mapping for walls: azimuthal arc length + radial height
           const horizR = Math.sqrt(x * x + z * z);
@@ -1463,10 +1470,16 @@ class Planet {
       // Collect from visible individual tiles
       const pos = mesh.geometry.attributes.position.array;
       const idx = mesh.geometry.index ? mesh.geometry.index.array : null;
-      // Sponsor tiles: copy tangent-plane UVs for pixel-perfect alignment
-      const sponsorUVs = (this.sponsorTileIndices.has(tileIndex) && mesh.geometry.attributes.uv)
-        ? mesh.geometry.attributes.uv.array : null;
-      collectMesh(pos, idx, sponsorUVs, false);
+      // Sponsor tiles: copy tangent-plane UVs scaled to match pixel art filter resolution
+      const tileCount = sponsorTileCounts.get(tileIndex);
+      if (tileCount && mesh.geometry.attributes.uv) {
+        const targetShortSide = Math.round(
+          Math.max(64, Math.min(256, 128 * Math.sqrt(tileCount / 20)))
+        );
+        collectMesh(pos, idx, mesh.geometry.attributes.uv.array, false, targetShortSide / 128);
+      } else {
+        collectMesh(pos, idx, null, false, 1);
+      }
     });
 
     if (allPositions.length === 0) return;
