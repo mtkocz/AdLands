@@ -2004,7 +2004,6 @@ class Planet {
   _findBoundaryEdges(tiles, clusterTiles, adjacencyMap) {
     const edges = [];
     const clusterSet = new Set(clusterTiles);
-    const te = this.terrainElevation;
 
     for (const tileIdx of clusterTiles) {
       const boundary = tiles[tileIdx].boundary;
@@ -2038,38 +2037,13 @@ class Planet {
         }
 
         if (isBoundary) {
-          // Use max elevation of this tile and its cross-boundary neighbor
-          // so the outline sits on top of cliff edges and isn't occluded
-          let es = 1;
-          if (te) {
-            let maxElev = te.getElevationAtTileIndex(tileIdx);
-            for (const neighborIdx of adjacencyMap.get(tileIdx) || []) {
-              if (clusterSet.has(neighborIdx)) continue;
-              const nb = tiles[neighborIdx].boundary;
-              for (let j = 0; j < nb.length; j++) {
-                const nv1 = nb[j];
-                const nv2 = nb[(j + 1) % nb.length];
-                if (
-                  (key1 === `${nv1.x},${nv1.y},${nv1.z}` &&
-                    key2 === `${nv2.x},${nv2.y},${nv2.z}`) ||
-                  (key1 === `${nv2.x},${nv2.y},${nv2.z}` &&
-                    key2 === `${nv1.x},${nv1.y},${nv1.z}`)
-                ) {
-                  const nElev = te.getElevationAtTileIndex(neighborIdx);
-                  if (nElev > maxElev) maxElev = nElev;
-                  break;
-                }
-              }
-            }
-            es = te.getExtrusion(maxElev);
-          }
-
-          const v1x = parseFloat(v1.x) * es,
-            v1y = parseFloat(v1.y) * es,
-            v1z = parseFloat(v1.z) * es;
-          const v2x = parseFloat(v2.x) * es,
-            v2y = parseFloat(v2.y) * es,
-            v2z = parseFloat(v2.z) * es;
+          // Draw outlines at ground level (no elevation scaling)
+          const v1x = parseFloat(v1.x),
+            v1y = parseFloat(v1.y),
+            v1z = parseFloat(v1.z);
+          const v2x = parseFloat(v2.x),
+            v2y = parseFloat(v2.y),
+            v2z = parseFloat(v2.z);
 
           const center = new THREE.Vector3(
             (v1x + v2x) / 2,
@@ -2516,11 +2490,11 @@ class Planet {
     const temp = this._cullTemp;
     camera.getWorldPosition(temp.cameraWorldPos);
 
-    // Fade noise overlay based on camera distance (fully gone at 260+)
+    // Fade noise overlay based on camera distance (starts fading at 260, gone at 320)
     if (this._noiseOverlayMesh) {
       const dist = temp.cameraWorldPos.length();
-      const fadeStart = 200;
-      const fadeEnd = 260;
+      const fadeStart = 260;
+      const fadeEnd = 320;
       const fade = 1 - Math.min(1, Math.max(0, (dist - fadeStart) / (fadeEnd - fadeStart)));
       this._noiseOverlayMesh.material.uniforms.uFade.value = fade;
       this._noiseOverlayMesh.visible = fade > 0;

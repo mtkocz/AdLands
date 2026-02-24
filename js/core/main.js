@@ -3284,8 +3284,9 @@
   function showTerritoryIntelPopup(clickX, clickY, sponsor, clusterId) {
     resetIntelPopupState();
     const logoEl = document.getElementById("intel-logo");
-    if (sponsor.logoImage) {
-      logoEl.src = sponsor.logoImage;
+    const logoSrc = sponsor.logoImage || (sponsor.ownerType === "player" ? sponsor.patternImage : null);
+    if (logoSrc) {
+      logoEl.src = logoSrc;
       logoEl.classList.remove("hidden");
     } else {
       logoEl.classList.add("hidden");
