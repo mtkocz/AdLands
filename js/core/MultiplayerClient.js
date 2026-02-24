@@ -90,6 +90,7 @@
     // Set by capture-progress and tic-crypto events. Prevents mismatch between
     // the server's grid-based cluster lookup and the client's nearest-neighbor detection.
     let serverClusterId = undefined;
+    let lastCaptureProgressTime = 0;
     mp.onFrameUpdate = (deltaTime, camera, frustum, lodOptions) => {
       if (!net.isMultiplayer) return;
 
@@ -124,6 +125,10 @@
       const onSurface = hasSpawned && !tank.isDead && !(mp.fastTravel && mp.fastTravel.active);
       if (now - lastHUDUpdateTime >= HUD_UPDATE_INTERVAL && hasSpawned) {
         lastHUDUpdateTime = now;
+        // Clear stale serverClusterId when server stops sending capture-progress (player left sponsor territory)
+        if (serverClusterId !== undefined && now - lastCaptureProgressTime > 1500) {
+          serverClusterId = undefined;
+        }
         // Use server-authoritative cluster when available (prevents grid vs nearest-neighbor mismatch)
         const clusterId = serverClusterId !== undefined ? serverClusterId : tank.getCurrentClusterId(planet);
 
@@ -1360,6 +1365,7 @@
       // Update capture state from payload BEFORE flash (avoids race with capture-progress)
       if (data && data.id) {
         serverClusterId = data.id; // Keep ring in sync with tic-crypto cluster
+        lastCaptureProgressTime = performance.now();
         const capState = planet.clusterCaptureState.get(data.id);
         if (capState) {
           capState.tics.rust = data.t.r;
@@ -1455,6 +1461,7 @@
       // Server sends capture-progress only for the player's assigned cluster,
       // so it's always the right one — track it as the authoritative cluster ID
       serverClusterId = data.clusterId;
+      lastCaptureProgressTime = performance.now();
 
       // Always refresh ring HUD (no client-side cluster check — server is authoritative)
       const hasSpawned = mp.getHasSpawnedIn?.();
