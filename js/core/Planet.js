@@ -1340,7 +1340,7 @@ class Planet {
     const allPositions = [];
     const allIndices = [];
     let vertexOffset = 0;
-    const offset = 0.003;
+    const offset = 0.04;
 
     const collectMesh = (pos, idx) => {
       for (let i = 0; i < pos.length; i += 3) {
@@ -3573,6 +3573,7 @@ class Planet {
     // Rebuild cliff walls if any elevation was restored
     if (restoredElevation.size > 0 && this.terrainElevation) {
       this.terrainElevation.rebuildCliffWalls(this._tiles, this._adjacencyMap);
+      this._createNoiseOverlay();
     }
 
     // Update capture state for clusters that gained tiles
@@ -3759,6 +3760,7 @@ class Planet {
 
     // Rebuild cliff walls with updated elevation data
     this.terrainElevation.rebuildCliffWalls(this._tiles, this._adjacencyMap);
+    this._createNoiseOverlay();
 
     // Rebuild any existing faction overlays for sponsor clusters.
     // Overlays may have been created (via applyTerritoryState) before de-elevation,
