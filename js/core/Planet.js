@@ -1286,6 +1286,68 @@ class Planet {
   }
 
   /**
+   * Full triplanar noise patch — diffuse + roughness baked into the material.
+   * Used for cliff walls and polar walls where the separate overlay mesh can't
+   * reliably render (z-fighting at steep angles, face culling issues).
+   * @param {THREE.MeshStandardMaterial} material
+   */
+  _patchTriplanarNoiseFull(material) {
+    const noiseDiffuseMap = this._noiseDiffuseMap;
+    const noiseRoughMap = this._noiseRoughnessMap;
+    const noiseScale = this._noiseScale;
+    material.onBeforeCompile = (shader) => {
+      shader.uniforms.triNoiseDiffuseMap = { value: noiseDiffuseMap };
+      shader.uniforms.triNoiseRoughMap = { value: noiseRoughMap };
+      shader.uniforms.triNoiseScale = { value: noiseScale };
+
+      shader.vertexShader = shader.vertexShader.replace(
+        "#include <common>",
+        "#include <common>\nvarying vec3 vTriObjPos;",
+      );
+      shader.vertexShader = shader.vertexShader.replace(
+        "#include <begin_vertex>",
+        "#include <begin_vertex>\nvTriObjPos = position;",
+      );
+
+      shader.fragmentShader = shader.fragmentShader.replace(
+        "#include <common>",
+        `#include <common>
+        varying vec3 vTriObjPos;
+        uniform sampler2D triNoiseDiffuseMap;
+        uniform sampler2D triNoiseRoughMap;
+        uniform float triNoiseScale;
+        vec3 triplanarSample(sampler2D tex, vec3 pos, vec3 blend) {
+          return texture2D(tex, pos.xy * triNoiseScale).rgb * blend.z +
+                 texture2D(tex, pos.xz * triNoiseScale).rgb * blend.y +
+                 texture2D(tex, pos.yz * triNoiseScale).rgb * blend.x;
+        }`,
+      );
+      // Diffuse noise: multiply base color by 2×noise (same as overlay blend)
+      shader.fragmentShader = shader.fragmentShader.replace(
+        "#include <color_fragment>",
+        `#include <color_fragment>
+        {
+          vec3 bf = abs(normalize(vTriObjPos));
+          bf = bf / (bf.x + bf.y + bf.z);
+          vec3 noiseDiff = triplanarSample(triNoiseDiffuseMap, vTriObjPos, bf);
+          diffuseColor.rgb *= noiseDiff * 2.0;
+        }`,
+      );
+      // Roughness noise
+      shader.fragmentShader = shader.fragmentShader.replace(
+        "#include <roughnessmap_fragment>",
+        `float roughnessFactor = roughness;
+        {
+          vec3 bf = abs(normalize(vTriObjPos));
+          bf = bf / (bf.x + bf.y + bf.z);
+          vec3 noiseRough = triplanarSample(triNoiseRoughMap, vTriObjPos, bf);
+          roughnessFactor *= noiseRough.g;
+        }`,
+      );
+    };
+  }
+
+  /**
    * Create a planet-wide noise grain overlay that sits on top of all tiles.
    * Uses multiply blending so the underlying textures (sponsor logos, patterns) show through
    * with a subtle pixel-noise grain on top.
@@ -1757,7 +1819,7 @@ class Planet {
       flatShading: true,
       side: THREE.FrontSide,
     });
-    this._patchTriplanarNoise(wallMaterial);
+    this._patchTriplanarNoiseFull(wallMaterial);
 
     const wallMesh = new THREE.Mesh(wallGeometry, wallMaterial);
     wallMesh.castShadow = true;

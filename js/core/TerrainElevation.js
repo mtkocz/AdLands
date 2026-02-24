@@ -845,7 +845,7 @@ class TerrainElevation {
       side: THREE.DoubleSide,
       shadowSide: THREE.FrontSide,
     });
-    this.planet._patchTriplanarNoise(material);
+    this.planet._patchTriplanarNoiseFull(material);
 
     this.cliffWallMesh = new THREE.Mesh(geometry, material);
     this.cliffWallMesh.castShadow = true;
