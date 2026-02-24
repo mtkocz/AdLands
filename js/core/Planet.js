@@ -1387,7 +1387,7 @@ class Planet {
     const offset = 0.04;
     const ns = this._noiseScale;
 
-    const collectMesh = (pos, idx, isWall) => {
+    const collectMesh = (pos, idx, srcUVs, isWall) => {
       for (let i = 0; i < pos.length; i += 3) {
         const x = pos[i], y = pos[i + 1], z = pos[i + 2];
         const len = Math.sqrt(x * x + y * y + z * z);
@@ -1397,7 +1397,11 @@ class Planet {
           z + (z / len) * offset,
         );
 
-        if (isWall) {
+        if (srcUVs) {
+          // Copy UVs from source geometry (sponsor tangent-plane projection)
+          const vi = (i / 3) * 2;
+          allUVs.push(srcUVs[vi], srcUVs[vi + 1]);
+        } else if (isWall) {
           // Cylindrical mapping for walls: azimuthal arc length + radial height
           const horizR = Math.sqrt(x * x + z * z);
           const theta = Math.atan2(z, x);
@@ -1431,11 +1435,11 @@ class Planet {
       // Skip inner crust — too dark for visible noise, and uses MeshBasicMaterial
       if (mesh.userData?.isInnerCrust) return;
 
-      // Collect from merged cluster meshes
+      // Collect from merged cluster meshes (non-sponsor, use computed UVs)
       if (mesh.userData?.isMergedCluster) {
         const pos = mesh.geometry.attributes.position.array;
         const idx = mesh.geometry.index ? mesh.geometry.index.array : null;
-        collectMesh(pos, idx, false);
+        collectMesh(pos, idx, null, false);
         return;
       }
 
@@ -1443,7 +1447,7 @@ class Planet {
       if (mesh.userData?.isCliffWall || mesh.userData?.isPolarWall) {
         const pos = mesh.geometry.attributes.position.array;
         const idx = mesh.geometry.index ? mesh.geometry.index.array : null;
-        collectMesh(pos, idx, true);
+        collectMesh(pos, idx, null, true);
         return;
       }
 
@@ -1456,10 +1460,13 @@ class Planet {
       if (this.portalCenterIndices.has(tileIndex)) return;
       if (this.polarTileIndices.has(tileIndex)) return;
 
-      // Collect from visible individual tiles (sponsor tiles etc.)
+      // Collect from visible individual tiles
       const pos = mesh.geometry.attributes.position.array;
       const idx = mesh.geometry.index ? mesh.geometry.index.array : null;
-      collectMesh(pos, idx, false);
+      // Sponsor tiles: copy tangent-plane UVs for pixel-perfect alignment
+      const sponsorUVs = (this.sponsorTileIndices.has(tileIndex) && mesh.geometry.attributes.uv)
+        ? mesh.geometry.attributes.uv.array : null;
+      collectMesh(pos, idx, sponsorUVs, false);
     });
 
     if (allPositions.length === 0) return;

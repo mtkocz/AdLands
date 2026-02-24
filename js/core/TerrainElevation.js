@@ -731,7 +731,7 @@ class TerrainElevation {
       const lowElev = Math.min(elevA, elevB);
 
       const highScale = this.getExtrusion(highElev);
-      // Extend cliff base slightly below ground to prevent light leaks at seams
+      // Extend cliff base below ground to prevent light leaks at seams
       const lowScale = this.getExtrusion(lowElev) - 0.002;
 
       const v1x = parseFloat(high.v1.x);
@@ -762,6 +762,12 @@ class TerrainElevation {
         )
         .sub(t.midpoint)
         .normalize();
+
+      // Extend cliff base outward (away from cliff) to cover shadow
+      // peter-panning at the cliff-ground junction
+      const CLIFF_LIP = 0.15;
+      t.lowA.addScaledVector(t.tileCenterDir, -CLIFF_LIP);
+      t.lowB.addScaledVector(t.tileCenterDir, -CLIFF_LIP);
 
       const baseIndex = positions.length / 3;
 
