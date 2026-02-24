@@ -1387,10 +1387,14 @@ class Planet {
     const offset = 0.04;
     const ns = this._noiseScale;
 
-    const collectMesh = (pos, idx, isWall, tileIndex) => {
-      // Per-tile tangent basis for square pixels everywhere
+    // Wall UVs are stored as distance / ROCK_TEXTURE_WORLD_SIZE.
+    // Rescale to noise density: multiply by ROCK_TEXTURE_WORLD_SIZE * noiseScale.
+    const wallUVRescale = ROCK_TEXTURE_WORLD_SIZE * ns;
+
+    const collectMesh = (pos, idx, srcUVs, tileIndex) => {
+      // Per-tile tangent basis for square pixels on flat tiles
       let tanU, tanV;
-      if (!isWall && tileIndex !== undefined && this._tiles && this._tiles[tileIndex]) {
+      if (!srcUVs && tileIndex !== undefined && this._tiles && this._tiles[tileIndex]) {
         const cp = this._tiles[tileIndex].centerPoint;
         const center = new THREE.Vector3(parseFloat(cp.x), parseFloat(cp.y), parseFloat(cp.z));
         ({ tanU, tanV } = this._calculateClusterTangentBasis(center));
@@ -1405,11 +1409,10 @@ class Planet {
           z + (z / len) * offset,
         );
 
-        if (isWall) {
-          // Cylindrical mapping for walls: azimuthal arc length + radial height
-          const horizR = Math.sqrt(x * x + z * z);
-          const theta = Math.atan2(z, x);
-          allUVs.push(theta * horizR * ns, len * ns);
+        const vi = i / 3; // vertex index for UV lookup
+        if (srcUVs) {
+          // Use existing planar UVs from wall geometry, rescaled to noise density
+          allUVs.push(srcUVs[vi * 2] * wallUVRescale, srcUVs[vi * 2 + 1] * wallUVRescale);
         } else if (tanU && tanV) {
           // Tangent-plane projection: square pixels at any latitude
           const u = (x * tanU.x + y * tanU.y + z * tanU.z) * ns;
@@ -1447,11 +1450,12 @@ class Planet {
       // Skip merged cluster meshes — we process individual tiles for per-tile tangent UVs
       if (mesh.userData?.isMergedCluster) return;
 
-      // Collect from cliff walls and polar walls — cylindrical mapping
+      // Collect from cliff walls and polar walls — use existing planar UVs
       if (mesh.userData?.isCliffWall || mesh.userData?.isPolarWall) {
         const pos = mesh.geometry.attributes.position.array;
         const idx = mesh.geometry.index ? mesh.geometry.index.array : null;
-        collectMesh(pos, idx, true);
+        const uvs = mesh.geometry.attributes.uv ? mesh.geometry.attributes.uv.array : null;
+        collectMesh(pos, idx, uvs);
         return;
       }
 
@@ -1469,7 +1473,7 @@ class Planet {
       // Collect with per-tile tangent-plane projection
       const pos = mesh.geometry.attributes.position.array;
       const idx = mesh.geometry.index ? mesh.geometry.index.array : null;
-      collectMesh(pos, idx, false, tileIndex);
+      collectMesh(pos, idx, null, tileIndex);
     });
 
     if (allPositions.length === 0) return;
