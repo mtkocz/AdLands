@@ -1194,18 +1194,10 @@ class Planet {
     const ctx = canvas.getContext("2d");
     const imgData = ctx.getImageData(0, 0, texSize, texSize);
     const d = imgData.data;
-    const pixelSize = 4; // 4x4 chunky pixel blocks
-    for (let by = 0; by < texSize; by += pixelSize) {
-      for (let bx = 0; bx < texSize; bx += pixelSize) {
-        const v = Math.floor(128 + (Math.random() - 0.5) * 50);
-        for (let py = 0; py < pixelSize && by + py < texSize; py++) {
-          for (let px = 0; px < pixelSize && bx + px < texSize; px++) {
-            const i = ((by + py) * texSize + (bx + px)) * 4;
-            d[i] = d[i + 1] = d[i + 2] = v;
-            d[i + 3] = 255;
-          }
-        }
-      }
+    for (let i = 0; i < d.length; i += 4) {
+      const v = Math.floor(128 + (Math.random() - 0.5) * 50);
+      d[i] = d[i + 1] = d[i + 2] = v;
+      d[i + 3] = 255;
     }
     ctx.putImageData(imgData, 0, 0);
 
@@ -1221,7 +1213,7 @@ class Planet {
     const allIndices = [];
     let vertexOffset = 0;
     const radialOffset = 0.04;
-    const uvScale = 8.0; // Texture tiling frequency across planet
+    const uvScale = 64.0; // Texture tiling frequency across planet
 
     const collectMesh = (pos, idx) => {
       for (let i = 0; i < pos.length; i += 3) {
