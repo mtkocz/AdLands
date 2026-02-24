@@ -55,6 +55,9 @@ class TerrainElevation {
       radialDir: new THREE.Vector3(),
       wallNormal: new THREE.Vector3(),
       tileCenterDir: new THREE.Vector3(),
+      apronA: new THREE.Vector3(),
+      apronB: new THREE.Vector3(),
+      groundNormal: new THREE.Vector3(),
     };
   }
 
@@ -808,6 +811,35 @@ class TerrainElevation {
       const cb = gray;
       for (let i = 0; i < 4; i++) {
         colors.push(cr, cg, cb);
+      }
+
+      // Dark ground apron at cliff base to mask shadow peter-panning gap.
+      // A thin dark strip extends outward from the cliff base along the
+      // ground, hiding the sunlit gap between cliff wall and cast shadow.
+      const APRON_WIDTH = 0.4;
+      t.apronA.copy(t.lowA).addScaledVector(t.tileCenterDir, -APRON_WIDTH);
+      t.apronB.copy(t.lowB).addScaledVector(t.tileCenterDir, -APRON_WIDTH);
+      t.groundNormal.copy(t.lowA).normalize();
+
+      const apronBase = positions.length / 3;
+      positions.push(
+        t.lowA.x,   t.lowA.y,   t.lowA.z,
+        t.lowB.x,   t.lowB.y,   t.lowB.z,
+        t.apronB.x, t.apronB.y, t.apronB.z,
+        t.apronA.x, t.apronA.y, t.apronA.z,
+      );
+      uvs.push(0, vTile, uTile, vTile, uTile, vTile, 0, vTile);
+      // Material is DoubleSide so both winding orders render; use consistent CCW
+      indices.push(
+        apronBase, apronBase + 1, apronBase + 2,
+        apronBase, apronBase + 2, apronBase + 3,
+      );
+      for (let i = 0; i < 4; i++) {
+        normals.push(t.groundNormal.x, t.groundNormal.y, t.groundNormal.z);
+      }
+      // Near-black so apron stays dark even in direct sunlight
+      for (let i = 0; i < 4; i++) {
+        colors.push(0.02, 0.02, 0.02);
       }
     }
 
