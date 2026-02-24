@@ -841,11 +841,11 @@ class TerrainElevation {
       vertexColors: true,
       roughness: 0.95,
       metalness: 0.05,
-      roughnessMap: this.planet._noiseRoughnessMap,
       flatShading: true,
       side: THREE.DoubleSide,
       shadowSide: THREE.FrontSide,
     });
+    this.planet._patchTriplanarNoise(material);
 
     this.cliffWallMesh = new THREE.Mesh(geometry, material);
     this.cliffWallMesh.castShadow = true;

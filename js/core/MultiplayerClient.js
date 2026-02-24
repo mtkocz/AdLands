@@ -125,12 +125,17 @@
       const onSurface = hasSpawned && !tank.isDead && !(mp.fastTravel && mp.fastTravel.active);
       if (now - lastHUDUpdateTime >= HUD_UPDATE_INTERVAL && hasSpawned) {
         lastHUDUpdateTime = now;
-        // Clear stale serverClusterId when server stops sending capture-progress (player left sponsor territory)
-        if (serverClusterId !== undefined && now - lastCaptureProgressTime > 1500) {
-          serverClusterId = undefined;
+        // Clear stale serverClusterId when player leaves sponsor territory.
+        // Local cluster check gives instant response; timeout is a fallback.
+        const localClusterId = tank.getCurrentClusterId(planet);
+        if (serverClusterId !== undefined) {
+          const localOnSponsor = localClusterId !== undefined && planet.clusterCaptureState.has(localClusterId);
+          if (!localOnSponsor || now - lastCaptureProgressTime > 1500) {
+            serverClusterId = undefined;
+          }
         }
         // Use server-authoritative cluster when available (prevents grid vs nearest-neighbor mismatch)
-        const clusterId = serverClusterId !== undefined ? serverClusterId : tank.getCurrentClusterId(planet);
+        const clusterId = serverClusterId !== undefined ? serverClusterId : localClusterId;
 
         if (clusterId !== undefined && onSurface) {
           const state = planet.clusterCaptureState.get(clusterId);

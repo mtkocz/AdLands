@@ -935,9 +935,9 @@ class Planet {
           flatShading: true,
           roughness: 0.8,
           metalness: 0.1,
-          roughnessMap: this._noiseRoughnessMap,
           side: THREE.FrontSide,
         });
+        this._patchTriplanarNoise(material);
       } else {
         const pattern = this.clusterPatterns.get(clusterId);
         const isElevated = this.terrainElevation && this.terrainElevation.getElevationAtTileIndex(index) > 0;
@@ -962,9 +962,9 @@ class Planet {
             flatShading: true,
             roughness: 0.95,
             metalness: 0.05,
-            roughnessMap: this._noiseRoughnessMap,
             side: THREE.FrontSide,
           });
+          this._patchTriplanarNoise(material);
         } else {
           if (!this.clusterTextures.has(clusterId)) {
             this.clusterTextures.set(
@@ -977,9 +977,9 @@ class Planet {
             flatShading: true,
             roughness: pattern.roughness,
             metalness: pattern.metalness,
-            roughnessMap: this._noiseRoughnessMap,
             side: THREE.FrontSide,
           });
+          this._patchTriplanarNoise(material);
         }
       }
 
@@ -1094,7 +1094,6 @@ class Planet {
           flatShading: true,
           roughness: 0.95,
           metalness: 0.05,
-          roughnessMap: this._noiseRoughnessMap,
           side: THREE.FrontSide,
         });
       } else {
@@ -1107,10 +1106,10 @@ class Planet {
           flatShading: true,
           roughness: pattern.roughness,
           metalness: pattern.metalness,
-          roughnessMap: this._noiseRoughnessMap,
           side: THREE.FrontSide,
         });
       }
+      this._patchTriplanarNoise(material);
 
       const mergedMesh = new THREE.Mesh(mergedGeom, material);
       mergedMesh.receiveShadow = true;
@@ -1234,6 +1233,46 @@ class Planet {
   }
 
   /**
+   * Patch a MeshStandardMaterial with triplanar roughness noise sampling.
+   * Uses the same world-space scale as the noise overlay so both maps align exactly.
+   * @param {THREE.MeshStandardMaterial} material
+   */
+  _patchTriplanarNoise(material) {
+    const noiseRoughMap = this._noiseRoughnessMap;
+    material.onBeforeCompile = (shader) => {
+      shader.uniforms.triNoiseRoughMap = { value: noiseRoughMap };
+
+      shader.vertexShader = shader.vertexShader.replace(
+        "#include <common>",
+        "#include <common>\nvarying vec3 vTriWorldPos;",
+      );
+      shader.vertexShader = shader.vertexShader.replace(
+        "#include <begin_vertex>",
+        "#include <begin_vertex>\nvTriWorldPos = (modelMatrix * vec4(transformed, 1.0)).xyz;",
+      );
+
+      shader.fragmentShader = shader.fragmentShader.replace(
+        "#include <common>",
+        `#include <common>
+        varying vec3 vTriWorldPos;
+        uniform sampler2D triNoiseRoughMap;`,
+      );
+      shader.fragmentShader = shader.fragmentShader.replace(
+        "#include <roughnessmap_fragment>",
+        `{
+          float noiseScale = 0.02;
+          vec3 bf = abs(normalize(vTriWorldPos));
+          bf = bf / (bf.x + bf.y + bf.z);
+          float rXY = texture2D(triNoiseRoughMap, vTriWorldPos.xy * noiseScale).g;
+          float rXZ = texture2D(triNoiseRoughMap, vTriWorldPos.xz * noiseScale).g;
+          float rYZ = texture2D(triNoiseRoughMap, vTriWorldPos.yz * noiseScale).g;
+          roughnessFactor *= rXY * bf.z + rXZ * bf.y + rYZ * bf.x;
+        }`,
+      );
+    };
+  }
+
+  /**
    * Create a planet-wide noise grain overlay that sits on top of all tiles.
    * Uses multiply blending so the underlying textures (sponsor logos, patterns) show through
    * with a subtle pixel-noise grain on top.
@@ -1252,7 +1291,6 @@ class Planet {
 
     // Collect geometry from all visible surface meshes
     const allPositions = [];
-    const allUvs = [];
     const allIndices = [];
     let vertexOffset = 0;
     const radialOffset = 0.04;
@@ -1266,13 +1304,6 @@ class Planet {
           x + (x / len) * radialOffset,
           y + (y / len) * radialOffset,
           z + (z / len) * radialOffset,
-        );
-        // Same spherical UV formula as tile materials (scale=60)
-        const theta = Math.atan2(z, x);
-        const phi = Math.acos(Math.max(-1, Math.min(1, y / len)));
-        allUvs.push(
-          (theta / Math.PI + 1) * 0.5 * 60.0,
-          (phi / Math.PI) * 60.0,
         );
       }
 
@@ -1328,30 +1359,33 @@ class Planet {
 
     const geometry = new THREE.BufferGeometry();
     geometry.setAttribute("position", new THREE.Float32BufferAttribute(allPositions, 3));
-    geometry.setAttribute("uv", new THREE.Float32BufferAttribute(allUvs, 2));
     geometry.setIndex(allIndices);
 
-    // Overlay blend with distance fade — fades to neutral (no effect) at 260+ units
-    // UVs match tile materials (scale=60); same mapping as roughnessMap
+    // Overlay blend with distance fade — triplanar mapping matches roughness patch
     const material = new THREE.ShaderMaterial({
       uniforms: {
         noiseMap: { value: texture },
         uFade: { value: 1.0 },
       },
       vertexShader: `
-        varying vec2 vUv;
+        varying vec3 vWorldPos;
         void main() {
-          vUv = uv;
+          vWorldPos = (modelMatrix * vec4(position, 1.0)).xyz;
           gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
         }
       `,
       fragmentShader: `
         uniform sampler2D noiseMap;
         uniform float uFade;
-        varying vec2 vUv;
+        varying vec3 vWorldPos;
         void main() {
-          vec3 noise = texture2D(noiseMap, vUv).rgb;
-          // Lerp toward 0.5 (neutral for overlay blend) as fade decreases
+          float noiseScale = 0.02;
+          vec3 bf = abs(normalize(vWorldPos));
+          bf = bf / (bf.x + bf.y + bf.z);
+          vec3 nXY = texture2D(noiseMap, vWorldPos.xy * noiseScale).rgb;
+          vec3 nXZ = texture2D(noiseMap, vWorldPos.xz * noiseScale).rgb;
+          vec3 nYZ = texture2D(noiseMap, vWorldPos.yz * noiseScale).rgb;
+          vec3 noise = nXY * bf.z + nXZ * bf.y + nYZ * bf.x;
           gl_FragColor = vec4(mix(vec3(0.5), noise, uFade), 1.0);
         }
       `,
@@ -1695,10 +1729,10 @@ class Planet {
       vertexColors: true,
       roughness: 0.95,
       metalness: 0.05,
-      roughnessMap: this._noiseRoughnessMap,
       flatShading: true,
       side: THREE.FrontSide,
     });
+    this._patchTriplanarNoise(wallMaterial);
 
     const wallMesh = new THREE.Mesh(wallGeometry, wallMaterial);
     wallMesh.castShadow = true;
@@ -2768,9 +2802,9 @@ class Planet {
         flatShading: true,
         roughness: 0.8,
         metalness: 0.1,
-        roughnessMap: this._noiseRoughnessMap,
         side: THREE.FrontSide,
       });
+      this._patchTriplanarNoise(mesh.material);
       mesh.userData.clusterId = clusterId;
     });
   }
@@ -3388,7 +3422,6 @@ class Planet {
           flatShading: true,
           roughness: 0.95,
           metalness: 0.05,
-          roughnessMap: this._noiseRoughnessMap,
           side: THREE.FrontSide,
         });
       } else if (newClusterId !== undefined) {
@@ -3406,7 +3439,6 @@ class Planet {
             flatShading: true,
             roughness: pattern.roughness,
             metalness: pattern.metalness,
-            roughnessMap: this._noiseRoughnessMap,
             side: THREE.FrontSide,
           });
         }
@@ -3415,10 +3447,10 @@ class Planet {
         material = new THREE.MeshStandardMaterial({
           color: 0x444444,
           flatShading: true,
-          roughnessMap: this._noiseRoughnessMap,
           side: THREE.FrontSide,
         });
       }
+      this._patchTriplanarNoise(material);
 
       const newMesh = new THREE.Mesh(geometry, material);
       newMesh.userData = oldUserData;
@@ -3993,14 +4025,15 @@ class Planet {
       finalTexture.wrapT = texture.wrapT;
     }
 
-    return new THREE.MeshStandardMaterial({
+    const mat = new THREE.MeshStandardMaterial({
       map: finalTexture,
       flatShading: true,
       roughness: roughness,
       metalness: metalness,
-      roughnessMap: this._noiseRoughnessMap,
       side: THREE.FrontSide,
     });
+    this._patchTriplanarNoise(mat);
+    return mat;
   }
 
   /**
