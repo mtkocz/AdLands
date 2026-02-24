@@ -116,7 +116,8 @@ class Tank {
     // Initialize position
     this._updateVisual(0);
     if (!options.skipScene) {
-      scene.add(this.group);
+      const parent = options.hexGroup || scene;
+      parent.add(this.group);
     }
     // Start hidden — tank becomes visible only after deployment
     this._hidden = true;
@@ -153,11 +154,15 @@ class Tank {
   }
 
   getPosition() {
-    return this.group.position.clone();
+    return (this.group._cachedWorldPos || this.group.position).clone();
+  }
+
+  getWorldPosition() {
+    return this.group._cachedWorldPos || this.group.position;
   }
 
   getCurrentClusterId(planet) {
-    return planet.getClusterIdAtPosition(this.group.position);
+    return planet.getClusterIdAtLocalPosition(this.group.position);
   }
 
   setPlanet(planet) {
@@ -521,7 +526,7 @@ class Tank {
 
     // Use preallocated turret temp objects
     const t = Tank._turretTemp;
-    t.tankPos.copy(this.group.position);
+    t.tankPos.copy(this.group._cachedWorldPos || this.group.position);
     t.normal.copy(t.tankPos).normalize();
     t.plane.set(t.normal, -t.tankPos.length());
 
@@ -625,7 +630,7 @@ class Tank {
     const range = this.cannonSystem
       ? this.cannonSystem.getCurrentRange()
       : 20;
-    t.aimPoint.copy(this.group.position).addScaledVector(t.aimDir, range);
+    t.aimPoint.copy(this.group._cachedWorldPos || this.group.position).addScaledVector(t.aimDir, range);
 
     // Project to screen coordinates
     t.aimPoint.project(camera);
@@ -1319,7 +1324,7 @@ class Tank {
 
   _startFadeOut() {
     this.fadeStartTime = performance.now();
-    this.sinkDelay = 3000; // 3s charred before sinking
+    this.sinkDelay = 5000; // 5s charred before sinking
     this.sinkDuration = 5000; // 5s to sink into ground
     this.sinkDepth = 3; // units to sink (roughly tank height)
     this.isFading = true;
@@ -1570,7 +1575,9 @@ Tank._visualTemp = {
   east: new THREE.Vector3(),
   north: new THREE.Vector3(),
   forward: new THREE.Vector3(),
-  target: new THREE.Vector3(),
+  right: new THREE.Vector3(),
+  negForward: new THREE.Vector3(),
+  rotationMatrix: new THREE.Matrix4(),
   rollAxis: new THREE.Vector3(0, 0, 1),
   rollQuat: new THREE.Quaternion(),
   worldUp: new THREE.Vector3(0, 1, 0),
@@ -1698,10 +1705,11 @@ Tank.updateEntityVisual = function (entity, sphereRadius) {
   t.forward.addScaledVector(t.east, Math.sin(heading));
   t.forward.normalize();
 
-  // Orient entity
-  t.target.copy(entity.group.position).add(t.forward);
-  entity.group.up.copy(t.up);
-  entity.group.lookAt(t.target);
+  // Orient entity using quaternion (works in any parent space, unlike lookAt)
+  t.right.crossVectors(t.forward, t.up).normalize();
+  t.negForward.copy(t.forward).negate();
+  t.rotationMatrix.makeBasis(t.right, t.up, t.negForward);
+  entity.group.quaternion.setFromRotationMatrix(t.rotationMatrix);
 
   // Apply lean + wiggle to bodyGroup (so headlights, hitbox, projectile origin on outer group are unaffected)
   const leanTarget = entity.bodyGroup || entity.group;
@@ -1753,6 +1761,11 @@ Tank.updateEntityVisual = function (entity, sphereRadius) {
       entity.currentRollAngle = 0;
     }
   }
+
+  // Cache world position (tanks are parented to hexGroup which rotates,
+  // so .position is local-space — callers need world pos for camera, effects, etc.)
+  if (!entity.group._cachedWorldPos) entity.group._cachedWorldPos = new THREE.Vector3();
+  entity.group.getWorldPosition(entity.group._cachedWorldPos);
 };
 
 // Preallocated temp vectors for LOD calculations (avoid GC pressure)

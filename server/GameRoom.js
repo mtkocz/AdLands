@@ -4193,7 +4193,12 @@ class GameRoom {
         continue;
       }
 
-      const tileIndices = sponsor.cluster.tileIndices;
+      // Filter out neutral tiles (portals, poles) — they must never be part of any cluster
+      const tileIndices = sponsor.cluster.tileIndices.filter(t =>
+        !worldResult.portalTileIndices.has(t) && !worldResult.polarTileIndices.has(t)
+      );
+      if (tileIndices.length === 0) continue;
+
       const sponsorClusterId = worldResult.clusterData.length;
 
       // Remove sponsor tiles from their original procedural clusters
@@ -4214,7 +4219,7 @@ class GameRoom {
       // Create new cluster entry for sponsor
       worldResult.clusterData.push({
         id: sponsorClusterId,
-        tiles: tileIndices.slice(),
+        tiles: tileIndices,
         isSponsorCluster: true,
         sponsorId: sponsor.id,
       });

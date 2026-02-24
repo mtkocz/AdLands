@@ -8,9 +8,10 @@
  */
 
 class RemoteTank {
-  constructor(scene, sphereRadius, playerData) {
+  constructor(scene, sphereRadius, playerData, hexGroup) {
     this.scene = scene;
     this.sphereRadius = sphereRadius;
+    this.hexGroup = hexGroup || scene;
     this.playerId = playerData.id;
     this.playerName = playerData.name;
     this.faction = playerData.faction;
@@ -106,8 +107,8 @@ class RemoteTank {
     // Remote tanks are visible immediately — LOD system will manage visibility.
     this.group.visible = true;
 
-    // Add to scene
-    this.scene.add(this.group);
+    // Add to hexGroup (rotates with planet)
+    this.hexGroup.add(this.group);
   }
 
   /**
@@ -243,9 +244,11 @@ class RemoteTank {
     }
 
     // Snapshot interpolation: render at a fixed delay behind real-time.
-    // Uses Hermite (cubic) interpolation for position — this produces smooth
-    // velocity transitions at tick boundaries, eliminating the visible "kinks"
-    // that linear interpolation creates at 10Hz update rate.
+    // Uses smoothstep between snapshots — zero-derivative at tick boundaries
+    // prevents acceleration discontinuities that lean springs would amplify.
+    // NOTE: Snapshots store theta WITH planet counter-rotation already applied
+    // by the server physics. Interpolation between them naturally provides
+    // smooth counter-rotation. Do NOT apply additional per-frame counter-rotation.
     const renderTime = performance.now() - this.interpolationDelay;
     const snapCount = this._snapCount;
 
@@ -271,45 +274,16 @@ class RemoteTank {
         const span = toSnap.t - fromSnap.t;
         const t = span > 0 ? Math.min(1, (renderTime - fromSnap.t) / span) : 1;
 
-        // Hermite basis functions for cubic interpolation
-        const t2 = t * t;
-        const t3 = t2 * t;
-        const h00 = 2 * t3 - 3 * t2 + 1;  // from position weight
-        const h10 = t3 - 2 * t2 + t;       // from tangent weight
-        const h01 = -2 * t3 + 3 * t2;      // to position weight
-        const h11 = t3 - t2;               // to tangent weight
-
-        // Compute tangent vectors from each snapshot's speed + heading.
-        // Tangent = velocity * span (Hermite tangent is scaled by the interval).
-        const spanScale = span / 1000 * 60; // convert ms → dt60-equivalent
-        const fromSinPhi = Math.max(0.01, Math.sin(fromSnap.phi));
-        const toSinPhi = Math.max(0.01, Math.sin(toSnap.phi));
-
-        const fromTanPhi = -Math.cos(fromSnap.heading) * fromSnap.speed * spanScale;
-        const toTanPhi = -Math.cos(toSnap.heading) * toSnap.speed * spanScale;
-        const fromTanTheta = -Math.sin(fromSnap.heading) * fromSnap.speed / fromSinPhi * spanScale;
-        const toTanTheta = -Math.sin(toSnap.heading) * toSnap.speed / toSinPhi * spanScale;
-
-        // Hermite interpolation for phi (no wrapping needed, bounded [0, π])
-        this.state.phi = h00 * fromSnap.phi + h10 * fromTanPhi
-                       + h01 * toSnap.phi + h11 * toTanPhi;
-
-        // For theta: compute Hermite delta from fromSnap.theta, then wrap
-        let thetaDelta = toSnap.theta - fromSnap.theta;
-        while (thetaDelta > Math.PI) thetaDelta -= Math.PI * 2;
-        while (thetaDelta < -Math.PI) thetaDelta += Math.PI * 2;
-        // Hermite on the delta: h01*delta replaces h00*from + h01*to
-        let thetaResult = fromSnap.theta
-          + h10 * fromTanTheta
-          + h01 * thetaDelta
-          + h11 * toTanTheta;
-        while (thetaResult < 0) thetaResult += Math.PI * 2;
-        while (thetaResult >= Math.PI * 2) thetaResult -= Math.PI * 2;
-        this.state.theta = thetaResult;
-
-        // Smoothstep for speed/heading/turret — eliminates acceleration
-        // discontinuities at tick boundaries that cause lean spring jitter
+        // Smoothstep — zero velocity at tick boundaries for jitter-free lean springs
         const st = t * t * (3 - 2 * t);
+
+        // Phi (latitude) — bounded [0, π], no wrapping needed
+        this.state.phi = fromSnap.phi + (toSnap.phi - fromSnap.phi) * st;
+
+        // Theta (longitude) — needs angle wrapping
+        this.state.theta = MathUtils.lerpAngle2Pi(fromSnap.theta, toSnap.theta, st);
+
+        // Speed, heading, turret
         this.state.heading = MathUtils.lerpAngle(fromSnap.heading, toSnap.heading, st);
         this.state.speed = fromSnap.speed + (toSnap.speed - fromSnap.speed) * st;
         this.state.turretAngle = MathUtils.lerpAngle(fromSnap.turretAngle, toSnap.turretAngle, st);
@@ -354,12 +328,7 @@ class RemoteTank {
       }
     }
 
-    // Counter planet rotation: convert from planet-fixed coords to world coords.
-    // Only needed for the interpolation path — dead-reckoning already applies
-    // counter-rotation to targetState (which state was lerped/snapped toward).
-    if (interpolated) {
-      this.state.theta -= (SharedPhysics.PLANET_ROTATION_SPEED * dt60) / 60;
-    }
+    // Wrap theta
     while (this.state.theta < 0) this.state.theta += Math.PI * 2;
     while (this.state.theta >= Math.PI * 2) this.state.theta -= Math.PI * 2;
 
@@ -424,7 +393,7 @@ class RemoteTank {
 
     // Start sink (2s charred delay + 5s sink into ground)
     this.fadeStartTime = performance.now();
-    this.sinkDelay = 3000;
+    this.sinkDelay = 5000;
     this.sinkDuration = 5000;
     this.sinkDepth = 3;
     this.isFading = true;
@@ -561,7 +530,7 @@ class RemoteTank {
    */
   destroy() {
     if (this.group) {
-      this.scene.remove(this.group);
+      this.hexGroup.remove(this.group);
       this.group.traverse((child) => {
         if (child.geometry) child.geometry.dispose();
         if (child.material) {

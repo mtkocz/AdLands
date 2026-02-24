@@ -3001,7 +3001,10 @@ class Planet {
       return;
     }
 
-    const tileIndices = sponsor.cluster.tileIndices;
+    // Filter out neutral tiles (portals, poles) — never part of any cluster
+    const tileIndices = sponsor.cluster.tileIndices.filter(t =>
+      !this.portalTileIndices.has(t) && !this.polarTileIndices.has(t)
+    );
     if (tileIndices.length === 0) return;
 
     // Create a new cluster ID for this sponsor
@@ -3399,7 +3402,11 @@ class Planet {
       const clusterId = sponsor.clusterId;
       if (clusterId === undefined || clusterId === null) continue;
 
-      const tileIndices = sponsor.cluster.tileIndices;
+      // Filter out neutral tiles (portals, poles) — never part of any cluster
+      const tileIndices = sponsor.cluster.tileIndices.filter(t =>
+        !this.portalTileIndices.has(t) && !this.polarTileIndices.has(t)
+      );
+      if (tileIndices.length === 0) continue;
 
       // Mark tiles as sponsor tiles
       for (const tileIndex of tileIndices) {

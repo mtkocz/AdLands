@@ -447,7 +447,7 @@
 
   const planet = new Planet(scene, CONFIG.sphereRadius);
   const environment = new Environment(scene, CONFIG.sphereRadius);
-  const tank = new Tank(scene, CONFIG.sphereRadius);
+  const tank = new Tank(scene, CONFIG.sphereRadius, { hexGroup: planet.hexGroup });
 
   // Merged hex-tile hull for bloom occlusion (matches actual planet surface with gaps)
   const occlusionSphereMesh = new THREE.Mesh(
@@ -869,7 +869,7 @@
 
   // Player death callback
   tank.onDeath = (deadTank, killerFaction) => {
-    const pos = deadTank.group.position.clone();
+    const pos = deadTank.getWorldPosition().clone();
 
     // Vignette death overlay
     try {

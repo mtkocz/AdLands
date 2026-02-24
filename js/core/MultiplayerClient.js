@@ -135,7 +135,7 @@
             counts[tank.faction]++;
             for (const [, rt] of remoteTanks) {
               if (!rt.isDead && rt.faction && rt.group) {
-                const rtCluster = planet.getClusterIdAtPosition(rt.group.position);
+                const rtCluster = planet.getClusterIdAtLocalPosition(rt.group.position);
                 if (rtCluster === clusterId) counts[rt.faction]++;
               }
             }
@@ -1454,7 +1454,7 @@
         if (!tank.isDead) counts[tank.faction]++;
         for (const [, rt] of remoteTanks) {
           if (!rt.isDead && rt.faction && rt.group) {
-            const rtCluster = planet.getClusterIdAtPosition(rt.group.position);
+            const rtCluster = planet.getClusterIdAtLocalPosition(rt.group.position);
             if (rtCluster === data.clusterId) counts[rt.faction]++;
           }
         }
@@ -1831,7 +1831,7 @@
         return;
       }
 
-      const remoteTank = new RemoteTank(scene, sphereRadius, playerData);
+      const remoteTank = new RemoteTank(scene, sphereRadius, playerData, planet.hexGroup);
       remoteTanks.set(playerData.id, remoteTank);
 
       // Register with visual systems

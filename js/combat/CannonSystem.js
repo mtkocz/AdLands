@@ -944,9 +944,10 @@ void main() {
         // Shake intensity scales with charge (0.02 to 0.12)
         const chargeRatio = this.charging.power / this.charging.maxPower;
         const shakeIntensity = 0.02 + chargeRatio * 0.1;
+        const playerWorldPos = this.playerTank.group._cachedWorldPos || this.playerTank.group.position;
         this.gameCamera.triggerShake(
-          this.playerTank.group.position,
-          this.playerTank.group.position,
+          playerWorldPos,
+          playerWorldPos,
           shakeIntensity,
           100,
         );
@@ -1109,7 +1110,7 @@ void main() {
 
     // Lift muzzle position up along surface normal to prevent ground collision
     // This compensates for roll wiggle tilting the barrel downward
-    _shotSurfaceNormal.copy(tank.group.position).normalize();
+    _shotSurfaceNormal.copy(tank.group._cachedWorldPos || tank.group.position).normalize();
     _muzzleWorld.addScaledVector(_shotSurfaceNormal, 0.5);
 
     // Fire direction: straight out of the barrel
@@ -1166,7 +1167,7 @@ void main() {
     if (this.dustShockwave) {
       // 25% smaller for tank firing: (0.6 + chargeRatio * 0.4) * 0.75
       this.dustShockwave.emit(
-        tank.group.position,
+        tank.group._cachedWorldPos || tank.group.position,
         (0.6 + chargeRatio * 0.4) * 0.75,
         tank.group,
       );
@@ -1177,7 +1178,7 @@ void main() {
       const shakeIntensity = 0.4 + chargeRatio * 0.6; // 0.4 to 1.0
       this.gameCamera.triggerShake(
         _muzzleWorld,
-        this.playerTank.group.position,
+        this.playerTank.group._cachedWorldPos || this.playerTank.group.position,
         shakeIntensity,
         100,
       );
@@ -1233,7 +1234,7 @@ void main() {
     _muzzleWorld.copy(_muzzleLocal).applyMatrix4(remoteTank.group.matrixWorld);
 
     // Lift muzzle up along surface normal to prevent ground collision
-    _shotSurfaceNormal.copy(remoteTank.group.position).normalize();
+    _shotSurfaceNormal.copy(remoteTank.group._cachedWorldPos || remoteTank.group.position).normalize();
     _muzzleWorld.addScaledVector(_shotSurfaceNormal, 0.5);
 
     // Fire direction: -Z rotated by turret angle, transformed to world space
@@ -1280,7 +1281,7 @@ void main() {
     // Spawn dust shockwave at tank position
     if (this.dustShockwave) {
       this.dustShockwave.emit(
-        remoteTank.group.position,
+        remoteTank.group._cachedWorldPos || remoteTank.group.position,
         (0.6 + chargeRatio * 0.4) * 0.75,
         remoteTank.group,
       );
@@ -1862,9 +1863,10 @@ void main() {
         // Trigger impact shake (scales with projectile size)
         if (this.gameCamera && this.playerTank) {
           const shakeIntensity = hitSurface || hitTank ? 0.8 : 0.5;
+          const playerWorldPos = this.playerTank.group._cachedWorldPos || this.playerTank.group.position;
           this.gameCamera.triggerShake(
             p.position,
-            this.playerTank.group.position,
+            playerWorldPos,
             shakeIntensity * (p.sizeScale || 1),
             80,
           );
@@ -1872,7 +1874,8 @@ void main() {
 
         // Trigger nearby explosion visual effects (noise, glitch, etc.)
         if (this.visualEffects && this.playerTank) {
-          const dist = p.position.distanceTo(this.playerTank.group.position);
+          const playerWorldPos = this.playerTank.group._cachedWorldPos || this.playerTank.group.position;
+          const dist = p.position.distanceTo(playerWorldPos);
           if (dist < 80) {
             const intensity = (1 - dist / 80) * (p.sizeScale || 1);
             this.visualEffects.onNearbyExplosion(intensity);

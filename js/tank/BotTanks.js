@@ -2589,7 +2589,7 @@ class BotTanks {
 
   _startBotFadeOut(bot) {
     bot.fadeStartTime = performance.now();
-    bot.sinkDelay = 3000; // 3s charred before sinking
+    bot.sinkDelay = 5000; // 5s charred before sinking
     bot.sinkDuration = 5000; // 5s to sink into ground
     bot.sinkDepth = 3; // units to sink (roughly tank height)
     bot.isFading = true;
@@ -2788,8 +2788,8 @@ class BotTanks {
       this.playerTags.removeTag(bot.playerId);
     }
 
-    // Remove from scene
-    this.scene.remove(bot.group);
+    // Remove from parent (hexGroup or scene)
+    if (bot.group.parent) bot.group.parent.remove(bot.group);
 
     // Remove from bots array
     const index = this.bots.indexOf(bot);

@@ -468,7 +468,7 @@ class FastTravel {
 
         // Emit dust shockwave at spawn point (half size for spawns)
         if (this.dustShockwave) {
-            this.dustShockwave.emit(this.tank.group.position.clone(), 0.5);
+            this.dustShockwave.emit((this.tank.group._cachedWorldPos || this.tank.group.position).clone(), 0.5);
         }
 
         // Enable controls only when camera arrives
