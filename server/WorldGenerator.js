@@ -203,136 +203,33 @@ class WorldGenerator {
       }
     }
 
-    // No sponsor tiles on server (sponsorCount = 0)
-    const sponsorCount = 0;
+    // Procedural clusters disabled — all non-special tiles go into one background cluster.
+    // Sponsor clusters (applied later by _applySponsorClusters) are the only distinct territories.
+    const backgroundTiles = [];
+    for (let i = 0; i < numTiles; i++) {
+      if (!assigned[i]) {
+        backgroundTiles.push(i);
+        assigned[i] = true;
+        this.tileClusterMap.set(i, 0);
+      }
+    }
 
-    // Plan cluster sizes
-    const clusterSizes = [];
-    let remaining = numTiles - polarCount - portalCount - sponsorCount;
+    const remaining = backgroundTiles.length;
     console.log(
       `[WorldGenerator] Total tiles: ${numTiles} | Polar: ${polarCount} | ` +
-      `Portal+neutral: ${portalCount} | Sponsor: ${sponsorCount} | RENTABLE: ${remaining - sponsorCount}`
+      `Portal+neutral: ${portalCount} | Background: ${remaining} (procedural clusters disabled)`
     );
-    const maxSize = 100;
 
-    while (remaining > 0) {
-      const rand = this.random();
-      let size;
-      if (rand < 0.3) size = Math.floor(this.random() * 5) + 1;
-      else if (rand < 0.6) size = Math.floor(this.random() * 10) + 6;
-      else if (rand < 0.85) size = Math.floor(this.random() * 25) + 16;
-      else size = Math.floor(this.random() * 60) + 41;
+    this.clusterData.push({ id: 0, tiles: backgroundTiles });
 
-      size = Math.min(size, maxSize, remaining);
-      clusterSizes.push(size);
-      remaining -= size;
-    }
-
-    // Grow clusters
-    let clusterId = 0;
-    let clusterIndex = 0;
-
-    const getTileCenter = (idx) => {
-      const cp = tiles[idx].centerPoint;
-      return new Vec3(
-        parseFloat(cp.x),
-        parseFloat(cp.y),
-        parseFloat(cp.z)
-      );
-    };
-
-    for (let i = 0; i < numTiles && clusterIndex < clusterSizes.length; i++) {
-      if (assigned[i]) continue;
-
-      const targetSize = clusterSizes[clusterIndex];
-      const clusterTiles = [];
-      const frontier = new Map();
-      const seedCenter = getTileCenter(i);
-
-      assigned[i] = true;
-      clusterTiles.push(i);
-      this.tileClusterMap.set(i, clusterId);
-
-      for (const neighbor of adjacencyMap.get(i) || []) {
-        if (!assigned[neighbor]) {
-          frontier.set(
-            neighbor,
-            getTileCenter(neighbor).distanceTo(seedCenter)
-          );
-        }
-      }
-
-      while (clusterTiles.length < targetSize && frontier.size > 0) {
-        let closest = -1;
-        let closestDist = Infinity;
-
-        for (const [idx, dist] of frontier) {
-          if (dist < closestDist) {
-            closestDist = dist;
-            closest = idx;
-          }
-        }
-
-        if (closest === -1) break;
-
-        frontier.delete(closest);
-        if (assigned[closest]) continue;
-
-        assigned[closest] = true;
-        clusterTiles.push(closest);
-        this.tileClusterMap.set(closest, clusterId);
-
-        for (const neighbor of adjacencyMap.get(closest) || []) {
-          if (!assigned[neighbor] && !frontier.has(neighbor)) {
-            frontier.set(
-              neighbor,
-              getTileCenter(neighbor).distanceTo(seedCenter)
-            );
-          }
-        }
-      }
-
-      this.clusterData.push({ id: clusterId, tiles: clusterTiles });
-
-      // Advance RNG identically to Planet.js (color, pattern, roughness, metalness)
-      const gray = Math.floor(102 + this.random() * 26);
-      this.clusterColors.set(clusterId, (gray << 16) | (gray << 8) | gray);
-
-      const patternIdx = Math.floor(this.random() * PATTERNS.length);
-      const roughness = 0.5 + this.random() * 0.5;
-      const metalness = this.random() * 0.3;
-      this.clusterPatterns.set(clusterId, {
-        type: PATTERNS[patternIdx],
-        grayValue: gray,
-        roughness,
-        metalness,
-      });
-
-      clusterId++;
-      clusterIndex++;
-    }
-
-    // Assign remaining unassigned tiles
-    for (let i = 0; i < numTiles; i++) {
-      if (assigned[i]) continue;
-
-      for (const neighbor of adjacencyMap.get(i) || []) {
-        if (assigned[neighbor]) {
-          const cid = this.tileClusterMap.get(neighbor);
-          if (cid === undefined) continue;
-          this.tileClusterMap.set(i, cid);
-          this.clusterData[cid].tiles.push(i);
-          assigned[i] = true;
-          break;
-        }
-      }
-
-      if (!assigned[i]) {
-        this.tileClusterMap.set(i, clusterId);
-        this.clusterData.push({ id: clusterId, tiles: [i] });
-        clusterId++;
-      }
-    }
+    const gray = 112;
+    this.clusterColors.set(0, (gray << 16) | (gray << 8) | gray);
+    this.clusterPatterns.set(0, {
+      type: PATTERNS[0],
+      grayValue: gray,
+      roughness: 0.7,
+      metalness: 0.1,
+    });
 
     return adjacencyMap;
   }

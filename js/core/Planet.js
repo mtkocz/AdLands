@@ -371,7 +371,7 @@ class Planet {
       }
     }
 
-    // Mark sponsor tiles as protected (not assignable to procedural clusters)
+    // Mark sponsor tiles as protected (not assignable to background cluster)
     let sponsorCount = 0;
     for (const sponsorTileIndex of this.sponsorTileIndices) {
       if (!assigned[sponsorTileIndex]) {
@@ -379,135 +379,28 @@ class Planet {
         sponsorCount++;
       }
     }
-    // Plan cluster sizes
-    const clusterSizes = [];
-    let remaining = numTiles - polarCount - portalCount - sponsorCount;
-    const maxSize = 100;
 
-    while (remaining > 0) {
-      const rand = this.random();
-      let size;
-      if (rand < 0.3) size = Math.floor(this.random() * 5) + 1;
-      else if (rand < 0.6) size = Math.floor(this.random() * 10) + 6;
-      else if (rand < 0.85) size = Math.floor(this.random() * 25) + 16;
-      else size = Math.floor(this.random() * 60) + 41;
-
-      size = Math.min(size, maxSize, remaining);
-      clusterSizes.push(size);
-      remaining -= size;
-    }
-
-    // Grow clusters
-    let clusterId = 0;
-    let clusterIndex = 0;
-
-    const getTileCenter = (idx) => {
-      const cp = tiles[idx].centerPoint;
-      return new THREE.Vector3(
-        parseFloat(cp.x),
-        parseFloat(cp.y),
-        parseFloat(cp.z),
-      );
-    };
-
-    for (let i = 0; i < numTiles && clusterIndex < clusterSizes.length; i++) {
-      if (assigned[i]) continue;
-
-      const targetSize = clusterSizes[clusterIndex];
-      const clusterTiles = [];
-      const frontier = new Map();
-      const seedCenter = getTileCenter(i);
-
-      assigned[i] = true;
-      clusterTiles.push(i);
-      this.tileClusterMap.set(i, clusterId);
-
-      // Add seed neighbors to frontier
-      for (const neighbor of adjacencyMap.get(i) || []) {
-        if (!assigned[neighbor]) {
-          frontier.set(
-            neighbor,
-            getTileCenter(neighbor).distanceTo(seedCenter),
-          );
-        }
-      }
-
-      // Grow by picking closest tile
-      while (clusterTiles.length < targetSize && frontier.size > 0) {
-        let closest = -1;
-        let closestDist = Infinity;
-
-        for (const [idx, dist] of frontier) {
-          if (dist < closestDist) {
-            closestDist = dist;
-            closest = idx;
-          }
-        }
-
-        if (closest === -1) break;
-
-        frontier.delete(closest);
-        if (assigned[closest]) continue;
-
-        assigned[closest] = true;
-        clusterTiles.push(closest);
-        this.tileClusterMap.set(closest, clusterId);
-
-        for (const neighbor of adjacencyMap.get(closest) || []) {
-          if (!assigned[neighbor] && !frontier.has(neighbor)) {
-            frontier.set(
-              neighbor,
-              getTileCenter(neighbor).distanceTo(seedCenter),
-            );
-          }
-        }
-      }
-
-      this.clusterData.push({ id: clusterId, tiles: clusterTiles });
-
-      // Assign color (40-50% gray)
-      const gray = Math.floor(102 + this.random() * 26);
-      this.clusterColors.set(clusterId, (gray << 16) | (gray << 8) | gray);
-
-      // Assign pattern with randomized material properties
-      const patternIdx = Math.floor(this.random() * this.PATTERNS.length);
-      // Randomize roughness: 50% - 100%
-      const roughness = 0.5 + this.random() * 0.5;
-      // Randomize metalness: 0% - 30%
-      const metalness = this.random() * 0.3;
-      this.clusterPatterns.set(clusterId, {
-        type: this.PATTERNS[patternIdx],
-        grayValue: gray,
-        roughness: roughness,
-        metalness: metalness,
-      });
-
-      clusterId++;
-      clusterIndex++;
-    }
-
-    // Assign remaining tiles
+    // Procedural clusters disabled — all non-special tiles go into one background cluster.
+    // Sponsor clusters (applied later) are the only distinct territories.
+    const backgroundTiles = [];
     for (let i = 0; i < numTiles; i++) {
-      if (assigned[i]) continue;
-
-      for (const neighbor of adjacencyMap.get(i) || []) {
-        if (assigned[neighbor]) {
-          const cid = this.tileClusterMap.get(neighbor);
-          // Skip if neighbor is neutral (portal/polar) with no cluster
-          if (cid === undefined) continue;
-          this.tileClusterMap.set(i, cid);
-          this.clusterData[cid].tiles.push(i);
-          assigned[i] = true;
-          break;
-        }
-      }
-
       if (!assigned[i]) {
-        this.tileClusterMap.set(i, clusterId);
-        this.clusterData.push({ id: clusterId, tiles: [i] });
-        clusterId++;
+        backgroundTiles.push(i);
+        assigned[i] = true;
+        this.tileClusterMap.set(i, 0);
       }
     }
+
+    this.clusterData.push({ id: 0, tiles: backgroundTiles });
+
+    const gray = 112;
+    this.clusterColors.set(0, (gray << 16) | (gray << 8) | gray);
+    this.clusterPatterns.set(0, {
+      type: this.PATTERNS[0],
+      grayValue: gray,
+      roughness: 0.7,
+      metalness: 0.1,
+    });
 
     return adjacencyMap;
   }

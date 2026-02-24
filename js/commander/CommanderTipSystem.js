@@ -73,6 +73,22 @@ class CommanderTipSystem {
     this._removeUI();
   }
 
+  /**
+   * Hide or show the tip panel without changing active state or budget.
+   * Used during death (hide) and respawn (show) to keep UI in sync.
+   */
+  setHidden(hidden) {
+    if (!this.uiElement) return;
+    if (hidden) {
+      this.uiElement.style.display = "none";
+      if (this.dragCoin) this.dragCoin.style.display = "none";
+    } else {
+      this.uiElement.style.display = "";
+      if (this.dragCoin) this.dragCoin.style.display = "";
+      this._updateUI();
+    }
+  }
+
   // ========================
   // TIP LOGIC
   // ========================

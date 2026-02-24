@@ -1424,16 +1424,16 @@
       window.cryptoSystem.awardCrypto(data.amount, "holding", _holdingCryptoPos);
     };
 
-    // Periodic capture progress — server sends tic state for player's current cluster ~4x/sec
+    // Periodic capture progress — server sends tic state for player's current cluster 1x/sec
     net.onCaptureProgress = (data) => {
       if (!planet) return;
 
       const state = planet.clusterCaptureState.get(data.clusterId);
       if (state) {
         // Calculate momentum from tic delta before overwriting
-        state.momentum.rust = (data.tics.rust - state.tics.rust) * 4; // 4x/sec → per-second rate
-        state.momentum.cobalt = (data.tics.cobalt - state.tics.cobalt) * 4;
-        state.momentum.viridian = (data.tics.viridian - state.tics.viridian) * 4;
+        state.momentum.rust = data.tics.rust - state.tics.rust; // 1x/sec — delta IS the per-second rate
+        state.momentum.cobalt = data.tics.cobalt - state.tics.cobalt;
+        state.momentum.viridian = data.tics.viridian - state.tics.viridian;
 
         const previousOwner = state.owner;
         state.tics = data.tics;

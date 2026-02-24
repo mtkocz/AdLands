@@ -640,9 +640,12 @@ class CommanderSystem {
       // (broadcast before the server recomputes ranks) don't override the resign
       this.resignedUntil = Date.now() + duration;
 
-      // Immediate dashboard UI feedback (resign dropdown hides)
+      // Immediate UI feedback (resign dropdown hides + tip panel removed)
       if (window.dashboard && window.dashboard.updateCommanderStatus) {
         window.dashboard.updateCommanderStatus(false);
+      }
+      if (this.tipSystem) {
+        this.tipSystem.deactivate();
       }
       return;
     }
@@ -801,8 +804,8 @@ class CommanderSystem {
         const tagId = (commanderData.id === this.humanMultiplayerId) ? this.humanPlayerId : commanderData.id;
         window.playerTags.setCommander(tagId, true, null, isActing);
       }
-      // Always confirm dashboard state (handles override confirmations where
-      // the commander was already set — dashboard may be out of sync)
+      // Always confirm dashboard + tip panel state (handles override confirmations
+      // where the commander was already set — UI may be out of sync)
       // But skip if the human player just resigned — stale commander-sync
       // events shouldn't override the resign UI
       if (
@@ -815,6 +818,15 @@ class CommanderSystem {
           // Don't re-confirm resigned player as commander
         } else {
           window.dashboard.updateCommanderStatus(isHuman, isHuman ? isActing : false);
+          // Sync tip panel: activate if human is commander but panel missing,
+          // deactivate if non-human but panel lingering
+          if (this.tipSystem) {
+            if (isHuman && !this.tipSystem.isActive()) {
+              this.tipSystem.activate(current.playerId, faction);
+            } else if (!isHuman && this.tipSystem.isActive()) {
+              this.tipSystem.deactivate();
+            }
+          }
         }
       }
       return;
@@ -960,6 +972,11 @@ class CommanderSystem {
     if (this.bodyguards && !this.multiplayerMode && this.bodyguards.commanderFaction === faction) {
       this.bodyguards.onCommanderDeath();
     }
+
+    // Hide tip panel during death (preserves budget — just hides the UI)
+    if (commander.isHuman && this.tipSystem && this.tipSystem.isActive()) {
+      this.tipSystem.setHidden(true);
+    }
   }
 
   /**
@@ -977,6 +994,11 @@ class CommanderSystem {
     // Respawn bodyguards (single-player only; server handles multiplayer)
     if (commander.isHuman && this.bodyguards && !this.multiplayerMode) {
       this.bodyguards.onCommanderRespawn();
+    }
+
+    // Restore tip panel on respawn (if still commander)
+    if (commander.isHuman && this.tipSystem && this.tipSystem.isActive()) {
+      this.tipSystem.setHidden(false);
     }
   }
 

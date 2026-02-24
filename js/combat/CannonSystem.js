@@ -128,7 +128,7 @@ class CannonSystem {
     this.impactDecalTexture = null;
     this._loadImpactDecalTexture();
     this.impactDecalConfig = {
-      size: 14, // Base size in units
+      size: 10.5, // Base size in units
       color: 0x000000, // Black
       lifetime: 10, // Fade out after 10 seconds
       fadeOutDuration: 2, // Fade out over 2 seconds

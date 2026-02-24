@@ -87,12 +87,10 @@ class GameRoom {
     // Sequence number for state snapshots (clients use for reconciliation)
     this.tick = 0;
 
-    // Throttle tic-crypto awards to once per second (counter resets at tickRate)
+    // Territory tics, crypto awards, and capture-progress all fire once per second.
+    // Counter increments at half tick rate (capture runs every other tick);
+    // threshold is tickRate/2 to maintain 1-second cadence.
     this.captureSecondCounter = 0;
-
-    // Throttle capture-progress broadcasts to ~4x/sec
-    this.captureProgressCounter = 0;
-    this.captureProgressRate = Math.round(this.tickRate / 4);
 
     // Award holding crypto at the top of each wall-clock minute
     this._lastHoldingMinute = Math.floor(Date.now() / 60000);
@@ -2983,7 +2981,15 @@ class GameRoom {
       c.viridian += counts.viridian;
     }
 
-    // 2. Process capture logic for each cluster with players in it
+    // 2. Advance territory tics and fire all effects (once per real-world second).
+    // Cluster assignment above still runs at 5Hz for smooth hysteresis, but tic
+    // gains, crypto awards, ring flash, shockwave pulse, and capture-progress
+    // all fire together at a clean 1-second cadence.
+    this.captureSecondCounter++;
+    if (this.captureSecondCounter < this.tickRate / 2) return;
+    this.captureSecondCounter = 0;
+
+    // 2a. Process capture logic for each cluster with players in it
     const territoryChanges = [];
 
     for (const [clusterId, counts] of clusterTankCounts) {
@@ -2997,10 +3003,10 @@ class GameRoom {
       const snapTotal = snapR + snapC + snapV;
       const isFull = snapTotal >= state.capacity;
 
-      // Process tic gains per faction
+      // Process tic gains per faction (1 tic per tank per second)
       for (const faction of FACTIONS) {
         if (counts[faction] <= 0) continue;
-        const ticsToAdd = counts[faction] * this.tickDelta * 2; // x2 to compensate for running at half tick rate
+        const ticsToAdd = counts[faction]; // 1 tic/tank/sec — runs once per second
 
         if (isFull) {
           // Territory full — steal from enemy factions proportionally
@@ -3073,47 +3079,40 @@ class GameRoom {
       }
     }
 
-    // 2a. Award tic crypto to contributing players (once per second)
-    // Counter increments at half tick rate (capture runs every other tick),
-    // so threshold is halved to maintain 1-second cadence.
-    this.captureSecondCounter++;
-    if (this.captureSecondCounter >= this.tickRate / 2) {
-      this.captureSecondCounter = 0;
-      for (const [id, player] of this.players) {
-        if (this._isUndeployed(player)) continue;
-        if (player.currentClusterId == null) continue;
+    // 2b. Award tic crypto to contributing players
+    for (const [id, player] of this.players) {
+      if (this._isUndeployed(player)) continue;
+      if (player.currentClusterId == null) continue;
 
-        const state = this.clusterCaptureState.get(player.currentClusterId);
-        if (!state) continue;
+      const state = this.clusterCaptureState.get(player.currentClusterId);
+      if (!state) continue;
 
-        // Only award crypto + pulse when actually gaining ground
-        const currentTics = state.tics[player.faction];
-        const sameCluster = player._lastTicCluster === player.currentClusterId;
-        const lastTics = sameCluster ? player._lastTicCryptoTics : null;
-        const gained = lastTics !== null && currentTics > lastTics + 0.001;
+      // Only award crypto + pulse when actually gaining ground
+      const currentTics = state.tics[player.faction];
+      const sameCluster = player._lastTicCluster === player.currentClusterId;
+      const lastTics = sameCluster ? player._lastTicCryptoTics : null;
+      const gained = lastTics !== null && currentTics > lastTics + 0.001;
 
-        player._lastTicCluster = player.currentClusterId;
-        player._lastTicCryptoTics = currentTics;
+      player._lastTicCluster = player.currentClusterId;
+      player._lastTicCryptoTics = currentTics;
 
-        if (gained) {
-          const cryptoAwarded = player.uid ? 10 : 0;
-          if (player.uid) {
-            player.crypto += 10; // Territory capture income (authenticated only)
-          }
-          const ticPayload = {
-            id: player.currentClusterId,
-            t: { r: state.tics.rust, c: state.tics.cobalt, v: state.tics.viridian },
-            cap: state.capacity,
-            crypto: cryptoAwarded,
-          };
-          this.io.to(id).emit("tic-crypto", ticPayload);
-          player.territoryCaptured += currentTics - lastTics; // Rank tiebreaker
+      if (gained) {
+        const cryptoAwarded = player.uid ? 10 : 0;
+        if (player.uid) {
+          player.crypto += 10; // Territory capture income (authenticated only)
         }
+        const ticPayload = {
+          id: player.currentClusterId,
+          t: { r: state.tics.rust, c: state.tics.cobalt, v: state.tics.viridian },
+          cap: state.capacity,
+          crypto: cryptoAwarded,
+        };
+        this.io.to(id).emit("tic-crypto", ticPayload);
+        player.territoryCaptured += currentTics - lastTics; // Rank tiebreaker
       }
-
     }
 
-    // 2b. Update sponsor hold timers
+    // 2c. Update sponsor hold timers
     for (const [sponsorId, clusterId] of this.sponsorClusterMap) {
       const state = this.clusterCaptureState.get(clusterId);
       if (!state) continue;
@@ -3121,7 +3120,7 @@ class GameRoom {
       if (!timer) continue;
 
       if (state.owner && state.owner === timer.owner) {
-        timer.holdDuration += this.tickDelta * 1000;
+        timer.holdDuration += 1000; // 1 full second per tick
       } else if (state.owner && state.owner !== timer.owner) {
         timer.owner = state.owner;
         timer.capturedAt = Date.now();
@@ -3129,7 +3128,7 @@ class GameRoom {
       }
     }
 
-    // 2c. Annotate territory changes with sponsor info
+    // 2d. Annotate territory changes with sponsor info
     for (const change of territoryChanges) {
       const sponsorId = this.clusterSponsorMap.get(change.clusterId);
       if (sponsorId) {
@@ -3162,36 +3161,30 @@ class GameRoom {
       }
     }
 
-    // 4. Broadcast capture progress to players in active clusters (throttled ~4x/sec)
-    this.captureProgressCounter++;
-    if (this.captureProgressCounter >= this.captureProgressRate) {
-      this.captureProgressCounter = 0;
-
-      // Group players by cluster
-      const clusterPlayers = new Map();
-      for (const [id, player] of this.players) {
-        if (this._isUndeployed(player)) continue;
-        if (player.currentClusterId == null) continue;
-        if (!clusterPlayers.has(player.currentClusterId)) {
-          clusterPlayers.set(player.currentClusterId, []);
-        }
-        clusterPlayers.get(player.currentClusterId).push(id);
+    // 4. Broadcast capture progress to players in active clusters (1/sec, synced with tic advancement)
+    const clusterPlayers = new Map();
+    for (const [id, player] of this.players) {
+      if (this._isUndeployed(player)) continue;
+      if (player.currentClusterId == null) continue;
+      if (!clusterPlayers.has(player.currentClusterId)) {
+        clusterPlayers.set(player.currentClusterId, []);
       }
+      clusterPlayers.get(player.currentClusterId).push(id);
+    }
 
-      for (const [clusterId, playerIds] of clusterPlayers) {
-        const state = this.clusterCaptureState.get(clusterId);
-        if (!state) continue;
+    for (const [clusterId, playerIds] of clusterPlayers) {
+      const state = this.clusterCaptureState.get(clusterId);
+      if (!state) continue;
 
-        const progressData = {
-          clusterId,
-          tics: { ...state.tics },
-          capacity: state.capacity,
-          owner: state.owner,
-        };
+      const progressData = {
+        clusterId,
+        tics: { ...state.tics },
+        capacity: state.capacity,
+        owner: state.owner,
+      };
 
-        for (const pid of playerIds) {
-          this.io.to(pid).emit("capture-progress", progressData);
-        }
+      for (const pid of playerIds) {
+        this.io.to(pid).emit("capture-progress", progressData);
       }
     }
   }
