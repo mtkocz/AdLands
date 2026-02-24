@@ -1197,7 +1197,7 @@ class Planet {
     const imgData = ctx.getImageData(0, 0, texSize, texSize);
     const d = imgData.data;
     for (let i = 0; i < d.length; i += 4) {
-      const v = Math.floor(128 + (Math.random() - 0.5) * 50);
+      const v = Math.floor(128 + (Math.random() - 0.5) * 20);
       d[i] = d[i + 1] = d[i + 2] = v;
       d[i + 3] = 255;
     }
@@ -1215,7 +1215,7 @@ class Planet {
     const allIndices = [];
     let vertexOffset = 0;
     const radialOffset = 0.04;
-    const uvScale = 32.0; // Texture tiling frequency across planet
+    const uvScale = 16.0; // Texture tiling frequency across planet
 
     const collectMesh = (pos, idx) => {
       for (let i = 0; i < pos.length; i += 3) {
@@ -1252,6 +1252,14 @@ class Planet {
     this.hexGroup.children.forEach((mesh) => {
       if (!mesh.isMesh) return;
       if (!mesh.geometry || !mesh.geometry.attributes.position) return;
+
+      // Collect from cliff walls and polar walls
+      if (mesh.userData?.isCliffWall || mesh.userData?.isPolarWall) {
+        const pos = mesh.geometry.attributes.position.array;
+        const idx = mesh.geometry.index ? mesh.geometry.index.array : null;
+        collectMesh(pos, idx);
+        return;
+      }
 
       // Collect from merged cluster meshes
       if (mesh.userData?.isMergedCluster) {

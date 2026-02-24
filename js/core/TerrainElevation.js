@@ -844,7 +844,6 @@ class TerrainElevation {
       flatShading: true,
       side: THREE.DoubleSide,
       shadowSide: THREE.FrontSide,
-      map: this.planet._rockWallTexture,
     });
 
     this.cliffWallMesh = new THREE.Mesh(geometry, material);
