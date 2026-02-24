@@ -731,7 +731,8 @@ class TerrainElevation {
       const lowElev = Math.min(elevA, elevB);
 
       const highScale = this.getExtrusion(highElev);
-      const lowScale = this.getExtrusion(lowElev);
+      // Extend cliff base slightly below ground to prevent light leaks at seams
+      const lowScale = this.getExtrusion(lowElev) - 0.002;
 
       const v1x = parseFloat(high.v1.x);
       const v1y = parseFloat(high.v1.y);
