@@ -1306,18 +1306,27 @@ class Planet {
     const allPositions = [];
     const allIndices = [];
     let vertexOffset = 0;
-    const radialOffset = 0.04;
+    const offset = 0.04;
 
-    const collectMesh = (pos, idx) => {
+    const collectMesh = (pos, idx, nrm) => {
       for (let i = 0; i < pos.length; i += 3) {
         const x = pos[i], y = pos[i + 1], z = pos[i + 2];
-        const len = Math.sqrt(x * x + y * y + z * z);
-        // Push vertices slightly outward to avoid z-fighting
-        allPositions.push(
-          x + (x / len) * radialOffset,
-          y + (y / len) * radialOffset,
-          z + (z / len) * radialOffset,
-        );
+        if (nrm) {
+          // Use geometry normal for offset (correct for walls)
+          allPositions.push(
+            x + nrm[i] * offset,
+            y + nrm[i + 1] * offset,
+            z + nrm[i + 2] * offset,
+          );
+        } else {
+          // Radial offset for surface tiles
+          const len = Math.sqrt(x * x + y * y + z * z);
+          allPositions.push(
+            x + (x / len) * offset,
+            y + (y / len) * offset,
+            z + (z / len) * offset,
+          );
+        }
       }
 
       if (idx) {
@@ -1337,11 +1346,12 @@ class Planet {
       if (!mesh.isMesh) return;
       if (!mesh.geometry || !mesh.geometry.attributes.position) return;
 
-      // Collect from cliff walls and polar walls
+      // Collect from cliff walls and polar walls (use geometry normals for offset)
       if (mesh.userData?.isCliffWall || mesh.userData?.isPolarWall) {
         const pos = mesh.geometry.attributes.position.array;
         const idx = mesh.geometry.index ? mesh.geometry.index.array : null;
-        collectMesh(pos, idx);
+        const nrm = mesh.geometry.attributes.normal ? mesh.geometry.attributes.normal.array : null;
+        collectMesh(pos, idx, nrm);
         return;
       }
 
