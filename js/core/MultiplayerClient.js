@@ -248,7 +248,7 @@
         for (const [clusterId, state] of Object.entries(data.captureState)) {
           planet.applyTerritoryState(Number(clusterId), state.owner, state.tics);
         }
-        planet.updateDirtyFactionOutlines?.();
+
       }
 
       // Handle reconnection: restore position if player was alive on the surface
@@ -1378,7 +1378,6 @@
           }
         }
       }
-      planet.updateDirtyFactionOutlines?.();
     };
 
     // Server awarded tic contribution crypto (once per second while contributing)
@@ -1476,7 +1475,7 @@
         // apply the visual update so the overlay color stays in sync
         if (data.owner !== previousOwner) {
           planet.updateClusterVisual(data.clusterId);
-          planet.updateDirtyFactionOutlines?.();
+  
         }
       }
 
@@ -1534,7 +1533,7 @@
         for (const [clusterId, state] of Object.entries(data.captureState)) {
           planet.applyTerritoryState(Number(clusterId), state.owner, state.tics);
         }
-        planet.updateDirtyFactionOutlines?.();
+
       }
 
       // Reconcile player territories with admin-authoritative server state

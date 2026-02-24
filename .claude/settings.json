@@ -6,7 +6,9 @@
       "Bash(done)",
       "Bash(node -c:*)",
       "WebFetch(domain:raw.githubusercontent.com)",
-      "Bash(git status:*)"
+      "Bash(git status:*)",
+      "Bash(git -C /Users/mtkocz/Library/CloudStorage/Dropbox-Personal/ROBOTA/2026/AdLands diff HEAD -- js/core/Planet.js)",
+      "Bash(git -C /Users/mtkocz/Library/CloudStorage/Dropbox-Personal/ROBOTA/2026/AdLands show:*)"
     ]
   }
 }

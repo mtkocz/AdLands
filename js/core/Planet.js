@@ -10,7 +10,7 @@ const BORDER_GLOW_CONFIG = {
   glowWidth: 11.0, // 20x thicker band (was 0.55)
   baseOpacity: 0.9, // Near-solid at edge
   fadeExponent: 1.2, // Smooth fade inward
-  zOffset: 0.012, // Above terrain, below cluster outlines
+  zOffset: 0.012, // Above terrain
 };
 
 // Cluster overlay opacity for faction territory coloring
@@ -79,6 +79,7 @@ class Planet {
     // Border glow meshes for faction territories (replaces color overlay)
     this.factionBorderGlows = new Map(); // 'rust'/'cobalt'/'viridian' → THREE.Mesh (ribbon mesh)
     this._dirtyFactionBorderGlows = new Set(); // factions needing border glow regeneration
+    this._lastBorderGlowUpdate = 0;
     this._borderGlowAnimations = []; // Active border glow animations
 
     // Volumetric light cones at polar openings
@@ -223,7 +224,7 @@ class Planet {
     this._markPortalTiles(hexasphere.tiles);
     const adjacencyMap = this._generateClusters(hexasphere.tiles);
     this._adjacencyMap = adjacencyMap; // Store for portal neighbor lookups
-    this._tiles = hexasphere.tiles; // Store for sponsor outline creation
+    this._tiles = hexasphere.tiles;
     this._initializeCaptureState();
 
     // Generate terrain elevation (raised hex plateaus)
@@ -252,7 +253,6 @@ class Planet {
     this._createPolarWalls(hexasphere.tiles);
     this._buildPolarBoundaryPolygons(hexasphere.tiles);
     this._createPolarVolumetricLights(hexasphere.tiles);
-    this._createClusterOutlines(hexasphere.tiles, adjacencyMap);
     this._clusterAdjacencyMap = this._buildClusterAdjacencyMap();
   }
 
@@ -2210,10 +2210,6 @@ class Planet {
     this.hexGroup.rotation.y = rotation;
   }
 
-  updateOutlineResolution(width, height) {
-    this._outlineMaterial.resolution.set(width, height);
-  }
-
   /**
    * Update visibility culling for terrain tiles based on camera position
    * Hides tiles on the far side of the planet (backface culling) and outside frustum
@@ -2293,40 +2289,6 @@ class Planet {
       }
     });
 
-    // Build cluster lookup map once (avoids O(n) .find() per outline child)
-    if (!this._clusterByIdMap) {
-      this._clusterByIdMap = new Map();
-      for (const cluster of this.clusterData) {
-        this._clusterByIdMap.set(cluster.id, cluster);
-      }
-    }
-
-    // Cull outline group children (tighter threshold to hide from inside pole holes)
-    this.outlineGroup.children.forEach((child) => {
-      if (!child.userData?.clusterId) return;
-
-      const cluster = this._clusterByIdMap.get(child.userData.clusterId);
-      if (!cluster || cluster.tiles.length === 0) return;
-
-      const firstTileIndex = cluster.tiles[0];
-      const tileData = this.tileCenters[firstTileIndex];
-      if (!tileData) return;
-
-      temp.tileWorldPos.copy(tileData.position).applyMatrix4(hexGroupMatrix);
-      temp.tileNormal.copy(temp.tileWorldPos).normalize();
-      temp.tileToCamera
-        .copy(temp.cameraWorldPos)
-        .sub(temp.tileWorldPos)
-        .normalize();
-      const dot = temp.tileNormal.dot(temp.tileToCamera);
-
-      child.visible = dot > -0.15;
-
-      // Additional frustum culling for outlines (if still visible after backface culling)
-      if (child.visible && frustum) {
-        child.visible = frustum.intersectsObject(child);
-      }
-    });
   }
 
   /**
@@ -2344,16 +2306,6 @@ class Planet {
         sponsor: data.sponsor,
         tileIndices: data.tileIndices.slice(),
       });
-    }
-
-    // Clear procedural cluster outlines (keep sponsor outlines)
-    for (const [clusterId, outline] of this.clusterOutlines) {
-      const cluster = this.clusterData[clusterId];
-      if (cluster && !cluster.isSponsorCluster) {
-        this.outlineGroup.remove(outline);
-        outline.geometry.dispose();
-        this.clusterOutlines.delete(clusterId);
-      }
     }
 
     // Reset cluster data but preserve sponsor clusters
@@ -2414,9 +2366,6 @@ class Planet {
     // Update tile mesh materials for procedural clusters
     this._updateProceduralTileMaterials();
 
-    // Regenerate all outlines
-    this._regenerateAllOutlines();
-
     // Reset capture state for procedural clusters
     this._initializeCaptureState();
 
@@ -2467,42 +2416,6 @@ class Planet {
   }
 
   /**
-   * Regenerate all cluster outlines
-   */
-  _regenerateAllOutlines() {
-    // Clear all existing cluster outlines
-    for (const outline of this.clusterOutlines.values()) {
-      this.outlineGroup.remove(outline);
-      outline.geometry.dispose();
-    }
-    this.clusterOutlines.clear();
-
-    // Clear all faction outlines
-    for (const outline of this.factionOutlines.values()) {
-      this.outlineGroup.remove(outline);
-      outline.geometry.dispose();
-    }
-    this.factionOutlines.clear();
-    this._dirtyFactionOutlines.clear();
-
-    // Rebuild cluster adjacency map with new clusters
-    this._clusterAdjacencyMap = this._buildClusterAdjacencyMap();
-
-    // Regenerate outlines for all clusters
-    this._createClusterOutlines(this._tiles, this._adjacencyMap);
-
-    // Re-mark all factions that own territory as dirty so faction outlines
-    // get rebuilt. Without this, faction outlines are destroyed but never
-    // regenerated (the dirty set was just cleared above).
-    for (const [, state] of this.clusterCaptureState) {
-      if (state.owner) this._dirtyFactionOutlines.add(state.owner);
-    }
-    // Reset debounce so the rebuild isn't skipped (the synchronous territory
-    // restoration may have triggered updateDirtyFactionOutlines recently).
-    this._lastOutlineUpdate = 0;
-    this.updateDirtyFactionOutlines();
-  }
-
   // ========================
   // TERRITORY CAPTURE
   // ========================
@@ -2568,19 +2481,8 @@ class Planet {
       this.clusterOwnership.delete(clusterId);
     }
 
-    // Cluster outlines stay visible regardless of ownership
-    // Faction outlines are additive (shown in addition to cluster outlines)
-
     // Only process visual changes when ownership actually changes
     if (previousOwner !== newOwner) {
-      // Mark affected factions as needing outline regeneration
-      if (previousOwner) {
-        this._dirtyFactionOutlines.add(previousOwner);
-      }
-      if (newOwner) {
-        this._dirtyFactionOutlines.add(newOwner);
-      }
-
       // Apply inner glow effect with transition animation (using light shade for visibility)
       const previousColor =
         previousOwner && FACTION_COLORS[previousOwner]
@@ -2904,35 +2806,6 @@ class Planet {
 
     // Apply sponsor pattern texture to tiles
     this._applySponsorTexture(sponsor, tileIndices);
-
-    // Regenerate outlines for affected clusters and create sponsor cluster outline
-    if (this._tiles && this._adjacencyMap) {
-      // Regenerate outlines for clusters that lost tiles
-      for (const affectedClusterId of affectedClusters) {
-        const affectedCluster = this.clusterData[affectedClusterId];
-        if (affectedCluster && affectedCluster.tiles.length > 0) {
-          this._createOutlineForCluster(
-            affectedClusterId,
-            this._tiles,
-            affectedCluster.tiles,
-            this._adjacencyMap,
-          );
-        } else if (this.clusterOutlines.has(affectedClusterId)) {
-          // Cluster is now empty, remove its outline
-          const oldOutline = this.clusterOutlines.get(affectedClusterId);
-          this.outlineGroup.remove(oldOutline);
-          oldOutline.geometry.dispose();
-          this.clusterOutlines.delete(affectedClusterId);
-        }
-      }
-      // Create outline for the new sponsor cluster
-      this._createOutlineForCluster(
-        sponsorClusterId,
-        this._tiles,
-        tileIndices,
-        this._adjacencyMap,
-      );
-    }
   }
 
   /**
@@ -2959,14 +2832,6 @@ class Planet {
     // Remove tiles from sponsorTileIndices
     for (const tileIndex of tileIndices) {
       this.sponsorTileIndices.delete(tileIndex);
-    }
-
-    // Remove sponsor outline
-    if (this.clusterOutlines.has(clusterId)) {
-      const outline = this.clusterOutlines.get(clusterId);
-      this.outlineGroup.remove(outline);
-      outline.geometry.dispose();
-      this.clusterOutlines.delete(clusterId);
     }
 
     // Remove capture state and ownership
@@ -3186,20 +3051,6 @@ class Planet {
       }
     }
 
-    // Rebuild outlines for affected clusters
-    if (this._tiles && this._adjacencyMap) {
-      for (const affectedId of affectedClusters) {
-        const cluster = this.clusterData[affectedId];
-        if (cluster && cluster.tiles.length > 0) {
-          this._createOutlineForCluster(
-            affectedId,
-            this._tiles,
-            cluster.tiles,
-            this._adjacencyMap,
-          );
-        }
-      }
-    }
   }
 
   clearSponsorData() {
@@ -3280,11 +3131,6 @@ class Planet {
       }
     }
 
-    // Regenerate all cluster outlines so sponsor clusters get outlines
-    // and adjacent procedural clusters that lost tiles get updated outlines
-    if (this._tiles && this._adjacencyMap) {
-      this._regenerateAllOutlines();
-    }
   }
 
   /**
@@ -4958,7 +4804,7 @@ class Planet {
     if (this._dirtyFactionBorderGlows.size === 0) return;
 
     const now = performance.now();
-    if (now - this._lastOutlineUpdate < 200) return; // Reuse debounce timing
+    if (now - this._lastBorderGlowUpdate < 200) return;
 
     for (const faction of this._dirtyFactionBorderGlows) {
       this._createFactionBorderGlow(faction);

@@ -2353,7 +2353,6 @@
 
     updateTerritoryChart();
     updateSponsorHoldTimers();
-    planet.updateDirtyFactionOutlines();
   }
 
   // ========================
@@ -3767,7 +3766,6 @@
       bloomComposer.renderTarget2.texture;
     lensDirtPass.uniforms.bloomTexelSize.value.set(1.0 / bloomWidth, 1.0 / bloomHeight);
     updateDirtUvScale();
-    planet.updateOutlineResolution(window.innerWidth, window.innerHeight);
   });
 
   // ========================
