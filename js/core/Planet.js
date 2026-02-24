@@ -1204,7 +1204,7 @@ class Planet {
     const diffuseImg = diffuseCtx.getImageData(0, 0, size, size);
     const dd = diffuseImg.data;
     for (let i = 0; i < randomValues.length; i++) {
-      const v = Math.floor(192 + (randomValues[i] - 0.5) * 60);
+      const v = Math.floor(150 + (randomValues[i] - 0.5) * 60);
       dd[i * 4] = dd[i * 4 + 1] = dd[i * 4 + 2] = v;
       dd[i * 4 + 3] = 255;
     }

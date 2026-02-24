@@ -843,13 +843,20 @@ class TerrainElevation {
       metalness: 0.05,
       flatShading: true,
       side: THREE.DoubleSide,
-      shadowSide: THREE.BackSide,
+      shadowSide: THREE.FrontSide,
     });
     this.planet._patchTriplanarNoise(material);
 
     this.cliffWallMesh = new THREE.Mesh(geometry, material);
     this.cliffWallMesh.castShadow = true;
     this.cliffWallMesh.receiveShadow = true;
+    // DoubleSide depth material so shadow-side cliff faces (whose front
+    // normals point away from the sun) still write to the shadow map.
+    // The visual material keeps FrontSide shadows to avoid self-shadow acne.
+    this.cliffWallMesh.customDepthMaterial = new THREE.MeshDepthMaterial({
+      depthPacking: THREE.RGBADepthPacking,
+      side: THREE.DoubleSide,
+    });
     this.cliffWallMesh.userData = { isCliffWall: true };
     this.planet.hexGroup.add(this.cliffWallMesh);
   }
