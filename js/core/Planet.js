@@ -3138,11 +3138,24 @@ class Planet {
       );
       if (!mesh) continue;
 
-      // Save original color if not already saved
+      // Save original state if not already saved
       if (mesh.userData._highlightOriginalColor === undefined) {
         mesh.userData._highlightOriginalColor = mesh.material.color.getHex();
         mesh.userData._highlightOriginalEmissive =
           mesh.material.emissive ? mesh.material.emissive.getHex() : 0x000000;
+        mesh.userData._highlightWasMerged = mesh.userData._merged || false;
+      }
+
+      // Un-hide merged tiles so the highlight is visible
+      if (mesh.userData._merged) {
+        mesh.visible = true;
+        mesh.material = mesh.material.clone();
+        mesh.material.map = null;
+        mesh.material.vertexColors = false;
+        mesh.material.polygonOffset = true;
+        mesh.material.polygonOffsetFactor = -1;
+        mesh.material.polygonOffsetUnits = -1;
+        mesh.material.needsUpdate = true;
       }
 
       mesh.material.color.setHex(color);
@@ -3167,12 +3180,47 @@ class Planet {
       if (!mesh) continue;
 
       if (mesh.userData._highlightOriginalColor !== undefined) {
-        mesh.material.color.setHex(mesh.userData._highlightOriginalColor);
-        if (mesh.material.emissive) {
-          mesh.material.emissive.setHex(mesh.userData._highlightOriginalEmissive || 0x000000);
+        // Dispose the cloned highlight material and hide merged tiles again
+        if (mesh.userData._highlightWasMerged) {
+          mesh.material.dispose();
+          // Restore original material from cluster
+          const clusterId = mesh.userData.clusterId;
+          const pattern = this.clusterPatterns.get(clusterId);
+          const isElevated = this.terrainElevation &&
+            this.terrainElevation.getElevationAtTileIndex(tileIndex) > 0;
+          if (isElevated) {
+            mesh.material = new THREE.MeshStandardMaterial({
+              vertexColors: true,
+              flatShading: true,
+              roughness: 0.95,
+              metalness: 0.05,
+              side: THREE.FrontSide,
+            });
+          } else {
+            const tex = this.clusterTextures.get(clusterId);
+            mesh.material = new THREE.MeshStandardMaterial({
+              map: tex || null,
+              flatShading: true,
+              roughness: pattern ? pattern.roughness : 0.8,
+              metalness: pattern ? pattern.metalness : 0.1,
+              side: THREE.FrontSide,
+            });
+          }
+          this._patchTriplanarNoise(mesh.material);
+          mesh.material.color.setHex(mesh.userData._highlightOriginalColor);
+          if (mesh.material.emissive) {
+            mesh.material.emissive.setHex(mesh.userData._highlightOriginalEmissive || 0x000000);
+          }
+          mesh.visible = false;
+        } else {
+          mesh.material.color.setHex(mesh.userData._highlightOriginalColor);
+          if (mesh.material.emissive) {
+            mesh.material.emissive.setHex(mesh.userData._highlightOriginalEmissive || 0x000000);
+          }
         }
         delete mesh.userData._highlightOriginalColor;
         delete mesh.userData._highlightOriginalEmissive;
+        delete mesh.userData._highlightWasMerged;
       }
     }
 
