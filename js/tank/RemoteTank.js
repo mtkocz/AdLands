@@ -54,7 +54,7 @@ class RemoteTank {
     this._snapBuf = new Array(this._snapCap);
     this._snapHead = 0;  // next write position
     this._snapCount = 0; // valid entries (0 to _snapCap)
-    this.interpolationDelay = 200; // ms — render 200ms behind real-time (2 server ticks at 10Hz)
+    this.interpolationDelay = 100; // ms — render 100ms behind real-time (1 server tick at 10Hz)
 
     // Health
     this.hp = playerData.hp || 100;
@@ -271,18 +271,40 @@ class RemoteTank {
 
       if (fromSnap && toSnap) {
         const span = toSnap.t - fromSnap.t;
-        const t = span > 0 ? Math.min(1, (renderTime - fromSnap.t) / span) : 1;
+        const rawT = span > 0 ? (renderTime - fromSnap.t) / span : 1;
 
-        // LINEAR for position — constant velocity between ticks (no pulsing)
-        this.state.phi = fromSnap.phi + (toSnap.phi - fromSnap.phi) * t;
-        this.state.theta = MathUtils.lerpAngle2Pi(fromSnap.theta, toSnap.theta, t);
+        if (rawT <= 1) {
+          // Normal interpolation between two snapshots
+          // LINEAR for position — constant velocity between ticks (no pulsing)
+          this.state.phi = fromSnap.phi + (toSnap.phi - fromSnap.phi) * rawT;
+          this.state.theta = MathUtils.lerpAngle2Pi(fromSnap.theta, toSnap.theta, rawT);
 
-        // SMOOTHSTEP for lean-spring inputs — zero derivative at tick boundaries
-        // prevents acceleration spikes that the underdamped lean springs amplify
-        const st = t * t * (3 - 2 * t);
-        this.state.heading = MathUtils.lerpAngle(fromSnap.heading, toSnap.heading, st);
-        this.state.speed = fromSnap.speed + (toSnap.speed - fromSnap.speed) * st;
-        this.state.turretAngle = MathUtils.lerpAngle(fromSnap.turretAngle, toSnap.turretAngle, st);
+          // SMOOTHSTEP for lean-spring inputs — zero derivative at tick boundaries
+          // prevents acceleration spikes that the underdamped lean springs amplify
+          const st = rawT * rawT * (3 - 2 * rawT);
+          this.state.heading = MathUtils.lerpAngle(fromSnap.heading, toSnap.heading, st);
+          this.state.speed = fromSnap.speed + (toSnap.speed - fromSnap.speed) * st;
+          this.state.turretAngle = MathUtils.lerpAngle(fromSnap.turretAngle, toSnap.turretAngle, st);
+        } else {
+          // Extrapolation: renderTime is past the latest pair.
+          // Project forward from toSnap using its velocity. Cap at 1 tick
+          // of extrapolation to prevent wild overshoot on packet loss.
+          const extraMs = Math.min(renderTime - toSnap.t, span);
+          const dt60 = (extraMs / 1000) * 60;
+
+          const heading = toSnap.heading;
+          const speed = toSnap.speed;
+          const sinPhi = Math.sin(toSnap.phi);
+          const safeSinPhi = Math.abs(sinPhi) < 0.01 ? 0.01 : sinPhi;
+
+          this.state.phi = toSnap.phi + (-Math.cos(heading) * speed * dt60);
+          this.state.theta = toSnap.theta + (-Math.sin(heading) * speed * dt60) / safeSinPhi;
+
+          // Hold lean-spring inputs at toSnap values during extrapolation
+          this.state.heading = toSnap.heading;
+          this.state.speed = toSnap.speed;
+          this.state.turretAngle = toSnap.turretAngle;
+        }
         interpolated = true;
       }
     }

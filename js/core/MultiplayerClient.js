@@ -430,12 +430,12 @@
           remoteTank.setTargetState(state);
 
           // Adaptive interpolation delay based on server tick rate + ping/jitter.
-          // Must be at least 2 server ticks behind for smooth snapshot interpolation.
+          // 1 tick minimum — extrapolation handles gaps when buffer runs thin.
           if (remoteTank._snapBuf) {
             const tickMs = 1000 / (net.serverTickRate || 10);
             const halfRtt = net.smoothPing / 2;
-            const minDelay = tickMs * 2; // Need 2 ticks of buffer minimum
-            const adaptiveDelay = Math.max(minDelay, Math.min(400, halfRtt + net.jitter * 2 + tickMs * 1.5));
+            const minDelay = tickMs; // 1 tick minimum; extrapolation covers the rest
+            const adaptiveDelay = Math.max(minDelay, Math.min(300, halfRtt + net.jitter * 2 + tickMs));
             // Slow blend (5%) to prevent oscillation
             remoteTank.interpolationDelay = remoteTank.interpolationDelay * 0.95 + adaptiveDelay * 0.05;
           }
