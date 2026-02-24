@@ -1230,6 +1230,16 @@ class Planet {
     roughTex.minFilter = THREE.NearestFilter;
     roughTex.magFilter = THREE.NearestFilter;
     this._noiseRoughnessMap = roughTex;
+
+    // Derive noise scale to match sponsor texture pixel density.
+    // Sponsor pixel art filter: 128px for a 20-tile reference cluster.
+    // The texture fills the cluster once, so pixel size = clusterDiam / 128.
+    // For triplanar: pixel size = 1 / (texSize * noiseScale).
+    // Match: noiseScale = texSize / (texSize * clusterDiam) = 1 / clusterDiam.
+    const numTiles = 10 * this.subdivisions * this.subdivisions + 2;
+    const tileSize = Math.sqrt(4 * Math.PI * this.radius * this.radius / numTiles);
+    const refClusterDiam = 2 * Math.sqrt(20 / Math.PI) * tileSize;
+    this._noiseScale = 1.0 / refClusterDiam;
   }
 
   /**
@@ -1239,8 +1249,10 @@ class Planet {
    */
   _patchTriplanarNoise(material) {
     const noiseRoughMap = this._noiseRoughnessMap;
+    const noiseScale = this._noiseScale;
     material.onBeforeCompile = (shader) => {
       shader.uniforms.triNoiseRoughMap = { value: noiseRoughMap };
+      shader.uniforms.triNoiseScale = { value: noiseScale };
 
       shader.vertexShader = shader.vertexShader.replace(
         "#include <common>",
@@ -1255,18 +1267,18 @@ class Planet {
         "#include <common>",
         `#include <common>
         varying vec3 vTriWorldPos;
-        uniform sampler2D triNoiseRoughMap;`,
+        uniform sampler2D triNoiseRoughMap;
+        uniform float triNoiseScale;`,
       );
       shader.fragmentShader = shader.fragmentShader.replace(
         "#include <roughnessmap_fragment>",
         `float roughnessFactor = roughness;
         {
-          float noiseScale = 0.02;
           vec3 bf = abs(normalize(vTriWorldPos));
           bf = bf / (bf.x + bf.y + bf.z);
-          float rXY = texture2D(triNoiseRoughMap, vTriWorldPos.xy * noiseScale).g;
-          float rXZ = texture2D(triNoiseRoughMap, vTriWorldPos.xz * noiseScale).g;
-          float rYZ = texture2D(triNoiseRoughMap, vTriWorldPos.yz * noiseScale).g;
+          float rXY = texture2D(triNoiseRoughMap, vTriWorldPos.xy * triNoiseScale).g;
+          float rXZ = texture2D(triNoiseRoughMap, vTriWorldPos.xz * triNoiseScale).g;
+          float rYZ = texture2D(triNoiseRoughMap, vTriWorldPos.yz * triNoiseScale).g;
           roughnessFactor *= rXY * bf.z + rXZ * bf.y + rYZ * bf.x;
         }`,
       );
@@ -1363,10 +1375,12 @@ class Planet {
     geometry.setIndex(allIndices);
 
     // Overlay blend with distance fade — triplanar mapping matches roughness patch
+    // Scale derived from sponsor pixel density (128px / reference cluster diameter)
     const material = new THREE.ShaderMaterial({
       uniforms: {
         noiseMap: { value: texture },
         uFade: { value: 1.0 },
+        uNoiseScale: { value: this._noiseScale },
       },
       vertexShader: `
         varying vec3 vWorldPos;
@@ -1378,14 +1392,14 @@ class Planet {
       fragmentShader: `
         uniform sampler2D noiseMap;
         uniform float uFade;
+        uniform float uNoiseScale;
         varying vec3 vWorldPos;
         void main() {
-          float noiseScale = 0.02;
           vec3 bf = abs(normalize(vWorldPos));
           bf = bf / (bf.x + bf.y + bf.z);
-          vec3 nXY = texture2D(noiseMap, vWorldPos.xy * noiseScale).rgb;
-          vec3 nXZ = texture2D(noiseMap, vWorldPos.xz * noiseScale).rgb;
-          vec3 nYZ = texture2D(noiseMap, vWorldPos.yz * noiseScale).rgb;
+          vec3 nXY = texture2D(noiseMap, vWorldPos.xy * uNoiseScale).rgb;
+          vec3 nXZ = texture2D(noiseMap, vWorldPos.xz * uNoiseScale).rgb;
+          vec3 nYZ = texture2D(noiseMap, vWorldPos.yz * uNoiseScale).rgb;
           vec3 noise = nXY * bf.z + nXZ * bf.y + nYZ * bf.x;
           gl_FragColor = vec4(mix(vec3(0.5), noise, uFade), 1.0);
         }
