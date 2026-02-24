@@ -2585,6 +2585,16 @@
       viridian: (tics.viridian / capacity) * Math.PI * 2 || 0,
     };
 
+    // Ensure factions with tanks present get a minimum visible arc.
+    // Without this, dots and arcs don't render when tics are 0 (fresh territories),
+    // making enemy presence invisible even though tanks are physically there.
+    const MIN_PRESENCE_ARC = 0.12; // ~7° — visible sliver with room for dots
+    for (const faction of ["rust", "cobalt", "viridian"]) {
+      if (ringAnimState.tankCounts[faction] > 0 && angles[faction] < MIN_PRESENCE_ARC) {
+        angles[faction] = MIN_PRESENCE_ARC;
+      }
+    }
+
     // Clamp: never exceed 100%, and close gap when territory is at capacity.
     // Math.floor() on stepped values can lose up to 2 tics total (one per faction),
     // creating a visible unclaimed sliver even though server says territory is full.

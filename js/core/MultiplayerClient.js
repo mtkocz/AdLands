@@ -92,6 +92,7 @@
     let serverClusterId = undefined;
     let lastCaptureProgressTime = 0;
     let serverTankCounts = null; // Cached server-authoritative tank counts from capture-progress
+    let clusterMismatchCount = 0; // Consecutive frames where local != server cluster
     mp.onFrameUpdate = (deltaTime, camera, frustum, lodOptions) => {
       if (!net.isMultiplayer) return;
 
@@ -126,14 +127,29 @@
       const onSurface = hasSpawned && !tank.isDead && !(mp.fastTravel && mp.fastTravel.active);
       if (now - lastHUDUpdateTime >= HUD_UPDATE_INTERVAL && hasSpawned) {
         lastHUDUpdateTime = now;
-        // Clear stale serverClusterId when player leaves sponsor territory.
-        // Local cluster check gives instant response; timeout is a fallback.
+        // Determine which cluster the ring should display.
+        // Prefers server-authoritative cluster ID, but detects stale data when the
+        // player has physically moved to a different sponsor cluster (hysteresis lag).
         const localClusterId = tank.getCurrentClusterId(planet);
         if (serverClusterId !== undefined) {
           const localOnSponsor = localClusterId !== undefined && planet.clusterCaptureState.has(localClusterId);
           if (!localOnSponsor || now - lastCaptureProgressTime > 1500) {
+            // Player left sponsor territory or server stopped sending — clear immediately
             serverClusterId = undefined;
             serverTankCounts = null;
+            clusterMismatchCount = 0;
+          } else if (localClusterId !== serverClusterId && localOnSponsor) {
+            // Player physically moved to a different sponsor cluster but server
+            // hasn't caught up yet (hysteresis). After 3 consecutive mismatches
+            // (~750ms, matching server's 600ms hysteresis), override to local.
+            clusterMismatchCount++;
+            if (clusterMismatchCount >= 3) {
+              serverClusterId = undefined;
+              serverTankCounts = null;
+              clusterMismatchCount = 0;
+            }
+          } else {
+            clusterMismatchCount = 0;
           }
         }
         // Use server-authoritative cluster when available (prevents grid vs nearest-neighbor mismatch)
@@ -142,11 +158,22 @@
         if (clusterId !== undefined && onSurface) {
           const state = planet.clusterCaptureState.get(clusterId);
           if (state) {
-            // Use server-authoritative tank counts (cached from capture-progress).
-            // Falls back to counting local player only if server counts not yet received.
-            const counts = (serverTankCounts && clusterId === serverClusterId)
-              ? serverTankCounts
-              : { rust: 0, cobalt: 0, viridian: 0, [tank.faction]: 1 };
+            // Use server-authoritative tank counts when available for the current cluster.
+            // During cluster transitions (before server catches up), fall back to
+            // client-side counting so the ring reflects what the player sees.
+            let counts;
+            if (serverTankCounts && clusterId === serverClusterId) {
+              counts = serverTankCounts;
+            } else {
+              counts = { rust: 0, cobalt: 0, viridian: 0 };
+              if (!tank.isDead) counts[tank.faction]++;
+              for (const [, rt] of remoteTanks) {
+                if (!rt.isDead && rt.faction && rt.group) {
+                  const rtCluster = planet.getClusterIdAtLocalPosition(rt.group.position);
+                  if (rtCluster === clusterId) counts[rt.faction]++;
+                }
+              }
+            }
             mp.updateTugOfWarUI?.(clusterId, state, counts);
             mp.setTerritoryRingVisible?.(true);
           } else {
