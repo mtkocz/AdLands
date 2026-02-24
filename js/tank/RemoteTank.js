@@ -210,12 +210,8 @@ class RemoteTank {
     const dt60 = deltaTime * 60;
 
     if (this.isDead) {
-      // Dead tanks: no interpolation, no dead-reckoning — only counter planet
-      // rotation so the wreck stays fixed on the surface.
-      this.state.theta -= (SharedPhysics.PLANET_ROTATION_SPEED * dt60) / 60;
-      while (this.state.theta < 0) this.state.theta += Math.PI * 2;
-      while (this.state.theta >= Math.PI * 2) this.state.theta -= Math.PI * 2;
-      // Keep target in sync so there's no snap if respawned
+      // Dead tanks on hexGroup: no counter-rotation needed (they rotate with the planet).
+      // Keep target in sync so there's no snap if respawned.
       this.targetState.theta = this.state.theta;
       this.targetState.phi = this.state.phi;
 
@@ -305,7 +301,7 @@ class RemoteTank {
         this.targetState.phi -= velocityNorth;
         this.targetState.theta += velocityEast / safeSinPhi;
       }
-      this.targetState.theta -= (SharedPhysics.PLANET_ROTATION_SPEED * dt60) / 60;
+      // No counter-rotation needed — remote tanks are hexGroup children
       while (this.targetState.theta < 0) this.targetState.theta += Math.PI * 2;
       while (this.targetState.theta >= Math.PI * 2) this.targetState.theta -= Math.PI * 2;
 

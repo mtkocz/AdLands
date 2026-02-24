@@ -366,9 +366,8 @@ class FastTravel {
         const localPhi = Math.acos(tilePosLocal.y / r);
         const localTheta = Math.atan2(tilePosLocal.z, tilePosLocal.x);
 
-        // Convert to world space: subtract hexGroup rotation
-        const planetRot = this.planet.hexGroup.rotation.y;
-        let baseTheta = localTheta - planetRot;
+        // Tank is parented to hexGroup, so theta is in local (hex) space already
+        let baseTheta = localTheta;
         let basePhi = localPhi;
 
         // Find a spawn position that doesn't overlap with other tanks
@@ -404,15 +403,11 @@ class FastTravel {
     _isSpawnBlocked(theta, phi) {
         if (!this.botTanks) return false;
 
-        // Bot theta is in local (hexGroup) space; player spawn theta is world space.
-        // Add hexGroup Y-rotation to convert bot theta to world space.
-        const planetRot = this.planet.hexGroup.rotation.y;
-
+        // Both bots and player are hexGroup children — theta is in the same local space
         for (const bot of this.botTanks.bots) {
             if (bot.isDead || bot.isDeploying) continue;
 
-            const botWorldTheta = bot.theta - planetRot;
-            const dTheta = theta - botWorldTheta;
+            const dTheta = theta - bot.theta;
             const dPhi = phi - bot.phi;
 
             // Approximate spherical distance (works well for small distances)

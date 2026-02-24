@@ -1576,7 +1576,6 @@ Tank._visualTemp = {
   north: new THREE.Vector3(),
   forward: new THREE.Vector3(),
   right: new THREE.Vector3(),
-  negForward: new THREE.Vector3(),
   rotationMatrix: new THREE.Matrix4(),
   rollAxis: new THREE.Vector3(0, 0, 1),
   rollQuat: new THREE.Quaternion(),
@@ -1706,9 +1705,9 @@ Tank.updateEntityVisual = function (entity, sphereRadius) {
   t.forward.normalize();
 
   // Orient entity using quaternion (works in any parent space, unlike lookAt)
-  t.right.crossVectors(t.forward, t.up).normalize();
-  t.negForward.copy(t.forward).negate();
-  t.rotationMatrix.makeBasis(t.right, t.up, t.negForward);
+  // Matches THREE.js Object3D.lookAt convention: Z column = forward, X = cross(up, forward)
+  t.right.crossVectors(t.up, t.forward).normalize();
+  t.rotationMatrix.makeBasis(t.right, t.up, t.forward);
   entity.group.quaternion.setFromRotationMatrix(t.rotationMatrix);
 
   // Apply lean + wiggle to bodyGroup (so headlights, hitbox, projectile origin on outer group are unaffected)

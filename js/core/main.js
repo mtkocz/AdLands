@@ -3823,7 +3823,7 @@
 
     // Update all systems
     tank.isSurfaceView = gameCamera.mode === "surface" && !gameCamera.transitioning;
-    tank.update(camera, dayNightSpeed, deltaTime);
+    tank.update(camera, 0, deltaTime);
     tank.updateFade();
     environment.update(camera, deltaTime);
     environment.updateAtmosphere(gameCamera.getEffectiveDistance());
