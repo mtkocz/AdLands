@@ -256,6 +256,7 @@ class Planet {
       );
     }
 
+    this._createNoiseRoughnessMap();
     this._createTileMeshes(hexasphere.tiles);
 
     // Create cliff wall geometry for terrain elevation transitions
@@ -934,6 +935,7 @@ class Planet {
           flatShading: true,
           roughness: 0.8,
           metalness: 0.1,
+          roughnessMap: this._noiseRoughnessMap,
           side: THREE.FrontSide,
         });
       } else {
@@ -960,6 +962,7 @@ class Planet {
             flatShading: true,
             roughness: 0.95,
             metalness: 0.05,
+            roughnessMap: this._noiseRoughnessMap,
             side: THREE.FrontSide,
           });
         } else {
@@ -974,6 +977,7 @@ class Planet {
             flatShading: true,
             roughness: pattern.roughness,
             metalness: pattern.metalness,
+            roughnessMap: this._noiseRoughnessMap,
             side: THREE.FrontSide,
           });
         }
@@ -1090,6 +1094,7 @@ class Planet {
           flatShading: true,
           roughness: 0.95,
           metalness: 0.05,
+          roughnessMap: this._noiseRoughnessMap,
           side: THREE.FrontSide,
         });
       } else {
@@ -1102,6 +1107,7 @@ class Planet {
           flatShading: true,
           roughness: pattern.roughness,
           metalness: pattern.metalness,
+          roughnessMap: this._noiseRoughnessMap,
           side: THREE.FrontSide,
         });
       }
@@ -1171,6 +1177,33 @@ class Planet {
 
     // Create noise grain overlay on top of entire planet surface
     this._createNoiseOverlay();
+  }
+
+  /**
+   * Create a shared noise roughness map applied to all surface materials.
+   * MeshStandardMaterial multiplies its roughness scalar by the green channel of roughnessMap.
+   * Values centered at ~0.85 give subtle per-pixel roughness variation.
+   */
+  _createNoiseRoughnessMap() {
+    const size = 128;
+    const canvas = document.createElement("canvas");
+    canvas.width = size;
+    canvas.height = size;
+    const ctx = canvas.getContext("2d");
+    const imgData = ctx.getImageData(0, 0, size, size);
+    const d = imgData.data;
+    for (let i = 0; i < d.length; i += 4) {
+      const v = Math.floor(217 + (Math.random() - 0.5) * 76); // ~0.7–1.0 range
+      d[i] = d[i + 1] = d[i + 2] = v;
+      d[i + 3] = 255;
+    }
+    ctx.putImageData(imgData, 0, 0);
+
+    const texture = new THREE.CanvasTexture(canvas);
+    texture.wrapS = texture.wrapT = THREE.RepeatWrapping;
+    texture.minFilter = THREE.NearestFilter;
+    texture.magFilter = THREE.NearestFilter;
+    this._noiseRoughnessMap = texture;
   }
 
   /**

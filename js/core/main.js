@@ -2854,6 +2854,9 @@
   }
 
   function clearTugOfWarUI() {
+    // Reset ring cluster tracking so HUD toggle doesn't re-show ring on non-sponsor territory
+    ringAnimState.lastClusterId = null;
+
     // Clear ring canvas (full viewport)
     const dpr = window.devicePixelRatio || 1;
     territoryRingCtx.clearRect(
