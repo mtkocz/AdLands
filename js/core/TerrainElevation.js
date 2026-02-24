@@ -700,6 +700,9 @@ class TerrainElevation {
     const colors = [];
     const uvs = [];
     const indices = [];
+    // Separate arrays for the ground apron (no shadow casting)
+    const apronPos = [];
+    const apronIdx = [];
     const t = this._temp;
 
     // Build edge map: canonical edge key → { tileIdx, v1, v2 }[]
@@ -814,33 +817,20 @@ class TerrainElevation {
       }
 
       // Dark ground apron at cliff base to mask shadow peter-panning gap.
-      // A thin dark strip extends outward from the cliff base along the
-      // ground, hiding the sunlit gap between cliff wall and cast shadow.
+      // Built into a separate mesh (no shadow casting) so it doesn't
+      // create phantom shadows on the ground.
       const APRON_WIDTH = 0.4;
       t.apronA.copy(t.lowA).addScaledVector(t.tileCenterDir, -APRON_WIDTH);
       t.apronB.copy(t.lowB).addScaledVector(t.tileCenterDir, -APRON_WIDTH);
-      t.groundNormal.copy(t.lowA).normalize();
 
-      const apronBase = positions.length / 3;
-      positions.push(
+      const ab = apronPos.length / 3;
+      apronPos.push(
         t.lowA.x,   t.lowA.y,   t.lowA.z,
         t.lowB.x,   t.lowB.y,   t.lowB.z,
         t.apronB.x, t.apronB.y, t.apronB.z,
         t.apronA.x, t.apronA.y, t.apronA.z,
       );
-      uvs.push(0, vTile, uTile, vTile, uTile, vTile, 0, vTile);
-      // Material is DoubleSide so both winding orders render; use consistent CCW
-      indices.push(
-        apronBase, apronBase + 1, apronBase + 2,
-        apronBase, apronBase + 2, apronBase + 3,
-      );
-      for (let i = 0; i < 4; i++) {
-        normals.push(t.groundNormal.x, t.groundNormal.y, t.groundNormal.z);
-      }
-      // Near-black so apron stays dark even in direct sunlight
-      for (let i = 0; i < 4; i++) {
-        colors.push(0.02, 0.02, 0.02);
-      }
+      apronIdx.push(ab, ab + 1, ab + 2, ab, ab + 2, ab + 3);
     }
 
     if (positions.length === 0) {
@@ -891,5 +881,31 @@ class TerrainElevation {
     });
     this.cliffWallMesh.userData = { isCliffWall: true };
     this.planet.hexGroup.add(this.cliffWallMesh);
+
+    // Apron mesh: dark ground strip at cliff bases, no shadow casting
+    if (apronPos.length > 0) {
+      const apronGeom = new THREE.BufferGeometry();
+      apronGeom.setAttribute(
+        "position",
+        new THREE.Float32BufferAttribute(apronPos, 3),
+      );
+      apronGeom.setIndex(apronIdx);
+      apronGeom.computeBoundingSphere();
+
+      const apronMesh = new THREE.Mesh(
+        apronGeom,
+        new THREE.MeshBasicMaterial({
+          color: 0x050505,
+          side: THREE.DoubleSide,
+        }),
+      );
+      apronMesh.castShadow = false;
+      apronMesh.receiveShadow = false;
+      apronMesh.renderOrder = 0.1;
+      apronMesh.raycast = () => {};
+      apronMesh.userData = { isCliffApron: true };
+      this.planet.hexGroup.add(apronMesh);
+      this._cliffApronMesh = apronMesh;
+    }
   }
 }
