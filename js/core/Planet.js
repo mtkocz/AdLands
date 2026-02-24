@@ -1291,6 +1291,49 @@ class Planet {
   }
 
   /**
+   * Patch a MeshStandardMaterial with cylindrical roughness noise sampling.
+   * Used for cliff walls and polar walls where spherical mapping distorts.
+   * Horizontal: azimuthal arc length, Vertical: radial distance.
+   * @param {THREE.MeshStandardMaterial} material
+   */
+  _patchWallNoise(material) {
+    const noiseRoughMap = this._noiseRoughnessMap;
+    const noiseScale = this._noiseScale;
+    material.onBeforeCompile = (shader) => {
+      shader.uniforms.triNoiseRoughMap = { value: noiseRoughMap };
+      shader.uniforms.triNoiseScale = { value: noiseScale };
+
+      shader.vertexShader = shader.vertexShader.replace(
+        "#include <common>",
+        "#include <common>\nvarying vec3 vTriObjPos;",
+      );
+      shader.vertexShader = shader.vertexShader.replace(
+        "#include <begin_vertex>",
+        "#include <begin_vertex>\nvTriObjPos = position;",
+      );
+
+      shader.fragmentShader = shader.fragmentShader.replace(
+        "#include <common>",
+        `#include <common>
+        varying vec3 vTriObjPos;
+        uniform sampler2D triNoiseRoughMap;
+        uniform float triNoiseScale;`,
+      );
+      shader.fragmentShader = shader.fragmentShader.replace(
+        "#include <roughnessmap_fragment>",
+        `float roughnessFactor = roughness;
+        {
+          float horizR = length(vTriObjPos.xz);
+          float theta = atan(vTriObjPos.z, vTriObjPos.x);
+          float r = length(vTriObjPos);
+          vec2 uv = vec2(theta * horizR, r) * triNoiseScale;
+          roughnessFactor *= texture2D(triNoiseRoughMap, uv).g;
+        }`,
+      );
+    };
+  }
+
+  /**
    * Patch a MeshStandardMaterial to ignore SpotLight illumination.
    * Three.js r128 doesn't filter lights per-object by layer, so we strip the
    * spot light loop from the compiled fragment shader. Chains with any existing
@@ -1338,11 +1381,13 @@ class Planet {
 
     // Collect geometry from all visible surface meshes
     const allPositions = [];
+    const allUVs = [];
     const allIndices = [];
     let vertexOffset = 0;
     const offset = 0.04;
+    const ns = this._noiseScale;
 
-    const collectMesh = (pos, idx) => {
+    const collectMesh = (pos, idx, isWall) => {
       for (let i = 0; i < pos.length; i += 3) {
         const x = pos[i], y = pos[i + 1], z = pos[i + 2];
         const len = Math.sqrt(x * x + y * y + z * z);
@@ -1351,6 +1396,19 @@ class Planet {
           y + (y / len) * offset,
           z + (z / len) * offset,
         );
+
+        if (isWall) {
+          // Cylindrical mapping for walls: azimuthal arc length + radial height
+          const horizR = Math.sqrt(x * x + z * z);
+          const theta = Math.atan2(z, x);
+          allUVs.push(theta * horizR * ns, len * ns);
+        } else {
+          // Spherical mapping for flat surfaces
+          const nx = x / len, ny = y / len, nz = z / len;
+          const theta = Math.atan2(nz, nx);
+          const phi = Math.acos(Math.max(-1, Math.min(1, ny)));
+          allUVs.push(theta * ns * len, phi * ns * len);
+        }
       }
 
       if (idx) {
@@ -1377,15 +1435,15 @@ class Planet {
       if (mesh.userData?.isMergedCluster) {
         const pos = mesh.geometry.attributes.position.array;
         const idx = mesh.geometry.index ? mesh.geometry.index.array : null;
-        collectMesh(pos, idx);
+        collectMesh(pos, idx, false);
         return;
       }
 
-      // Collect from cliff walls and polar walls
+      // Collect from cliff walls and polar walls — use cylindrical mapping
       if (mesh.userData?.isCliffWall || mesh.userData?.isPolarWall) {
         const pos = mesh.geometry.attributes.position.array;
         const idx = mesh.geometry.index ? mesh.geometry.index.array : null;
-        collectMesh(pos, idx);
+        collectMesh(pos, idx, true);
         return;
       }
 
@@ -1401,42 +1459,36 @@ class Planet {
       // Collect from visible individual tiles (sponsor tiles etc.)
       const pos = mesh.geometry.attributes.position.array;
       const idx = mesh.geometry.index ? mesh.geometry.index.array : null;
-      collectMesh(pos, idx);
+      collectMesh(pos, idx, false);
     });
 
     if (allPositions.length === 0) return;
 
     const geometry = new THREE.BufferGeometry();
     geometry.setAttribute("position", new THREE.Float32BufferAttribute(allPositions, 3));
+    geometry.setAttribute("uv", new THREE.Float32BufferAttribute(allUVs, 2));
     geometry.setIndex(allIndices);
 
-    // Overlay blend with distance fade — triplanar mapping matches roughness patch
-    // Scale derived from sponsor pixel density (128px / reference cluster diameter)
+    // Overlay blend with distance fade
+    // UVs pre-computed: spherical for flat tiles, cylindrical for walls
     const material = new THREE.ShaderMaterial({
       uniforms: {
         noiseMap: { value: texture },
         uFade: { value: 1.0 },
-        uNoiseScale: { value: this._noiseScale },
       },
       vertexShader: `
-        varying vec3 vObjPos;
+        varying vec2 vNoiseUV;
         void main() {
-          vObjPos = position;
+          vNoiseUV = uv;
           gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
         }
       `,
       fragmentShader: `
         uniform sampler2D noiseMap;
         uniform float uFade;
-        uniform float uNoiseScale;
-        varying vec3 vObjPos;
+        varying vec2 vNoiseUV;
         void main() {
-          float r = length(vObjPos);
-          vec3 n = vObjPos / r;
-          float theta = atan(n.z, n.x);
-          float phi = acos(clamp(n.y, -1.0, 1.0));
-          vec2 uv = vec2(theta, phi) * uNoiseScale * r;
-          vec3 noise = texture2D(noiseMap, uv).rgb;
+          vec3 noise = texture2D(noiseMap, vNoiseUV).rgb;
           gl_FragColor = vec4(mix(vec3(0.5), noise, uFade), 1.0);
         }
       `,
@@ -1784,7 +1836,7 @@ class Planet {
       flatShading: true,
       side: THREE.FrontSide,
     });
-    this._patchTriplanarNoise(wallMaterial);
+    this._patchWallNoise(wallMaterial);
 
     const wallMesh = new THREE.Mesh(wallGeometry, wallMaterial);
     wallMesh.castShadow = true;

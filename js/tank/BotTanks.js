@@ -2926,6 +2926,9 @@ class BotTanks {
     this._orbitalPhantomVisible = false;
     this._phantomsRegistered = false;
 
+    // Per-mesh interpolation targets for smooth orbital dot movement
+    this._phantomHasTarget = new Uint8Array(POOL_SIZE); // 0 = no target yet (snap), 1 = has previous position
+
     // Pre-allocated temp objects for phantom raycast (shared across all pool meshes)
     const _rcWorldPos = new THREE.Vector3();
     const _rcSphere = new THREE.Sphere(new THREE.Vector3(), hitRadius);
@@ -2966,7 +2969,7 @@ class BotTanks {
    * Update orbital phantom dots from server-reported positions.
    * Called every frame from the render loop.
    */
-  updateOrbitalPhantoms(isOrbitalView, isHumanCommander, viewerFaction) {
+  updateOrbitalPhantoms(isOrbitalView, isHumanCommander, viewerFaction, deltaTime) {
     const mp = window._mpState;
     if (!mp || !mp.orbitalPositions) {
       this._hideOrbitalPhantoms();
@@ -3028,12 +3031,32 @@ class BotTanks {
       if (poolIdx >= this._phantomPool.length) break;
       const mesh = this._phantomPool[poolIdx];
 
-      // Position in hexGroup local space
-      mesh.position.set(
-        r * Math.sin(phi) * Math.cos(theta),
-        r * Math.cos(phi),
-        r * Math.sin(phi) * Math.sin(theta),
-      );
+      // Position in hexGroup local space — interpolate for smooth movement
+      const tx = r * Math.sin(phi) * Math.cos(theta);
+      const ty = r * Math.cos(phi);
+      const tz = r * Math.sin(phi) * Math.sin(theta);
+
+      if (!this._phantomHasTarget[poolIdx] || !mesh.visible) {
+        // First frame or re-activated — snap directly
+        mesh.position.set(tx, ty, tz);
+        this._phantomHasTarget[poolIdx] = 1;
+      } else {
+        // Smooth exponential lerp toward target
+        const dx = tx - mesh.position.x;
+        const dy = ty - mesh.position.y;
+        const dz = tz - mesh.position.z;
+        const distSq = dx * dx + dy * dy + dz * dz;
+
+        // Snap if target jumped far (bot died/spawned, pool reassigned)
+        if (distSq > 400) {
+          mesh.position.set(tx, ty, tz);
+        } else {
+          const t = Math.min(1, 8 * deltaTime);
+          mesh.position.x += dx * t;
+          mesh.position.y += dy * t;
+          mesh.position.z += dz * t;
+        }
+      }
 
       // Swap faction material (skip if this dot is currently hovered to preserve hover effect)
       if (mesh !== hoveredMesh) {
@@ -3065,9 +3088,10 @@ class BotTanks {
       poolIdx++;
     }
 
-    // Hide unused pool entries
+    // Hide unused pool entries and reset their interpolation state
     for (let i = poolIdx; i < this._phantomPool.length; i++) {
       this._phantomPool[i].visible = false;
+      this._phantomHasTarget[i] = 0;
     }
 
     // Force world matrix update on active phantom dots so raycasting works
@@ -3090,5 +3114,7 @@ class BotTanks {
     }
     this._phantomActiveCount = 0;
     this._orbitalPhantomVisible = false;
+    // Reset interpolation so dots snap on next activation
+    if (this._phantomHasTarget) this._phantomHasTarget.fill(0);
   }
 }
