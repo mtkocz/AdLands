@@ -7,12 +7,6 @@
 const Hexasphere = require("./shared/hexasphere");
 const Vec3 = require("./shared/Vec3");
 
-// Same pattern array as Planet.js — needed so RNG advances identically
-const PATTERNS = [
-  "stripes_h", "stripes_v", "stripes_d1", "stripes_d2",
-  "dots", "dots_sparse", "checkerboard", "crosshatch",
-  "grid", "waves", "zigzag", "diamonds", "triangles", "circles",
-];
 
 class WorldGenerator {
   constructor(radius, subdivisions, seed = 42) {
@@ -225,7 +219,7 @@ class WorldGenerator {
     const gray = 112;
     this.clusterColors.set(0, (gray << 16) | (gray << 8) | gray);
     this.clusterPatterns.set(0, {
-      type: PATTERNS[0],
+      type: "solid",
       grayValue: gray,
       roughness: 0.7,
       metalness: 0.1,

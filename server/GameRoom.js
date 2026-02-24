@@ -206,8 +206,10 @@ class GameRoom {
     this._worldPayload = this._buildWorldPayload(worldResult);
 
     // Territory capture state: clusterId → { tics, owner, capacity, momentum }
+    // Only sponsor clusters are capturable — background cluster is neutral territory
     this.clusterCaptureState = new Map();
     for (const cluster of worldResult.clusterData) {
+      if (!cluster.isSponsorCluster) continue;
       const capacity = cluster.tiles.length * 5;
       this.clusterCaptureState.set(cluster.id, {
         tics: { rust: 0, cobalt: 0, viridian: 0 },
