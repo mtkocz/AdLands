@@ -2381,6 +2381,13 @@ class Planet {
         const centroid = this._mergedClusterCentroids?.get(child.userData.clusterId);
         if (!centroid) return;
 
+        // Background cluster (id 0) wraps the whole planet — centroid is near
+        // the planet center, so backface culling doesn't apply. Always visible.
+        if (child.userData.clusterId === 0) {
+          child.visible = true;
+          return;
+        }
+
         temp.tileWorldPos.copy(centroid).applyMatrix4(hexGroupMatrix);
         temp.tileNormal.copy(temp.tileWorldPos).normalize();
         temp.tileToCamera.copy(temp.cameraWorldPos).sub(temp.tileWorldPos).normalize();
