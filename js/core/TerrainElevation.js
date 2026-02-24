@@ -841,6 +841,7 @@ class TerrainElevation {
       vertexColors: true,
       roughness: 0.95,
       metalness: 0.05,
+      roughnessMap: this.planet._noiseRoughnessMap,
       flatShading: true,
       side: THREE.DoubleSide,
       shadowSide: THREE.FrontSide,

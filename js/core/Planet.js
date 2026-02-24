@@ -1689,6 +1689,7 @@ class Planet {
       vertexColors: true,
       roughness: 0.95,
       metalness: 0.05,
+      roughnessMap: this._noiseRoughnessMap,
       flatShading: true,
       side: THREE.FrontSide,
     });
@@ -2761,6 +2762,7 @@ class Planet {
         flatShading: true,
         roughness: 0.8,
         metalness: 0.1,
+        roughnessMap: this._noiseRoughnessMap,
         side: THREE.FrontSide,
       });
       mesh.userData.clusterId = clusterId;
@@ -3380,6 +3382,7 @@ class Planet {
           flatShading: true,
           roughness: 0.95,
           metalness: 0.05,
+          roughnessMap: this._noiseRoughnessMap,
           side: THREE.FrontSide,
         });
       } else if (newClusterId !== undefined) {
@@ -3397,6 +3400,7 @@ class Planet {
             flatShading: true,
             roughness: pattern.roughness,
             metalness: pattern.metalness,
+            roughnessMap: this._noiseRoughnessMap,
             side: THREE.FrontSide,
           });
         }
@@ -3405,6 +3409,7 @@ class Planet {
         material = new THREE.MeshStandardMaterial({
           color: 0x444444,
           flatShading: true,
+          roughnessMap: this._noiseRoughnessMap,
           side: THREE.FrontSide,
         });
       }
@@ -3985,6 +3990,7 @@ class Planet {
       flatShading: true,
       roughness: roughness,
       metalness: metalness,
+      roughnessMap: this._noiseRoughnessMap,
       side: THREE.FrontSide,
     });
   }
