@@ -34,7 +34,7 @@ class TerrainElevation {
       TERTIARY_MAX_SIZE: 6,
       TERTIARY_MIN_PARENT: 8,
       MIN_SEED_SPACING: 0.12,        // Radians between primary seeds
-      CLIFF_BASE_COLOR: { r: 0.35, g: 0.28, b: 0.22 },
+      CLIFF_BASE_COLOR: { r: 112 / 255, g: 112 / 255, b: 112 / 255 },
       CLIFF_COLOR_VARIATION: 0.08,
     };
 
@@ -802,9 +802,10 @@ class TerrainElevation {
 
       // Per-quad color variation (same as polar walls)
       const variation = (this.random() - 0.5) * 0.06;
-      const cr = 0.45 + variation;
-      const cg = 0.42 + variation * 0.8;
-      const cb = 0.40 + variation * 0.6;
+      const gray = 112 / 255 + variation;
+      const cr = gray;
+      const cg = gray;
+      const cb = gray;
       for (let i = 0; i < 4; i++) {
         colors.push(cr, cg, cb);
       }

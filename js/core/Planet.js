@@ -418,6 +418,7 @@ class Planet {
 
   _initializeCaptureState() {
     this.clusterData.forEach((cluster) => {
+      if (!cluster.isSponsorCluster) return;
       const capacity = cluster.tiles.length * 5;
       this.clusterCaptureState.set(cluster.id, {
         tics: { rust: 0, cobalt: 0, viridian: 0 },
@@ -473,6 +474,7 @@ class Planet {
     this.clusterData = world.clusters.map((c) => ({
       id: c.id,
       tiles: c.tiles,
+      isSponsorCluster: !!c.isSponsorCluster,
     }));
 
     // Override cluster visuals
@@ -941,7 +943,7 @@ class Planet {
         if (isElevated) {
           // Desaturated vertex color with per-tile variation
           const variation = (this.random() - 0.5) * 0.06;
-          const gray = 0.42 + variation;
+          const gray = 112 / 255 + variation;
           const cr = gray;
           const cg = gray;
           const cb = gray;
@@ -1304,6 +1306,7 @@ class Planet {
           gl_FragColor = vec4(mix(vec3(0.5), noise, uFade), 1.0);
         }
       `,
+      transparent: true,
       depthWrite: false,
       polygonOffset: true,
       polygonOffsetFactor: -2,

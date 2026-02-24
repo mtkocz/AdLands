@@ -4237,6 +4237,7 @@ class GameRoom {
     const clusters = worldResult.clusterData.map((c) => ({
       id: c.id,
       tiles: c.tiles,
+      isSponsorCluster: !!c.isSponsorCluster,
     }));
 
     // Serialize tileClusterMap as a flat array (index = tileIndex, value = clusterId)
