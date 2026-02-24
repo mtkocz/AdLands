@@ -256,7 +256,7 @@ class Planet {
       );
     }
 
-    this._createNoiseRoughnessMap();
+    this._createNoiseTextures();
     this._createTileMeshes(hexasphere.tiles);
 
     // Create cliff wall geometry for terrain elevation transitions
@@ -1184,29 +1184,56 @@ class Planet {
    * MeshStandardMaterial multiplies its roughness scalar by the green channel of roughnessMap.
    * Values centered at ~0.85 give subtle per-pixel roughness variation.
    */
-  _createNoiseRoughnessMap() {
+  _createNoiseTextures() {
     const size = 128;
-    const canvas = document.createElement("canvas");
-    canvas.width = size;
-    canvas.height = size;
-    const ctx = canvas.getContext("2d");
-    const imgData = ctx.getImageData(0, 0, size, size);
-    const d = imgData.data;
-    for (let i = 0; i < d.length; i += 4) {
-      const v = Math.floor(217 + (Math.random() - 0.5) * 76); // ~0.7–1.0 range
-      d[i] = d[i + 1] = d[i + 2] = v;
-      d[i + 3] = 255;
+    // Generate shared random values so diffuse and roughness are the same PBR texture
+    const randomValues = new Float32Array(size * size);
+    for (let i = 0; i < randomValues.length; i++) {
+      randomValues[i] = Math.random();
     }
-    ctx.putImageData(imgData, 0, 0);
 
-    const texture = new THREE.CanvasTexture(canvas);
-    texture.wrapS = texture.wrapT = THREE.RepeatWrapping;
-    texture.minFilter = THREE.NearestFilter;
-    texture.magFilter = THREE.NearestFilter;
-    // Match overlay UV mapping: overlay uses uvScale=16 with U doubled (32),
-    // tile materials use spherical UVs with scale=60 in both axes
-    texture.repeat.set(32 / 60, 16 / 60);
-    this._noiseRoughnessMap = texture;
+    // Diffuse noise: centered at gray 128 ±10 (used by overlay shader)
+    const diffuseCanvas = document.createElement("canvas");
+    diffuseCanvas.width = size;
+    diffuseCanvas.height = size;
+    const diffuseCtx = diffuseCanvas.getContext("2d");
+    const diffuseImg = diffuseCtx.getImageData(0, 0, size, size);
+    const dd = diffuseImg.data;
+    for (let i = 0; i < randomValues.length; i++) {
+      const v = Math.floor(128 + (randomValues[i] - 0.5) * 20);
+      dd[i * 4] = dd[i * 4 + 1] = dd[i * 4 + 2] = v;
+      dd[i * 4 + 3] = 255;
+    }
+    diffuseCtx.putImageData(diffuseImg, 0, 0);
+
+    const diffuseTex = new THREE.CanvasTexture(diffuseCanvas);
+    diffuseTex.wrapS = diffuseTex.wrapT = THREE.RepeatWrapping;
+    diffuseTex.minFilter = THREE.NearestFilter;
+    diffuseTex.magFilter = THREE.NearestFilter;
+    this._noiseDiffuseMap = diffuseTex;
+
+    // Roughness noise: same pattern mapped to 0.7–1.0 range (179–255)
+    const roughCanvas = document.createElement("canvas");
+    roughCanvas.width = size;
+    roughCanvas.height = size;
+    const roughCtx = roughCanvas.getContext("2d");
+    const roughImg = roughCtx.getImageData(0, 0, size, size);
+    const rd = roughImg.data;
+    for (let i = 0; i < randomValues.length; i++) {
+      const v = Math.floor(217 + (randomValues[i] - 0.5) * 76);
+      rd[i * 4] = rd[i * 4 + 1] = rd[i * 4 + 2] = v;
+      rd[i * 4 + 3] = 255;
+    }
+    roughCtx.putImageData(roughImg, 0, 0);
+
+    const roughTex = new THREE.CanvasTexture(roughCanvas);
+    roughTex.wrapS = roughTex.wrapT = THREE.RepeatWrapping;
+    roughTex.minFilter = THREE.NearestFilter;
+    roughTex.magFilter = THREE.NearestFilter;
+    // Tile UVs use spherical scale=60, overlay uses uvScale=16 (V) with U doubled (32)
+    // repeat = overlay_scale / tile_scale per axis
+    roughTex.repeat.set(32 / 60, 16 / 60);
+    this._noiseRoughnessMap = roughTex;
   }
 
   /**
@@ -1220,30 +1247,11 @@ class Planet {
       this.hexGroup.remove(this._noiseOverlayMesh);
       this._noiseOverlayMesh.geometry.dispose();
       this._noiseOverlayMesh.material.dispose();
-      if (this._noiseOverlayTexture) this._noiseOverlayTexture.dispose();
       this._noiseOverlayMesh = null;
     }
 
-    // Create noise texture centered at gray 128 (neutral for overlay blend)
-    const texSize = 128;
-    const canvas = document.createElement("canvas");
-    canvas.width = texSize;
-    canvas.height = texSize;
-    const ctx = canvas.getContext("2d");
-    const imgData = ctx.getImageData(0, 0, texSize, texSize);
-    const d = imgData.data;
-    for (let i = 0; i < d.length; i += 4) {
-      const v = Math.floor(128 + (Math.random() - 0.5) * 20);
-      d[i] = d[i + 1] = d[i + 2] = v;
-      d[i + 3] = 255;
-    }
-    ctx.putImageData(imgData, 0, 0);
-
-    const texture = new THREE.CanvasTexture(canvas);
-    texture.wrapS = texture.wrapT = THREE.RepeatWrapping;
-    texture.minFilter = THREE.NearestFilter;
-    texture.magFilter = THREE.NearestFilter;
-    this._noiseOverlayTexture = texture;
+    // Use the shared diffuse noise texture (created in _createNoiseTextures)
+    const texture = this._noiseDiffuseMap;
 
     // Collect geometry from all visible surface meshes
     const allPositions = [];
@@ -1400,9 +1408,7 @@ class Planet {
       this.hexGroup.remove(this._noiseOverlayMesh);
       this._noiseOverlayMesh.geometry.dispose();
       this._noiseOverlayMesh.material.dispose();
-      if (this._noiseOverlayTexture) this._noiseOverlayTexture.dispose();
       this._noiseOverlayMesh = null;
-      this._noiseOverlayTexture = null;
     }
   }
 
