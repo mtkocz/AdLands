@@ -2493,12 +2493,12 @@ class Planet {
     const temp = this._cullTemp;
     camera.getWorldPosition(temp.cameraWorldPos);
 
-    // Fade noise overlay based on camera distance (starts fading at 260, gone at 320)
+    // Fade noise overlay based on camera altitude above planet surface
     if (this._noiseOverlayMesh) {
-      const dist = temp.cameraWorldPos.length();
+      const altitude = temp.cameraWorldPos.length() - this.radius;
       const fadeStart = 260;
       const fadeEnd = 320;
-      const fade = 1 - Math.min(1, Math.max(0, (dist - fadeStart) / (fadeEnd - fadeStart)));
+      const fade = 1 - Math.min(1, Math.max(0, (altitude - fadeStart) / (fadeEnd - fadeStart)));
       this._noiseOverlayMesh.material.uniforms.uFade.value = fade;
       this._noiseOverlayMesh.visible = fade > 0;
     }
