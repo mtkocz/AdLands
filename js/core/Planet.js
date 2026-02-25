@@ -809,8 +809,6 @@ class Planet {
       geometry.computeVertexNormals();
 
       const clusterId = this.tileClusterMap.get(index);
-      const _cp = tile.centerPoint;
-      const tileCenter = new THREE.Vector3(parseFloat(_cp.x), parseFloat(_cp.y), parseFloat(_cp.z));
 
       let material;
 
@@ -921,7 +919,7 @@ class Planet {
           metalness: 0.02,
           side: THREE.FrontSide,
         });
-        this._patchTriplanarNoise(material, tileCenter);
+        this._patchTriplanarNoise(material);
         this._patchIgnoreSpotLights(material);
       } else {
         const pattern = this.clusterPatterns.get(clusterId);
@@ -950,7 +948,7 @@ class Planet {
             side: THREE.FrontSide,
           });
           if (!this.sponsorTileIndices.has(index)) {
-            this._patchTriplanarNoise(material, tileCenter);
+            this._patchTriplanarNoise(material);
           }
         } else {
           if (!this.clusterTextures.has(clusterId)) {
@@ -967,7 +965,7 @@ class Planet {
             side: THREE.FrontSide,
           });
           if (!this.sponsorTileIndices.has(index)) {
-            this._patchTriplanarNoise(material, tileCenter);
+            this._patchTriplanarNoise(material);
           }
           this._patchIgnoreSpotLights(material);
         }
@@ -1099,14 +1097,7 @@ class Planet {
           side: THREE.FrontSide,
         });
       }
-      // Compute cluster centroid for noise tangent basis
-      let cx = 0, cy = 0, cz = 0;
-      for (const m of tiles) {
-        const cp = this._tiles[m.userData.tileIndex].centerPoint;
-        cx += parseFloat(cp.x); cy += parseFloat(cp.y); cz += parseFloat(cp.z);
-      }
-      const clusterCenter = new THREE.Vector3(cx / tiles.length, cy / tiles.length, cz / tiles.length);
-      this._patchTriplanarNoise(material, clusterCenter);
+      this._patchTriplanarNoise(material);
       if (materialType !== "elevated") {
         this._patchIgnoreSpotLights(material);
       }
@@ -1247,23 +1238,13 @@ class Planet {
    * Uses the same world-space scale as the noise overlay so both maps align exactly.
    * @param {THREE.MeshStandardMaterial} material
    */
-  _patchTriplanarNoise(material, center) {
+  _patchTriplanarNoise(material) {
     const noiseRoughMap = this._noiseRoughnessMap;
     const noiseScale = this._noiseScale;
-
-    // Compute tangent basis from center (same logic as _calculateClusterTangentBasis)
-    const normal = center.clone().normalize();
-    const up = new THREE.Vector3(0, 1, 0);
-    let tanE = new THREE.Vector3().crossVectors(up, normal);
-    if (tanE.lengthSq() < 0.001) tanE.set(1, 0, 0);
-    tanE.normalize();
-    const tanN = new THREE.Vector3().crossVectors(normal, tanE).normalize();
 
     material.onBeforeCompile = (shader) => {
       shader.uniforms.triNoiseRoughMap = { value: noiseRoughMap };
       shader.uniforms.triNoiseScale = { value: noiseScale };
-      shader.uniforms.noiseTanE = { value: tanE };
-      shader.uniforms.noiseTanN = { value: tanN };
 
       shader.vertexShader = shader.vertexShader.replace(
         "#include <common>",
@@ -1274,20 +1255,28 @@ class Planet {
         "#include <begin_vertex>\nvTriObjPos = position;",
       );
 
+      // Arc-length equirectangular mapping gives square pixels everywhere.
+      // Near poles (sinPhi→0) theta compresses, so blend to XZ planar there.
       shader.fragmentShader = shader.fragmentShader.replace(
         "#include <common>",
         `#include <common>
         varying vec3 vTriObjPos;
         uniform sampler2D triNoiseRoughMap;
-        uniform float triNoiseScale;
-        uniform vec3 noiseTanE;
-        uniform vec3 noiseTanN;`,
+        uniform float triNoiseScale;`,
       );
       shader.fragmentShader = shader.fragmentShader.replace(
         "#include <roughnessmap_fragment>",
         `float roughnessFactor = roughness;
         {
-          vec2 uv = vec2(dot(vTriObjPos, noiseTanE), dot(vTriObjPos, noiseTanN)) * triNoiseScale;
+          vec3 n = normalize(vTriObjPos);
+          float r = length(vTriObjPos);
+          float sinPhi = sqrt(1.0 - n.y * n.y);
+          float theta = atan(n.z, n.x);
+          float phi = acos(clamp(n.y, -1.0, 1.0));
+          vec2 uvEq = vec2(theta * sinPhi * r, phi * r);
+          vec2 uvPl = vTriObjPos.xz;
+          float blend = smoothstep(0.0, 0.3, sinPhi);
+          vec2 uv = mix(uvPl, uvEq, blend) * triNoiseScale;
           roughnessFactor *= texture2D(triNoiseRoughMap, uv).g;
         }`,
       );
@@ -2431,9 +2420,7 @@ class Planet {
         metalness: 0.02,
         side: THREE.FrontSide,
       });
-      const cp = this._tiles[tileIndex].centerPoint;
-      const center = new THREE.Vector3(parseFloat(cp.x), parseFloat(cp.y), parseFloat(cp.z));
-      this._patchTriplanarNoise(mesh.material, center);
+      this._patchTriplanarNoise(mesh.material);
       const isElevated = this.terrainElevation &&
         this.terrainElevation.getElevationAtTileIndex(tileIndex) > 0;
       if (!isElevated) {
@@ -2720,9 +2707,7 @@ class Planet {
               side: THREE.FrontSide,
             });
           }
-          const cp = this._tiles[tileIndex].centerPoint;
-          const center = new THREE.Vector3(parseFloat(cp.x), parseFloat(cp.y), parseFloat(cp.z));
-          this._patchTriplanarNoise(mesh.material, center);
+          this._patchTriplanarNoise(mesh.material);
           if (!isElevated) {
             this._patchIgnoreSpotLights(mesh.material);
           }
@@ -3058,9 +3043,7 @@ class Planet {
           side: THREE.FrontSide,
         });
       }
-      const _cp = tile.centerPoint;
-      const tileCenter = new THREE.Vector3(parseFloat(_cp.x), parseFloat(_cp.y), parseFloat(_cp.z));
-      this._patchTriplanarNoise(material, tileCenter);
+      this._patchTriplanarNoise(material);
       if (!isElevated) {
         this._patchIgnoreSpotLights(material);
       }
@@ -3632,7 +3615,6 @@ class Planet {
       normalMap: null,
       side: THREE.FrontSide,
     });
-    this._patchTriplanarNoise(mat);
     this._patchIgnoreSpotLights(mat);
     return mat;
   }
