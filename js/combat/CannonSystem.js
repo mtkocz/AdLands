@@ -471,7 +471,7 @@ class CannonSystem {
       opacity: 1.0,
       side: THREE.DoubleSide,
       depthWrite: false,
-      roughness: 0.25,
+      roughness: 0.3125,
       metalness: 0.0,
     });
 

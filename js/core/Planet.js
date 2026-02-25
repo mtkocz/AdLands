@@ -1260,13 +1260,14 @@ class Planet {
         "#include <roughnessmap_fragment>",
         `float roughnessFactor = roughness;
         {
-          float r = length(vTriObjPos);
-          vec3 n = vTriObjPos / r;
-          float theta = atan(n.z, n.x);
-          float phi = acos(clamp(n.y, -1.0, 1.0));
-          float sinPhi = sqrt(1.0 - n.y * n.y);
-          vec2 uv = vec2(theta * sinPhi, phi) * triNoiseScale * r;
-          roughnessFactor *= texture2D(triNoiseRoughMap, uv).g;
+          vec3 an = abs(normalize(vTriObjPos));
+          vec3 bl = an * an * an;
+          bl /= bl.x + bl.y + bl.z;
+          vec3 sp = vTriObjPos * triNoiseScale;
+          float rYZ = texture2D(triNoiseRoughMap, sp.yz).g;
+          float rXZ = texture2D(triNoiseRoughMap, sp.xz).g;
+          float rXY = texture2D(triNoiseRoughMap, sp.xy).g;
+          roughnessFactor *= rYZ * bl.x + rXZ * bl.y + rXY * bl.z;
         }`,
       );
     };
