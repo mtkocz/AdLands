@@ -3575,10 +3575,9 @@ class Planet {
       finalTexture.wrapT = texture.wrapT;
     }
 
-    const mat = new THREE.MeshPhongMaterial({
+    const mat = new THREE.MeshLambertMaterial({
       map: finalTexture,
       side: THREE.FrontSide,
-      shininess: 0,
     });
     this._patchIgnoreSpotLights(mat);
     return mat;
