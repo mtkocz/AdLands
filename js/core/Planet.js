@@ -737,24 +737,6 @@ class Planet {
     return texture;
   }
 
-  /**
-   * Compute sphere-surface normals for a geometry (normalized position).
-   * Adjacent tiles sharing boundary vertices get identical normals,
-   * eliminating dark seams with smooth shading.
-   */
-  static _computeSphereNormals(geometry) {
-    const pos = geometry.attributes.position.array;
-    const normals = new Float32Array(pos.length);
-    for (let i = 0; i < pos.length; i += 3) {
-      const x = pos[i], y = pos[i + 1], z = pos[i + 2];
-      const len = Math.sqrt(x * x + y * y + z * z);
-      normals[i] = x / len;
-      normals[i + 1] = y / len;
-      normals[i + 2] = z / len;
-    }
-    geometry.setAttribute("normal", new THREE.Float32BufferAttribute(normals, 3));
-  }
-
   _createTileMeshes(tiles) {
     tiles.forEach((tile, index) => {
       if (this.polarTileIndices.has(index)) return;
@@ -823,7 +805,7 @@ class Planet {
       );
       geometry.setAttribute("uv", new THREE.Float32BufferAttribute(uvs, 2));
       geometry.setIndex(indices);
-      Planet._computeSphereNormals(geometry);
+      geometry.computeVertexNormals();
 
       const clusterId = this.tileClusterMap.get(index);
 
@@ -1083,10 +1065,9 @@ class Planet {
       const mergedGeom = new THREE.BufferGeometry();
       mergedGeom.setAttribute("position", new THREE.Float32BufferAttribute(allPositions, 3));
       if (allUvs.length > 0) mergedGeom.setAttribute("uv", new THREE.Float32BufferAttribute(allUvs, 2));
+      if (allNormals.length > 0) mergedGeom.setAttribute("normal", new THREE.Float32BufferAttribute(allNormals, 3));
       if (allColors.length > 0) mergedGeom.setAttribute("color", new THREE.Float32BufferAttribute(allColors, 3));
       mergedGeom.setIndex(allIndices);
-      // Use sphere normals so adjacent tiles share identical boundary normals
-      Planet._computeSphereNormals(mergedGeom);
 
       // Create material matching the tile group
       let material;
@@ -2995,7 +2976,7 @@ class Planet {
       );
       geometry.setAttribute("uv", new THREE.Float32BufferAttribute(uvs, 2));
       geometry.setIndex(indices);
-      Planet._computeSphereNormals(geometry);
+      geometry.computeVertexNormals();
 
       // Restore correct material based on elevation
       let material;
@@ -3215,7 +3196,7 @@ class Planet {
       );
       geometry.setAttribute("uv", new THREE.Float32BufferAttribute(uvs, 2));
       geometry.setIndex(indices);
-      Planet._computeSphereNormals(geometry);
+      geometry.computeVertexNormals();
 
       const newMesh = new THREE.Mesh(geometry, oldMaterial);
       newMesh.userData = oldUserData;
@@ -4943,7 +4924,7 @@ class Planet {
       new THREE.Float32BufferAttribute(positions, 3),
     );
     geometry.setIndex(indices);
-    Planet._computeSphereNormals(geometry);
+    geometry.computeVertexNormals();
 
     // Lighting-aware color overlay for occupied territory
     // Boosts visibility on bright (sun-lit) areas

@@ -201,11 +201,23 @@ class Environment {
     this.sun = sun;
     this.scene.add(sun);
 
-    // Fill light - subtle indirect illumination on the night side
-    const fillLight = new THREE.DirectionalLight(0x6b8e99, 0.1);
+    // Fill light - opposite sun, casts softer shadows onto terrain
+    const fillLight = new THREE.DirectionalLight(0x6b8e99, 0.75);
     fillLight.position.set(-960, 0, 0);
+    fillLight.castShadow = true;
+    fillLight.shadow.mapSize.width = 2048;
+    fillLight.shadow.mapSize.height = 2048;
+    fillLight.shadow.camera.near = 0.5;
+    fillLight.shadow.camera.far = 2000;
+    fillLight.shadow.camera.left = -200;
+    fillLight.shadow.camera.right = 200;
+    fillLight.shadow.camera.top = 200;
+    fillLight.shadow.camera.bottom = -200;
+    fillLight.shadow.bias = -0.0002;
+    fillLight.shadow.normalBias = 0.05;
     this.fillLight = fillLight;
     this.scene.add(fillLight);
+    this.scene.add(fillLight.target);
   }
 
   /**
@@ -222,7 +234,7 @@ class Environment {
       fill: {
         color: new THREE.Color(0x6b8e99),
         direction: new THREE.Vector3(-1, 0, 0),
-        intensity: 0.1,
+        intensity: 0.75,
       },
       ambient: {
         color: new THREE.Color(0x3366aa),
