@@ -1357,6 +1357,9 @@ class Planet {
       this._noiseOverlayMesh = null;
     }
 
+    // Disabled — the per-tile overlay geometry creates visible gaps at hex boundaries
+    return;
+
     // Use the shared diffuse noise texture (created in _createNoiseTextures)
     const texture = this._noiseDiffuseMap;
 
