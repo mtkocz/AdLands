@@ -195,7 +195,13 @@ class GameRoom {
     this.sponsorHoldTimers = new Map(); // sponsorId → { owner, capturedAt, holdDuration }
 
     if (this.sponsorStore) {
-      this.sponsors = this.sponsorStore.getAll().filter(s => s.active !== false && !s.paused);
+      this.sponsors = this.sponsorStore.getAll().filter(s => {
+        if (s.paused) return false;
+        if (s.active !== false) return true;
+        // Include pending inquiry hex territories
+        if (s.ownerType === "inquiry" && s.cluster?.tileIndices?.length > 0) return true;
+        return false;
+      });
       this._applySponsorClusters(worldResult);
       // Rebuild blocked grid now that sponsor tiles have been de-elevated
       this.worldGen.buildBlockedGrid(this.terrain);
@@ -486,8 +492,13 @@ class GameRoom {
     this.clusterSponsorMap.clear();
     this.sponsorHoldTimers.clear();
 
-    // 3. Re-read and re-apply sponsors (exclude paused)
-    this.sponsors = this.sponsorStore.getAll().filter(s => s.active !== false && !s.paused);
+    // 3. Re-read and re-apply sponsors (exclude paused, include pending inquiries)
+    this.sponsors = this.sponsorStore.getAll().filter(s => {
+      if (s.paused) return false;
+      if (s.active !== false) return true;
+      if (s.ownerType === "inquiry" && s.cluster?.tileIndices?.length > 0) return true;
+      return false;
+    });
     this._applySponsorClusters(wr);
     // Rebuild blocked grid now that sponsor tiles have been de-elevated
     this.worldGen.buildBlockedGrid(this.terrain);

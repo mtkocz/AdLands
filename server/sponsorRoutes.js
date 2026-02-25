@@ -8,8 +8,16 @@ const { Router } = require("express");
 const crypto = require("crypto");
 const fsp = require("fs").promises;
 const path = require("path");
-let applyPixelArtFilter;
-try { applyPixelArtFilter = require("./pixelArtFilter").applyPixelArtFilter; } catch (e) { /* optional — needs sharp */ }
+let sharp;
+try { sharp = require("sharp"); } catch (e) { /* optional — sharp not installed */ }
+
+/** Resize image to 512px short side (high-res source for client-side pixel art filter). */
+async function resizeHighRes(inputBuffer) {
+  return sharp(inputBuffer)
+    .resize(512, 512, { fit: "inside", withoutEnlargement: true })
+    .png({ compressionLevel: 9 })
+    .toBuffer();
+}
 const { getFirestore } = require("./firebaseAdmin");
 const { sendViaResend } = require("./inquiryRoutes");
 
@@ -50,11 +58,11 @@ async function extractSponsorImage(sponsor, texDir) {
       const ext = match[1] === "jpeg" ? "jpg" : match[1];
       const filePath = path.join(texDir, `${sponsor.id}.${ext}`);
       const raw = Buffer.from(match[2], "base64");
-      if (applyPixelArtFilter) {
-        // Bake pixel art filter: downscale to 128px, 8 colors, Bayer dithering
-        const baked = await applyPixelArtFilter(raw);
+      if (sharp) {
+        // Resize to 512px short side — client applies adaptive pixel art filter
+        const resized = await resizeHighRes(raw);
         const pngPath = path.join(texDir, `${sponsor.id}.png`);
-        await fsp.writeFile(pngPath, baked);
+        await fsp.writeFile(pngPath, resized);
         urls.patternUrl = await withMtime(`/sponsor-textures/${sponsor.id}.png`, pngPath);
       } else {
         await fsp.writeFile(filePath, raw);
@@ -66,15 +74,15 @@ async function extractSponsorImage(sponsor, texDir) {
     const existing = await findExistingFile(texDir, sponsor.id + ".");
     if (existing && !existing.includes("_logo")) {
       const filePath = path.join(texDir, existing);
-      // Re-bake oversized files through pixel art filter on startup
-      if (applyPixelArtFilter) {
+      // Resize oversized files to 512px on startup — client applies pixel art filter
+      if (sharp) {
         try {
           const stat = await fsp.stat(filePath);
           if (stat.size > 5000) {
             const raw = await fsp.readFile(filePath);
-            const baked = await applyPixelArtFilter(raw);
+            const resized = await resizeHighRes(raw);
             const pngPath = path.join(texDir, `${sponsor.id}.png`);
-            await fsp.writeFile(pngPath, baked);
+            await fsp.writeFile(pngPath, resized);
             urls.patternUrl = await withMtime(`/sponsor-textures/${sponsor.id}.png`, pngPath);
           } else {
             urls.patternUrl = await withMtime(`/sponsor-textures/${existing}`, filePath);
@@ -92,9 +100,8 @@ async function extractSponsorImage(sponsor, texDir) {
     if (match) {
       const raw = Buffer.from(match[2], "base64");
       const pngPath = path.join(texDir, `${sponsor.id}_logo.png`);
-      if (applyPixelArtFilter) {
+      if (sharp) {
         // Resize logo to 128px (displayed at 64px CSS / 128px retina)
-        const sharp = require("sharp");
         const optimized = await sharp(raw)
           .resize(128, 128, { fit: "inside", withoutEnlargement: true })
           .png({ compressionLevel: 9 })

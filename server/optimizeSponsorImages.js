@@ -7,7 +7,7 @@
  */
 const fs = require('fs');
 const path = require('path');
-const { applyPixelArtFilter } = require('./pixelArtFilter');
+const sharp = require('sharp');
 
 const TEXTURE_DIR = path.join(__dirname, '..', 'sponsor-textures');
 
@@ -39,15 +39,17 @@ async function optimize() {
 
     if (isLogo) {
       // Logos: resize to 128px (displayed at 64px CSS / 128px retina), no pixel art filter
-      const sharp = require('sharp');
       optimized = await sharp(inputBuffer)
         .resize(128, 128, { fit: 'inside', withoutEnlargement: true })
         .png({ compressionLevel: 9 })
         .toBuffer();
       logoCount++;
     } else {
-      // Pattern images: apply full pixel art filter (128px, 8 colors, dithering)
-      optimized = await applyPixelArtFilter(inputBuffer);
+      // Pattern images: resize to 512px short side — client applies adaptive pixel art filter
+      optimized = await sharp(inputBuffer)
+        .resize(512, 512, { fit: 'inside', withoutEnlargement: true })
+        .png({ compressionLevel: 9 })
+        .toBuffer();
       patternCount++;
     }
 

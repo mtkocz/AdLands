@@ -4477,7 +4477,7 @@ class Planet {
     );
 
     const material = new THREE.LineBasicMaterial({
-      color: 0x555555,
+      color: 0x000000,
       depthTest: true,
       depthWrite: false,
     });
