@@ -3187,13 +3187,6 @@ class GameRoom {
         counts: counts ? { ...counts } : { rust: 0, cobalt: 0, viridian: 0 },
       };
 
-      // DEBUG: Log when multiple factions present (remove after fix verified)
-      const c = progressData.counts;
-      const factionsPresentCount = (c.rust > 0 ? 1 : 0) + (c.cobalt > 0 ? 1 : 0) + (c.viridian > 0 ? 1 : 0);
-      if (factionsPresentCount > 1) {
-        console.log(`[capture-progress] cluster=${clusterId} counts: R=${c.rust} C=${c.cobalt} V=${c.viridian} → ${playerIds.length} player(s)`);
-      }
-
       for (const pid of playerIds) {
         this.io.to(pid).emit("capture-progress", progressData);
       }

@@ -186,6 +186,10 @@ class SkyBeams {
         `;
 
     // Create a beam for each portal
+    if (typeof this.planet.getAllPortalCenters !== 'function') {
+      console.warn('[SkyBeams] planet.getAllPortalCenters not available — skipping beam creation');
+      return;
+    }
     const portalCenters = this.planet.getAllPortalCenters();
 
     for (const portalIndex of portalCenters) {

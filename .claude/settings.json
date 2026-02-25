@@ -8,7 +8,10 @@
       "WebFetch(domain:raw.githubusercontent.com)",
       "Bash(git status:*)",
       "Bash(git -C /Users/mtkocz/Library/CloudStorage/Dropbox-Personal/ROBOTA/2026/AdLands diff HEAD -- js/core/Planet.js)",
-      "Bash(git -C /Users/mtkocz/Library/CloudStorage/Dropbox-Personal/ROBOTA/2026/AdLands show:*)"
+      "Bash(git -C /Users/mtkocz/Library/CloudStorage/Dropbox-Personal/ROBOTA/2026/AdLands show:*)",
+      "Bash(BASH_SILENCE_DEPRECATION_WARNING=1 /bin/bash -c 'git diff --stat 2>&1':*)",
+      "Bash(curl:*)",
+      "Bash(md5:*)"
     ]
   }
 }
