@@ -3563,7 +3563,6 @@
   const uiElements = [
     document.getElementById("left-panel-stack"),
     document.getElementById("chat-window"),
-    document.getElementById("territory-intel-popup"),
     document.getElementById("territory-ring-container"),
     document.querySelector("#player-tags-container"),
     document.getElementById("crypto-hud-bar"),

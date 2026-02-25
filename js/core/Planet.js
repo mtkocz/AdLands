@@ -3575,8 +3575,10 @@ class Planet {
       finalTexture.wrapT = texture.wrapT;
     }
 
-    const mat = new THREE.MeshLambertMaterial({
+    const mat = new THREE.MeshStandardMaterial({
       map: finalTexture,
+      roughness: 0.95,
+      metalness: 0.02,
       side: THREE.FrontSide,
     });
     this._patchIgnoreSpotLights(mat);
@@ -4884,14 +4886,35 @@ class Planet {
 
       const pos = mesh.geometry.attributes.position.array;
       const idx = mesh.geometry.index ? mesh.geometry.index.array : null;
+      const vertCount = pos.length / 3;
 
-      // Add vertices with slight offset outward from planet center
+      // Compute tile centroid for edge expansion
+      let cx = 0, cy = 0, cz = 0;
       for (let i = 0; i < pos.length; i += 3) {
-        const x = pos[i],
+        cx += pos[i]; cy += pos[i + 1]; cz += pos[i + 2];
+      }
+      cx /= vertCount; cy /= vertCount; cz /= vertCount;
+
+      // Add vertices with radial offset + slight expansion from tile centroid
+      // Expansion prevents sub-pixel gaps between adjacent tile overlays
+      const expand = 0.04;
+      for (let i = 0; i < pos.length; i += 3) {
+        let x = pos[i],
           y = pos[i + 1],
           z = pos[i + 2];
+
+        // Push vertex slightly away from tile centroid to overlap neighbors
+        const dx = x - cx, dy = y - cy, dz = z - cz;
+        const edgeDist = Math.sqrt(dx * dx + dy * dy + dz * dz);
+        if (edgeDist > 0) {
+          x += (dx / edgeDist) * expand;
+          y += (dy / edgeDist) * expand;
+          z += (dz / edgeDist) * expand;
+        }
+
+        // Offset outward from planet center to prevent z-fighting
         const len = Math.sqrt(x * x + y * y + z * z);
-        const offset = 0.03; // Offset to prevent z-fighting
+        const offset = 0.03;
         positions.push(
           x + (x / len) * offset,
           y + (y / len) * offset,
@@ -4905,13 +4928,12 @@ class Planet {
           indices.push(idx[i] + vertexOffset);
         }
       } else {
-        const vertCount = pos.length / 3;
         for (let i = 1; i < vertCount - 1; i++) {
           indices.push(vertexOffset, vertexOffset + i, vertexOffset + i + 1);
         }
       }
 
-      vertexOffset += pos.length / 3;
+      vertexOffset += vertCount;
     });
 
     if (positions.length === 0) return;

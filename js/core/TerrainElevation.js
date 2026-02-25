@@ -751,13 +751,14 @@ class TerrainElevation {
       t.lowA.set(v1x * lowScale, v1y * lowScale, v1z * lowScale);
       t.lowB.set(v2x * lowScale, v2y * lowScale, v2z * lowScale);
 
-      // Normal: cross(edgeDir, radialDir), oriented away from higher tile
+      // Wall normal: cross(radialDir, edgeDir) always points outward
+      // (away from higher tile) because hexasphere boundaries are CCW from outside.
       t.edgeDir.subVectors(t.highB, t.highA).normalize();
       t.midpoint.addVectors(t.highA, t.highB).multiplyScalar(0.5);
       t.radialDir.copy(t.midpoint).normalize();
-      t.wallNormal.crossVectors(t.edgeDir, t.radialDir).normalize();
+      t.wallNormal.crossVectors(t.radialDir, t.edgeDir).normalize();
 
-      // Orient outward (away from higher tile center)
+      // Direction toward higher tile center (used for apron placement)
       const cp = tiles[high.tileIdx].centerPoint;
       t.tileCenterDir
         .set(
@@ -789,9 +790,7 @@ class TerrainElevation {
         0,     vTile,  // lowA
       );
 
-      // DoubleSide material auto-flips the shader normal for back faces,
-      // so standard winding + unmodified cross-product normal is correct
-      // from both viewing directions. No conditional flip needed.
+      // Standard winding: front face matches the outward normal direction.
       indices.push(
         baseIndex, baseIndex + 1, baseIndex + 2,
         baseIndex, baseIndex + 2, baseIndex + 3,
