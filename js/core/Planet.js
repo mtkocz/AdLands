@@ -60,6 +60,7 @@ class Planet {
     this.sponsorHoldTimers = new Map(); // sponsorId → { owner, capturedAt, holdDuration }
     this.sponsorTileIndices = new Set(); // All tiles belonging to any sponsor cluster
     this._sponsorTextureCache = new Map(); // patternImage dataUrl → THREE.Texture
+    this.sponsorOutlines = new Map(); // sponsorId → THREE.LineSegments
 
     // Historical occupancy tracking for pie charts
     this.clusterOccupancyHistory = new Map(); // clusterId → { rust: ms, cobalt: ms, viridian: ms, unclaimed: ms }
@@ -808,6 +809,8 @@ class Planet {
       geometry.computeVertexNormals();
 
       const clusterId = this.tileClusterMap.get(index);
+      const _cp = tile.centerPoint;
+      const tileCenter = new THREE.Vector3(parseFloat(_cp.x), parseFloat(_cp.y), parseFloat(_cp.z));
 
       let material;
 
@@ -918,7 +921,7 @@ class Planet {
           metalness: 0.02,
           side: THREE.FrontSide,
         });
-        this._patchTriplanarNoise(material);
+        this._patchTriplanarNoise(material, tileCenter);
         this._patchIgnoreSpotLights(material);
       } else {
         const pattern = this.clusterPatterns.get(clusterId);
@@ -946,7 +949,7 @@ class Planet {
             metalness: 0.02,
             side: THREE.FrontSide,
           });
-          this._patchTriplanarNoise(material);
+          this._patchTriplanarNoise(material, tileCenter);
         } else {
           if (!this.clusterTextures.has(clusterId)) {
             this.clusterTextures.set(
@@ -961,7 +964,7 @@ class Planet {
             metalness: pattern.metalness,
             side: THREE.FrontSide,
           });
-          this._patchTriplanarNoise(material);
+          this._patchTriplanarNoise(material, tileCenter);
           this._patchIgnoreSpotLights(material);
         }
       }
@@ -1092,7 +1095,14 @@ class Planet {
           side: THREE.FrontSide,
         });
       }
-      this._patchTriplanarNoise(material);
+      // Compute cluster centroid for noise tangent basis
+      let cx = 0, cy = 0, cz = 0;
+      for (const m of tiles) {
+        const cp = this._tiles[m.userData.tileIndex].centerPoint;
+        cx += parseFloat(cp.x); cy += parseFloat(cp.y); cz += parseFloat(cp.z);
+      }
+      const clusterCenter = new THREE.Vector3(cx / tiles.length, cy / tiles.length, cz / tiles.length);
+      this._patchTriplanarNoise(material, clusterCenter);
       if (materialType !== "elevated") {
         this._patchIgnoreSpotLights(material);
       }
@@ -1233,12 +1243,23 @@ class Planet {
    * Uses the same world-space scale as the noise overlay so both maps align exactly.
    * @param {THREE.MeshStandardMaterial} material
    */
-  _patchTriplanarNoise(material) {
+  _patchTriplanarNoise(material, center) {
     const noiseRoughMap = this._noiseRoughnessMap;
     const noiseScale = this._noiseScale;
+
+    // Compute tangent basis from center (same logic as _calculateClusterTangentBasis)
+    const normal = center.clone().normalize();
+    const up = new THREE.Vector3(0, 1, 0);
+    let tanE = new THREE.Vector3().crossVectors(up, normal);
+    if (tanE.lengthSq() < 0.001) tanE.set(1, 0, 0);
+    tanE.normalize();
+    const tanN = new THREE.Vector3().crossVectors(normal, tanE).normalize();
+
     material.onBeforeCompile = (shader) => {
       shader.uniforms.triNoiseRoughMap = { value: noiseRoughMap };
       shader.uniforms.triNoiseScale = { value: noiseScale };
+      shader.uniforms.noiseTanE = { value: tanE };
+      shader.uniforms.noiseTanN = { value: tanN };
 
       shader.vertexShader = shader.vertexShader.replace(
         "#include <common>",
@@ -1254,19 +1275,15 @@ class Planet {
         `#include <common>
         varying vec3 vTriObjPos;
         uniform sampler2D triNoiseRoughMap;
-        uniform float triNoiseScale;`,
+        uniform float triNoiseScale;
+        uniform vec3 noiseTanE;
+        uniform vec3 noiseTanN;`,
       );
       shader.fragmentShader = shader.fragmentShader.replace(
         "#include <roughnessmap_fragment>",
         `float roughnessFactor = roughness;
         {
-          vec3 nrm = normalize(vTriObjPos);
-          vec3 up = vec3(0.0, 1.0, 0.0);
-          vec3 tanE = cross(up, nrm);
-          if (dot(tanE, tanE) < 0.001) tanE = vec3(1.0, 0.0, 0.0);
-          tanE = normalize(tanE);
-          vec3 tanN = normalize(cross(nrm, tanE));
-          vec2 uv = vec2(dot(vTriObjPos, tanE), dot(vTriObjPos, tanN)) * triNoiseScale;
+          vec2 uv = vec2(dot(vTriObjPos, noiseTanE), dot(vTriObjPos, noiseTanN)) * triNoiseScale;
           roughnessFactor *= texture2D(triNoiseRoughMap, uv).g;
         }`,
       );
@@ -2410,7 +2427,9 @@ class Planet {
         metalness: 0.02,
         side: THREE.FrontSide,
       });
-      this._patchTriplanarNoise(mesh.material);
+      const cp = this._tiles[tileIndex].centerPoint;
+      const center = new THREE.Vector3(parseFloat(cp.x), parseFloat(cp.y), parseFloat(cp.z));
+      this._patchTriplanarNoise(mesh.material, center);
       const isElevated = this.terrainElevation &&
         this.terrainElevation.getElevationAtTileIndex(tileIndex) > 0;
       if (!isElevated) {
@@ -2697,7 +2716,9 @@ class Planet {
               side: THREE.FrontSide,
             });
           }
-          this._patchTriplanarNoise(mesh.material);
+          const cp = this._tiles[tileIndex].centerPoint;
+          const center = new THREE.Vector3(parseFloat(cp.x), parseFloat(cp.y), parseFloat(cp.z));
+          this._patchTriplanarNoise(mesh.material, center);
           if (!isElevated) {
             this._patchIgnoreSpotLights(mesh.material);
           }
@@ -3027,7 +3048,9 @@ class Planet {
           side: THREE.FrontSide,
         });
       }
-      this._patchTriplanarNoise(material);
+      const _cp = tile.centerPoint;
+      const tileCenter = new THREE.Vector3(parseFloat(_cp.x), parseFloat(_cp.y), parseFloat(_cp.z));
+      this._patchTriplanarNoise(material, tileCenter);
       if (!isElevated) {
         this._patchIgnoreSpotLights(material);
       }
@@ -4366,6 +4389,116 @@ class Planet {
     });
 
     return maxDist;
+  }
+
+  // ========================================================================
+  // SPONSOR OUTLINE SYSTEM - 1px screen-space outlines for sponsored territories
+  // ========================================================================
+
+  /**
+   * Build and add a 1px outline around a sponsor cluster's boundary edges.
+   * Uses THREE.LineSegments which WebGL renders at exactly 1px screen-space.
+   * @param {string} sponsorId
+   */
+  _buildSponsorOutline(sponsorId) {
+    // Remove existing outline for this sponsor if any
+    this._removeSponsorOutline(sponsorId);
+
+    const entry = this.sponsorClusters.get(sponsorId);
+    if (!entry) return;
+
+    const tileIndices = entry.tileIndices;
+    const tileSet = new Set(tileIndices);
+    const zOffset = 0.015; // Slightly above border glow (0.012)
+
+    const positions = [];
+
+    for (const tileIdx of tileIndices) {
+      const tile = this._tiles[tileIdx];
+      if (!tile) continue;
+
+      const boundary = tile.boundary;
+
+      // Terrain elevation scaling
+      const es = this.terrainElevation
+        ? this.terrainElevation.getExtrusion(
+            this.terrainElevation.getElevationAtTileIndex(tileIdx),
+          )
+        : 1;
+
+      for (let i = 0; i < boundary.length; i++) {
+        const v1 = boundary[i];
+        const v2 = boundary[(i + 1) % boundary.length];
+
+        // Check if this edge is on the sponsor boundary
+        if (this._isEdgeFactionBoundary(tileIdx, v1, v2, tileSet)) {
+          // Apply elevation and radial z-offset
+          const p1 = new THREE.Vector3(
+            parseFloat(v1.x) * es,
+            parseFloat(v1.y) * es,
+            parseFloat(v1.z) * es,
+          );
+          const p2 = new THREE.Vector3(
+            parseFloat(v2.x) * es,
+            parseFloat(v2.y) * es,
+            parseFloat(v2.z) * es,
+          );
+
+          // Offset outward along surface normal to prevent z-fighting
+          const n1 = p1.clone().normalize().multiplyScalar(zOffset);
+          const n2 = p2.clone().normalize().multiplyScalar(zOffset);
+          p1.add(n1);
+          p2.add(n2);
+
+          // Line segment pair
+          positions.push(p1.x, p1.y, p1.z, p2.x, p2.y, p2.z);
+        }
+      }
+    }
+
+    if (positions.length === 0) return;
+
+    const geometry = new THREE.BufferGeometry();
+    geometry.setAttribute(
+      "position",
+      new THREE.Float32BufferAttribute(positions, 3),
+    );
+
+    const material = new THREE.LineBasicMaterial({
+      color: 0x555555,
+      depthTest: true,
+      depthWrite: false,
+    });
+
+    const lineSegments = new THREE.LineSegments(geometry, material);
+    lineSegments.renderOrder = 3; // Above border glow (renderOrder 2)
+    this.scene.add(lineSegments);
+    this.sponsorOutlines.set(sponsorId, lineSegments);
+  }
+
+  /**
+   * Remove and dispose the outline for a sponsor cluster.
+   * @param {string} sponsorId
+   */
+  _removeSponsorOutline(sponsorId) {
+    const outline = this.sponsorOutlines.get(sponsorId);
+    if (!outline) return;
+    this.scene.remove(outline);
+    outline.geometry.dispose();
+    outline.material.dispose();
+    this.sponsorOutlines.delete(sponsorId);
+  }
+
+  /**
+   * Remove and dispose all sponsor outlines.
+   */
+  _removeAllSponsorOutlines() {
+    for (const [sponsorId, outline] of this.sponsorOutlines) {
+      this.scene.remove(outline);
+      outline.geometry.dispose();
+      outline.material.dispose();
+    }
+    this.sponsorOutlines.clear();
   }
 
   // ========================================================================
