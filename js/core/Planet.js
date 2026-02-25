@@ -755,19 +755,19 @@ class Planet {
 
       const isElevated = extrusionScale > 1;
 
-      // For elevated tiles, build tangent-plane basis for distortion-free UVs
-      let tanU, tanV;
-      if (isElevated) {
-        const cp = tile.centerPoint;
-        const normal = new THREE.Vector3(
-          parseFloat(cp.x), parseFloat(cp.y), parseFloat(cp.z),
-        ).normalize();
-        const up = Math.abs(normal.y) < 0.99
-          ? new THREE.Vector3(0, 1, 0)
-          : new THREE.Vector3(1, 0, 0);
-        tanU = new THREE.Vector3().crossVectors(up, normal).normalize();
-        tanV = new THREE.Vector3().crossVectors(normal, tanU);
-      }
+      // Per-tile tangent-plane basis for distortion-free UVs
+      const cp = tile.centerPoint;
+      const _nrm = new THREE.Vector3(
+        parseFloat(cp.x), parseFloat(cp.y), parseFloat(cp.z),
+      ).normalize();
+      const _up = Math.abs(_nrm.y) < 0.99
+        ? new THREE.Vector3(0, 1, 0)
+        : new THREE.Vector3(1, 0, 0);
+      const tanU = new THREE.Vector3().crossVectors(_up, _nrm).normalize();
+      const tanV = new THREE.Vector3().crossVectors(_nrm, tanU);
+
+      const ns = this._noiseScale;
+      const noiseUvs = [];
 
       for (let i = 0; i < n; i++) {
         const origX = parseFloat(boundary[i].x);
@@ -779,6 +779,12 @@ class Planet {
         const vy = origY * extrusionScale;
         const vz = origZ * extrusionScale;
         vertices.push(vx, vy, vz);
+
+        // Noise UVs: tangent-plane projection (square pixels per tile)
+        noiseUvs.push(
+          (origX * tanU.x + origY * tanU.y + origZ * tanU.z) * ns,
+          (origX * tanV.x + origY * tanV.y + origZ * tanV.z) * ns,
+        );
 
         if (isElevated) {
           // Tangent-plane projection scaled to match cliff wall texture density
@@ -805,6 +811,7 @@ class Planet {
         new THREE.Float32BufferAttribute(vertices, 3),
       );
       geometry.setAttribute("uv", new THREE.Float32BufferAttribute(uvs, 2));
+      geometry.setAttribute("aNoiseUV", new THREE.Float32BufferAttribute(noiseUvs, 2));
       geometry.setIndex(indices);
       geometry.computeVertexNormals();
 
@@ -1026,6 +1033,7 @@ class Planet {
       // Collect geometry data
       const allPositions = [];
       const allUvs = [];
+      const allNoiseUvs = [];
       const allNormals = [];
       const allColors = [];
       const allIndices = [];
@@ -1037,6 +1045,7 @@ class Planet {
         const geom = mesh.geometry;
         const pos = geom.attributes.position.array;
         const uv = geom.attributes.uv ? geom.attributes.uv.array : null;
+        const nuv = geom.attributes.aNoiseUV ? geom.attributes.aNoiseUV.array : null;
         const norm = geom.attributes.normal ? geom.attributes.normal.array : null;
         const col = hasColors && geom.attributes.color ? geom.attributes.color.array : null;
         const idx = geom.index ? geom.index.array : null;
@@ -1046,6 +1055,7 @@ class Planet {
         // Copy vertex data
         for (let i = 0; i < pos.length; i++) allPositions.push(pos[i]);
         if (uv) for (let i = 0; i < uv.length; i++) allUvs.push(uv[i]);
+        if (nuv) for (let i = 0; i < nuv.length; i++) allNoiseUvs.push(nuv[i]);
         if (norm) for (let i = 0; i < norm.length; i++) allNormals.push(norm[i]);
         if (col) for (let i = 0; i < col.length; i++) allColors.push(col[i]);
 
@@ -1070,6 +1080,7 @@ class Planet {
       const mergedGeom = new THREE.BufferGeometry();
       mergedGeom.setAttribute("position", new THREE.Float32BufferAttribute(allPositions, 3));
       if (allUvs.length > 0) mergedGeom.setAttribute("uv", new THREE.Float32BufferAttribute(allUvs, 2));
+      if (allNoiseUvs.length > 0) mergedGeom.setAttribute("aNoiseUV", new THREE.Float32BufferAttribute(allNoiseUvs, 2));
       if (allNormals.length > 0) mergedGeom.setAttribute("normal", new THREE.Float32BufferAttribute(allNormals, 3));
       if (allColors.length > 0) mergedGeom.setAttribute("color", new THREE.Float32BufferAttribute(allColors, 3));
       mergedGeom.setIndex(allIndices);
@@ -1240,45 +1251,32 @@ class Planet {
    */
   _patchTriplanarNoise(material) {
     const noiseRoughMap = this._noiseRoughnessMap;
-    const noiseScale = this._noiseScale;
 
     material.onBeforeCompile = (shader) => {
       shader.uniforms.triNoiseRoughMap = { value: noiseRoughMap };
-      shader.uniforms.triNoiseScale = { value: noiseScale };
 
+      // Pass pre-computed per-tile tangent-plane noise UVs from aNoiseUV attribute
       shader.vertexShader = shader.vertexShader.replace(
         "#include <common>",
-        "#include <common>\nvarying vec3 vTriObjPos;",
+        `#include <common>
+        attribute vec2 aNoiseUV;
+        varying vec2 vNoiseUV;`,
       );
       shader.vertexShader = shader.vertexShader.replace(
         "#include <begin_vertex>",
-        "#include <begin_vertex>\nvTriObjPos = position;",
+        "#include <begin_vertex>\nvNoiseUV = aNoiseUV;",
       );
 
-      // Arc-length equirectangular mapping gives square pixels everywhere.
-      // Near poles (sinPhi→0) theta compresses, so blend to XZ planar there.
       shader.fragmentShader = shader.fragmentShader.replace(
         "#include <common>",
         `#include <common>
-        varying vec3 vTriObjPos;
-        uniform sampler2D triNoiseRoughMap;
-        uniform float triNoiseScale;`,
+        varying vec2 vNoiseUV;
+        uniform sampler2D triNoiseRoughMap;`,
       );
       shader.fragmentShader = shader.fragmentShader.replace(
         "#include <roughnessmap_fragment>",
         `float roughnessFactor = roughness;
-        {
-          vec3 n = normalize(vTriObjPos);
-          float r = length(vTriObjPos);
-          float sinPhi = sqrt(1.0 - n.y * n.y);
-          float theta = atan(n.z, n.x);
-          float phi = acos(clamp(n.y, -1.0, 1.0));
-          vec2 uvEq = vec2(theta * sinPhi * r, phi * r);
-          vec2 uvPl = vTriObjPos.xz;
-          float blend = smoothstep(0.0, 0.3, sinPhi);
-          vec2 uv = mix(uvPl, uvEq, blend) * triNoiseScale;
-          roughnessFactor *= texture2D(triNoiseRoughMap, uv).g;
-        }`,
+        roughnessFactor *= texture2D(triNoiseRoughMap, vNoiseUV).g;`,
       );
     };
   }
@@ -2939,6 +2937,7 @@ class Planet {
       const n = boundary.length;
       const vertices = [];
       const uvs = [];
+      const noiseUvs = [];
 
       const elevation = this.terrainElevation
         ? this.terrainElevation.getElevationAtTileIndex(tileIndex)
@@ -2948,25 +2947,30 @@ class Planet {
         : 1;
       const isElevated = extrusionScale > 1;
 
-      // Build tangent-plane basis for elevated tile UVs
-      let tanU, tanV;
-      if (isElevated) {
-        const cp = tile.centerPoint;
-        const normal = new THREE.Vector3(
-          parseFloat(cp.x), parseFloat(cp.y), parseFloat(cp.z),
-        ).normalize();
-        const up = Math.abs(normal.y) < 0.99
-          ? new THREE.Vector3(0, 1, 0)
-          : new THREE.Vector3(1, 0, 0);
-        tanU = new THREE.Vector3().crossVectors(up, normal).normalize();
-        tanV = new THREE.Vector3().crossVectors(normal, tanU);
-      }
+      // Per-tile tangent-plane basis for distortion-free UVs
+      const cp = tile.centerPoint;
+      const _nrm = new THREE.Vector3(
+        parseFloat(cp.x), parseFloat(cp.y), parseFloat(cp.z),
+      ).normalize();
+      const _up = Math.abs(_nrm.y) < 0.99
+        ? new THREE.Vector3(0, 1, 0)
+        : new THREE.Vector3(1, 0, 0);
+      const tanU = new THREE.Vector3().crossVectors(_up, _nrm).normalize();
+      const tanV = new THREE.Vector3().crossVectors(_nrm, tanU);
+
+      const ns = this._noiseScale;
 
       for (let i = 0; i < n; i++) {
         const origX = parseFloat(boundary[i].x);
         const origY = parseFloat(boundary[i].y);
         const origZ = parseFloat(boundary[i].z);
         vertices.push(origX * extrusionScale, origY * extrusionScale, origZ * extrusionScale);
+
+        // Noise UVs: tangent-plane projection (square pixels per tile)
+        noiseUvs.push(
+          (origX * tanU.x + origY * tanU.y + origZ * tanU.z) * ns,
+          (origX * tanV.x + origY * tanV.y + origZ * tanV.z) * ns,
+        );
 
         if (isElevated) {
           // Tangent-plane UVs for elevated rock textures
@@ -2993,6 +2997,7 @@ class Planet {
         new THREE.Float32BufferAttribute(vertices, 3),
       );
       geometry.setAttribute("uv", new THREE.Float32BufferAttribute(uvs, 2));
+      geometry.setAttribute("aNoiseUV", new THREE.Float32BufferAttribute(noiseUvs, 2));
       geometry.setIndex(indices);
       geometry.computeVertexNormals();
 
