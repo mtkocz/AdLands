@@ -464,13 +464,15 @@ class CannonSystem {
     // Generate a unique pixelated blob texture for this puddle
     const texture = this._generateOilPuddleTexture();
 
-    // Create dark oil material with pixelated texture
-    const material = new THREE.MeshBasicMaterial({
+    // Create dark oil material with pixelated texture (semi-glossy PBR)
+    const material = new THREE.MeshStandardMaterial({
       map: texture,
       transparent: true,
       opacity: 1.0,
       side: THREE.DoubleSide,
       depthWrite: false,
+      roughness: 0.25,
+      metalness: 0.0,
     });
 
     // Reuse shared plane geometry

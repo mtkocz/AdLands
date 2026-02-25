@@ -1264,7 +1264,8 @@ class Planet {
           vec3 n = vTriObjPos / r;
           float theta = atan(n.z, n.x);
           float phi = acos(clamp(n.y, -1.0, 1.0));
-          vec2 uv = vec2(theta, phi) * triNoiseScale * r;
+          float sinPhi = sqrt(1.0 - n.y * n.y);
+          vec2 uv = vec2(theta * sinPhi, phi) * triNoiseScale * r;
           roughnessFactor *= texture2D(triNoiseRoughMap, uv).g;
         }`,
       );
@@ -3577,8 +3578,8 @@ class Planet {
 
     const mat = new THREE.MeshStandardMaterial({
       map: finalTexture,
-      roughness: 0.95,
-      metalness: 0.02,
+      roughness: 1.0,
+      metalness: 0,
       side: THREE.FrontSide,
     });
     this._patchIgnoreSpotLights(mat);
