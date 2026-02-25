@@ -234,6 +234,13 @@ class GameRoom {
     // Server-authoritative bots on worker thread (population fills to 300, despawn as humans join)
     this.botBridge = new BotWorkerBridge(480, 22, 42, 73, this.players.size);
 
+    // Send sponsor cluster data to worker — the worker regenerates the world from seeds
+    // but doesn't have sponsor data, so all tiles map to background cluster 0. This gives
+    // the worker correct cluster grids so bots get proper cluster IDs for territory presence.
+    if (this.sponsors && this.sponsors.length > 0) {
+      this.botBridge.sendClusterData(this.worldGen, worldResult.clusterData);
+    }
+
     // ---- All-profile faction ranking cache ----
     // Stores ALL profiles from Firestore (online + offline) for true faction ranking.
     // Updated live as connected players' stats change.
@@ -484,6 +491,8 @@ class GameRoom {
     this._applySponsorClusters(wr);
     // Rebuild blocked grid now that sponsor tiles have been de-elevated
     this.worldGen.buildBlockedGrid(this.terrain);
+    // Sync updated cluster data to bot worker thread
+    this.botBridge.sendClusterData(this.worldGen, wr.clusterData);
 
     // 4. Rebuild world payload
     this._worldPayload = this._buildWorldPayload(wr);

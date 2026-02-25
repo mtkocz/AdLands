@@ -221,6 +221,24 @@ class BotWorkerBridge {
     };
   }
 
+  /**
+   * Send updated cluster data to the worker after sponsor clusters are applied.
+   * The worker regenerates the world from seeds but doesn't have sponsor data,
+   * so its cluster grid maps everything to background cluster 0. This sends
+   * the main thread's post-sponsor grids and cluster data so bots get correct
+   * cluster IDs (fixes territory ring presence dots and bot AI targeting).
+   */
+  sendClusterData(worldGen, clusterData) {
+    if (!this._worker) return;
+    this._worker.postMessage({
+      type: "update-cluster-data",
+      clusterGrid: worldGen._clusterGrid.slice(),
+      blockedGrid: worldGen._blockedGrid.slice(),
+      clusterData: clusterData.map(c => ({ id: c.id, tiles: c.tiles.slice() })),
+      tileClusterMap: Array.from(worldGen.tileClusterMap.entries()),
+    });
+  }
+
   // ========================
   // BROADCAST STATE
   // ========================

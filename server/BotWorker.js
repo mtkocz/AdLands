@@ -131,6 +131,46 @@ parentPort.on("message", (msg) => {
       break;
     }
 
+    case "update-cluster-data": {
+      // Main thread sends post-sponsor cluster grids and data.
+      // Without this, all tiles map to background cluster 0 because the worker
+      // regenerates the world from seeds without sponsor cluster assignments.
+      if (msg.clusterGrid) {
+        worldGen._clusterGrid = new Int16Array(msg.clusterGrid);
+      }
+      if (msg.blockedGrid) {
+        worldGen._blockedGrid = new Uint8Array(msg.blockedGrid);
+      }
+      if (msg.tileClusterMap) {
+        worldGen.tileClusterMap.clear();
+        for (const [tileIdx, clusterId] of msg.tileClusterMap) {
+          worldGen.tileClusterMap.set(tileIdx, clusterId);
+        }
+      }
+      if (msg.clusterData) {
+        worldGen.clusterData = msg.clusterData;
+      }
+      // Rebuild coordinator cluster centers with new sponsor clusters
+      for (const coord of Object.values(botManager.coordinators)) {
+        coord._clusterCenters.clear();
+        worldGen.clusterData.forEach((cluster) => {
+          coord._clusterCenters.set(cluster.id, coord._computeClusterCenter(cluster));
+        });
+      }
+      // Rebuild pathfinder cluster center tiles
+      if (botManager.pathfinder && botManager.pathfinder._clusterCenterTiles) {
+        botManager.pathfinder._clusterCenterTiles.clear();
+        for (const cluster of worldGen.clusterData) {
+          botManager.pathfinder._clusterCenterTiles.set(
+            cluster.id,
+            botManager.pathfinder._findClusterCenterTile(cluster),
+          );
+        }
+      }
+      console.log(`[BotWorker] Updated cluster data — ${worldGen.clusterData.length} clusters`);
+      break;
+    }
+
     case "shutdown": {
       process.exit(0);
       break;
