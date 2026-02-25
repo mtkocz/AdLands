@@ -2509,6 +2509,10 @@ class Planet {
       } else {
         this.applyInnerGlowToCluster(clusterId, null, previousColor);
       }
+    } else if (newOwner && FACTION_COLORS[newOwner] && !this.clusterGlowOverlays.has(clusterId)) {
+      // Safety net: overlay should exist but is missing (e.g. lost during
+      // sponsor de-elevation rebuild or stale animation cleanup). Recreate it.
+      this._createClusterColorOverlay(clusterId, FACTION_COLORS[newOwner].threeLight);
     }
   }
 
@@ -3240,11 +3244,20 @@ class Planet {
     // Rebuild any existing faction overlays for sponsor clusters.
     // Overlays may have been created (via applyTerritoryState) before de-elevation,
     // so their geometry still references the old elevated vertex positions.
+    // Use the true owner color from capture state (not the mid-animation material color).
     for (const [, data] of this.sponsorClusters) {
       const clusterId = data.clusterId;
       const existingOverlay = this.clusterGlowOverlays.get(clusterId);
       if (existingOverlay) {
-        const color = this._getOverlayColor(existingOverlay.material);
+        // Cancel stale animations referencing the old overlay
+        this._overlayAnimations = this._overlayAnimations.filter(
+          (a) => a.clusterId !== clusterId,
+        );
+        // Use the authoritative owner color from capture state
+        const state = this.clusterCaptureState.get(clusterId);
+        const color = (state && state.owner && FACTION_COLORS[state.owner])
+          ? FACTION_COLORS[state.owner].threeLight
+          : this._getOverlayColor(existingOverlay.material);
         this._removeClusterColorOverlay(clusterId);
         this._createClusterColorOverlay(clusterId, color);
       }
@@ -3636,7 +3649,7 @@ class Planet {
     const inputWhite = (adjustment.inputWhite ?? 255) / 255; // 0-1
     const gamma = adjustment.inputGamma ?? 1.0; // 0.1-3.0
     const outputBlack = (adjustment.outputBlack ?? 0) / 255; // 0-1
-    const outputWhite = (adjustment.outputWhite ?? 255) / 255; // 0-1
+    const outputWhite = Math.min(adjustment.outputWhite ?? 200, 200) / 255; // 0-1, capped at 200
     const saturation = adjustment.saturation ?? 1.0; // 0-2 (1.0 = normal)
 
     // If all defaults, skip processing
@@ -3645,7 +3658,7 @@ class Planet {
       inputWhite === 1 &&
       gamma === 1.0 &&
       outputBlack === 0 &&
-      outputWhite === 1 &&
+      outputWhite === 200 / 255 &&
       saturation === 1.0
     ) {
       // Return a canvas texture of the original (pixel-perfect, no smoothing)

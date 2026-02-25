@@ -67,7 +67,7 @@ class SponsorForm {
 
         // Output levels values
         this.patternOutputBlack = 0;     // 0 to 255 (output black point)
-        this.patternOutputWhite = 255;   // 0 to 255 (output white point)
+        this.patternOutputWhite = 200;   // 0 to 200 (output white point, capped at 200)
 
         // Saturation value
         this.patternSaturation = 1.0;    // 0 to 2 (1.0 = normal)
@@ -174,11 +174,11 @@ class SponsorForm {
             this.patternInputWhiteValue.textContent = '255';
             // Reset output levels
             this.patternOutputBlack = 0;
-            this.patternOutputWhite = 255;
+            this.patternOutputWhite = 200;
             this.patternOutputBlackSlider.value = 0;
             this.patternOutputBlackValue.textContent = '0';
-            this.patternOutputWhiteSlider.value = 255;
-            this.patternOutputWhiteValue.textContent = '255';
+            this.patternOutputWhiteSlider.value = 200;
+            this.patternOutputWhiteValue.textContent = '200';
             // Reset saturation
             this.patternSaturation = 1.0;
             this.patternSaturationSlider.value = 1.0;
@@ -535,7 +535,7 @@ class SponsorForm {
             this.patternInputWhite = sponsor.patternAdjustment.inputWhite ?? 255;
             // Output levels
             this.patternOutputBlack = sponsor.patternAdjustment.outputBlack ?? 0;
-            this.patternOutputWhite = sponsor.patternAdjustment.outputWhite ?? 255;
+            this.patternOutputWhite = Math.min(sponsor.patternAdjustment.outputWhite ?? 200, 200);
             // Saturation
             this.patternSaturation = sponsor.patternAdjustment.saturation ?? 1.0;
         } else {
@@ -546,7 +546,7 @@ class SponsorForm {
             this.patternInputGamma = 1.0;
             this.patternInputWhite = 255;
             this.patternOutputBlack = 0;
-            this.patternOutputWhite = 255;
+            this.patternOutputWhite = 200;
             this.patternSaturation = 1.0;
         }
 
@@ -618,11 +618,11 @@ class SponsorForm {
         this.patternInputWhiteValue.textContent = '255';
         // Reset output levels
         this.patternOutputBlack = 0;
-        this.patternOutputWhite = 255;
+        this.patternOutputWhite = 200;
         this.patternOutputBlackSlider.value = 0;
         this.patternOutputBlackValue.textContent = '0';
-        this.patternOutputWhiteSlider.value = 255;
-        this.patternOutputWhiteValue.textContent = '255';
+        this.patternOutputWhiteSlider.value = 200;
+        this.patternOutputWhiteValue.textContent = '200';
         // Reset saturation
         this.patternSaturation = 1.0;
         this.patternSaturationSlider.value = 1.0;

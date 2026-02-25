@@ -219,6 +219,14 @@
             planet.applySponsorVisuals(data.world.sponsors);
             planet.deElevateSponsorTiles();
             planet.mergeClusterTiles();
+            // Re-check all territory overlays now that sponsor tiles are at
+            // ground level. Overlays created before de-elevation may have been
+            // lost or built with stale geometry.
+            if (data.captureState) {
+              for (const [cid, st] of Object.entries(data.captureState)) {
+                planet.updateClusterVisual(Number(cid));
+              }
+            }
             mp.setSponsorTexturesReady();
           });
         } else {
@@ -1514,6 +1522,14 @@
           planet.applySponsorVisuals(data.world.sponsors);
           planet.deElevateSponsorTiles();
           planet.mergeClusterTiles();
+          // Re-check all territory overlays now that sponsor tiles are at
+          // ground level. Overlays created before de-elevation may have been
+          // lost or built with stale geometry.
+          if (data.captureState) {
+            for (const [cid, st] of Object.entries(data.captureState)) {
+              planet.updateClusterVisual(Number(cid));
+            }
+          }
         });
       } else {
         planet.mergeClusterTiles();
