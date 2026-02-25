@@ -260,7 +260,7 @@ class Planet {
     const geometry = new THREE.IcosahedronGeometry(this.radius, 5);
     const material = new THREE.MeshStandardMaterial({
       color: 0x808080,
-      flatShading: true,
+      flatShading: false,
       roughness: 0.95,
       metalness: 0.02,
       side: THREE.FrontSide,
@@ -913,7 +913,7 @@ class Planet {
         }
         material = new THREE.MeshStandardMaterial({
           map: this._neutralTexture,
-          flatShading: true,
+          flatShading: false,
           roughness: 0.95,
           metalness: 0.02,
           side: THREE.FrontSide,
@@ -941,7 +941,7 @@ class Planet {
           );
           material = new THREE.MeshStandardMaterial({
             vertexColors: true,
-            flatShading: true,
+            flatShading: false,
             roughness: 0.95,
             metalness: 0.02,
             side: THREE.FrontSide,
@@ -956,7 +956,7 @@ class Planet {
           }
           material = new THREE.MeshStandardMaterial({
             map: this.clusterTextures.get(clusterId),
-            flatShading: true,
+            flatShading: false,
             roughness: pattern.roughness,
             metalness: pattern.metalness,
             side: THREE.FrontSide,
@@ -1074,7 +1074,7 @@ class Planet {
       if (materialType === "elevated") {
         material = new THREE.MeshStandardMaterial({
           vertexColors: true,
-          flatShading: true,
+          flatShading: false,
           roughness: 0.95,
           metalness: 0.02,
           side: THREE.FrontSide,
@@ -1086,7 +1086,7 @@ class Planet {
         }
         material = new THREE.MeshStandardMaterial({
           map: this.clusterTextures.get(clusterId),
-          flatShading: true,
+          flatShading: false,
           roughness: pattern.roughness,
           metalness: pattern.metalness,
           side: THREE.FrontSide,
@@ -1828,7 +1828,7 @@ class Planet {
       vertexColors: true,
       roughness: 0.95,
       metalness: 0.02,
-      flatShading: true,
+      flatShading: false,
       side: THREE.FrontSide,
     });
     this._patchWallNoise(wallMaterial);
@@ -2400,7 +2400,7 @@ class Planet {
       mesh.material.dispose();
       mesh.material = new THREE.MeshStandardMaterial({
         map: this.clusterTextures.get(clusterId),
-        flatShading: true,
+        flatShading: false,
         roughness: 0.95,
         metalness: 0.02,
         side: THREE.FrontSide,
@@ -2677,7 +2677,7 @@ class Planet {
           if (isElevated) {
             mesh.material = new THREE.MeshStandardMaterial({
               vertexColors: true,
-              flatShading: true,
+              flatShading: false,
               roughness: 0.95,
               metalness: 0.02,
               side: THREE.FrontSide,
@@ -2686,7 +2686,7 @@ class Planet {
             const tex = this.clusterTextures.get(clusterId);
             mesh.material = new THREE.MeshStandardMaterial({
               map: tex || null,
-              flatShading: true,
+              flatShading: false,
               roughness: pattern ? pattern.roughness : 0.95,
               metalness: pattern ? pattern.metalness : 0.02,
               side: THREE.FrontSide,
@@ -2991,7 +2991,7 @@ class Planet {
         );
         material = new THREE.MeshStandardMaterial({
           vertexColors: true,
-          flatShading: true,
+          flatShading: false,
           roughness: 0.95,
           metalness: 0.02,
           side: THREE.FrontSide,
@@ -3008,7 +3008,7 @@ class Planet {
           }
           material = new THREE.MeshStandardMaterial({
             map: this.clusterTextures.get(newClusterId),
-            flatShading: true,
+            flatShading: false,
             roughness: pattern.roughness,
             metalness: pattern.metalness,
             side: THREE.FrontSide,
@@ -3018,7 +3018,7 @@ class Planet {
       if (!material) {
         material = new THREE.MeshStandardMaterial({
           color: 0x444444,
-          flatShading: true,
+          flatShading: false,
           side: THREE.FrontSide,
         });
       }
@@ -3574,7 +3574,7 @@ class Planet {
 
     const mat = new THREE.MeshStandardMaterial({
       map: finalTexture,
-      flatShading: true,
+      flatShading: false,
       roughness: 0.95,
       metalness: 0.02,
       side: THREE.FrontSide,

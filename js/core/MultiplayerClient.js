@@ -1944,6 +1944,7 @@
       treadTracks.unregisterTank?.(playerId);
       tankHeadlights.unregisterTank?.(playerId);
       tankCollision.unregisterTank?.(playerId);
+      tankDamageEffects.removeTank?.(playerId);
 
       // Unregister from CommanderSystem
       if (window.commanderSystem) {

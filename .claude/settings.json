@@ -11,7 +11,8 @@
       "Bash(git -C /Users/mtkocz/Library/CloudStorage/Dropbox-Personal/ROBOTA/2026/AdLands show:*)",
       "Bash(BASH_SILENCE_DEPRECATION_WARNING=1 /bin/bash -c 'git diff --stat 2>&1':*)",
       "Bash(curl:*)",
-      "Bash(md5:*)"
+      "Bash(md5:*)",
+      "Bash(python3:*)"
     ]
   }
 }

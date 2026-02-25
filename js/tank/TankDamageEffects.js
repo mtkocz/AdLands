@@ -80,6 +80,7 @@ class TankDamageEffects {
      * Remove all effects for a tank
      */
     removeTank(tankId) {
+        this._clearParticlesForTank(tankId);
         this.tankEffects.delete(tankId);
     }
 

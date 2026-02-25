@@ -863,7 +863,7 @@ class TerrainElevation {
       vertexColors: true,
       roughness: 0.95,
       metalness: 0.02,
-      flatShading: true,
+      flatShading: false,
       side: THREE.DoubleSide,
       shadowSide: THREE.FrontSide,
     });
