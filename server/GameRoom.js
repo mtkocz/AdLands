@@ -95,6 +95,10 @@ class GameRoom {
     // Award holding crypto at the top of each wall-clock minute
     this._lastHoldingMinute = Math.floor(Date.now() / 60000);
 
+    // Tusk faction commentary — track standings for periodic updates
+    this._lastFactionCheckMinute = Math.floor(Date.now() / 60000);
+    this._lastFactionLeader = null; // Track lead changes
+
     // Throttle rank recomputation to once per second (or when dirty flag is set)
     this.rankRecomputeCounter = 0;
     this._ranksDirty = false;
@@ -2204,6 +2208,12 @@ class GameRoom {
       this._awardHoldingCrypto();
     }
 
+    // 7b. Tusk faction standings commentary (every 2 minutes)
+    if (currentMinute !== this._lastFactionCheckMinute && currentMinute % 2 === 0) {
+      this._lastFactionCheckMinute = currentMinute;
+      this._tuskFactionUpdate();
+    }
+
     // 8. Save authenticated player profiles to Firestore (every 60 seconds)
     this._profileSaveCounter = (this._profileSaveCounter || 0) + 1;
     if (this._profileSaveCounter >= this.tickRate * 60) {
@@ -3275,6 +3285,67 @@ class GameRoom {
         clusters: factionClusters[player.faction],
       });
     }
+  }
+
+  // ========================
+  // TUSK FACTION STANDINGS
+  // ========================
+
+  /**
+   * Compute faction territory percentages and fire Tusk commentary events.
+   * Called every 2 minutes from the tick loop.
+   */
+  _tuskFactionUpdate() {
+    if (!this.tuskChat) return;
+
+    const totalClusters = this.clusterCaptureState.size;
+    if (totalClusters === 0) return;
+
+    // Count owned clusters per faction
+    const owned = { rust: 0, cobalt: 0, viridian: 0 };
+    for (const [, state] of this.clusterCaptureState) {
+      if (state.owner) owned[state.owner]++;
+    }
+
+    const pct = {};
+    for (const f of FACTIONS) {
+      pct[f] = (owned[f] / totalClusters) * 100;
+    }
+
+    // Sort factions by territory %
+    const sorted = FACTIONS.slice().sort((a, b) => pct[b] - pct[a]);
+    const leader = sorted[0];
+    const middle = sorted[1];
+    const trailer = sorted[2];
+
+    // Faction lead change — someone new took the lead
+    if (pct[leader] > pct[middle] && leader !== this._lastFactionLeader && this._lastFactionLeader !== null) {
+      this.tuskChat.onFactionLeadChange(leader, pct[leader], middle, trailer);
+      this._lastFactionLeader = leader;
+      return; // One event per check
+    }
+    this._lastFactionLeader = pct[leader] > pct[middle] ? leader : null;
+
+    // Faction struggle — bottom faction below 20%
+    if (pct[trailer] < 20 && pct[trailer] > 0) {
+      this.tuskChat.onFactionStruggle(trailer, pct[trailer]);
+      return;
+    }
+
+    // Faction domination — leader above 50%
+    if (pct[leader] >= 50) {
+      this.tuskChat.onFactionDomination(leader, pct[leader], middle, trailer);
+      return;
+    }
+
+    // Close race — top two within 5% of each other
+    if (Math.abs(pct[leader] - pct[middle]) < 5 && pct[leader] > 10) {
+      this.tuskChat.onFactionCloseRace(leader, pct[leader], middle, pct[middle]);
+      return;
+    }
+
+    // Periodic standings report (general commentary)
+    this.tuskChat.onFactionStandings(leader, pct[leader], middle, pct[middle], trailer, pct[trailer]);
   }
 
   // ========================

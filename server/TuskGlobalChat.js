@@ -19,9 +19,9 @@ class TuskGlobalChat {
 
     // Configuration
     this.config = {
-      minInterval: 180000, // 3 minutes minimum between messages
-      maxInterval: 600000, // 10 minutes max quiet time before random message
-      maxPerHour: 8,
+      minInterval: 120000, // 2 minutes minimum between messages
+      maxInterval: 420000, // 7 minutes max quiet time before random message
+      maxPerHour: 12,
       eventCooldown: 15000, // 15 second delay after event before posting
 
       eventChance: {
@@ -30,8 +30,11 @@ class TuskGlobalChat {
         deathStreak: 0.3,
         clusterCapture: 0.075,
         territoryRent: 0.8,
-        factionLeadChange: 0.2,
-        factionStruggle: 0.1,
+        factionLead: 0.9,
+        factionStruggle: 0.5,
+        factionDomination: 0.8,
+        factionCloseRace: 0.6,
+        factionStandings: 0.35,
         playerMilestone: 0.6,
         revengeKill: 0.25,
         commanderTip: 0.8,
@@ -110,6 +113,36 @@ class TuskGlobalChat {
         "If {faction} were a stock it'd be delisted. {percent}% territory is not even a rounding error.",
         "{faction} holds {percent}% of the planet. That's less than my personal bathroom. And I would know — it's massive.",
         "BREAKING: {faction} territory has dropped to {percent}%. At this rate they'll be a Wikipedia article by tomorrow.",
+        "Any {faction} contractors still alive? Genuinely asking. {percent}% territory looks like a rounding error.",
+        "{faction} is at {percent}%. I've seen better territorial control from a house cat.",
+      ],
+      factionDomination: [
+        "{faction} controls {percent}% of the planet. This isn't a war, it's a hostile takeover.",
+        "BREAKING: {faction} owns {percent}% of everything. {loser1} and {loser2} are basically tenants now.",
+        "{faction} at {percent}%. At this point, {loser1} and {loser2} should just merge and hope for the best.",
+        "{faction} is running away with it. {percent}% and climbing. I love watching a monopoly form.",
+        "MARKET DOMINANCE: {faction} holds {percent}%. {loser1} and {loser2}, have you considered surrendering? It'd save us all time.",
+        "{faction} at {percent}%. The other two factions are fighting over scraps. Beautiful. This is the free market at work.",
+        "If this were a board meeting, {faction} at {percent}% would be making all the decisions. {loser1} and {loser2} would be fetching coffee.",
+        "INVESTOR UPDATE: {faction} at {percent}% is a blue chip. {loser1} and {loser2} are penny stocks.",
+      ],
+      factionCloseRace: [
+        "It's neck and neck! {faction1} at {percent1}% vs {faction2} at {percent2}%. This is the kind of drama I subscribe for.",
+        "CONTESTED: {faction1} ({percent1}%) and {faction2} ({percent2}%) are trading blows. Someone's about to get hurt.",
+        "{faction1} and {faction2} are practically tied. {percent1}% vs {percent2}%. My money's on... actually, I don't bet. I own the house.",
+        "BREAKING: {faction1} at {percent1}% and {faction2} at {percent2}%. This is closer than my last shareholder vote.",
+        "The gap between {faction1} and {faction2} is razor-thin. {percent1}% vs {percent2}%. Somebody make a move!",
+        "{faction1} ({percent1}%) and {faction2} ({percent2}%) are locked in combat. Third faction? Taking notes, hopefully.",
+      ],
+      factionStandings: [
+        "STANDINGS: {leader} leads at {leaderPct}%. {middle} holding at {middlePct}%. {trailer} at {trailerPct}%. Work harder, all of you.",
+        "SCOREBOARD: {leader} {leaderPct}% | {middle} {middlePct}% | {trailer} {trailerPct}%. The planet isn't going to conquer itself.",
+        "Territory report — {leader}: {leaderPct}%, {middle}: {middlePct}%, {trailer}: {trailerPct}%. I expect better numbers next quarter.",
+        "{leader} at {leaderPct}%, {middle} at {middlePct}%, {trailer} at {trailerPct}%. My planet, your problem.",
+        "STATUS UPDATE: {leader} ({leaderPct}%) is ahead, {middle} ({middlePct}%) is mid, and {trailer} ({trailerPct}%) is... well, present.",
+        "QUARTERLY REVIEW: {leader} leads with {leaderPct}%. {trailer} at {trailerPct}% — your performance review is not looking good.",
+        "If territory was stock, {leader} at {leaderPct}% is soaring. {trailer} at {trailerPct}% just got a margin call.",
+        "PLANET STATUS: {leader} dominates at {leaderPct}%. {middle} scrapes by at {middlePct}%. {trailer} clings to life at {trailerPct}%.",
       ],
       playerMilestone: [
         "@{player} just hit {count} kills this session. Somebody's gunning for Employee of the Month.",
@@ -417,6 +450,38 @@ class TuskGlobalChat {
     this.onEvent("factionStruggle", {
       faction: faction ? faction.charAt(0).toUpperCase() + faction.slice(1) : "Unknown",
       percent: percent.toFixed(1),
+    });
+  }
+
+  onFactionDomination(leadingFaction, percent, loser1, loser2) {
+    const cap = (s) => s ? s.charAt(0).toUpperCase() + s.slice(1) : "Unknown";
+    this.onEvent("factionDomination", {
+      faction: cap(leadingFaction),
+      percent: percent.toFixed(1),
+      loser1: cap(loser1),
+      loser2: cap(loser2),
+    });
+  }
+
+  onFactionCloseRace(faction1, percent1, faction2, percent2) {
+    const cap = (s) => s ? s.charAt(0).toUpperCase() + s.slice(1) : "Unknown";
+    this.onEvent("factionCloseRace", {
+      faction1: cap(faction1),
+      percent1: percent1.toFixed(1),
+      faction2: cap(faction2),
+      percent2: percent2.toFixed(1),
+    });
+  }
+
+  onFactionStandings(leader, leaderPct, middle, middlePct, trailer, trailerPct) {
+    const cap = (s) => s ? s.charAt(0).toUpperCase() + s.slice(1) : "Unknown";
+    this.onEvent("factionStandings", {
+      leader: cap(leader),
+      leaderPct: leaderPct.toFixed(1),
+      middle: cap(middle),
+      middlePct: middlePct.toFixed(1),
+      trailer: cap(trailer),
+      trailerPct: trailerPct.toFixed(1),
     });
   }
 
