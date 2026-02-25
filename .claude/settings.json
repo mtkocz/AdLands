@@ -14,7 +14,8 @@
       "Bash(md5:*)",
       "Bash(python3:*)",
       "Bash(git checkout:*)",
-      "Bash(xargs:*)"
+      "Bash(xargs:*)",
+      "Bash(node server/rebakeSponsorTextures.js:*)"
     ]
   }
 }

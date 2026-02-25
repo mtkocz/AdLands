@@ -789,18 +789,13 @@ class TerrainElevation {
         0,     vTile,  // lowA
       );
 
-      if (t.wallNormal.dot(t.tileCenterDir) > 0) {
-        t.wallNormal.negate();
-        indices.push(
-          baseIndex, baseIndex + 2, baseIndex + 1,
-          baseIndex, baseIndex + 3, baseIndex + 2,
-        );
-      } else {
-        indices.push(
-          baseIndex, baseIndex + 1, baseIndex + 2,
-          baseIndex, baseIndex + 2, baseIndex + 3,
-        );
-      }
+      // DoubleSide material auto-flips the shader normal for back faces,
+      // so standard winding + unmodified cross-product normal is correct
+      // from both viewing directions. No conditional flip needed.
+      indices.push(
+        baseIndex, baseIndex + 1, baseIndex + 2,
+        baseIndex, baseIndex + 2, baseIndex + 3,
+      );
 
       for (let i = 0; i < 4; i++) {
         normals.push(t.wallNormal.x, t.wallNormal.y, t.wallNormal.z);
