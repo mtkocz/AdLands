@@ -949,7 +949,9 @@ class Planet {
             metalness: 0.02,
             side: THREE.FrontSide,
           });
-          this._patchTriplanarNoise(material, tileCenter);
+          if (!this.sponsorTileIndices.has(index)) {
+            this._patchTriplanarNoise(material, tileCenter);
+          }
         } else {
           if (!this.clusterTextures.has(clusterId)) {
             this.clusterTextures.set(
@@ -964,7 +966,9 @@ class Planet {
             metalness: pattern.metalness,
             side: THREE.FrontSide,
           });
-          this._patchTriplanarNoise(material, tileCenter);
+          if (!this.sponsorTileIndices.has(index)) {
+            this._patchTriplanarNoise(material, tileCenter);
+          }
           this._patchIgnoreSpotLights(material);
         }
       }
@@ -3621,13 +3625,14 @@ class Planet {
 
     const mat = new THREE.MeshStandardMaterial({
       map: finalTexture,
-      roughness: 1.0,
-      metalness: 0,
+      roughness: 0.55,
+      metalness: 0.1,
       roughnessMap: null,
       metalnessMap: null,
       normalMap: null,
       side: THREE.FrontSide,
     });
+    this._patchTriplanarNoise(mat);
     this._patchIgnoreSpotLights(mat);
     return mat;
   }
@@ -4497,7 +4502,7 @@ class Planet {
 
     const lineSegments = new THREE.LineSegments(geometry, material);
     lineSegments.renderOrder = 3; // Above border glow (renderOrder 2)
-    this.scene.add(lineSegments);
+    this.hexGroup.add(lineSegments);
     this.sponsorOutlines.set(sponsorId, lineSegments);
   }
 
@@ -4508,7 +4513,7 @@ class Planet {
   _removeSponsorOutline(sponsorId) {
     const outline = this.sponsorOutlines.get(sponsorId);
     if (!outline) return;
-    this.scene.remove(outline);
+    this.hexGroup.remove(outline);
     outline.geometry.dispose();
     outline.material.dispose();
     this.sponsorOutlines.delete(sponsorId);
@@ -4519,7 +4524,7 @@ class Planet {
    */
   _removeAllSponsorOutlines() {
     for (const [sponsorId, outline] of this.sponsorOutlines) {
-      this.scene.remove(outline);
+      this.hexGroup.remove(outline);
       outline.geometry.dispose();
       outline.material.dispose();
     }
