@@ -12,7 +12,8 @@
       "Bash(BASH_SILENCE_DEPRECATION_WARNING=1 /bin/bash -c 'git diff --stat 2>&1':*)",
       "Bash(curl:*)",
       "Bash(md5:*)",
-      "Bash(python3:*)"
+      "Bash(python3:*)",
+      "Bash(git checkout:*)"
     ]
   }
 }
