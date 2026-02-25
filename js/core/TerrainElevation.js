@@ -687,6 +687,12 @@ class TerrainElevation {
       this.cliffWallMesh.material.dispose();
       this.cliffWallMesh = null;
     }
+    if (this._cliffApronMesh) {
+      this.planet.hexGroup.remove(this._cliffApronMesh);
+      this._cliffApronMesh.geometry.dispose();
+      this._cliffApronMesh.material.dispose();
+      this._cliffApronMesh = null;
+    }
     this.createCliffWalls(tiles, adjacencyMap);
   }
 
