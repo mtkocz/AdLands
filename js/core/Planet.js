@@ -2831,6 +2831,9 @@ class Planet {
 
     // Apply sponsor pattern texture to tiles
     this._applySponsorTexture(sponsor, tileIndices);
+
+    // Build 1px outline around sponsor boundary
+    this._buildSponsorOutline(sponsor.id);
   }
 
   /**
@@ -2846,6 +2849,9 @@ class Planet {
     if (!sponsorEntry) return;
 
     const { sponsor, clusterId, tileIndices } = sponsorEntry;
+
+    // Remove sponsor outline
+    this._removeSponsorOutline(sponsorId);
 
     // Remove sponsor texture from cache
     const patternSrc = sponsor?.patternImage || sponsor?.patternUrl;
@@ -3081,6 +3087,7 @@ class Planet {
   }
 
   clearSponsorData() {
+    this._removeAllSponsorOutlines();
     this.sponsorClusters.clear();
     this.sponsorHoldTimers.clear();
     this.sponsorTileIndices.clear();
@@ -3156,6 +3163,9 @@ class Planet {
       if (!skipTextures) {
         this._applySponsorTexture(sponsor, tileIndices);
       }
+
+      // Build 1px outline around sponsor boundary
+      this._buildSponsorOutline(sponsor.id);
     }
 
   }
@@ -3281,6 +3291,7 @@ class Planet {
         texture.generateMipmaps = false;
         texture.minFilter = THREE.NearestFilter;
         texture.magFilter = THREE.NearestFilter;
+        texture.encoding = THREE.sRGBEncoding;
         texture.needsUpdate = true;
         this._sponsorTextureCache.set(src, texture);
         // Store in global cache so moon/billboard can reuse the same image
@@ -3335,6 +3346,7 @@ class Planet {
           texture.generateMipmaps = false;
           texture.minFilter = THREE.NearestFilter;
           texture.magFilter = THREE.NearestFilter;
+          texture.encoding = THREE.sRGBEncoding;
           texture.needsUpdate = true;
           planet._sponsorTextureCache.set(src, texture);
           if (window._sponsorImageCache) window._sponsorImageCache.set(src, { img });
@@ -3387,6 +3399,7 @@ class Planet {
         texture.generateMipmaps = false;
         texture.minFilter = THREE.NearestFilter;
         texture.magFilter = THREE.NearestFilter;
+        texture.encoding = THREE.sRGBEncoding;
         texture.needsUpdate = true;
 
         this._sponsorTextureCache.set(src, texture);
@@ -3588,14 +3601,20 @@ class Planet {
     adjustment = {},
     tileCount = 20,
   ) {
-    // Apply levels adjustment then pixel art filter (downscale, palette, dither, upscale)
+    // Apply levels adjustment, then pixel art filter only if not already server-processed
     let finalTexture = texture;
     if (texture.image) {
       finalTexture = this._applyLevelsAdjustment(
         texture.image,
         adjustment,
       );
-      finalTexture = this._applyPixelArtFilter(finalTexture.image, tileCount);
+      // Server-side pixelArtFilter already produces ~128px dithered PNGs.
+      // Only re-apply client-side filter for large (unprocessed) images to avoid
+      // double-dithering artifacts (Bayer-on-Bayer moire).
+      const shortSide = Math.min(finalTexture.image.width, finalTexture.image.height);
+      if (shortSide > 256) {
+        finalTexture = this._applyPixelArtFilter(finalTexture.image, tileCount);
+      }
       finalTexture.wrapS = texture.wrapS;
       finalTexture.wrapT = texture.wrapT;
     }
@@ -3604,6 +3623,9 @@ class Planet {
       map: finalTexture,
       roughness: 1.0,
       metalness: 0,
+      roughnessMap: null,
+      metalnessMap: null,
+      normalMap: null,
       side: THREE.FrontSide,
     });
     this._patchIgnoreSpotLights(mat);
@@ -3645,6 +3667,7 @@ class Planet {
       tex.generateMipmaps = false;
       tex.minFilter = THREE.NearestFilter;
       tex.magFilter = THREE.NearestFilter;
+      tex.encoding = THREE.sRGBEncoding;
       return tex;
     }
 
@@ -3708,6 +3731,7 @@ class Planet {
     processedTexture.generateMipmaps = false;
     processedTexture.minFilter = THREE.NearestFilter;
     processedTexture.magFilter = THREE.NearestFilter;
+    processedTexture.encoding = THREE.sRGBEncoding;
     processedTexture.needsUpdate = true;
     return processedTexture;
   }
@@ -3844,6 +3868,7 @@ class Planet {
     processedTexture.generateMipmaps = false;
     processedTexture.magFilter = THREE.NearestFilter;
     processedTexture.minFilter = THREE.NearestFilter;
+    processedTexture.encoding = THREE.sRGBEncoding;
     processedTexture.needsUpdate = true;
     return processedTexture;
   }
