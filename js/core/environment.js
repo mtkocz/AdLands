@@ -1617,10 +1617,11 @@ gl_FragColor = vec4( outgoingLight, diffuseColor.a );`
 
       adPanel.material.map = texture;
       adPanel.material.color.setHex(0xffffff);
-      adPanel.material.emissive.setHex(0x000000);
-      adPanel.material.emissiveMap = null;
-      adPanel.material.emissiveIntensity = 0;
+      adPanel.material.emissive.setHex(0xffffff);
+      adPanel.material.emissiveMap = texture;
+      adPanel.material.emissiveIntensity = 1.5;
       adPanel.material.needsUpdate = true;
+      adPanel.layers.enable(1);
     };
 
     const cached = window._sponsorImageCache.get(src);

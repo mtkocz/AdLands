@@ -3556,7 +3556,7 @@ class Planet {
    * @param {THREE.Texture} texture
    * @param {Object} adjustment - { inputBlack, inputGamma, inputWhite, outputBlack, outputWhite }
    * @param {number} tileCount - Number of tiles in the cluster (for pixel art resolution)
-   * @returns {THREE.MeshStandardMaterial}
+   * @returns {THREE.MeshBasicMaterial}
    */
   _createHSVMaterial(
     texture,
@@ -3575,14 +3575,10 @@ class Planet {
       finalTexture.wrapT = texture.wrapT;
     }
 
-    const mat = new THREE.MeshStandardMaterial({
+    const mat = new THREE.MeshBasicMaterial({
       map: finalTexture,
-      flatShading: false,
-      roughness: 0.95,
-      metalness: 0.02,
       side: THREE.FrontSide,
     });
-    this._patchIgnoreSpotLights(mat);
     return mat;
   }
 
