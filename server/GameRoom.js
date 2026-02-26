@@ -2658,7 +2658,7 @@ class GameRoom {
 
           // Send damage to worker (it handles death, respawn, trash talk)
           const attacker = this.players.get(p.ownerId);
-          const attackerName = attacker ? attacker.name : "Unknown";
+          const attackerName = attacker ? attacker.name : (this.botBridge.getBotName(p.ownerId) || botName);
           this.botBridge.applyDamage(botHit.id, damage, p.ownerId, attackerName);
 
           // Award crypto to human attacker
@@ -2677,7 +2677,7 @@ class GameRoom {
 
           // Check if this hit likely killed the bot (approximate — worker confirms next tick)
           if (botHp - damage <= 0) {
-            const killerName = attacker ? attacker.name : "Unknown";
+            const killerName = attackerName;
             this.io.to(this.roomId).emit("player-killed", {
               victimId: botHit.id,
               killerId: p.ownerId,
