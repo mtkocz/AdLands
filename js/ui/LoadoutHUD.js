@@ -104,8 +104,9 @@ class LoadoutHUD {
       const tag = document.activeElement?.tagName;
       if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return;
 
-      // Skip if auth screen is showing
-      if (document.getElementById("auth-screen")?.style.display !== "none") return;
+      // Skip if auth screen is showing (uses .auth-hidden class, not inline style)
+      const authEl = document.getElementById("auth-screen");
+      if (authEl && !authEl.classList.contains("auth-hidden")) return;
 
       const category = this._keyMap[e.key];
       if (!category) return;
