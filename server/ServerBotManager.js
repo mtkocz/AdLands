@@ -20,7 +20,7 @@ const BOT_STATES = {
   WANDERING: "wandering",
 };
 
-// Bot name pool — 320 unique names to cover full 300-bot population
+// Bot name pool — 350 unique names to cover full 300-bot population
 const BOT_NAME_POOL = [
   // OG gamer tags
   "xXSlayerXx", "N00bKiller", "TankMaster", "DeathWish", "ShadowFury",
