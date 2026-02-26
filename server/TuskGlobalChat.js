@@ -28,7 +28,7 @@ class TuskGlobalChat {
         kill: 0.05,
         killStreak: 0.4,
         deathStreak: 0.3,
-        clusterCapture: 0.075,
+        clusterCapture: 0.0375,
         territoryRent: 0.8,
         factionLead: 0.9,
         factionStruggle: 0.5,
@@ -158,8 +158,8 @@ class TuskGlobalChat {
         "@{killer} to @{victim}: 'Remember me?' Apparently they do now.",
       ],
       quietLobby: [
-        "It's been {minutes} minutes without drama. What am I paying you for?!",
-        "Did everyone fall asleep? The metrics are flatlining here.",
+        "Reminder: territory doesn't capture itself. Get out there, contractors!",
+        "PRO TIP: The more territory your faction holds, the more crypto you earn. Just saying.",
       ],
       commanderTip: [
         "BREAKING: @{from} has bestowed ¢{amount} upon @{to}. Trickle-down economics at work!",

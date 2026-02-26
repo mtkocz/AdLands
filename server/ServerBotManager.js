@@ -101,8 +101,8 @@ const BOT_HIT_QUICK_REJECT = 0.012; // radians
 const FACTION_INDEX = { rust: 0, cobalt: 1, viridian: 2 };
 
 // Trash talk
-const BOT_CHAT_COOLDOWN = 5000; // Per-bot cooldown between messages (ms)
-const BOT_GLOBAL_CHAT_COOLDOWN = 1500; // Global cooldown so bots don't flood (ms)
+const BOT_CHAT_COOLDOWN = 3500; // Per-bot cooldown between messages (ms)
+const BOT_GLOBAL_CHAT_COOLDOWN = 1000; // Global cooldown so bots don't flood (ms)
 const BOT_CHAT_PROXIMITY_RADIUS = 0.20; // Radians — ~96 world units, proximity hearing range
 
 const BOT_TRASH_TALK = {
@@ -168,16 +168,21 @@ const BOT_TRASH_TALK = {
     "ez cap",
   ],
   idle: [
-    "anyone else bored",
-    "where is everyone",
     "gg lobby",
     "this faction rocks",
     "lets goooo",
-    "yall are quiet",
-    "bruh this map",
     "whos the best here",
     "im the goat",
     "vibes",
+    "we got this",
+    "push push push",
+    "need more territory",
+    "our faction is cracked",
+    "cap everything",
+    "who wants smoke",
+    "feeling dangerous rn",
+    "we own this planet",
+    "lets take their land",
   ],
 };
 
@@ -1853,7 +1858,7 @@ class ServerBotManager {
   _updateIdleChat(dt) {
     this._idleChatTimer -= dt;
     if (this._idleChatTimer > 0) return;
-    this._idleChatTimer = 30 + Math.random() * 60; // 30-90 seconds
+    this._idleChatTimer = 20 + Math.random() * 40; // 20-60 seconds
 
     // Pick a random alive bot
     const alive = this._botArray.filter(b => !b.isDead && !b.isDeploying);

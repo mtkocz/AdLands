@@ -2455,11 +2455,12 @@
       }
     }
 
-    // Animate opacity for fade in/out
+    // Animate opacity for fade in/out (fade-out is 3x faster so ring disappears promptly)
     const opacityDiff = ringAnimState.targetOpacity - ringAnimState.opacity;
     if (Math.abs(opacityDiff) > 0.01) {
+      const fade = opacityDiff < 0 ? ringAnimState.fadeSpeed * 3 : ringAnimState.fadeSpeed;
       ringAnimState.opacity +=
-        opacityDiff * Math.min(ringAnimState.fadeSpeed * deltaTime, 1);
+        opacityDiff * Math.min(fade * deltaTime, 1);
       valueChanged = true;
     } else {
       ringAnimState.opacity = ringAnimState.targetOpacity;
