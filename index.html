@@ -189,6 +189,9 @@
         <!-- Ping Marker Arrows (inside territory ring) -->
         <div id="ping-arrows-container"></div>
 
+        <!-- Loadout HUD (HL1-style weapon selector, top center) -->
+        <div id="loadout-hud"></div>
+
         <!-- Left Panel Stack -->
         <div id="left-panel-stack">
             <div id="capture-status">
@@ -284,6 +287,18 @@
                     <div class="control-group">
                         <span class="control-label">Screenshot:</span>
                         <span class="control-keys">F12</span>
+                    </div>
+                    <div class="control-group">
+                        <span class="control-label">Offense Loadout:</span>
+                        <span class="control-keys">1</span>
+                    </div>
+                    <div class="control-group">
+                        <span class="control-label">Defense Loadout:</span>
+                        <span class="control-keys">2</span>
+                    </div>
+                    <div class="control-group">
+                        <span class="control-label">Tactical Loadout:</span>
+                        <span class="control-keys">3</span>
                     </div>
                 </div>
             </div>
@@ -603,6 +618,7 @@
         <script defer src="js/ui/ProfileCard.js"></script>
         <script defer src="js/ui/ScreenshotSystem.js"></script>
         <script defer src="js/ui/Dashboard.js"></script>
+        <script defer src="js/ui/LoadoutHUD.js"></script>
         <script defer src="js/ui/CosmeticsShop.js"></script>
         <script defer src="js/ui/OnboardingScreen.js"></script>
         <script defer src="js/ui/AuthScreen.js"></script>

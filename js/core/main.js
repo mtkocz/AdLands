@@ -554,6 +554,10 @@
   cannonSystem.weaponSlotSystem = weaponSlotSystem;
   window.weaponSlotSystem = weaponSlotSystem;
 
+  // Loadout HUD (HL1-style weapon category switcher)
+  const loadoutHUD = new LoadoutHUD(weaponSlotSystem);
+  window.loadoutHUD = loadoutHUD;
+
   // Crypto System (initialized early, connected to cannon system below)
   const cryptoSystem = new CryptoSystem();
   cannonSystem.setCryptoSystem(cryptoSystem);
@@ -3567,6 +3571,7 @@
     document.querySelector("#player-tags-container"),
     document.getElementById("crypto-hud-bar"),
     document.getElementById("dashboard-container"),
+    document.getElementById("loadout-hud"),
   ];
 
   const chatWindowEl = document.getElementById("chat-window");

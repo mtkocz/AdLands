@@ -3871,6 +3871,9 @@ class Dashboard {
     // Update visuals
     this._renderUpgrades(this.playerLevel || 1);
     this._updateTankPreview();
+
+    // Sync LoadoutHUD active slots
+    if (window.loadoutHUD) window.loadoutHUD.syncFromLoadout();
   }
 
   /**
@@ -3894,6 +3897,9 @@ class Dashboard {
     this._updateSlotStates(this.playerLevel || 1);
     this._renderUpgrades(this.playerLevel || 1);
     this._updateTankPreview();
+
+    // Sync LoadoutHUD active slots
+    if (window.loadoutHUD) window.loadoutHUD.syncFromLoadout();
   }
 
   /**

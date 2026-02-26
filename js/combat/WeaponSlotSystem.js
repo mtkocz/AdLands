@@ -15,6 +15,17 @@ class WeaponSlotSystem {
     this.equipped = {};
 
     /**
+     * Active slot per category: which equipped slot's modifiers apply.
+     * Only one slot per category is "live" at a time.
+     * @type {{ offense: string, defense: string, tactical: string }}
+     */
+    this.activeSlots = {
+      offense: "offense-1",
+      defense: "defense-1",
+      tactical: "tactical-1",
+    };
+
+    /**
      * Upgrade stat definitions: upgradeId → { modifiers }
      * Modifiers are multipliers or flat bonuses applied during combat.
      */
@@ -52,8 +63,9 @@ class WeaponSlotSystem {
    * Load loadout from a Firestore profile object.
    * @param {Object} loadout - { "offense-1": "cannon", ... }
    * @param {Object} [tankUpgrades] - { armor: 0, speed: 0, fireRate: 0, damage: 0 }
+   * @param {Object} [activeSlots] - { offense: "offense-1", ... }
    */
-  loadFromProfile(loadout, tankUpgrades) {
+  loadFromProfile(loadout, tankUpgrades, activeSlots) {
     this.equipped = loadout && typeof loadout === "object" ? { ...loadout } : {};
     if (tankUpgrades && typeof tankUpgrades === "object") {
       this.tankUpgrades = {
@@ -62,6 +74,30 @@ class WeaponSlotSystem {
         fireRate: tankUpgrades.fireRate || 0,
         damage: tankUpgrades.damage || 0,
       };
+    }
+    // Restore active slots from profile, or compute defaults
+    if (activeSlots && typeof activeSlots === "object") {
+      for (const cat of ["offense", "defense", "tactical"]) {
+        if (activeSlots[cat]) this.activeSlots[cat] = activeSlots[cat];
+      }
+    } else {
+      for (const cat of ["offense", "defense", "tactical"]) {
+        this.activeSlots[cat] = this.equipped[`${cat}-1`] ? `${cat}-1`
+          : this.equipped[`${cat}-2`] ? `${cat}-2`
+          : `${cat}-1`;
+      }
+    }
+  }
+
+  /**
+   * Set the active slot for a category.
+   * Only the active slot's modifiers will apply during combat.
+   * @param {string} category - "offense", "defense", or "tactical"
+   * @param {string} slotId - e.g. "offense-2"
+   */
+  setActiveSlot(category, slotId) {
+    if (this.activeSlots.hasOwnProperty(category)) {
+      this.activeSlots[category] = slotId;
     }
   }
 
@@ -163,7 +199,8 @@ class WeaponSlotSystem {
   }
 
   /**
-   * Compute aggregate combat modifiers from all equipped items + tank upgrades.
+   * Compute combat modifiers from active slots + tank upgrades.
+   * Only one slot per category is "live" — the active slot.
    * Called by CannonSystem before damage/fire-rate calculations.
    * @returns {Object} Modifier values
    */
@@ -180,9 +217,12 @@ class WeaponSlotSystem {
       repairRate: 0,
     };
 
-    // Apply equipped weapon modifiers
-    for (const slotId in this.equipped) {
+    // Apply weapon modifiers from active slots only (one per category)
+    for (const cat in this.activeSlots) {
+      const slotId = this.activeSlots[cat];
+      if (!slotId) continue;
       const upgradeId = this.equipped[slotId];
+      if (!upgradeId) continue;
       const stats = this.upgradeStats[upgradeId];
       if (!stats) continue;
 
@@ -215,6 +255,7 @@ class WeaponSlotSystem {
       window.firestoreSync.writeProfile({
         loadout: this.equipped,
         tankUpgrades: this.tankUpgrades,
+        activeSlots: this.activeSlots,
       }, 5000); // 5s debounce
     }
     // Also update Dashboard's equippedUpgrades for UI sync

@@ -1235,6 +1235,7 @@ class GameRoom {
         unlockedSlots: player.unlockedSlots || ['offense-1'],
         loadout: player.loadout || {},
         tankUpgrades: player.tankUpgrades || { armor: 0, speed: 0, fireRate: 0, damage: 0 },
+        activeSlots: player.activeSlots || { offense: 'offense-1', defense: 'defense-1', tactical: 'tactical-1' },
       };
 
       // Keep totalCrypto in sync with live balance for next save
@@ -1442,6 +1443,7 @@ class GameRoom {
     player.avatarColor = profileData.profilePicture || null;
     player.loadout = profileData.loadout || {};
     player.tankUpgrades = profileData.tankUpgrades || { armor: 0, speed: 0, fireRate: 0, damage: 0 };
+    player.activeSlots = profileData.activeSlots || { offense: 'offense-1', defense: 'defense-1', tactical: 'tactical-1' };
     player.unlockedSlots = profileData.unlockedSlots || ['offense-1'];
     player.profileIndex = newProfileIndex;
 
@@ -1676,6 +1678,23 @@ class GameRoom {
       // Persist immediately so loadout survives disconnect/crash
       this.savePlayerProfile(socketId).catch(() => {});
     }
+  }
+
+  /** Handle active slot change (which slot's modifiers apply per category) */
+  handleActiveSlotChange(socketId, category, slotId) {
+    const player = this.players.get(socketId);
+    if (!player || !player.uid) return;
+
+    const validCategories = ['offense', 'defense', 'tactical'];
+    if (!validCategories.includes(category)) return;
+
+    const validSlots = [`${category}-1`, `${category}-2`];
+    if (!validSlots.includes(slotId)) return;
+
+    if (!player.activeSlots) {
+      player.activeSlots = { offense: 'offense-1', defense: 'defense-1', tactical: 'tactical-1' };
+    }
+    player.activeSlots[category] = slotId;
   }
 
   /** Handle tank upgrade purchase (armor, speed, fireRate, damage) */

@@ -86,12 +86,18 @@ class ProfileManager {
       this.dashboard.equippedUpgrades = { ...profileData.loadout };
     }
 
-    // Load loadout + tank upgrades into WeaponSlotSystem
+    // Load loadout + tank upgrades + active slots into WeaponSlotSystem
     if (this.weaponSlotSystem) {
       this.weaponSlotSystem.loadFromProfile(
         profileData?.loadout,
-        profileData?.tankUpgrades
+        profileData?.tankUpgrades,
+        profileData?.activeSlots
       );
+    }
+
+    // Sync LoadoutHUD with restored active slots
+    if (window.loadoutHUD) {
+      window.loadoutHUD.syncFromLoadout();
     }
 
   }

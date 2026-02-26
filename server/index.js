@@ -385,6 +385,13 @@ io.on("connection", (socket) => {
     if (data?.slotId) mainRoom.handleUnequipUpgrade(socket.id, data.slotId);
   });
 
+  // ---- Active Slot Change (loadout HUD cycling) ----
+  socket.on("active-slot-change", (data) => {
+    if (data?.category && data?.slotId) {
+      mainRoom.handleActiveSlotChange(socket.id, data.category, data.slotId);
+    }
+  });
+
   // ---- Tank Upgrade Purchase ----
   socket.on("tank-upgrade", (data) => {
     if (data?.type) mainRoom.handleTankUpgrade(socket.id, data.type);

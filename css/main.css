@@ -185,10 +185,9 @@ canvas {
    ======================== */
 
 #debug-bar {
-    position: absolute;
-    top: var(--padding-md);
-    left: 50%;
-    transform: translateX(-50%);
+    position: fixed;
+    top: var(--space-sm);
+    right: calc(var(--space-sm) + var(--panel-width) + var(--space-sm));
     display: flex;
     gap: var(--padding-md);
     background: var(--bg-panel);
@@ -5769,4 +5768,104 @@ body.colorblind-tritanopia {
 
 .shop-item-unequip:hover {
     color: var(--text-primary);
+}
+
+/* ========================
+   LOADOUT HUD (HL1-style weapon selector)
+   Top-center strip with 3 category tabs.
+   Keys [1][2][3] cycle active slot per category.
+   ======================== */
+
+#loadout-hud {
+    position: fixed;
+    top: var(--space-sm);
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 100;
+    display: flex;
+    gap: var(--space-xs);
+    opacity: 0;
+    transition: opacity 200ms;
+    pointer-events: none;
+}
+
+#loadout-hud.visible {
+    opacity: 1;
+    pointer-events: auto;
+}
+
+.loadout-hud-tab {
+    position: relative;
+    background: var(--bg-panel);
+    border: var(--border-width) solid var(--border-dark);
+    min-width: 104px;
+    text-align: center;
+}
+
+.loadout-hud-tab.expanded {
+    border-color: var(--accent-gold);
+}
+
+.tab-header {
+    display: flex;
+    align-items: center;
+    gap: var(--space-xs);
+    padding: var(--space-xs) var(--space-sm);
+}
+
+.tab-key {
+    font-family: var(--font-body);
+    font-size: var(--font-size-body);
+    color: var(--accent-gold);
+    flex-shrink: 0;
+}
+
+.tab-label {
+    font-family: var(--font-small);
+    font-size: var(--font-size-small);
+    color: var(--text-secondary);
+    text-transform: uppercase;
+    letter-spacing: 1px;
+}
+
+.tab-active-name {
+    font-family: var(--font-small);
+    font-size: var(--font-size-small);
+    color: var(--text-muted);
+    margin-left: auto;
+    white-space: nowrap;
+}
+
+.loadout-hud-tab.expanded .tab-active-name {
+    display: none;
+}
+
+.tab-slots {
+    display: none;
+    border-top: var(--border-width) solid var(--border-dark);
+}
+
+.loadout-hud-tab.expanded .tab-slots {
+    display: block;
+}
+
+.tab-slot {
+    padding: var(--space-xs) var(--space-sm);
+    font-family: var(--font-body);
+    font-size: var(--font-size-body);
+    color: var(--text-muted);
+    text-align: left;
+}
+
+.tab-slot + .tab-slot {
+    border-top: 1px solid var(--border-dark);
+}
+
+.tab-slot.active {
+    color: var(--text-primary);
+    background: var(--bg-highlight);
+}
+
+.tab-slot.empty {
+    color: var(--text-dim);
 }
