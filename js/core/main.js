@@ -2455,12 +2455,11 @@
       }
     }
 
-    // Animate opacity for fade in/out (fade-out is 3x faster so ring disappears promptly)
+    // Animate opacity for fade in/out
     const opacityDiff = ringAnimState.targetOpacity - ringAnimState.opacity;
     if (Math.abs(opacityDiff) > 0.01) {
-      const fade = opacityDiff < 0 ? ringAnimState.fadeSpeed * 3 : ringAnimState.fadeSpeed;
       ringAnimState.opacity +=
-        opacityDiff * Math.min(fade * deltaTime, 1);
+        opacityDiff * Math.min(ringAnimState.fadeSpeed * deltaTime, 1);
       valueChanged = true;
     } else {
       ringAnimState.opacity = ringAnimState.targetOpacity;
@@ -3949,6 +3948,16 @@
     // Update territory overlay animations
     planet.updateOverlayAnimations();
     planet.updateCapturePulseDecays(deltaTime);
+
+    // Per-frame cluster exit detection — start ring fade-out immediately when
+    // leaving a sponsored territory (capture tick runs at 1/sec SP, 250ms MP which
+    // is too slow and causes the ring to linger visibly after leaving).
+    if (ringAnimState.lastClusterId !== null && hasSpawnedIn && !tank.isDead && !isOrbitalView) {
+      const currentCluster = tank.getCurrentClusterId(planet);
+      if (currentCluster !== ringAnimState.lastClusterId) {
+        setTerritoryRingVisible(false);
+      }
+    }
 
     // Update territory ring animation (smooth transitions between clusters)
     updateRingAnimation(deltaTime);

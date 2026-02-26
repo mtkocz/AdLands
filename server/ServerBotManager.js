@@ -20,8 +20,9 @@ const BOT_STATES = {
   WANDERING: "wandering",
 };
 
-// Bot name pool (same as GameRoom)
+// Bot name pool — 320 unique names to cover full 300-bot population
 const BOT_NAME_POOL = [
+  // OG gamer tags
   "xXSlayerXx", "N00bKiller", "TankMaster", "DeathWish", "ShadowFury",
   "IronClad", "VoidWalker", "CyberPunk", "NightHawk", "StormBringer",
   "PhantomX", "BlazeFire", "FrostBite", "ThunderBolt", "VenomStrike",
@@ -33,10 +34,12 @@ const BOT_NAME_POOL = [
   "QuantumLeap", "Nebula9", "CometTail", "StarDust", "MoonRise",
   "DesertFox", "ArcticWolf", "JungleCat", "CoralReef", "VolcanoAsh",
   "TurboTank", "NitroBoost", "DriftKing", "BurnOut", "RedLine",
+  // Internet culture
   "Anon420", "Shitposter", "HODL_Lord", "ToTheMoon", "BasedChad",
   "BigBrain99", "SmoothOp", "BotOrNot", "TryHard42", "Lurker_1",
   "OmegaLul", "Kek_Master", "GG_EZ", "PogChamp", "Pepe_Hands",
   "NoScope360", "Wallhacker", "AimBot_Hehe", "LaggingOut", "RubberBand",
+  // Gen Z slang
   "SendIt", "FullSend", "SkibidiTank", "RizzLord", "CapnCap",
   "SigmaTank", "GyattDamn", "NPC_Energy", "MainChar", "TouchGrass",
   "LockIn", "Tweakin", "GoatedFR", "NoCapFR", "itsGivingTank",
@@ -48,6 +51,63 @@ const BOT_NAME_POOL = [
   "ImCooked", "RentFree", "StayMad", "Delulu", "EraOfMe",
   "NPC_#4829", "Bot_Maybe", "TankGoBrrr", "PewPewPew", "Kaboomski",
   "SorryNotSorry", "WhoAsked", "Literally1984", "MidTank", "L_Plus_Ratio",
+  // Military / callsigns
+  "Maverick", "Goose", "Viper", "Jester", "Iceman",
+  "Wardog", "Foxhound", "Jackal", "Reaper_6", "Warthog",
+  "Bravo_Six", "Overlord", "Sandman", "Ghost_Actual", "Havoc",
+  "Valkyrie", "Banshee", "Sabre", "Talon", "Raptor",
+  // Sci-fi / cyberpunk
+  "Neon_Ronin", "ChromeSkull", "DataMiner", "SynthWave", "GlitchMob",
+  "ZeroDay", "DarkFiber", "NetRunner", "IceBreaker", "Payload",
+  "MalwareX", "Daemon_7", "Proxy_War", "Firewall", "Trojan_Horse",
+  "CyberVortex", "DigitalGhost", "PixelDrift", "HoloStrike", "NeonVenom",
+  // Edgy / dark
+  "Gravedigger", "BoneCollector", "SoulEater", "Nightmare_Fuel", "SkullCrusher",
+  "BloodMoon", "DarkMatter", "AbyssWalker", "HellSpawn", "WraithKing",
+  "Oblivion", "ChaosAgent", "VoidReaper", "Lich_Lord", "Entropy",
+  // Funny / absurd
+  "TacoTuesday", "PotatoAim", "ChickenNugget", "WaffleStomp", "BananaSplit",
+  "CouchPotato", "NoodleArms", "SneakyPeaky", "CaptainObvious", "SirLagsAlot",
+  "LoadingScreen", "Error_404", "BufferUnderrun", "CtrlAltDead", "AFK_Andy",
+  "CampingChair", "BushWookie", "BarrelStuff", "FloorGang", "CeilingGang",
+  "Leeroy", "LastPicked", "MomSaidNo", "DadBot", "GrandpaTank",
+  "LeftOnRead", "BlueScreen", "HotDogWater", "TrashPanda", "GoblinMode",
+  // Competitive / tryhard
+  "SweatLord", "Grinder_99", "RankedAndy", "ClimbOrDie", "TopFrag",
+  "FlickGod", "OneClip", "CleanShot", "PerfectKD", "Unranked_Fury",
+  "ProPlayer_69", "Smurf_Alert", "Warmup_Round", "Clutch_King", "AceEveryRound",
+  "FPS_Doug", "WristPain", "Cracked_Out", "Zoomer_Aim", "Boomer_Strats",
+  // Nature / animals
+  "SteelWolf", "IronBear", "CopperHawk", "TitanEagle", "RustFox",
+  "WildBoar", "ViperFang", "HornetNest", "Wolverine_X", "MadBull",
+  "LoneShark", "BlackMamba", "KingCobra", "HoneyBadger", "PolarBear_7",
+  // Space / cosmic
+  "Andromeda", "EventHorizon", "SuperNova", "Pulsar_X", "DarkEnergy",
+  "CosmicRay", "RedDwarf", "Quasar", "AsteroidBelt", "SolarFlare",
+  "GravityWell", "BlackHole_Sun", "WarpDrive", "LightYear", "VoidStar",
+  // Historical / mythological
+  "Spartacus", "Genghis", "CaesarX", "Viking_Rage", "Samurai_7",
+  "Ronin_Zero", "Crusader", "GladiatorX", "Centurion", "Shogun",
+  "Odin_Son", "ThorHammer", "LokiTrick", "AresWrath", "HadesGate",
+  // Tech / hacker
+  "Sudo_Kill", "Chmod_777", "Ping_Death", "SQL_Inject", "Git_Push_Force",
+  "Kernel_Panic", "Null_Pointer", "Stack_Overflow", "Seg_Fault", "Memory_Leak",
+  "Port_Scanner", "Brute_Force", "Phishing_4U", "DDoS_Lite", "Rootkit",
+  // Meme lords
+  "DogeSniper", "StonksOnly", "DiamondHands", "PaperHands", "Wen_Lambo",
+  "This_Is_Fine", "SurprisedPika", "DrakeNo", "TwoButtons", "ExpandBrain",
+  "MonkeLord", "AmongUs_Sus", "LigmaTank", "CandiceGotcha", "Deez_Nuts",
+  // Aggressive / intimidating
+  "Executioner", "Annihilator", "Demolisher", "Obliterator", "Exterminator",
+  "RamPage", "HavocMaker", "WarMachine", "JuggernautX", "Berserker",
+  "BlitzKrieg", "Scorched_Earth", "ShellShock", "FragOut", "NapalmDawn",
+  // Chill / wholesome
+  "JustVibin", "ChillPill", "EasyBreezy", "NoStress", "PeaceTank",
+  "GoodVibes", "SunnyDay", "CloudNine", "ZenMaster", "HappyCamper",
+  "CozyTank", "WarmBlanket", "PuppyLove", "KittenMittons", "BobRossTank",
+  // Regional / cultural
+  "SakuraDrift", "KamikazeRun", "WuTang_Tank", "BollyBlast", "OutbackOp",
+  "FjordKnight", "TundraWolf", "SaharaDust", "BayouBrawl", "PrairieStorm",
 ];
 
 // Physics constants (match client BotTanks.js)
