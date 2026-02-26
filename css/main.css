@@ -185,9 +185,11 @@ canvas {
    ======================== */
 
 #debug-bar {
+    position: fixed;
+    top: var(--space-sm);
+    right: calc(var(--space-sm) + var(--panel-width) + var(--space-sm));
     display: flex;
     gap: var(--padding-md);
-    justify-content: center;
     background: var(--bg-panel);
     padding: var(--padding-sm) var(--padding-lg);
     border-radius: 0;
@@ -197,7 +199,7 @@ canvas {
     font-size: var(--font-size-body);
     font-family: var(--font-body);
     line-height: 1;
-    pointer-events: auto;
+    z-index: 300;
     filter: url(#pixel-outline-1);
 }
 
