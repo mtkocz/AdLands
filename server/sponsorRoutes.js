@@ -10,14 +10,8 @@ const fsp = require("fs").promises;
 const path = require("path");
 let sharp;
 try { sharp = require("sharp"); } catch (e) { /* optional — sharp not installed */ }
-
-/** Resize image to 512px short side (high-res source for client-side pixel art filter). */
-async function resizeHighRes(inputBuffer) {
-  return sharp(inputBuffer)
-    .resize(512, 512, { fit: "inside", withoutEnlargement: true })
-    .png({ compressionLevel: 9 })
-    .toBuffer();
-}
+let applyPixelArtFilter;
+try { applyPixelArtFilter = require("./pixelArtFilter").applyPixelArtFilter; } catch (e) { /* optional — needs sharp */ }
 const { getFirestore } = require("./firebaseAdmin");
 const { sendViaResend } = require("./inquiryRoutes");
 
@@ -55,16 +49,16 @@ async function extractSponsorImage(sponsor, texDir) {
   if (sponsor.patternImage) {
     const match = sponsor.patternImage.match(/^data:image\/(\w+);base64,(.+)$/);
     if (match) {
-      const ext = match[1] === "jpeg" ? "jpg" : match[1];
-      const filePath = path.join(texDir, `${sponsor.id}.${ext}`);
       const raw = Buffer.from(match[2], "base64");
-      if (sharp) {
-        // Resize to 512px short side — client applies adaptive pixel art filter
-        const resized = await resizeHighRes(raw);
+      if (applyPixelArtFilter) {
+        // Apply pixel art filter: downscale to 128px, 8-color palette, Bayer dithering
+        const baked = await applyPixelArtFilter(raw);
         const pngPath = path.join(texDir, `${sponsor.id}.png`);
-        await fsp.writeFile(pngPath, resized);
+        await fsp.writeFile(pngPath, baked);
         urls.patternUrl = await withMtime(`/sponsor-textures/${sponsor.id}.png`, pngPath);
       } else {
+        const ext = match[1] === "jpeg" ? "jpg" : match[1];
+        const filePath = path.join(texDir, `${sponsor.id}.${ext}`);
         await fsp.writeFile(filePath, raw);
         urls.patternUrl = await withMtime(`/sponsor-textures/${sponsor.id}.${ext}`, filePath);
       }
@@ -74,15 +68,15 @@ async function extractSponsorImage(sponsor, texDir) {
     const existing = await findExistingFile(texDir, sponsor.id + ".");
     if (existing && !existing.includes("_logo")) {
       const filePath = path.join(texDir, existing);
-      // Resize oversized files to 512px on startup — client applies pixel art filter
-      if (sharp) {
+      // Re-bake oversized files through pixel art filter on startup
+      if (applyPixelArtFilter) {
         try {
           const stat = await fsp.stat(filePath);
           if (stat.size > 5000) {
             const raw = await fsp.readFile(filePath);
-            const resized = await resizeHighRes(raw);
+            const baked = await applyPixelArtFilter(raw);
             const pngPath = path.join(texDir, `${sponsor.id}.png`);
-            await fsp.writeFile(pngPath, resized);
+            await fsp.writeFile(pngPath, baked);
             urls.patternUrl = await withMtime(`/sponsor-textures/${sponsor.id}.png`, pngPath);
           } else {
             urls.patternUrl = await withMtime(`/sponsor-textures/${existing}`, filePath);

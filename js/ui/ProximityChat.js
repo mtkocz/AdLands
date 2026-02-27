@@ -343,11 +343,11 @@ class ProximityChat {
      * @param {string} text - Message text
      * @param {string} mode - 'faction' (colored, faction-only), 'lobby' (normal, all see), or 'squad' (purple, squad-only)
      */
-    addMessage(tankId, text, mode = 'lobby') {
-        // Get tag info for ChatWindow
+    addMessage(tankId, text, mode = 'lobby', fallbackName = null, fallbackFaction = null) {
+        // Get tag info for ChatWindow, fall back to server-provided name/faction
         const tagData = this.playerTags.tags.get(tankId);
-        const senderName = tagData ? tagData.config.name : 'Unknown';
-        const faction = tagData ? tagData.config.faction : 'cobalt';
+        const senderName = tagData ? tagData.config.name : (fallbackName || 'Unknown');
+        const faction = tagData ? tagData.config.faction : (fallbackFaction || 'cobalt');
         const isPlayer = tankId === 'player';
         // For player, use the authoritative playerSquad; for others, use tag config
         const senderSquad = isPlayer ? this.playerSquad : (tagData ? tagData.config.squad : null);

@@ -536,6 +536,11 @@ class Dashboard {
     const listEl = document.getElementById("faction-roster-list");
     if (!listEl) return;
 
+    // Save parent scroll position — DOM changes below can cause the browser
+    // to clamp .dashboard-panels scrollTop during reflow
+    const panelsContainer = listEl.closest(".dashboard-panels");
+    const savedPanelScroll = panelsContainer ? panelsContainer.scrollTop : 0;
+
     if (!this._rosterElements) this._rosterElements = new Map();
 
     const faction = data.faction || this.playerFaction;
@@ -547,6 +552,7 @@ class Dashboard {
       listEl.innerHTML = '<div class="empty-state" style="padding:12px;opacity:0.5;font-family:var(--font-small);font-size:var(--font-size-small);">No faction members</div>';
       this._rosterElements.clear();
       this._prevRosterRanks = new Map();
+      if (panelsContainer) panelsContainer.scrollTop = savedPanelScroll;
       return;
     }
 
@@ -681,6 +687,9 @@ class Dashboard {
         listEl.scrollTop = elBottom - listEl.clientHeight;
       }
     }
+
+    // Restore parent scroll position after all DOM changes and reflows
+    if (panelsContainer) panelsContainer.scrollTop = savedPanelScroll;
   }
 
   _buildLoadoutContent() {
@@ -974,8 +983,9 @@ class Dashboard {
                         </div>
                         <div class="controls-hints">
                             <div class="controls-hint"><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> <span>Move</span></div>
-                            <div class="controls-hint"><kbd>H</kbd> <span>Hide UI</span></div>
                             <div class="controls-hint"><kbd>Left Click</kbd> <span>Fire</span></div>
+                            <div class="controls-hint"><kbd>1</kbd><kbd>2</kbd><kbd>3</kbd> <span>Switch Loadout</span></div>
+                            <div class="controls-hint"><kbd>H</kbd> <span>Hide UI</span></div>
                             <div class="controls-hint"><kbd>Right Drag</kbd> <span>Orbit Camera</span></div>
                         </div>
                     </div>

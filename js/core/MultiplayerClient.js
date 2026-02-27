@@ -1081,7 +1081,7 @@
     net.onChatMessage = (data) => {
       if (data.id === net.playerId) return; // Skip own messages (already shown locally)
       if (mp.proximityChat) {
-        mp.proximityChat.addMessage(data.id, data.text, data.mode || "lobby");
+        mp.proximityChat.addMessage(data.id, data.text, data.mode || "lobby", data.name, data.faction);
       }
     };
 

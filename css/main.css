@@ -3077,6 +3077,9 @@ body.tip-dragging .chat-mention.tip-highlight {
     overflow-x: hidden;
     overscroll-behavior: contain;
     padding-bottom: var(--space-lg); /* 16px - extra scroll space at bottom */
+    /* Promote to own compositing layer so parent filter/will-change
+       don't reset scroll position during repaints */
+    will-change: scroll-position;
     /* Firefox scrollbar styling */
     scrollbar-width: thin;
     scrollbar-color: var(--border-dark) transparent;
