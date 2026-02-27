@@ -38,7 +38,7 @@ class ShieldEffect {
         'varying vec2 vUv;',
         'void main() {',
         '  vUv = uv;',
-        '  vAngle = atan(position.x, position.z);',
+        '  vAngle = atan(position.x, -position.z);',
         '  gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);',
         '}',
       ].join('\n'),
