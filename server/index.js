@@ -141,10 +141,10 @@ const io = new Server(server, {
 // ========================
 
 // Serve the shared physics module so the client can use it too
-app.use("/shared", express.static(path.join(__dirname, "shared"), { maxAge: 0 }));
+app.use("/shared", express.static(path.join(__dirname, "shared"), { maxAge: "1d" }));
 
 // Serve the main game directory (parent of server/)
-app.use(express.static(gameDir, { maxAge: 0 }));
+app.use(express.static(gameDir, { maxAge: "1d" }));
 
 // Fallback: serve index.html for root
 app.get("/", (req, res) => {

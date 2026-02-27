@@ -24,7 +24,7 @@ const DEBUG_LOG = process.env.DEBUG_LOG === "1";
 const SHIELD = {
   MAX_ENERGY: 1.0,
   DRAIN_RATE: 0.125,       // per second (8s full drain)
-  RECHARGE_RATE: 0.15,     // per second (~6.7s full recharge)
+  RECHARGE_RATE: 0.30,     // per second (~3.3s full recharge)
   RECHARGE_DELAY: 1.0,     // seconds after release before recharge begins
   ARC_START: 2.094,        // 120 degrees in radians
   ARC_MIN: 0.524,          // 30 degrees in radians
@@ -2491,9 +2491,6 @@ class GameRoom {
           player.shieldEnergy = 0;
           player.shieldActive = false;
         }
-        // Narrow arc proportionally to remaining energy
-        player.shieldArcAngle = SHIELD.ARC_MIN +
-          (SHIELD.ARC_START - SHIELD.ARC_MIN) * player.shieldEnergy;
         player.shieldRechargeTimer = 0;
       } else {
         if (player.shieldActive) {
@@ -2506,8 +2503,6 @@ class GameRoom {
             player.shieldEnergy < SHIELD.MAX_ENERGY) {
           player.shieldEnergy = Math.min(SHIELD.MAX_ENERGY,
             player.shieldEnergy + SHIELD.RECHARGE_RATE * dt);
-          player.shieldArcAngle = SHIELD.ARC_MIN +
-            (SHIELD.ARC_START - SHIELD.ARC_MIN) * player.shieldEnergy;
         }
       }
     }

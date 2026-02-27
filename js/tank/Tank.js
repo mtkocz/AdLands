@@ -147,14 +147,12 @@ class Tank {
     }
     // Shield energy prediction (mirrors server _updateShields)
     if (this.state.keys.q && this.shieldEnergy > 0) {
-      if (!this.shieldActive) console.log('[Shield] ACTIVATED — energy:', this.shieldEnergy.toFixed(2));
       this.shieldActive = true;
       this.shieldEnergy -= 0.125 * deltaTime; // DRAIN_RATE
       if (this.shieldEnergy <= 0) {
         this.shieldEnergy = 0;
         this.shieldActive = false;
       }
-      this.shieldArcAngle = 0.524 + (2.094 - 0.524) * this.shieldEnergy;
       this.shieldRechargeTimer = 0;
     } else {
       if (this.shieldActive) {
@@ -163,8 +161,7 @@ class Tank {
       }
       this.shieldRechargeTimer += deltaTime;
       if (this.shieldRechargeTimer >= 1.0 && this.shieldEnergy < 1.0) {
-        this.shieldEnergy = Math.min(1.0, this.shieldEnergy + 0.15 * deltaTime);
-        this.shieldArcAngle = 0.524 + (2.094 - 0.524) * this.shieldEnergy;
+        this.shieldEnergy = Math.min(1.0, this.shieldEnergy + 0.30 * deltaTime);
       }
     }
 
@@ -1460,7 +1457,6 @@ class Tank {
         return;
       }
       const key = e.key.toLowerCase();
-      if (key === 'q') console.log('[Tank] Q keydown, controlsEnabled:', this.controlsEnabled, 'isDead:', this.isDead);
       if (key in this.state.keys) {
         this.state.keys[key] = true;
         e.preventDefault();

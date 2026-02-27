@@ -568,11 +568,8 @@
   // Connect tank to cannon system for ghost reticle range
   tank.setCannonSystem(cannonSystem);
 
-  // Shield effect system (3D arc visuals) + HUD energy bar
-  console.log('[main] ShieldEffect class exists:', typeof ShieldEffect);
+  // Shield effect system (3D arc visuals)
   const shieldEffect = new ShieldEffect(scene, CONFIG.sphereRadius);
-  const shieldEnergyBar = new ShieldEnergyBar();
-  console.log('[main] Shield systems initialized');
 
   // Tank damage effects (smoke/fire)
   const tankDamageEffects = new TankDamageEffects(scene, CONFIG.sphereRadius);
@@ -3889,13 +3886,6 @@
       shieldEffect.getOrCreateShield('local', tank.turretGroup, playerFaction);
     }
     shieldEffect.updateShield('local', tank.shieldActive, tank.shieldArcAngle, tank.shieldEnergy, deltaTime);
-    shieldEnergyBar.update(tank.shieldEnergy, tank.shieldActive);
-    if (tank.shieldActive && !window._shieldDbg) {
-      window._shieldDbg = true;
-      const s = shieldEffect.shields.get('local');
-      console.log('[Shield] mesh:', s?.mesh?.visible, 'arcAngle:', tank.shieldArcAngle.toFixed(2), 'energy:', tank.shieldEnergy.toFixed(2), 'turretGroup children:', tank.turretGroup?.children?.length);
-    }
-    if (!tank.shieldActive) window._shieldDbg = false;
     environment.update(camera, deltaTime);
     environment.updateAtmosphere(gameCamera.getEffectiveDistance());
     const shadowTarget = gameCamera.mode === "surface" && !gameCamera.transitioning
