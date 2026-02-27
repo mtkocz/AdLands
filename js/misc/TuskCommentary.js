@@ -130,6 +130,7 @@ const TUSK_LINES = {
     "Mines are invisible to enemies. Place them on high-traffic hexes. Surprise economics.",
     "Tip: Portal placement is an art. A profitable, shareholder-pleasing art.",
     "Pro tip: Save your shield for when you NEED it. Panic-shielding wastes cooldowns.",
+    "Pro tip: Shields can't block homing missiles. Pop a flare instead — it's what they're for. Basic missile economics.",
     "Tip: Abilities recharge faster when you're capturing hexes. Synergy!",
     // Meta/teamwork
     "Quick tip: Playing with your faction helps everyone. Shocking concept, teamwork.",

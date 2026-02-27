@@ -59,7 +59,7 @@ class CannonSystem {
 
     this.config = {
       // Base values (at charge 0)
-      projectileSpeed: 1.125, // Units per frame
+      projectileSpeed: 0.84375, // Units per frame
       projectileLength: 2.5, // Tracer length
       projectileRadius: 0.125, // Tracer thickness
       maxDistance: 20, // Max range before despawn
