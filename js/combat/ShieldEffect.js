@@ -21,10 +21,10 @@ class ShieldEffect {
     if (this.shields.has(tankId)) return this.shields.get(tankId);
 
     const factionColor = FACTION_COLORS[faction]
-      ? FACTION_COLORS[faction].threeLight.clone()
+      ? FACTION_COLORS[faction].three.clone()
       : new THREE.Color(0x00ccff);
-    // HDR boost for bloom
-    factionColor.multiplyScalar(3);
+    // HDR boost for bloom (moderate to preserve faction hue)
+    factionColor.multiplyScalar(2.0);
 
     const material = new THREE.ShaderMaterial({
       uniforms: {
