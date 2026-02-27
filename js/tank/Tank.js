@@ -256,6 +256,7 @@ class Tank {
         s: false,
         d: false,
         shift: false,
+        q: false,
       };
       this.state.speed = 0;
       // Hide ghost reticle when controls disabled
@@ -1286,7 +1287,7 @@ class Tank {
     this.state.isDead = true; // Also set on state for tread dust/tracks
     this.damageState = "dead";
     this.state.speed = 0;
-    this.state.keys = { w: false, a: false, s: false, d: false, shift: false };
+    this.state.keys = { w: false, a: false, s: false, d: false, shift: false, q: false };
 
     // Notify damage state callback for smoke effects
     if (this.onDamageStateChange) {
@@ -1436,7 +1437,7 @@ class Tank {
 
     // Reset movement state
     this.state.speed = 0;
-    this.state.keys = { w: false, a: false, s: false, d: false, shift: false };
+    this.state.keys = { w: false, a: false, s: false, d: false, shift: false, q: false };
 
     // Notify damage state change (to clear effects)
     if (this.onDamageStateChange) {
