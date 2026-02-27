@@ -1695,6 +1695,7 @@ class GameRoom {
       player.activeSlots = { offense: 'offense-1', defense: 'defense-1', tactical: 'tactical-1' };
     }
     player.activeSlots[category] = slotId;
+    this.savePlayerProfile(socketId).catch(() => {});
   }
 
   /** Handle tank upgrade purchase (armor, speed, fireRate, damage) */

@@ -3871,6 +3871,12 @@ class Dashboard {
     // Sync to WeaponSlotSystem so modifiers + HUD reflect the change
     if (window.weaponSlotSystem) {
       window.weaponSlotSystem.equipped = { ...this.equippedUpgrades };
+      window.weaponSlotSystem._saveToProfile();
+    }
+
+    // Notify server for persistence
+    if (window.networkManager?.connected) {
+      window.networkManager.socket.emit("unequip-upgrade", { slotId });
     }
 
     // Update visuals
@@ -3901,6 +3907,12 @@ class Dashboard {
     // Sync to WeaponSlotSystem so modifiers + HUD reflect the change
     if (window.weaponSlotSystem) {
       window.weaponSlotSystem.equipped = { ...this.equippedUpgrades };
+      window.weaponSlotSystem._saveToProfile();
+    }
+
+    // Notify server for persistence
+    if (window.networkManager?.connected) {
+      window.networkManager.socket.emit("equip-upgrade", { slotId, upgradeId });
     }
 
     // Update visuals
