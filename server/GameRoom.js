@@ -20,6 +20,18 @@ const BodyguardManager = require("./BodyguardManager");
 const BotWorkerBridge = require("./BotWorkerBridge");
 const DEBUG_LOG = process.env.DEBUG_LOG === "1";
 
+// Shield constants
+const SHIELD = {
+  MAX_ENERGY: 1.0,
+  DRAIN_RATE: 0.25,        // per second (4s full drain)
+  RECHARGE_RATE: 0.15,     // per second (~6.7s full recharge)
+  RECHARGE_DELAY: 1.0,     // seconds after release before recharge begins
+  ARC_START: 2.094,        // 120 degrees in radians
+  ARC_MIN: 0.524,          // 30 degrees in radians
+  RADIUS: 4.0,             // world units
+  RADIUS_RAD: 4.0 / 480,   // angular distance on R=480 sphere
+};
+
 // Bot name pool (same as client for consistency)
 const BOT_NAME_POOL = [
   "xXSlayerXx", "N00bKiller", "TankMaster", "DeathWish", "ShadowFury",
@@ -725,7 +737,7 @@ class GameRoom {
       _portalReason: 'deploy', // 'deploy' | 'fastTravel' | 'respawn'
 
       // Latest input from client (updated every time we receive input)
-      keys: { w: false, a: false, s: false, d: false, shift: false },
+      keys: { w: false, a: false, s: false, d: false, shift: false, q: false },
 
       // Input sequence number (for client-side prediction reconciliation)
       lastInputSeq: 0,
@@ -742,6 +754,12 @@ class GameRoom {
 
       // Cannon cooldown (server-authoritative)
       lastFireTime: 0,
+
+      // Shield state (server-authoritative)
+      shieldActive: false,
+      shieldEnergy: SHIELD.MAX_ENERGY,
+      shieldArcAngle: SHIELD.ARC_START,
+      shieldRechargeTimer: 0,
 
       // Profile data (from Firestore or sent by client after connect)
       badges: profileData?.unlockedBadges?.map(b => b.id) || [],
@@ -1751,6 +1769,7 @@ class GameRoom {
       player.keys.s = !!input.keys.s;
       player.keys.d = !!input.keys.d;
       player.keys.shift = !!input.keys.shift;
+      player.keys.q = !!input.keys.q;
 
       // Any key pressed counts as meaningful activity
       if (input.keys.w || input.keys.a || input.keys.s || input.keys.d) {
@@ -1772,6 +1791,9 @@ class GameRoom {
   handleFire(socketId, power, fireTurretAngle) {
     const player = this.players.get(socketId);
     if (!player || this._isUndeployed(player)) return;
+
+    // Cannot fire while shield is active
+    if (player.shieldActive) return;
 
     // Enforce server-side cooldown (2 seconds between shots)
     const now = Date.now();
@@ -2152,7 +2174,10 @@ class GameRoom {
     this._resolveTankCollisions();
 
     const _t4 = Date.now();
-    // 2. Update projectiles
+    // 1.8. Update shield energy (drain/recharge)
+    this._updateShields(dt);
+
+    // 2. Update projectiles (includes shield collision + reflection)
     this._updateProjectiles(dt);
 
     // 3. Update territory capture (every other tick — 10Hz is imperceptible for
@@ -2452,6 +2477,42 @@ class GameRoom {
     return false;
   }
 
+  _updateShields(dt) {
+    for (const [id, player] of this.players) {
+      if (this._isUndeployed(player) || player.isDead) {
+        player.shieldActive = false;
+        continue;
+      }
+
+      if (player.keys.q && player.shieldEnergy > 0) {
+        player.shieldActive = true;
+        player.shieldEnergy -= SHIELD.DRAIN_RATE * dt;
+        if (player.shieldEnergy <= 0) {
+          player.shieldEnergy = 0;
+          player.shieldActive = false;
+        }
+        // Narrow arc proportionally to remaining energy
+        player.shieldArcAngle = SHIELD.ARC_MIN +
+          (SHIELD.ARC_START - SHIELD.ARC_MIN) * player.shieldEnergy;
+        player.shieldRechargeTimer = 0;
+      } else {
+        if (player.shieldActive) {
+          player.shieldActive = false;
+          player.shieldRechargeTimer = 0;
+        }
+        // Recharge after delay
+        player.shieldRechargeTimer += dt;
+        if (player.shieldRechargeTimer >= SHIELD.RECHARGE_DELAY &&
+            player.shieldEnergy < SHIELD.MAX_ENERGY) {
+          player.shieldEnergy = Math.min(SHIELD.MAX_ENERGY,
+            player.shieldEnergy + SHIELD.RECHARGE_RATE * dt);
+          player.shieldArcAngle = SHIELD.ARC_MIN +
+            (SHIELD.ARC_START - SHIELD.ARC_MIN) * player.shieldEnergy;
+        }
+      }
+    }
+  }
+
   _updateProjectiles(dt) {
     const projs = this.projectiles;
     for (let i = projs.length - 1; i >= 0; i--) {
@@ -2498,12 +2559,79 @@ class GameRoom {
       while (dTheta < -Math.PI) dTheta += Math.PI * 2;
       const dPhi = p.phi - prevPhi;
 
+      let shieldReflected = false;
+
       for (let step = 0; step <= numSteps; step++) {
+        if (shieldReflected) break;
         const t = step / numSteps;
         let testTheta = prevTheta + dTheta * t;
         while (testTheta < 0) testTheta += Math.PI * 2;
         while (testTheta >= Math.PI * 2) testTheta -= Math.PI * 2;
         const testPhi = prevPhi + dPhi * t;
+
+        // --- Shield collision check (before tank body check) ---
+        for (const [shId, shPlayer] of this.players) {
+          if (!shPlayer.shieldActive) continue;
+          if (shId === p.ownerId) continue; // Own shield doesn't block own shots
+          // Friendly shields don't block friendly projectiles
+          if (shPlayer.faction === p.ownerFaction) continue;
+
+          const distToShield = sphericalDistance(testTheta, testPhi, shPlayer.theta, shPlayer.phi);
+          if (distToShield > SHIELD.RADIUS_RAD * 1.5) continue;
+          if (distToShield < SHIELD.RADIUS_RAD * 0.3) continue;
+
+          // Compute angle from shield center to projectile in turret-facing frame
+          const shSinPhi = Math.sin(shPlayer.phi);
+          const shSafeSin = Math.abs(shSinPhi) < 0.01 ? 0.01 * Math.sign(shSinPhi || 1) : shSinPhi;
+          let shDtN = testTheta - shPlayer.theta;
+          while (shDtN > Math.PI) shDtN -= Math.PI * 2;
+          while (shDtN < -Math.PI) shDtN += Math.PI * 2;
+          const shDpN = testPhi - shPlayer.phi;
+          const shNorthOff = shDpN;
+          const shEastOff = shDtN * shSafeSin;
+
+          // Shield facing direction (same conversion as fireHeading)
+          let shieldFacing = shPlayer.heading + Math.PI - shPlayer.turretAngle;
+          while (shieldFacing >= Math.PI * 2) shieldFacing -= Math.PI * 2;
+          while (shieldFacing < 0) shieldFacing += Math.PI * 2;
+
+          // Angle from tank center to projectile
+          const angleToProj = Math.atan2(-shEastOff, -shNorthOff);
+          let angleDiff = angleToProj - shieldFacing;
+          while (angleDiff > Math.PI) angleDiff -= Math.PI * 2;
+          while (angleDiff < -Math.PI) angleDiff += Math.PI * 2;
+
+          const halfArc = shPlayer.shieldArcAngle / 2;
+          if (Math.abs(angleDiff) < halfArc) {
+            // Shield hit — reflect projectile
+            let normalAngle = angleToProj;
+            while (normalAngle < 0) normalAngle += Math.PI * 2;
+            while (normalAngle >= Math.PI * 2) normalAngle -= Math.PI * 2;
+
+            let reflectedHeading = 2 * normalAngle - p.heading + Math.PI;
+            while (reflectedHeading < 0) reflectedHeading += Math.PI * 2;
+            while (reflectedHeading >= Math.PI * 2) reflectedHeading -= Math.PI * 2;
+
+            p.heading = reflectedHeading;
+            p.ownerId = shId;           // Shield holder gets kill credit
+            p.ownerFaction = "__none__"; // Can hit anyone now
+            p.startTheta = p.theta;
+            p.startPhi = p.phi;
+            p.age = 0;
+
+            this.io.to(this.roomId).emit("shield-reflect", {
+              shieldOwnerId: shId,
+              theta: testTheta,
+              phi: testPhi,
+              newHeading: reflectedHeading,
+              projectileId: p.id,
+            });
+
+            shieldReflected = true;
+            break;
+          }
+        }
+        if (shieldReflected) break;
 
         // Check for hits against all players
         for (const [id, player] of this.players) {
@@ -2751,6 +2879,12 @@ class GameRoom {
     player.isDead = false;
     player.speed = 0;
     player.waitingForPortal = true;
+
+    // Reset shield energy
+    player.shieldActive = false;
+    player.shieldEnergy = SHIELD.MAX_ENERGY;
+    player.shieldArcAngle = SHIELD.ARC_START;
+    player.shieldRechargeTimer = 0;
     player._portalReason = 'respawn';
 
     // Recompute ranks and commander
@@ -3415,6 +3549,7 @@ class GameRoom {
       state.f = p.faction;
       state.r = p.rank || 0;
       state.rt = this.factionMemberCounts[p.faction] || 0;
+      state.sh = p.shieldActive ? 1 : 0;
     }
 
     // -- Celestial data (shared by all clients — computed once) --

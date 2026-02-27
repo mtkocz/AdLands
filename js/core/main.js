@@ -568,6 +568,10 @@
   // Connect tank to cannon system for ghost reticle range
   tank.setCannonSystem(cannonSystem);
 
+  // Shield effect system (3D arc visuals) + HUD energy bar
+  const shieldEffect = new ShieldEffect(scene, CONFIG.sphereRadius);
+  const shieldEnergyBar = new ShieldEnergyBar();
+
   // Tank damage effects (smoke/fire)
   const tankDamageEffects = new TankDamageEffects(scene, CONFIG.sphereRadius);
 
@@ -1179,6 +1183,7 @@
       e.button === 0 &&
       tank.controlsEnabled &&
       !tank.isDead &&
+      !tank.shieldActive &&
       gameCamera.mode === "surface"
     ) {
       if (!isUIClick(e)) {
@@ -1190,10 +1195,11 @@
   window.addEventListener("mouseup", (e) => {
     if (e.button === 0) {
       if (cannonSystem.isCharging()) {
-        // Only fire if still in surface mode with controls enabled and alive
+        // Only fire if still in surface mode with controls enabled, alive, and not shielding
         if (
           tank.controlsEnabled &&
           !tank.isDead &&
+          !tank.shieldActive &&
           gameCamera.mode === "surface"
         ) {
           cannonSystem.releaseCharge(tank, playerFaction);
@@ -1508,6 +1514,7 @@
     botTanks,
     capturePulse,
     commanderDrawing,
+    shieldEffect,
     updatePlayerCount,
 
     // Called by MultiplayerClient when server assigns faction
@@ -3865,6 +3872,13 @@
     tank.isSurfaceView = gameCamera.mode === "surface" && !gameCamera.transitioning;
     tank.update(camera, deltaTime);
     tank.updateFade();
+
+    // Update local player shield visual + energy bar
+    if (tank.turretGroup) {
+      shieldEffect.getOrCreateShield('local', tank.turretGroup, playerFaction);
+    }
+    shieldEffect.updateShield('local', tank.shieldActive, tank.shieldArcAngle, tank.shieldEnergy, deltaTime);
+    shieldEnergyBar.update(tank.shieldEnergy, tank.shieldActive);
     environment.update(camera, deltaTime);
     environment.updateAtmosphere(gameCamera.getEffectiveDistance());
     const shadowTarget = gameCamera.mode === "surface" && !gameCamera.transitioning

@@ -193,6 +193,11 @@ class NetworkManager {
       if (this.onPlayerRespawned) this.onPlayerRespawned(data);
     });
 
+    // Projectile reflected off a shield
+    this.socket.on("shield-reflect", (data) => {
+      if (this.onShieldReflect) this.onShieldReflect(data);
+    });
+
     // Chat message
     this.socket.on("chat", (data) => {
       if (this.onChatMessage) this.onChatMessage(data);
@@ -409,6 +414,7 @@ class NetworkManager {
         s: !!keys.s,
         d: !!keys.d,
         shift: !!keys.shift,
+        q: !!keys.q,
       },
       turretAngle: turretAngle,
       seq: this.inputSeq,

@@ -51,7 +51,7 @@ class Tank {
       turretAngularVelocity: 0,
 
       // Input
-      keys: { w: false, a: false, s: false, d: false, shift: false },
+      keys: { w: false, a: false, s: false, d: false, shift: false, q: false },
 
       // Death state (for tread dust/tracks to check)
       isDead: false,
@@ -74,6 +74,12 @@ class Tank {
 
     // Control state (can be disabled during fast travel)
     this.controlsEnabled = true;
+
+    // Shield state (client-side prediction, synced from server)
+    this.shieldActive = false;
+    this.shieldEnergy = 1.0;
+    this.shieldArcAngle = 2.094; // 120 degrees
+    this.shieldRechargeTimer = 0;
 
     // Multiplayer mode: when true, skip local physics (server is authoritative)
     this.multiplayerMode = false;
@@ -139,6 +145,28 @@ class Tank {
     if (this.ghostReticle) {
       this.ghostReticle.style.display = this.isSurfaceView ? "" : "none";
     }
+    // Shield energy prediction (mirrors server _updateShields)
+    if (this.state.keys.q && this.shieldEnergy > 0) {
+      this.shieldActive = true;
+      this.shieldEnergy -= 0.25 * deltaTime; // DRAIN_RATE
+      if (this.shieldEnergy <= 0) {
+        this.shieldEnergy = 0;
+        this.shieldActive = false;
+      }
+      this.shieldArcAngle = 0.524 + (2.094 - 0.524) * this.shieldEnergy;
+      this.shieldRechargeTimer = 0;
+    } else {
+      if (this.shieldActive) {
+        this.shieldActive = false;
+        this.shieldRechargeTimer = 0;
+      }
+      this.shieldRechargeTimer += deltaTime;
+      if (this.shieldRechargeTimer >= 1.0 && this.shieldEnergy < 1.0) {
+        this.shieldEnergy = Math.min(1.0, this.shieldEnergy + 0.15 * deltaTime);
+        this.shieldArcAngle = 0.524 + (2.094 - 0.524) * this.shieldEnergy;
+      }
+    }
+
     // Local physics + terrain collision run in both SP and MP.
     // In MP, server reconciliation corrects any prediction drift each tick.
     this._updatePhysics(deltaTime);

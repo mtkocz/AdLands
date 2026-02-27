@@ -51,6 +51,7 @@
       dustShockwave,
       gameCamera,
       visualEffects,
+      shieldEffect,
     } = mp;
 
     const net = new NetworkManager();
@@ -488,6 +489,17 @@
             remoteTank.setFaction(state.f);
             playerTags.updateFaction?.(id, state.f);
             tankHeadlights.updateFaction?.(id, state.f);
+          }
+
+          // Update remote tank shield visual
+          if (state.sh !== undefined && shieldEffect) {
+            const shActive = state.sh === 1;
+            remoteTank.shieldActive = shActive;
+            if (shActive && remoteTank.turretGroup) {
+              shieldEffect.getOrCreateShield(id, remoteTank.turretGroup, remoteTank.faction);
+            }
+            // Use a default arc for remote tanks (server doesn't send arc width)
+            shieldEffect.updateShield(id, shActive, shActive ? 2.094 : 0, shActive ? 1.0 : 0, 0.1);
           }
         }
       }
@@ -1961,6 +1973,7 @@
       tankHeadlights.unregisterTank?.(playerId);
       tankCollision.unregisterTank?.(playerId);
       tankDamageEffects.removeTank?.(playerId);
+      shieldEffect?.removeShield(playerId);
 
       // Unregister from CommanderSystem
       if (window.commanderSystem) {
