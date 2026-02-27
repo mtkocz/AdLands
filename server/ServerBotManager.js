@@ -137,7 +137,7 @@ const BOT_SEPARATION_STRENGTH = 0.35;
 const BOT_STUCK_CHECK_INTERVAL = 0.5;
 const BOT_STUCK_THRESHOLD = 3;
 const BOT_TERRAIN_BOUNCE_LIMIT = 3;
-const BOT_COLLISION_SPEED_RETAIN = 0.15;
+const BOT_COLLISION_SPEED_RETAIN = 0.5;
 const BOT_TERRAIN_AVOID_COOLDOWN = 1.5;
 
 // Terrain collision probes (half-dimensions of tank body)
@@ -1300,11 +1300,11 @@ class ServerBotManager {
       if (!thetaOnly) {
         // Slide along theta (east-west)
         bot.phi = prevPhi;
-        bot.speed *= 0.85;
+        bot.speed *= 0.97;
       } else if (!phiOnly) {
         // Slide along phi (north-south)
         bot.theta = prevTheta;
-        bot.speed *= 0.85;
+        bot.speed *= 0.97;
       } else {
         // Both axes blocked — full revert
         bot.theta = prevTheta;
