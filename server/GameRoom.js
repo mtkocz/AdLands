@@ -2484,26 +2484,10 @@ class GameRoom {
         continue;
       }
 
-      if (player.keys.q && player.shieldEnergy > 0) {
+      if (player.keys.q) {
         player.shieldActive = true;
-        player.shieldEnergy -= SHIELD.DRAIN_RATE * dt;
-        if (player.shieldEnergy <= 0) {
-          player.shieldEnergy = 0;
-          player.shieldActive = false;
-        }
-        player.shieldRechargeTimer = 0;
       } else {
-        if (player.shieldActive) {
-          player.shieldActive = false;
-          player.shieldRechargeTimer = 0;
-        }
-        // Recharge after delay
-        player.shieldRechargeTimer += dt;
-        if (player.shieldRechargeTimer >= SHIELD.RECHARGE_DELAY &&
-            player.shieldEnergy < SHIELD.MAX_ENERGY) {
-          player.shieldEnergy = Math.min(SHIELD.MAX_ENERGY,
-            player.shieldEnergy + SHIELD.RECHARGE_RATE * dt);
-        }
+        player.shieldActive = false;
       }
     }
   }

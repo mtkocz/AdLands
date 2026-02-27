@@ -145,25 +145,8 @@ class Tank {
     if (this.ghostReticle) {
       this.ghostReticle.style.display = this.isSurfaceView ? "" : "none";
     }
-    // Shield energy prediction (mirrors server _updateShields)
-    if (this.state.keys.q && this.shieldEnergy > 0) {
-      this.shieldActive = true;
-      this.shieldEnergy -= 0.125 * deltaTime; // DRAIN_RATE
-      if (this.shieldEnergy <= 0) {
-        this.shieldEnergy = 0;
-        this.shieldActive = false;
-      }
-      this.shieldRechargeTimer = 0;
-    } else {
-      if (this.shieldActive) {
-        this.shieldActive = false;
-        this.shieldRechargeTimer = 0;
-      }
-      this.shieldRechargeTimer += deltaTime;
-      if (this.shieldRechargeTimer >= 1.0 && this.shieldEnergy < 1.0) {
-        this.shieldEnergy = Math.min(1.0, this.shieldEnergy + 0.30 * deltaTime);
-      }
-    }
+    // Shield — active while Q held
+    this.shieldActive = !!this.state.keys.q;
 
     // Local physics + terrain collision run in both SP and MP.
     // In MP, server reconciliation corrects any prediction drift each tick.
