@@ -2128,6 +2128,7 @@
   const _captureFactions = ["rust", "cobalt", "viridian"];
   const _captureOldTics = { rust: 0, cobalt: 0, viridian: 0 };
   const _capturePlayerWorldPos = new THREE.Vector3();
+  let _captureRingHideTime = 0; // Grace period timestamp for ring hide during territory transitions
 
 
   function updateCapture() {
@@ -2335,10 +2336,14 @@
     if (playerCluster !== undefined) {
       const state = planet.clusterCaptureState.get(playerCluster);
       if (!state) {
-        // Player is on a tile with no capture state (portal/neutral) — treat as no cluster
-        clearTugOfWarUI();
-        if (hasSpawnedIn) setTerritoryRingVisible(false);
+        // Non-sponsor territory — grace period before hiding to allow smooth transitions
+        if (_captureRingHideTime === 0) _captureRingHideTime = performance.now();
+        if (performance.now() - _captureRingHideTime > 500) {
+          clearTugOfWarUI();
+          if (hasSpawnedIn) setTerritoryRingVisible(false);
+        }
       } else {
+        _captureRingHideTime = 0; // On sponsor territory — cancel pending hide
         const counts = clusterTankCounts.get(playerCluster) || {
           rust: 0,
           cobalt: 0,
@@ -2356,9 +2361,13 @@
         }
       }
     } else {
-      clearTugOfWarUI();
-      if (hasSpawnedIn) {
-        setTerritoryRingVisible(false); // Fade out when on neutral territory
+      // Off-planet or no cluster — grace period before hiding
+      if (_captureRingHideTime === 0) _captureRingHideTime = performance.now();
+      if (performance.now() - _captureRingHideTime > 500) {
+        clearTugOfWarUI();
+        if (hasSpawnedIn) {
+          setTerritoryRingVisible(false);
+        }
       }
     }
 
@@ -2533,15 +2542,13 @@
     ringAnimState.target.viridian = state.tics.viridian;
     ringAnimState.target.capacity = state.capacity;
 
-    // Snap current + stepped values when entering a new cluster (avoids slow animation from stale defaults)
+    // Set stepped targets for new cluster (current animates toward them smoothly)
     if (clusterId !== ringAnimState.lastClusterId) {
       ringAnimState.stepped.rust = Math.floor(state.tics.rust);
       ringAnimState.stepped.cobalt = Math.floor(state.tics.cobalt);
       ringAnimState.stepped.viridian = Math.floor(state.tics.viridian);
-      ringAnimState.current.rust = ringAnimState.stepped.rust;
-      ringAnimState.current.cobalt = ringAnimState.stepped.cobalt;
-      ringAnimState.current.viridian = ringAnimState.stepped.viridian;
-      ringAnimState.current.capacity = state.capacity;
+      // Don't snap current values — let them animate from the previous territory
+      // so the ring transitions smoothly instead of popping to new values
     }
     ringAnimState.lastClusterId = clusterId;
   }
@@ -3973,7 +3980,15 @@
     if (ringAnimState.lastClusterId !== null && hasSpawnedIn && !tank.isDead && !isOrbitalView) {
       const currentCluster = tank.getCurrentClusterId(planet);
       if (currentCluster !== ringAnimState.lastClusterId) {
-        setTerritoryRingVisible(false);
+        // Only hide if new position is NOT on a sponsor territory.
+        // When transitioning between sponsor clusters, keep ring visible
+        // and let values animate smoothly to the new territory's state.
+        const newState = currentCluster !== undefined
+          ? planet.clusterCaptureState.get(currentCluster)
+          : null;
+        if (!newState) {
+          setTerritoryRingVisible(false);
+        }
       }
     }
 

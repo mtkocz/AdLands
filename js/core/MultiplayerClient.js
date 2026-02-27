@@ -86,6 +86,8 @@
     let lastHUDUpdateTime = 0;
     const HUD_UPDATE_INTERVAL = 250; // 4x/sec
     let lastPlayerClusterId = undefined;
+    let ringHideTime = 0; // Timestamp when ring hide was first requested
+    const RING_HIDE_GRACE = 500; // Grace period (ms) before hiding — allows smooth territory transitions
 
     // Server-authoritative cluster ID for ring display.
     // Set by capture-progress and tic-crypto events. Prevents mismatch between
@@ -147,6 +149,7 @@
         if (clusterId !== undefined && onSurface) {
           const state = planet.clusterCaptureState.get(clusterId);
           if (state) {
+            ringHideTime = 0; // On sponsor territory — cancel any pending hide
             // Use server-authoritative tank counts when available for the current cluster.
             // During cluster transitions (before server catches up), fall back to
             // client-side counting so the ring reflects what the player sees.
@@ -166,14 +169,21 @@
             mp.updateTugOfWarUI?.(clusterId, state, counts);
             mp.setTerritoryRingVisible?.(true);
           } else {
-            // Non-sponsor cluster — hide ring
-            mp.clearTugOfWarUI?.();
-            mp.setTerritoryRingVisible?.(false);
+            // Non-sponsor cluster — grace period before hiding to allow smooth transitions
+            if (ringHideTime === 0) ringHideTime = now;
+            if (now - ringHideTime > RING_HIDE_GRACE) {
+              mp.clearTugOfWarUI?.();
+              mp.setTerritoryRingVisible?.(false);
+            }
           }
         } else {
-          if (lastPlayerClusterId !== undefined) {
-            mp.clearTugOfWarUI?.();
-            mp.setTerritoryRingVisible?.(false);
+          if (lastPlayerClusterId !== undefined || ringHideTime > 0) {
+            // Off-cluster — grace period before hiding
+            if (ringHideTime === 0) ringHideTime = now;
+            if (now - ringHideTime > RING_HIDE_GRACE) {
+              mp.clearTugOfWarUI?.();
+              mp.setTerritoryRingVisible?.(false);
+            }
           }
         }
         lastPlayerClusterId = clusterId;
