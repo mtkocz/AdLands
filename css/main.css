@@ -5833,18 +5833,6 @@ body.colorblind-tritanopia {
     letter-spacing: 1px;
 }
 
-.tab-active-name {
-    font-family: var(--font-small);
-    font-size: var(--font-size-small);
-    color: var(--accent-cyan);
-    margin-left: auto;
-    white-space: nowrap;
-}
-
-.loadout-hud-tab.expanded .tab-active-name {
-    display: none;
-}
-
 .tab-slots {
     position: absolute;
     top: 100%;

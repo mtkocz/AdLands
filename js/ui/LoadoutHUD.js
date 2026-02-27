@@ -70,13 +70,8 @@ class LoadoutHUD {
       label.className = "tab-label";
       label.textContent = this._labels[cat];
 
-      const activeName = document.createElement("span");
-      activeName.className = "tab-active-name";
-      activeName.textContent = "";
-
       header.appendChild(keyBadge);
       header.appendChild(label);
-      header.appendChild(activeName);
       tab.appendChild(header);
 
       // Dropdown slots
@@ -96,7 +91,7 @@ class LoadoutHUD {
       tab.appendChild(slotsEl);
 
       this._container.appendChild(tab);
-      this._tabs[cat] = { el: tab, slotsEl, activeNameEl: activeName, slot1El: slot1, slot2El: slot2 };
+      this._tabs[cat] = { el: tab, slotsEl, slot1El: slot1, slot2El: slot2 };
     }
   }
 
@@ -209,17 +204,13 @@ class LoadoutHUD {
 
   _updateDisplay() {
     for (const cat in this._tabs) {
-      const { activeNameEl, slot1El, slot2El } = this._tabs[cat];
+      const { slot1El, slot2El } = this._tabs[cat];
       const activeSlot = this.wss.activeSlots[cat];
 
       const id1 = this.wss.equipped[`${cat}-1`];
       const id2 = this.wss.equipped[`${cat}-2`];
       const name1 = this._getUpgradeName(id1);
       const name2 = this._getUpgradeName(id2);
-
-      // Active name shown in collapsed header
-      const activeId = this.wss.equipped[activeSlot];
-      activeNameEl.textContent = activeId ? this._getUpgradeName(activeId) : "";
 
       // Slot 1
       slot1El.textContent = name1 || "-- Empty --";
