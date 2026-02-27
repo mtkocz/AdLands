@@ -28,7 +28,7 @@ class LoadoutHUD {
     this._keyMap = { "1": "offense", "2": "defense", "3": "tactical" };
 
     /** Category display labels */
-    this._labels = { offense: "OFFENSE", defense: "DEFENSE", tactical: "TACTICAL" };
+    this._labels = { offense: "Offense", defense: "Defense", tactical: "Tactical" };
 
     /** DOM references per category */
     this._tabs = {}; // category → { el, slotsEl, activeNameEl, slot1El, slot2El }

@@ -5841,7 +5841,6 @@ body.colorblind-tritanopia {
     font-family: var(--font-small);
     font-size: var(--font-size-small);
     color: var(--text-secondary);
-    text-transform: uppercase;
     letter-spacing: 1px;
 }
 
