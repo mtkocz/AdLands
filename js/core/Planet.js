@@ -1781,7 +1781,7 @@ class Planet {
       _edgeDir.subVectors(_outerB, _outerA).normalize();
       _midpoint.addVectors(_outerA, _outerB).multiplyScalar(0.5);
       _radialDir.copy(_midpoint).normalize();
-      _wallNormal.crossVectors(_edgeDir, _radialDir).normalize();
+      _wallNormal.crossVectors(_radialDir, _edgeDir).normalize();
 
       // Orient normal away from the pole (outward from the hole)
       const poleY = _midpoint.y > 0 ? this.radius : -this.radius;
