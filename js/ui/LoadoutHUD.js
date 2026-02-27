@@ -121,17 +121,8 @@ class LoadoutHUD {
       console.log("[LoadoutHUD] PASSED guards, showing:", category);
       e.preventDefault();
 
-      if (!this.visible) {
-        // First press: show HUD and expand this category
-        this._show();
-        this._expand(category);
-      } else if (this.expandedCategory === category) {
-        // Same category pressed again: cycle active slot
-        this._cycleSlot(category);
-      } else {
-        // Different category: switch expansion
-        this._expand(category);
-      }
+      if (!this.visible) this._show();
+      this._cycleSlot(category);
 
       this._resetHideTimer();
     });
