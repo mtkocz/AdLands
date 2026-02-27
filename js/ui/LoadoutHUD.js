@@ -34,9 +34,13 @@ class LoadoutHUD {
     this._tabs = {}; // category → { el, slotsEl, activeNameEl, slot1El, slot2El }
 
     this._container = document.getElementById("loadout-hud");
+    console.log("[LoadoutHUD] container:", this._container);
     if (this._container) {
       this._buildDOM();
       this._bindKeys();
+      console.log("[LoadoutHUD] initialized, keys [1][2][3] bound");
+    } else {
+      console.warn("[LoadoutHUD] #loadout-hud element not found in DOM");
     }
   }
 
@@ -111,6 +115,7 @@ class LoadoutHUD {
       const category = this._keyMap[e.key];
       if (!category) return;
 
+      console.log("[LoadoutHUD] key pressed:", e.key, "→", category);
       e.preventDefault();
 
       if (!this.visible) {
