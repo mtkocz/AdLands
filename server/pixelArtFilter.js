@@ -7,7 +7,7 @@
  */
 const sharp = require("sharp");
 
-const TARGET_SHORT_SIDE = 128;
+const TARGET_SHORT_SIDE = 64;
 const MAX_COLORS = 8;
 const DITHER_INTENSITY = 32;
 
