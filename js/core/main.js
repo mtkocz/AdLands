@@ -3571,7 +3571,6 @@
     document.querySelector("#player-tags-container"),
     document.getElementById("crypto-hud-bar"),
     document.getElementById("dashboard-container"),
-    document.getElementById("loadout-hud"),
   ];
 
   const chatWindowEl = document.getElementById("chat-window");
