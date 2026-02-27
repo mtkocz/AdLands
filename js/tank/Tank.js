@@ -149,7 +149,7 @@ class Tank {
     if (this.state.keys.q && this.shieldEnergy > 0) {
       if (!this.shieldActive) console.log('[Shield] ACTIVATED — energy:', this.shieldEnergy.toFixed(2));
       this.shieldActive = true;
-      this.shieldEnergy -= 0.25 * deltaTime; // DRAIN_RATE
+      this.shieldEnergy -= 0.125 * deltaTime; // DRAIN_RATE
       if (this.shieldEnergy <= 0) {
         this.shieldEnergy = 0;
         this.shieldActive = false;

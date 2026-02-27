@@ -23,7 +23,7 @@ const DEBUG_LOG = process.env.DEBUG_LOG === "1";
 // Shield constants
 const SHIELD = {
   MAX_ENERGY: 1.0,
-  DRAIN_RATE: 0.25,        // per second (4s full drain)
+  DRAIN_RATE: 0.125,       // per second (8s full drain)
   RECHARGE_RATE: 0.15,     // per second (~6.7s full recharge)
   RECHARGE_DELAY: 1.0,     // seconds after release before recharge begins
   ARC_START: 2.094,        // 120 degrees in radians

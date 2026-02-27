@@ -63,11 +63,9 @@ class ShieldEffect {
         '  float grid = step(0.08, gx) * step(gx, 0.92) * step(0.08, gy) * step(gy, 0.92);',
         // Shimmer
         '  float shimmer = 0.75 + 0.25 * sin(uTime * 5.0 + vUv.y * 12.0);',
-        // Energy pulse
-        '  float pulse = 0.5 + 0.5 * uEnergy;',
         // Top/bottom fade
         '  float vFade = smoothstep(0.0, 0.15, vUv.y) * smoothstep(1.0, 0.85, vUv.y);',
-        '  float alpha = uOpacity * edgeFade * (0.25 + 0.75 * grid) * shimmer * pulse * vFade;',
+        '  float alpha = uOpacity * edgeFade * (0.25 + 0.75 * grid) * shimmer * vFade;',
         '  gl_FragColor = vec4(uColor, alpha);',
         '}',
       ].join('\n'),
