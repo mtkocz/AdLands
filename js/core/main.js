@@ -569,8 +569,10 @@
   tank.setCannonSystem(cannonSystem);
 
   // Shield effect system (3D arc visuals) + HUD energy bar
+  console.log('[main] ShieldEffect class exists:', typeof ShieldEffect);
   const shieldEffect = new ShieldEffect(scene, CONFIG.sphereRadius);
   const shieldEnergyBar = new ShieldEnergyBar();
+  console.log('[main] Shield systems initialized');
 
   // Tank damage effects (smoke/fire)
   const tankDamageEffects = new TankDamageEffects(scene, CONFIG.sphereRadius);

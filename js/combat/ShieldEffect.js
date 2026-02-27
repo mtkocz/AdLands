@@ -3,6 +3,7 @@
  * Manages per-tank shield meshes (partial cylinder masked by shader).
  * Attach to turretGroup so the arc rotates with the turret.
  */
+console.log('[ShieldEffect] Script loaded');
 class ShieldEffect {
   constructor(scene, sphereRadius) {
     this.scene = scene;

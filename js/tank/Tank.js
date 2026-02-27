@@ -1459,6 +1459,7 @@ class Tank {
         return;
       }
       const key = e.key.toLowerCase();
+      if (key === 'q') console.log('[Tank] Q keydown, controlsEnabled:', this.controlsEnabled, 'isDead:', this.isDead);
       if (key in this.state.keys) {
         this.state.keys[key] = true;
         e.preventDefault();
