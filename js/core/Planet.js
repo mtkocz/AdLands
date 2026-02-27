@@ -1842,13 +1842,18 @@ class Planet {
       roughness: 0.95,
       metalness: 0.02,
       flatShading: false,
-      side: THREE.FrontSide,
+      side: THREE.DoubleSide,
+      shadowSide: THREE.FrontSide,
     });
     this._patchWallNoise(wallMaterial);
 
     const wallMesh = new THREE.Mesh(wallGeometry, wallMaterial);
     wallMesh.castShadow = true;
     wallMesh.receiveShadow = true;
+    wallMesh.customDepthMaterial = new THREE.MeshDepthMaterial({
+      depthPacking: THREE.RGBADepthPacking,
+      side: THREE.DoubleSide,
+    });
     wallMesh.userData = { isPolarWall: true };
     this.hexGroup.add(wallMesh);
     this._polarWallMesh = wallMesh;

@@ -443,8 +443,8 @@
    */
   function updateFieldVisibility() {
     const isPlayer = isEditingPlayerGroup();
-    // Info view: hide name/tagline/URL for player groups, show notes
-    sponsorSharedFields.style.display = isPlayer ? "none" : "";
+    // Info view: show name/tagline/URL for all groups (sponsors + players)
+    sponsorSharedFields.style.display = "";
     notesFieldGroup.style.display = isPlayer ? "" : "none";
     // Territory view: show territory name/tagline/URL for player groups
     territoryInfoFields.style.display = isPlayer ? "" : "none";
@@ -724,8 +724,11 @@
         const isPlayer = isEditingPlayerGroup();
 
         if (isPlayer) {
-          // Player territory groups: save only logo + notes (name/tagline/URL are per-territory)
+          // Player territory groups: save shared fields (name/tagline/URL/logo) + notes
           const sharedFields = {
+            name: formData.name,
+            tagline: formData.tagline,
+            websiteUrl: formData.websiteUrl,
             logoImage: formData.logoImage,
             notes: sponsorForm.getNotes(),
           };
@@ -733,7 +736,7 @@
             for (const id of editingGroup.ids) {
               await SponsorStorage.update(id, sharedFields);
             }
-            showToast(`Account info updated (${editingGroup.ids.length} territories)`, "success");
+            showToast(`Account "${formData.name}" info updated (${editingGroup.ids.length} territories)`, "success");
           } catch (e) {
             showToast(e.message || "Failed to save account info", "error");
             return;
@@ -1635,11 +1638,10 @@
       const isPlayer = isEditingPlayerGroup();
       const patternData = {
         id: id,
-        // For player groups, keep shared name from form (not relevant for display)
-        // For sponsor groups, carry over shared name/tagline/URL
-        name: isPlayer ? (sponsor.name || "") : currentFormData.name,
-        tagline: isPlayer ? "" : currentFormData.tagline,
-        websiteUrl: isPlayer ? "" : currentFormData.websiteUrl,
+        // Carry over shared name/tagline/URL for both sponsor and player groups
+        name: currentFormData.name,
+        tagline: currentFormData.tagline,
+        websiteUrl: currentFormData.websiteUrl,
         logoImage: currentFormData.logoImage || sponsor.logoImage || null,
         patternImage: sponsor.patternImage || null,
         patternAdjustment: sponsor.patternAdjustment || null,
@@ -1814,9 +1816,9 @@
       const isPlayer = first.ownerType === "player";
       const createData = {
         name: firstFull.name || first.name,
-        // For player territories, new territory gets blank title/tagline/URL (per-territory)
-        tagline: isPlayer ? "" : (firstFull.tagline || first.tagline || ""),
-        websiteUrl: isPlayer ? "" : (firstFull.websiteUrl || first.websiteUrl || ""),
+        // Copy shared tagline/URL from group for both sponsors and players
+        tagline: firstFull.tagline || first.tagline || "",
+        websiteUrl: firstFull.websiteUrl || first.websiteUrl || "",
         logoImage: firstFull.logoImage || first.logoImage || null,
         cluster: { tileIndices: [] },
         rewards: [],

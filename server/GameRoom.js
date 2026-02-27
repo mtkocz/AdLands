@@ -2092,21 +2092,24 @@ class GameRoom {
       moveOnSphere(player, dt);
 
       // Terrain collision with wall sliding
+      // Frame-rate independent friction: Math.pow(base, dt * tickRate)
+      // At 10Hz (dt=0.1): 0.85^1 = 0.85 — same as before
       if (this._isTerrainBlockedAt(player.theta, player.phi, player.heading, player.speed)) {
+        const dtScaled = dt * this.tickRate;
         // Wall sliding: try each axis independently before full revert
         if (!this._isTerrainBlockedAt(player.theta, prevPhi, player.heading, player.speed)) {
           // Slide along latitude (theta moved, phi reverted)
           player.phi = prevPhi;
-          player.speed *= 0.85;
+          player.speed *= Math.pow(0.85, dtScaled);
         } else if (!this._isTerrainBlockedAt(prevTheta, player.phi, player.heading, player.speed)) {
           // Slide along longitude (theta reverted, phi moved)
           player.theta = prevTheta;
-          player.speed *= 0.85;
+          player.speed *= Math.pow(0.85, dtScaled);
         } else {
           // Both axes blocked — full revert with speed decay
           player.theta = prevTheta;
           player.phi = prevPhi;
-          player.speed *= 0.3;
+          player.speed *= Math.pow(0.3, dtScaled);
         }
       }
     }

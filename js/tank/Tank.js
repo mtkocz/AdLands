@@ -182,7 +182,7 @@ class Tank {
       if (this.state.phi < fallbackLimit || this.state.phi > Math.PI - fallbackLimit) {
         this.state.theta = prevTheta;
         this.state.phi = prevPhi;
-        this.state.speed *= 0.3;
+        this.state.speed *= Math.pow(0.3, deltaTime * 10);
         return true;
       }
       return false;
@@ -194,19 +194,21 @@ class Tank {
     }
 
     // Wall-sliding — must match server logic exactly
+    // Frame-rate independent friction: Math.pow(base, dt * SERVER_TICK_RATE)
+    const dtScaled = deltaTime * 10;
     if (!this._isTerrainBlocked(this.state.theta, prevPhi)) {
       // Slide along latitude
       this.state.phi = prevPhi;
-      this.state.speed *= 0.85;
+      this.state.speed *= Math.pow(0.85, dtScaled);
     } else if (!this._isTerrainBlocked(prevTheta, this.state.phi)) {
       // Slide along longitude
       this.state.theta = prevTheta;
-      this.state.speed *= 0.85;
+      this.state.speed *= Math.pow(0.85, dtScaled);
     } else {
       // Both blocked — full revert
       this.state.theta = prevTheta;
       this.state.phi = prevPhi;
-      this.state.speed *= 0.3;
+      this.state.speed *= Math.pow(0.3, dtScaled);
     }
     return true;
   }
@@ -393,22 +395,26 @@ class Tank {
     this.state.phi = entity.phi;
 
     // Collision with wall sliding
+    // Friction is frame-rate independent: Math.pow(base, dt * SERVER_TICK_RATE)
+    // At server 10Hz (dt=0.1): 0.85^1 = 0.85 — matches server exactly
+    // At client 60fps (dt≈0.017): 0.85^0.17 ≈ 0.974 per frame, same per-second rate
     if (this.planet && this.state.speed !== 0) {
       if (this._isTerrainBlocked(this.state.theta, this.state.phi)) {
+        const dtScaled = deltaTime * 10; // normalize to server tick rate
         // Wall sliding: try each axis independently before full revert
         if (!this._isTerrainBlocked(this.state.theta, prevPhi)) {
           // Slide along latitude (theta moved, phi reverted)
           this.state.phi = prevPhi;
-          this.state.speed *= 0.85;
+          this.state.speed *= Math.pow(0.85, dtScaled);
         } else if (!this._isTerrainBlocked(prevTheta, this.state.phi)) {
           // Slide along longitude (theta reverted, phi moved)
           this.state.theta = prevTheta;
-          this.state.speed *= 0.85;
+          this.state.speed *= Math.pow(0.85, dtScaled);
         } else {
           // Both axes blocked — full revert with speed decay
           this.state.theta = prevTheta;
           this.state.phi = prevPhi;
-          this.state.speed *= 0.3;
+          this.state.speed *= Math.pow(0.3, dtScaled);
         }
       }
     }

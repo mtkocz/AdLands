@@ -18,7 +18,7 @@ const UPGRADES = {
     { id: "barricades", name: "Barricades" },
   ],
   tactical: [
-    { id: "proximity_mine", name: "Proximity Mine" },
+    { id: "proximity_mine", name: "Mine" },
     { id: "foot_soldiers", name: "Foot Soldiers" },
     { id: "turrets", name: "Turrets" },
     { id: "welding_gun", name: "Welding Gun" },
