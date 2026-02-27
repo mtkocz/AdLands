@@ -5846,7 +5846,6 @@ body.colorblind-tritanopia {
 }
 
 .tab-slots {
-    display: none;
     position: absolute;
     top: 100%;
     left: 0;
@@ -5862,10 +5861,6 @@ body.colorblind-tritanopia {
         drop-shadow(-2px 0 0 var(--accent-cyan))
         drop-shadow(0 2px 0 var(--accent-cyan))
         drop-shadow(0 -2px 0 var(--accent-cyan));
-}
-
-.loadout-hud-tab.expanded .tab-slots {
-    display: block;
 }
 
 .tab-slot {
