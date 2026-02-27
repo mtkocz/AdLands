@@ -5824,6 +5824,7 @@ body.colorblind-tritanopia {
     color: var(--accent-cyan);
     text-shadow: 0 0 8px rgba(0, 255, 255, 0.6);
     flex-shrink: 0;
+    margin-right: 4px;
 }
 
 .tab-label {
