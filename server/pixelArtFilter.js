@@ -7,7 +7,8 @@
  */
 const sharp = require("sharp");
 
-const TARGET_SHORT_SIDE = 64;
+const BASE_SHORT_SIDE = 128;
+const REFERENCE_TILE_COUNT = 20;
 const MAX_COLORS = 8;
 const DITHER_INTENSITY = 32;
 
@@ -20,23 +21,31 @@ const BAYER_4X4 = [
 
 /**
  * Apply pixel art filter to an image buffer.
+ * Resolution scales with territory size: 5 tiles → 64px, 20 tiles → 128px, 80 tiles → 256px.
+ * Mirrors client-side _applyPixelArtFilter() in Planet.js.
  * @param {Buffer} inputBuffer - PNG/JPEG image buffer
+ * @param {number} [tileCount=20] - Number of hex tiles in the sponsor's territory
  * @returns {Promise<Buffer>} - Processed PNG buffer at reduced resolution
  */
-async function applyPixelArtFilter(inputBuffer) {
+async function applyPixelArtFilter(inputBuffer, tileCount = REFERENCE_TILE_COUNT) {
   const metadata = await sharp(inputBuffer).metadata();
   const srcWidth = metadata.width || 256;
   const srcHeight = metadata.height || 256;
   const aspect = srcWidth / srcHeight;
 
-  // Calculate target dimensions (short side = 128)
+  // Scale resolution with territory size so pixel blocks appear the same physical size
+  const targetShortSide = Math.round(
+    Math.max(64, Math.min(256, BASE_SHORT_SIDE * Math.sqrt(tileCount / REFERENCE_TILE_COUNT)))
+  );
+
+  // Calculate target dimensions
   let targetWidth, targetHeight;
   if (srcWidth <= srcHeight) {
-    targetWidth = TARGET_SHORT_SIDE;
-    targetHeight = Math.round(TARGET_SHORT_SIDE / aspect);
+    targetWidth = targetShortSide;
+    targetHeight = Math.round(targetShortSide / aspect);
   } else {
-    targetHeight = TARGET_SHORT_SIDE;
-    targetWidth = Math.round(TARGET_SHORT_SIDE * aspect);
+    targetHeight = targetShortSide;
+    targetWidth = Math.round(targetShortSide * aspect);
   }
 
   // Step 1: Downscale with nearest-neighbor (no antialiasing)

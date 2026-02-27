@@ -94,16 +94,7 @@ async function rebake() {
     const raw = fs.readFileSync(srcPath);
     const rawSize = raw.length;
 
-    // Apply pixel art filter: downscale to 128px, 8-color palette, Bayer dithering
-    const baked = await applyPixelArtFilter(raw);
-
-    // Get dimensions of baked image
-    const meta = await sharp(baked).metadata();
     const srcMeta = await sharp(raw).metadata();
-
-    console.log(
-      `  ${name}: ${srcFileName} (${srcMeta.width}x${srcMeta.height}, ${(rawSize / 1024).toFixed(1)}KB) → ${meta.width}x${meta.height} (${(baked.length / 1024).toFixed(1)}KB)`
-    );
 
     // Encode original as base64 for sponsors.json
     const ext = path.extname(srcFileName).slice(1).toLowerCase();
@@ -114,6 +105,14 @@ async function rebake() {
     for (const s of sponsorList) {
       // Update base64 in sponsors.json
       s.patternImage = base64;
+
+      // Apply pixel art filter with adaptive resolution based on territory size
+      const tileCount = s.cluster?.tileIndices?.length || 20;
+      const baked = await applyPixelArtFilter(raw, tileCount);
+      const meta = await sharp(baked).metadata();
+      console.log(
+        `  ${name} (${s.id}): ${srcFileName} (${srcMeta.width}x${srcMeta.height}, ${(rawSize / 1024).toFixed(1)}KB) → ${meta.width}x${meta.height} [${tileCount} tiles] (${(baked.length / 1024).toFixed(1)}KB)`
+      );
 
       // Write baked PNG to sponsor-textures
       const outPath = path.join(TEX_DIR, `${s.id}.png`);

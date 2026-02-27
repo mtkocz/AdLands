@@ -35,6 +35,7 @@ async function findExistingFile(texDir, prefix) {
  */
 async function extractSponsorImage(sponsor, texDir) {
   const urls = {};
+  const tileCount = sponsor.cluster?.tileIndices?.length || 20;
 
   /** Append file mtime as cache-buster query param so browsers re-fetch after re-baking. */
   async function withMtime(urlPath, filePath) {
@@ -51,8 +52,8 @@ async function extractSponsorImage(sponsor, texDir) {
     if (match) {
       const raw = Buffer.from(match[2], "base64");
       if (applyPixelArtFilter) {
-        // Apply pixel art filter: downscale to 128px, 8-color palette, Bayer dithering
-        const baked = await applyPixelArtFilter(raw);
+        // Apply pixel art filter: resolution scales with territory size
+        const baked = await applyPixelArtFilter(raw, tileCount);
         const pngPath = path.join(texDir, `${sponsor.id}.png`);
         await fsp.writeFile(pngPath, baked);
         urls.patternUrl = await withMtime(`/sponsor-textures/${sponsor.id}.png`, pngPath);
@@ -74,7 +75,7 @@ async function extractSponsorImage(sponsor, texDir) {
           const stat = await fsp.stat(filePath);
           if (stat.size > 5000) {
             const raw = await fsp.readFile(filePath);
-            const baked = await applyPixelArtFilter(raw);
+            const baked = await applyPixelArtFilter(raw, tileCount);
             const pngPath = path.join(texDir, `${sponsor.id}.png`);
             await fsp.writeFile(pngPath, baked);
             urls.patternUrl = await withMtime(`/sponsor-textures/${sponsor.id}.png`, pngPath);
