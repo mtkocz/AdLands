@@ -190,6 +190,20 @@ class RemoteTank {
     this.targetState.speed = serverState.s;
     this.targetState.turretAngle = serverState.ta;
 
+    // Skip stale snapshots: when the bot worker is slow, the server rebroadcasts
+    // cached positions. Pushing duplicate positions creates a "frozen" interpolation
+    // segment (bot stands still then jumps forward). Instead, skip the duplicate so
+    // the extrapolation code smoothly projects the bot from the last real snapshot.
+    if (this._snapCount > 0 && serverState.s !== 0) {
+      const prevIdx = (this._snapHead - 1 + this._snapCap) % this._snapCap;
+      const prev = this._snapBuf[prevIdx];
+      if (prev &&
+        Math.abs(serverState.t - prev.theta) < 0.00015 &&
+        Math.abs(serverState.p - prev.phi) < 0.00015) {
+        return;
+      }
+    }
+
     // Push timestamped snapshot into ring buffer
     this._snapBuf[this._snapHead] = {
       t: performance.now(),
@@ -287,9 +301,9 @@ class RemoteTank {
           this.state.turretAngle = MathUtils.lerpAngle(fromSnap.turretAngle, toSnap.turretAngle, st);
         } else {
           // Extrapolation: renderTime is past the latest pair.
-          // Project forward from toSnap using its velocity. Cap at 1 tick
-          // of extrapolation to prevent wild overshoot on packet loss.
-          const extraMs = Math.min(renderTime - toSnap.t, span);
+          // Project forward from toSnap using its velocity. Cap at 3 ticks
+          // of extrapolation to cover worker timing gaps without overshoot.
+          const extraMs = Math.min(renderTime - toSnap.t, span * 3);
           const dt60 = (extraMs / 1000) * 60;
 
           const heading = toSnap.heading;

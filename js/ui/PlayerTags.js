@@ -95,7 +95,7 @@ class PlayerTags {
                 <div class="tag-rank">${config.rank ? "#" + config.rank : ""}</div>
             </div>
             <div class="tag-healthbar">
-                <div class="tag-healthbar-fill" style="width: ${hpPercent}%"></div>
+                <div class="tag-healthbar-fill ${hpPercent > 50 ? 'hp-high' : hpPercent > 25 ? 'hp-medium' : 'hp-low'}" style="width: ${hpPercent}%"></div>
             </div>
         `;
 
