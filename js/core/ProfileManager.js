@@ -81,9 +81,12 @@ class ProfileManager {
       }
     }
 
-    // Load loadout into Dashboard
+    // Load loadout into Dashboard and re-render if already initialized
     if (this.dashboard && profileData?.loadout) {
       this.dashboard.equippedUpgrades = { ...profileData.loadout };
+      if (this.dashboard.loadoutInitialized) {
+        this.dashboard.updateLoadout(this.dashboard.playerLevel || 1);
+      }
     }
 
     // Load loadout + tank upgrades + active slots into WeaponSlotSystem

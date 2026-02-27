@@ -11,6 +11,7 @@
 const fs = require("fs");
 const path = require("path");
 const sharp = require("sharp");
+const { applyPixelArtFilter } = require("./pixelArtFilter");
 
 const PROJECT_ROOT = path.join(__dirname, "..");
 const SPONSOR_DIR = path.join(PROJECT_ROOT, "sponsors");
@@ -93,11 +94,8 @@ async function rebake() {
     const raw = fs.readFileSync(srcPath);
     const rawSize = raw.length;
 
-    // Resize to 512px short side — client applies adaptive pixel art filter
-    const baked = await sharp(raw)
-      .resize(512, 512, { fit: "inside", withoutEnlargement: true })
-      .png({ compressionLevel: 9 })
-      .toBuffer();
+    // Apply pixel art filter: downscale to 128px, 8-color palette, Bayer dithering
+    const baked = await applyPixelArtFilter(raw);
 
     // Get dimensions of baked image
     const meta = await sharp(baked).metadata();
