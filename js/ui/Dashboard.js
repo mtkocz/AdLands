@@ -670,9 +670,17 @@ class Dashboard {
 
     this._prevRosterRanks = newRanks;
 
-    // Auto-scroll to the current player's row
+    // Auto-scroll to the current player's row (within roster list only)
     const selfEl = this._rosterElements.get("player_self");
-    if (selfEl) selfEl.scrollIntoView({ block: "nearest" });
+    if (selfEl) {
+      const elTop = selfEl.offsetTop - listEl.offsetTop;
+      const elBottom = elTop + selfEl.offsetHeight;
+      if (elTop < listEl.scrollTop) {
+        listEl.scrollTop = elTop;
+      } else if (elBottom > listEl.scrollTop + listEl.clientHeight) {
+        listEl.scrollTop = elBottom - listEl.clientHeight;
+      }
+    }
   }
 
   _buildLoadoutContent() {
