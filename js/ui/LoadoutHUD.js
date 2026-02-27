@@ -104,6 +104,14 @@ class LoadoutHUD {
 
   _bindKeys() {
     window.addEventListener("keydown", (e) => {
+      // Only log for keys we care about
+      if (e.key === "1" || e.key === "2" || e.key === "3") {
+        const tag = document.activeElement?.tagName;
+        const authEl = document.getElementById("auth-screen");
+        const authHidden = authEl ? authEl.classList.contains("auth-hidden") : "no-el";
+        console.log("[LoadoutHUD] key=" + e.key, "activeTag=" + tag, "authHidden=" + authHidden);
+      }
+
       // Standard guards: skip if typing in input fields
       const tag = document.activeElement?.tagName;
       if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return;
@@ -115,7 +123,7 @@ class LoadoutHUD {
       const category = this._keyMap[e.key];
       if (!category) return;
 
-      console.log("[LoadoutHUD] key pressed:", e.key, "→", category);
+      console.log("[LoadoutHUD] PASSED guards, showing:", category);
       e.preventDefault();
 
       if (!this.visible) {
