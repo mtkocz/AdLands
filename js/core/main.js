@@ -1283,6 +1283,7 @@
       playerFaction = newFaction;
       window.playerFaction = newFaction;
       tank.setFactionColors(playerFaction);
+      shieldEffect.removeShield('local'); // Recreate with new faction color
       tankHeadlights.updateFaction("player", newFaction);
       playerTags.updateFaction("player", playerFaction);
       proximityChat.setPlayerFaction(playerFaction);
@@ -1524,6 +1525,7 @@
       playerFaction = faction;
       window.playerFaction = faction;
       tank.setFactionColors(faction);
+      shieldEffect.removeShield('local'); // Recreate with new faction color
       tankHeadlights.updateFaction("player", faction);
       playerTags.updateFaction("player", faction);
       proximityChat.setPlayerFaction(faction);
