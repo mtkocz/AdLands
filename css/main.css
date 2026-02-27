@@ -5797,9 +5797,16 @@ body.colorblind-tritanopia {
 
 .loadout-hud-tab {
     position: relative;
-    background: var(--bg-highlight);
     min-width: 104px;
     text-align: center;
+}
+
+.tab-header {
+    display: flex;
+    align-items: center;
+    gap: var(--space-xs);
+    padding: var(--space-xs) var(--space-sm);
+    background: var(--bg-highlight);
     clip-path: var(--clip-rounded-8);
     filter: drop-shadow(1px 0 0 rgba(0, 255, 255, 0.15))
         drop-shadow(-1px 0 0 rgba(0, 255, 255, 0.15))
@@ -5811,7 +5818,7 @@ body.colorblind-tritanopia {
         drop-shadow(0 -2px 0 var(--border-dark));
 }
 
-.loadout-hud-tab.expanded {
+.loadout-hud-tab.expanded .tab-header {
     filter: drop-shadow(1px 0 0 rgba(0, 255, 255, 0.4))
         drop-shadow(-1px 0 0 rgba(0, 255, 255, 0.4))
         drop-shadow(0 1px 0 rgba(0, 255, 255, 0.4))
@@ -5820,13 +5827,6 @@ body.colorblind-tritanopia {
         drop-shadow(-2px 0 0 var(--accent-cyan))
         drop-shadow(0 2px 0 var(--accent-cyan))
         drop-shadow(0 -2px 0 var(--accent-cyan));
-}
-
-.tab-header {
-    display: flex;
-    align-items: center;
-    gap: var(--space-xs);
-    padding: var(--space-xs) var(--space-sm);
 }
 
 .tab-key {
@@ -5858,6 +5858,21 @@ body.colorblind-tritanopia {
 
 .tab-slots {
     display: none;
+    position: absolute;
+    top: 100%;
+    left: 0;
+    right: 0;
+    margin-top: var(--space-xs);
+    background: var(--bg-highlight);
+    clip-path: var(--clip-rounded-8);
+    filter: drop-shadow(1px 0 0 rgba(0, 255, 255, 0.4))
+        drop-shadow(-1px 0 0 rgba(0, 255, 255, 0.4))
+        drop-shadow(0 1px 0 rgba(0, 255, 255, 0.4))
+        drop-shadow(0 -1px 0 rgba(0, 255, 255, 0.4))
+        drop-shadow(2px 0 0 var(--accent-cyan))
+        drop-shadow(-2px 0 0 var(--accent-cyan))
+        drop-shadow(0 2px 0 var(--accent-cyan))
+        drop-shadow(0 -2px 0 var(--accent-cyan));
 }
 
 .loadout-hud-tab.expanded .tab-slots {
