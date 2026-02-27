@@ -5774,6 +5774,7 @@ body.colorblind-tritanopia {
    LOADOUT HUD (HL1-style weapon selector)
    Top-center strip with 3 category tabs.
    Keys [1][2][3] cycle active slot per category.
+   Styled to match commander bonus budget panel.
    ======================== */
 
 #loadout-hud {
@@ -5783,7 +5784,7 @@ body.colorblind-tritanopia {
     transform: translateX(-50%);
     z-index: 100;
     display: flex;
-    gap: var(--space-xs);
+    gap: var(--space-sm);
     opacity: 0;
     transition: opacity 200ms;
     pointer-events: none;
@@ -5796,14 +5797,29 @@ body.colorblind-tritanopia {
 
 .loadout-hud-tab {
     position: relative;
-    background: var(--bg-panel);
-    border: var(--border-width) solid var(--border-dark);
+    background: var(--bg-highlight);
     min-width: 104px;
     text-align: center;
+    clip-path: var(--clip-rounded-8);
+    filter: drop-shadow(1px 0 0 rgba(0, 255, 255, 0.15))
+        drop-shadow(-1px 0 0 rgba(0, 255, 255, 0.15))
+        drop-shadow(0 1px 0 rgba(0, 255, 255, 0.15))
+        drop-shadow(0 -1px 0 rgba(0, 255, 255, 0.15))
+        drop-shadow(2px 0 0 var(--border-dark))
+        drop-shadow(-2px 0 0 var(--border-dark))
+        drop-shadow(0 2px 0 var(--border-dark))
+        drop-shadow(0 -2px 0 var(--border-dark));
 }
 
 .loadout-hud-tab.expanded {
-    border-color: var(--accent-gold);
+    filter: drop-shadow(1px 0 0 rgba(0, 255, 255, 0.4))
+        drop-shadow(-1px 0 0 rgba(0, 255, 255, 0.4))
+        drop-shadow(0 1px 0 rgba(0, 255, 255, 0.4))
+        drop-shadow(0 -1px 0 rgba(0, 255, 255, 0.4))
+        drop-shadow(2px 0 0 var(--accent-cyan))
+        drop-shadow(-2px 0 0 var(--accent-cyan))
+        drop-shadow(0 2px 0 var(--accent-cyan))
+        drop-shadow(0 -2px 0 var(--accent-cyan));
 }
 
 .tab-header {
@@ -5816,7 +5832,8 @@ body.colorblind-tritanopia {
 .tab-key {
     font-family: var(--font-body);
     font-size: var(--font-size-body);
-    color: var(--accent-gold);
+    color: var(--accent-cyan);
+    text-shadow: 0 0 8px rgba(0, 255, 255, 0.6);
     flex-shrink: 0;
 }
 
@@ -5831,7 +5848,7 @@ body.colorblind-tritanopia {
 .tab-active-name {
     font-family: var(--font-small);
     font-size: var(--font-size-small);
-    color: var(--text-muted);
+    color: var(--accent-cyan);
     margin-left: auto;
     white-space: nowrap;
 }
@@ -5842,7 +5859,6 @@ body.colorblind-tritanopia {
 
 .tab-slots {
     display: none;
-    border-top: var(--border-width) solid var(--border-dark);
 }
 
 .loadout-hud-tab.expanded .tab-slots {
@@ -5858,12 +5874,13 @@ body.colorblind-tritanopia {
 }
 
 .tab-slot + .tab-slot {
-    border-top: 1px solid var(--border-dark);
+    border-top: 1px solid rgba(0, 255, 255, 0.1);
 }
 
 .tab-slot.active {
-    color: var(--text-primary);
-    background: var(--bg-highlight);
+    color: var(--accent-cyan);
+    background: rgba(0, 255, 255, 0.08);
+    text-shadow: 0 0 8px rgba(0, 255, 255, 0.4);
 }
 
 .tab-slot.empty {

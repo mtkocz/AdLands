@@ -3868,6 +3868,11 @@ class Dashboard {
     const upgrade = this._findUpgrade(upgradeId);
     delete this.equippedUpgrades[slotId];
 
+    // Sync to WeaponSlotSystem so modifiers + HUD reflect the change
+    if (window.weaponSlotSystem) {
+      window.weaponSlotSystem.equipped = { ...this.equippedUpgrades };
+    }
+
     // Update visuals
     this._renderUpgrades(this.playerLevel || 1);
     this._updateTankPreview();
@@ -3892,6 +3897,11 @@ class Dashboard {
 
     // Equip to new slot
     this.equippedUpgrades[slotId] = upgradeId;
+
+    // Sync to WeaponSlotSystem so modifiers + HUD reflect the change
+    if (window.weaponSlotSystem) {
+      window.weaponSlotSystem.equipped = { ...this.equippedUpgrades };
+    }
 
     // Update visuals
     this._updateSlotStates(this.playerLevel || 1);
