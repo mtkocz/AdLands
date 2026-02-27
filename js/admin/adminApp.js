@@ -20,8 +20,8 @@
   // { name: string, ids: [id1, id2, ...], activeIndex: number, clusterStates: Map }
   let editingGroup = null;
 
-  // Sponsor list filter: "sponsors" | "players" | "all"
-  let sponsorListFilter = "sponsors";
+  // Sponsor list filter: "placeholders" | "players" | "sponsors" | "all"
+  let sponsorListFilter = "placeholders";
 
   // UI elements
   const selectionCountEl = document.getElementById("selection-count");
@@ -1139,8 +1139,10 @@
     let sponsors;
     if (sponsorListFilter === "players") {
       sponsors = allSponsors.filter((s) => s.ownerType === "player");
+    } else if (sponsorListFilter === "placeholders") {
+      sponsors = allSponsors.filter((s) => s.ownerType !== "player" && s.ownerType !== "sponsor");
     } else if (sponsorListFilter === "sponsors") {
-      sponsors = allSponsors.filter((s) => s.ownerType !== "player");
+      sponsors = allSponsors.filter((s) => s.ownerType === "sponsor");
     } else {
       sponsors = allSponsors;
     }
@@ -1149,15 +1151,19 @@
     const playerCount = allSponsors.filter((s) => s.ownerType === "player").length;
     const pendingCount = allSponsors.filter((s) => s.ownerType === "player" && (s.submissionStatus === "pending" || s.imageStatus === "pending")).length;
     const inquiryCount = allSponsors.filter((s) => s.ownerType === "inquiry").length;
-    const sponsorCount = allSponsors.length - playerCount;
+    const realSponsorCount = allSponsors.filter((s) => s.ownerType === "sponsor").length;
+    const placeholderCount = allSponsors.length - playerCount - realSponsorCount;
     const tabEls = document.querySelectorAll(".sponsor-tab");
     tabEls.forEach((tab) => {
       const filter = tab.dataset.filter;
-      if (filter === "sponsors") {
-        tab.innerHTML = `Sponsors (${sponsorCount})${inquiryCount > 0 ? ` <span class="inquiry-count-badge">${inquiryCount} pending</span>` : ""}`;
+      if (filter === "placeholders") {
+        tab.innerHTML = `Placeholders (${placeholderCount})${inquiryCount > 0 ? ` <span class="inquiry-count-badge">${inquiryCount} pending</span>` : ""}`;
       }
       else if (filter === "players") {
-        tab.innerHTML = `User Territories (${playerCount})${pendingCount > 0 ? ` <span class="pending-badge">${pendingCount}</span>` : ""}`;
+        tab.innerHTML = `Users (${playerCount})${pendingCount > 0 ? ` <span class="pending-badge">${pendingCount}</span>` : ""}`;
+      }
+      else if (filter === "sponsors") {
+        tab.textContent = `Sponsors (${realSponsorCount})`;
       }
       else if (filter === "all") tab.textContent = `All (${allSponsors.length})`;
     });
@@ -1165,7 +1171,9 @@
     if (sponsors.length === 0) {
       const emptyMsg = sponsorListFilter === "players"
         ? "No user territories yet"
-        : "No sponsors created yet";
+        : sponsorListFilter === "sponsors"
+        ? "No sponsors yet"
+        : "No placeholders created yet";
       sponsorsListEl.innerHTML = `<div class="empty-state">${emptyMsg}</div>`;
       return;
     }
