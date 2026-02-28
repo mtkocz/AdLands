@@ -2468,9 +2468,9 @@ body.tip-dragging .chat-mention.tip-highlight {
 
 .resign-toggle {
     background: transparent;
-    border: 1px solid rgba(0, 255, 255, 0.4);
+    border: 1px solid rgba(255, 215, 0, 0.4);
     border-radius: 3px;
-    color: var(--accent-cyan);
+    color: var(--accent-gold);
     font-family: var(--font-small);
     font-size: var(--font-size-small);
     cursor: pointer;
@@ -2483,13 +2483,13 @@ body.tip-dragging .chat-mention.tip-highlight {
 
 .resign-toggle:hover {
     opacity: 1;
-    background: rgba(0, 255, 255, 0.15);
+    background: rgba(255, 215, 0, 0.15);
 }
 
 .resign-menu {
     position: fixed;
     background: rgba(30, 30, 35, 0.98);
-    border: 1px solid rgba(0, 255, 255, 0.3);
+    border: 1px solid rgba(255, 215, 0, 0.3);
     border-radius: 4px;
     min-width: 140px;
     z-index: 1000;
@@ -2507,7 +2507,7 @@ body.tip-dragging .chat-mention.tip-highlight {
     color: #999;
     text-transform: uppercase;
     letter-spacing: 1px;
-    border-bottom: 1px solid rgba(0, 255, 255, 0.2);
+    border-bottom: 1px solid rgba(255, 215, 0, 0.2);
 }
 
 .resign-option {
@@ -2527,8 +2527,8 @@ body.tip-dragging .chat-mention.tip-highlight {
 }
 
 .resign-option:hover {
-    background: rgba(0, 255, 255, 0.15);
-    color: var(--accent-cyan);
+    background: rgba(255, 215, 0, 0.15);
+    color: var(--accent-gold);
 }
 
 .resign-option:last-child {
