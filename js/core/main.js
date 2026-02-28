@@ -2543,15 +2543,13 @@
     ringAnimState.target.viridian = state.tics.viridian;
     ringAnimState.target.capacity = state.capacity;
 
-    // Snap to new cluster immediately so the ring doesn't animate from the old territory
+    // Set stepped targets for new cluster (current animates toward them smoothly)
     if (clusterId !== ringAnimState.lastClusterId) {
       ringAnimState.stepped.rust = Math.floor(state.tics.rust);
       ringAnimState.stepped.cobalt = Math.floor(state.tics.cobalt);
       ringAnimState.stepped.viridian = Math.floor(state.tics.viridian);
-      ringAnimState.current.rust = state.tics.rust;
-      ringAnimState.current.cobalt = state.tics.cobalt;
-      ringAnimState.current.viridian = state.tics.viridian;
-      ringAnimState.current.capacity = state.capacity;
+      // Don't snap current values — let them animate from the previous territory
+      // so the ring transitions smoothly instead of popping to new values
     }
     ringAnimState.lastClusterId = clusterId;
   }

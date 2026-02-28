@@ -123,21 +123,25 @@
         bg.updateFade();
       }
 
-      // Update territory ring HUD (throttled — server data only changes at tick rate)
+      // Update territory ring HUD
       // Only show ring when player is alive and on the planet surface (not in fast travel, orbital, or dead)
       const hasSpawned = mp.getHasSpawnedIn?.();
       const onSurface = hasSpawned && !tank.isDead && !(mp.fastTravel && mp.fastTravel.active);
-      if (now - lastHUDUpdateTime >= HUD_UPDATE_INTERVAL && hasSpawned) {
+      // Detect local cluster every frame so transitions are instant
+      const localClusterId = hasSpawned ? tank.getCurrentClusterId(planet) : undefined;
+      // When local detection shows a different valid cluster, clear stale server data
+      // so the ring switches immediately instead of waiting for server catch-up
+      if (localClusterId !== undefined && localClusterId !== serverClusterId &&
+          localClusterId !== lastPlayerClusterId && planet.clusterCaptureState.has(localClusterId)) {
+        serverClusterId = undefined;
+        serverTankCounts = null;
+      }
+      const clusterChanged = (serverClusterId !== undefined ? serverClusterId : localClusterId) !== lastPlayerClusterId;
+      if ((clusterChanged || now - lastHUDUpdateTime >= HUD_UPDATE_INTERVAL) && hasSpawned) {
         lastHUDUpdateTime = now;
-        // Determine which cluster the ring should display.
-        // Prefers server-authoritative cluster ID, but detects stale data when the
-        // player has physically moved to a different sponsor cluster (hysteresis lag).
-        const localClusterId = tank.getCurrentClusterId(planet);
         if (serverClusterId !== undefined) {
-          // Only clear server data on staleness — server sends capture-progress 1/sec,
+          // Clear server data on staleness — server sends capture-progress 1/sec,
           // so >2s without data means the player left the cluster or server stopped sending.
-          // Do NOT clear based on local cluster detection (nearest-tile-center is unreliable
-          // near boundaries due to the 0.4-unit radial offset between tile centers and tanks).
           if (now - lastCaptureProgressTime > 2000) {
             serverClusterId = undefined;
             serverTankCounts = null;
