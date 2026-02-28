@@ -786,6 +786,7 @@
     // Shield reflect — spawn visual effect at impact point
     const _reflectWorldPos = new THREE.Vector3();
     net.onShieldReflect = (data) => {
+      console.log('[Shield] reflect event received:', data.shieldOwnerId);
       // Convert spherical (theta, phi) to world position
       const r = CONFIG.sphereRadius;
       const sinPhi = Math.sin(data.phi);
