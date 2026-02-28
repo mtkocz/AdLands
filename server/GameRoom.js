@@ -2558,11 +2558,6 @@ class GameRoom {
           const distToShield = sphericalDistance(testTheta, testPhi, shPlayer.theta, shPlayer.phi);
           if (distToShield > SHIELD.RADIUS_RAD * 1.5) continue;
 
-          // DEBUG: projectile is within shield distance band
-          if (step === 0 || step === numSteps) {
-            console.log(`[SHIELD-DBG] proj near shield: dist=${(distToShield*480).toFixed(1)}wu, owner=${p.ownerId}, shieldPlayer=${shId}, shFaction=${shPlayer.faction}, pFaction=${p.ownerFaction}`);
-          }
-
           // Compute angle from shield center to projectile in turret-facing frame
           const shSinPhi = Math.sin(shPlayer.phi);
           const shSafeSin = Math.abs(shSinPhi) < 0.01 ? 0.01 * Math.sign(shSinPhi || 1) : shSinPhi;
@@ -2585,11 +2580,7 @@ class GameRoom {
           while (angleDiff < -Math.PI) angleDiff += Math.PI * 2;
 
           const halfArc = shPlayer.shieldArcAngle / 2 + 0.18; // +10° buffer for turret lag
-          if (step === 0 || step === numSteps) {
-            console.log(`[SHIELD-DBG] arc check: angleDiff=${angleDiff.toFixed(3)}, halfArc=${halfArc.toFixed(3)}, shieldFacing=${shieldFacing.toFixed(3)}, heading=${shPlayer.heading.toFixed(3)}, turretAngle=${shPlayer.turretAngle.toFixed(3)}, arcAngle=${shPlayer.shieldArcAngle.toFixed(3)}`);
-          }
           if (Math.abs(angleDiff) < halfArc) {
-            console.log(`[SHIELD-DBG] *** REFLECT! angleDiff=${angleDiff.toFixed(3)} < halfArc=${halfArc.toFixed(3)}`);
             // Shield hit — reflect projectile
             let normalAngle = angleToProj;
             while (normalAngle < 0) normalAngle += Math.PI * 2;

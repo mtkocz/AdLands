@@ -779,6 +779,23 @@
       }
     };
 
+    // Shield reflect — spawn visual effect at impact point
+    const _reflectWorldPos = new THREE.Vector3();
+    net.onShieldReflect = (data) => {
+      // Convert spherical (theta, phi) to world position
+      const r = CONFIG.sphereRadius;
+      const sinPhi = Math.sin(data.phi);
+      _reflectWorldPos.set(
+        r * sinPhi * Math.sin(data.theta),
+        r * Math.cos(data.phi),
+        r * sinPhi * Math.cos(data.theta)
+      );
+      // Use shield owner's faction color for the spark
+      const shieldTank = remoteTanks.get(data.shieldOwnerId);
+      const faction = shieldTank?.faction || (data.shieldOwnerId === net.playerId ? window.playerFaction : 'cobalt');
+      cannonSystem._spawnExplosion?.(_reflectWorldPos, faction, 0.6);
+    };
+
     // Preallocated vectors for hit effects and ping positions
     const _hitWorldPos = new THREE.Vector3();
     const _pingWorldPos = new THREE.Vector3();
