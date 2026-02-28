@@ -1439,6 +1439,12 @@ class Tank {
         this.state.keys.shift = true;
         return;
       }
+      // Spacebar → shield (same as Q)
+      if (e.key === " ") {
+        this.state.keys.q = true;
+        e.preventDefault();
+        return;
+      }
       const key = e.key.toLowerCase();
       if (key in this.state.keys) {
         this.state.keys[key] = true;
@@ -1452,6 +1458,11 @@ class Tank {
       if (tag === "INPUT" || tag === "TEXTAREA" || document.activeElement?.isContentEditable) return;
       if (e.key === "Shift") {
         this.state.keys.shift = false;
+        return;
+      }
+      // Spacebar → shield (same as Q)
+      if (e.key === " ") {
+        this.state.keys.q = false;
         return;
       }
       const key = e.key.toLowerCase();
