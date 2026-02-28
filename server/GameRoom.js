@@ -2551,6 +2551,7 @@ class GameRoom {
         // --- Shield collision check (before tank body check) ---
         for (const [shId, shPlayer] of this.players) {
           if (!shPlayer.shieldActive) continue;
+          if (step === 0 && (!this._shieldLogT || Date.now() - this._shieldLogT > 5000)) { this._shieldLogT = Date.now(); console.log(`[Shield] Active shield found: ${shId} faction=${shPlayer.faction} projOwner=${p.ownerId} projFaction=${p.ownerFaction}`); }
           if (shId === p.ownerId) continue; // Own shield doesn't block own shots
           // Friendly shields don't block friendly projectiles
           if (shPlayer.faction === p.ownerFaction) continue;
@@ -2604,6 +2605,7 @@ class GameRoom {
               newHeading: reflectedHeading,
               projectileId: p.id,
             });
+            console.log(`[Shield] REFLECT owner=${shId} dist=${distToShield.toFixed(5)} angleDiff=${angleDiff.toFixed(3)}`);
 
             shieldReflected = true;
             break;
