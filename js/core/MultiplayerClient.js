@@ -788,7 +788,7 @@
     net.onShieldReflect = (data) => {
       console.log('[Shield] reflect event received:', data.shieldOwnerId);
       // Convert spherical (theta, phi) to world position
-      const r = CONFIG.sphereRadius;
+      const r = sphereRadius;
       const sinPhi = Math.sin(data.phi);
       _reflectWorldPos.set(
         r * sinPhi * Math.sin(data.theta),
