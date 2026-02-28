@@ -433,6 +433,9 @@ class AuthScreen {
           const data = accountDoc.data();
           this._profiles = this._sanitizeProfiles(data.profiles);
 
+          // Enrich summary profiles with actual levels from full profile docs
+          await this._enrichProfileLevels(uid);
+
           // Update last login (fire and forget)
           firebaseDb.collection("accounts").doc(uid).update({
             lastLoginAt: firebase.firestore.FieldValue.serverTimestamp(),
@@ -640,6 +643,7 @@ class AuthScreen {
 
         const data = accountDoc.data();
         this._profiles = this._sanitizeProfiles(data.profiles);
+        await this._enrichProfileLevels(uid);
       }
 
       // Always show profile selector after auth
@@ -855,7 +859,7 @@ class AuthScreen {
           <div class="profile-slot-info">
             <div class="profile-slot-name">${this._escapeHtml(profile.name)}</div>
             <div class="profile-slot-details">
-              <span class="profile-slot-faction">${profile.faction}</span>
+              <span class="profile-slot-faction">${profile.faction.charAt(0).toUpperCase() + profile.faction.slice(1)}</span>
               <span class="profile-slot-level">Lv ${profile.level || 1}</span>
             </div>
           </div>
@@ -1244,6 +1248,32 @@ class AuthScreen {
       ? name.length > 0
       : name.length > 0 && this._selectedFaction !== null;
     this.overlay.querySelector("#auth-create-confirm").disabled = !valid;
+  }
+
+  /**
+   * Fetch actual levels from full profile sub-documents and update summary.
+   * The summary array on the accounts doc can become stale if a save failed
+   * or was interrupted — the profile sub-docs are the source of truth.
+   */
+  async _enrichProfileLevels(uid) {
+    const fetches = this._profiles.map(async (p, i) => {
+      if (!p) return;
+      try {
+        const doc = await firebaseDb
+          .collection("accounts").doc(uid)
+          .collection("profiles").doc(String(i))
+          .get();
+        if (doc.exists) {
+          const data = doc.data();
+          if (typeof data.level === "number" && data.level >= 1) {
+            p.level = data.level;
+          }
+        }
+      } catch (_) {
+        // Summary level is the fallback — no action needed
+      }
+    });
+    await Promise.all(fetches);
   }
 
   /**
