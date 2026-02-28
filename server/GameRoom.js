@@ -2524,12 +2524,12 @@ class GameRoom {
       const R = 480;
       const HALF_LEN = 3.5;   // Forward/back half-extent in world units (2.75 + latency margin)
       const HALF_WID = 3.0;   // Left/right half-extent in world units (1.5 + latency margin, matches client hitRadius)
-      const QUICK_REJECT = 0.012; // ~5.8 world units — skip distant players fast
+      const QUICK_REJECT = 0.015; // ~7.2 world units — skip distant players fast
 
       // Swept collision: check multiple points along the path to prevent tunneling
       const moveDist = sphericalDistance(prevTheta, prevPhi, p.theta, p.phi);
       // Step every ~1.0 world units (well under half of narrow box dim) to catch edge hits
-      const numSteps = Math.max(1, Math.ceil(moveDist / 0.002));
+      const numSteps = Math.max(1, Math.ceil(moveDist / 0.0015));
       let hitPlayer = false;
 
       // Theta wraparound: compute shortest delta for proper interpolation
@@ -2557,7 +2557,6 @@ class GameRoom {
 
           const distToShield = sphericalDistance(testTheta, testPhi, shPlayer.theta, shPlayer.phi);
           if (distToShield > SHIELD.RADIUS_RAD * 1.5) continue;
-          if (distToShield < SHIELD.RADIUS_RAD * 0.3) continue;
 
           // Compute angle from shield center to projectile in turret-facing frame
           const shSinPhi = Math.sin(shPlayer.phi);
@@ -2580,7 +2579,7 @@ class GameRoom {
           while (angleDiff > Math.PI) angleDiff -= Math.PI * 2;
           while (angleDiff < -Math.PI) angleDiff += Math.PI * 2;
 
-          const halfArc = shPlayer.shieldArcAngle / 2;
+          const halfArc = shPlayer.shieldArcAngle / 2 + 0.18; // +10° buffer for turret lag
           if (Math.abs(angleDiff) < halfArc) {
             // Shield hit — reflect projectile
             let normalAngle = angleToProj;
@@ -2618,6 +2617,30 @@ class GameRoom {
 
           // No friendly fire — skip same-faction targets
           if (player.faction === p.ownerFaction) continue;
+
+          // Shield-priority: if this player's shield is active and projectile
+          // is within shield zone, skip body damage for frontal approaches
+          if (player.shieldActive) {
+            const shDist = sphericalDistance(testTheta, testPhi, player.theta, player.phi);
+            if (shDist < SHIELD.RADIUS_RAD * 1.5) {
+              const shSinPhi2 = Math.sin(player.phi);
+              const shSafeSin2 = Math.abs(shSinPhi2) < 0.01 ? 0.01 * Math.sign(shSinPhi2 || 1) : shSinPhi2;
+              let shDt2 = testTheta - player.theta;
+              while (shDt2 > Math.PI) shDt2 -= Math.PI * 2;
+              while (shDt2 < -Math.PI) shDt2 += Math.PI * 2;
+              const shDp2 = testPhi - player.phi;
+              const atp = Math.atan2(-shDt2 * shSafeSin2, -shDp2);
+              let sf = player.heading + Math.PI - player.turretAngle;
+              while (sf >= Math.PI * 2) sf -= Math.PI * 2;
+              while (sf < 0) sf += Math.PI * 2;
+              let ad = atp - sf;
+              while (ad > Math.PI) ad -= Math.PI * 2;
+              while (ad < -Math.PI) ad += Math.PI * 2;
+              if (Math.abs(ad) < player.shieldArcAngle / 2 + 0.35) {
+                continue; // Shield protects this angle — skip body hit
+              }
+            }
+          }
 
           // Quick reject: great-circle distance filter
           const dist = sphericalDistance(testTheta, testPhi, player.theta, player.phi);
