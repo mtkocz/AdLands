@@ -145,7 +145,7 @@ class Tank {
     if (this.ghostReticle) {
       this.ghostReticle.style.display = this.isSurfaceView ? "" : "none";
     }
-    // Shield — active while Q held
+    // Shield — active while Space held
     this.shieldActive = !!this.state.keys.q;
 
     // Local physics + terrain collision run in both SP and MP.
@@ -1439,14 +1439,14 @@ class Tank {
         this.state.keys.shift = true;
         return;
       }
-      // Spacebar → shield (same as Q)
+      // Spacebar → shield
       if (e.key === " ") {
         this.state.keys.q = true;
         e.preventDefault();
         return;
       }
       const key = e.key.toLowerCase();
-      if (key in this.state.keys) {
+      if (key in this.state.keys && key !== 'q') {
         this.state.keys[key] = true;
         e.preventDefault();
       }
@@ -1460,13 +1460,13 @@ class Tank {
         this.state.keys.shift = false;
         return;
       }
-      // Spacebar → shield (same as Q)
+      // Spacebar → shield
       if (e.key === " ") {
         this.state.keys.q = false;
         return;
       }
       const key = e.key.toLowerCase();
-      if (key in this.state.keys) {
+      if (key in this.state.keys && key !== 'q') {
         this.state.keys[key] = false;
       }
     });
