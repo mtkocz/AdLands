@@ -1319,9 +1319,11 @@ void main() {
   redirectProjectile(data, sphereRadius) {
     // Try to find by server ID first
     let proj = null;
+    let foundBy = 'none';
     for (let i = 0; i < this.projectiles.length; i++) {
       if (this.projectiles[i].serverId === data.projectileId) {
         proj = this.projectiles[i];
+        foundBy = 'serverId';
         break;
       }
     }
@@ -1334,7 +1336,7 @@ void main() {
       const impactY = r * Math.cos(data.phi);
       const impactZ = r * sinPhi * Math.cos(data.theta);
 
-      let bestDist = 25; // Max search radius (world units)
+      let bestDist = 625; // Max search radius squared (25 wu)
       for (let i = 0; i < this.projectiles.length; i++) {
         const p = this.projectiles[i];
         const dx = p.position.x - impactX;
@@ -1344,10 +1346,13 @@ void main() {
         if (d < bestDist) {
           bestDist = d;
           proj = p;
+          foundBy = 'nearest';
         }
       }
+      if (proj) console.log('[Shield] Nearest proj dist:', Math.sqrt(bestDist).toFixed(1), 'wu, total projs:', this.projectiles.length);
     }
 
+    console.log('[Shield] redirectProjectile:', foundBy, 'projId:', data.projectileId, 'totalProjs:', this.projectiles.length);
     if (!proj) return false;
 
     // Convert server heading to world-space velocity direction
@@ -1871,6 +1876,11 @@ void main() {
             horizontalDist < hitRadius &&
             Math.abs(heightDiff) < heightTolerance
           ) {
+            // If target has an active shield, skip client-side explosion.
+            // The server will send shield-reflect (to redirect) or player-hit
+            // (for flanking hits) — let the server drive the outcome.
+            if (tank.shieldActive) break;
+
             // HIT! Snap projectile to impact point so explosion spawns on target
             p.position.copy(_testPos);
             p.mesh.position.copy(p.position);
