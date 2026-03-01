@@ -168,7 +168,7 @@ class ShieldEffect {
         shield.material.uniforms.uReveal.value = ease;
         shield.material.uniforms.uPulseEdge.value = ease;
         const flash = t < 0.2 ? t / 0.2 : (1 - t) / 0.8;
-        shield.material.uniforms.uFlash.value = flash * 0.7;
+        shield.material.uniforms.uFlash.value = flash * 1.4;
       } else {
         shield.material.uniforms.uReveal.value = 1.0;
         shield.material.uniforms.uPulseEdge.value = -1.0;
