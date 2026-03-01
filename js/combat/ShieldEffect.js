@@ -67,6 +67,7 @@ class ShieldEffect {
         uColor: { value: factionColor },
         uReveal: { value: 1.0 },
         uPulseEdge: { value: 0.0 },
+        uFlash: { value: 0.0 },
       },
       vertexShader: [
         'varying float vNormAngle;',
@@ -79,14 +80,14 @@ class ShieldEffect {
         'uniform vec3 uColor;',
         'uniform float uReveal;',
         'uniform float uPulseEdge;',
+        'uniform float uFlash;',
         'varying float vNormAngle;',
         'void main() {',
         '  if (vNormAngle > uReveal) discard;',
-        // Bright pulse at the expanding leading edge
         '  float edgeDist = abs(vNormAngle - uPulseEdge);',
         '  float pulse = smoothstep(0.12, 0.0, edgeDist);',
-        '  vec3 col = uColor + pulse * vec3(0.8);',
-        '  float alpha = 0.9 + pulse * 0.6;',
+        '  vec3 col = uColor + pulse * vec3(0.8) + uFlash * vec3(1.0);',
+        '  float alpha = 0.9 + pulse * 0.6 + uFlash * 0.5;',
         '  gl_FragColor = vec4(col, alpha);',
         '}',
       ].join('\n'),
@@ -126,6 +127,7 @@ class ShieldEffect {
     if (!active) {
       shield.material.uniforms.uReveal.value = 1.0;
       shield.material.uniforms.uPulseEdge.value = 0.0;
+      shield.material.uniforms.uFlash.value = 0.0;
       return;
     }
 
@@ -139,9 +141,13 @@ class ShieldEffect {
         const ease = 1 - (1 - t) * (1 - t);
         shield.material.uniforms.uReveal.value = ease;
         shield.material.uniforms.uPulseEdge.value = ease;
+        // Flash: peaks at t=0.2 then fades out smoothly
+        const flash = t < 0.2 ? t / 0.2 : (1 - t) / 0.8;
+        shield.material.uniforms.uFlash.value = flash * 0.7;
       } else {
         shield.material.uniforms.uReveal.value = 1.0;
         shield.material.uniforms.uPulseEdge.value = 0.0;
+        shield.material.uniforms.uFlash.value = 0.0;
         shield.deployTime = -1;
       }
     }
