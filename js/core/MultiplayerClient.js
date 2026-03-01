@@ -761,21 +761,25 @@
       if (data.id === net.playerId) return; // We already played our own effects
 
       const remoteTank = remoteTanks.get(data.id);
-      if (remoteTank) {
-        // Trigger muzzle flash and recoil on the remote tank
-        if (remoteTank.barrelMesh) {
-          // Simple recoil
-          const baseZ = remoteTank.barrelBaseZ || 0;
-          remoteTank.barrelMesh.position.z = baseZ + 0.8;
-          setTimeout(() => {
-            if (remoteTank.barrelMesh) {
-              remoteTank.barrelMesh.position.z = baseZ;
-            }
-          }, 150);
-        }
 
-        // Spawn projectile visually using cannon system
-        // (Server handles hit detection; client just shows the visual)
+      // Barrel recoil effect (only if we have the remote tank mesh)
+      if (remoteTank?.barrelMesh) {
+        const baseZ = remoteTank.barrelBaseZ || 0;
+        remoteTank.barrelMesh.position.z = baseZ + 0.8;
+        setTimeout(() => {
+          if (remoteTank.barrelMesh) {
+            remoteTank.barrelMesh.position.z = baseZ;
+          }
+        }, 150);
+      }
+
+      // Spawn projectile visual from server-computed world data (always works,
+      // even if the firing tank isn't in remoteTanks yet — e.g. bots)
+      if (data.wx !== undefined) {
+        const faction = remoteTank?.faction || 'cobalt';
+        cannonSystem.spawnProjectileFromServer?.(data, faction);
+      } else if (remoteTank) {
+        // Fallback for older server that doesn't send world data
         cannonSystem.spawnRemoteProjectile?.(
           { theta: data.theta, phi: data.phi, turretAngle: data.turretAngle, power: data.power, projectileId: data.projectileId },
           remoteTank
