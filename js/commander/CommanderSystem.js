@@ -496,8 +496,8 @@ class CommanderSystem {
       this.bodyguards.spawn(commander, faction);
     }
 
-    // Tip system (only for human player — no tankRef needed)
-    if (commander.isHuman && this.tipSystem) {
+    // Tip system (only for signed-in human player — no tankRef needed)
+    if (commander.isHuman && this.tipSystem && window.authManager?.isSignedIn && !window.authManager?.isGuest) {
       this.tipSystem.activate(commander.playerId, faction);
     }
   }
@@ -821,7 +821,7 @@ class CommanderSystem {
           // Sync tip panel: activate if human is commander but panel missing,
           // deactivate if non-human but panel lingering
           if (this.tipSystem) {
-            if (isHuman && !this.tipSystem.isActive()) {
+            if (isHuman && !this.tipSystem.isActive() && window.authManager?.isSignedIn && !window.authManager?.isGuest) {
               this.tipSystem.activate(current.playerId, faction);
             } else if (!isHuman && this.tipSystem.isActive()) {
               this.tipSystem.deactivate();
