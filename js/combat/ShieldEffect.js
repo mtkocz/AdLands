@@ -66,7 +66,7 @@ class ShieldEffect {
       uniforms: {
         uColor: { value: factionColor },
         uReveal: { value: 1.0 },
-        uPulseEdge: { value: 0.0 },
+        uPulseEdge: { value: -1.0 },
         uFlash: { value: 0.0 },
       },
       vertexShader: [
@@ -85,7 +85,7 @@ class ShieldEffect {
         'void main() {',
         '  if (vNormAngle > uReveal) discard;',
         '  float edgeDist = abs(vNormAngle - uPulseEdge);',
-        '  float pulse = smoothstep(0.12, 0.0, edgeDist);',
+        '  float pulse = uPulseEdge > -0.5 ? smoothstep(0.12, 0.0, edgeDist) : 0.0;',
         '  vec3 col = uColor + pulse * vec3(0.8) + uFlash * vec3(1.0);',
         '  float alpha = 0.9 + pulse * 0.6 + uFlash * 0.5;',
         '  gl_FragColor = vec4(col, alpha);',
@@ -147,7 +147,7 @@ class ShieldEffect {
       } else {
         shield.mesh.visible = false;
         shield.material.uniforms.uReveal.value = 1.0;
-        shield.material.uniforms.uPulseEdge.value = 0.0;
+        shield.material.uniforms.uPulseEdge.value = -1.0;
         shield.material.uniforms.uFlash.value = 0.0;
         shield.retractTime = -1;
       }
@@ -171,7 +171,7 @@ class ShieldEffect {
         shield.material.uniforms.uFlash.value = flash * 0.7;
       } else {
         shield.material.uniforms.uReveal.value = 1.0;
-        shield.material.uniforms.uPulseEdge.value = 0.0;
+        shield.material.uniforms.uPulseEdge.value = -1.0;
         shield.material.uniforms.uFlash.value = 0.0;
         shield.deployTime = -1;
       }
