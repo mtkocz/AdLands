@@ -2985,20 +2985,46 @@ class GameRoom {
       return;
     }
 
-    const target = this.players.get(targetId);
-    if (!target) {
+    // Look up target — check real players first, then bots
+    let target = this.players.get(targetId);
+    let isBot = false;
+    let botName = null;
+    let botFaction = null;
+
+    if (!target && targetId.startsWith("bot-")) {
+      const botStates = this.botBridge.getStatesForBroadcast();
+      const bs = botStates[targetId];
+      if (bs) {
+        isBot = true;
+        botName = bs.n || targetId;
+        botFaction = bs.f;
+      }
+    }
+
+    if (!target && !isBot) {
       this._emitToSocket(socketId, "tip-failed", { reason: "Player not found" });
       return;
     }
 
-    // Cannot tip undeployed players (dead or in portal selection)
-    if (this._isUndeployed(target)) {
+    // Cannot tip undeployed players (dead or in portal selection) — bots are always deployed if present
+    if (target && this._isUndeployed(target)) {
       this._emitToSocket(socketId, "tip-failed", { reason: "Player is not deployed" });
       return;
     }
 
+    // Check dead bot
+    if (isBot) {
+      const botStates = this.botBridge.getStatesForBroadcast();
+      const bs = botStates[targetId];
+      if (bs && bs.d === 1) {
+        this._emitToSocket(socketId, "tip-failed", { reason: "Player is not deployed" });
+        return;
+      }
+    }
+
     // Must be same faction
-    if (target.faction !== tipper.faction) {
+    const targetFaction = isBot ? botFaction : target.faction;
+    if (targetFaction !== tipper.faction) {
       this._emitToSocket(socketId, "tip-failed", { reason: "Can only tip faction members" });
       return;
     }
@@ -3033,26 +3059,31 @@ class GameRoom {
     // All checks passed — execute tip
     tipper._tipBudget -= tipAmount;
     tipper._tipCooldowns.set(targetId, Date.now());
-    target.crypto += tipAmount;
 
-    // Notify the recipient
-    this._emitToSocket(targetId, "tip-received", {
-      fromId: socketId,
-      fromName: tipper.name,
-      amount: tipAmount,
-      newCrypto: target.crypto,
-    });
+    const targetName = isBot ? botName : target.name;
+
+    if (!isBot) {
+      target.crypto += tipAmount;
+
+      // Notify the recipient (only real players have sockets)
+      this._emitToSocket(targetId, "tip-received", {
+        fromId: socketId,
+        fromName: tipper.name,
+        amount: tipAmount,
+        newCrypto: target.crypto,
+      });
+    }
 
     // Confirm to the tipper (with server-authoritative budget)
     this._emitToSocket(socketId, "tip-confirmed", {
       targetId,
-      targetName: target.name,
+      targetName,
       amount: tipAmount,
       newBudget: tipper._tipBudget,
     });
 
     // Tusk announcement to everyone (pass socket IDs for deferred name resolution)
-    this.tuskChat.onCommanderTip(tipper.name, target.name, tipAmount, socketId, targetId);
+    this.tuskChat.onCommanderTip(tipper.name, targetName, tipAmount, socketId, targetId);
   }
 
   _emitToSocket(socketId, event, data) {
@@ -3356,7 +3387,9 @@ class GameRoom {
               break;
             }
           }
-          const clusterLabel = `Sector ${change.clusterId}`;
+          const sponsorId = this.clusterSponsorMap.get(change.clusterId);
+          const sponsor = sponsorId && this.sponsors.find(s => s.id === sponsorId);
+          const clusterLabel = sponsor && sponsor.name ? sponsor.name : `Sector ${change.clusterId}`;
           this.tuskChat.onClusterCapture(capturerName, clusterLabel, change.owner, capturerSocketId);
         }
       }
