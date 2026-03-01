@@ -1,6 +1,6 @@
 /**
- * ShieldEffect — 2D arc line shield visual for tanks.
- * A 1/3 circle (120°) line in front of the turret, faction-colored with bloom glow.
+ * ShieldEffect — 2D arc shield visual for tanks.
+ * A 1/3 circle (120°) ribbon in front of the turret, faction-colored with bloom glow.
  * Attach to turretGroup so the arc rotates with the turret.
  */
 class ShieldEffect {
@@ -9,26 +9,48 @@ class ShieldEffect {
     this.sphereRadius = sphereRadius;
     this.shields = new Map(); // tankId → { mesh, material, parent }
 
-    // Shared arc geometry — 120° arc centered on -Z (barrel direction)
+    // Shared arc geometry — 120° ribbon (inner + outer radius) centered on -Z
     const segments = 32;
-    const radius = 4.5;
+    const innerRadius = 4.2;
+    const outerRadius = 4.8;
     const arcAngle = Math.PI * 2 / 3; // 120°
     const halfArc = arcAngle / 2;
 
-    const positions = new Float32Array((segments + 1) * 3);
+    // Two vertices per segment (inner and outer edge)
+    const vertCount = (segments + 1) * 2;
+    const positions = new Float32Array(vertCount * 3);
+    const indices = [];
+
     for (let i = 0; i <= segments; i++) {
       const angle = -halfArc + (arcAngle * i / segments);
-      positions[i * 3]     = Math.sin(angle) * radius;
-      positions[i * 3 + 1] = 0;
-      positions[i * 3 + 2] = -Math.cos(angle) * radius;
+      const sinA = Math.sin(angle);
+      const cosA = -Math.cos(angle);
+      const base = i * 2;
+
+      // Inner vertex
+      positions[base * 3]     = sinA * innerRadius;
+      positions[base * 3 + 1] = 0;
+      positions[base * 3 + 2] = cosA * innerRadius;
+
+      // Outer vertex
+      positions[(base + 1) * 3]     = sinA * outerRadius;
+      positions[(base + 1) * 3 + 1] = 0;
+      positions[(base + 1) * 3 + 2] = cosA * outerRadius;
+
+      // Two triangles per quad
+      if (i < segments) {
+        const a = base, b = base + 1, c = base + 2, d = base + 3;
+        indices.push(a, b, c, b, d, c);
+      }
     }
 
     this._sharedGeometry = new THREE.BufferGeometry();
     this._sharedGeometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+    this._sharedGeometry.setIndex(indices);
   }
 
   /**
-   * Get or create a shield line for a tank, attached to its turretGroup.
+   * Get or create a shield mesh for a tank, attached to its turretGroup.
    */
   getOrCreateShield(tankId, turretGroup, faction) {
     if (this.shields.has(tankId)) return this.shields.get(tankId);
@@ -39,23 +61,24 @@ class ShieldEffect {
     // HDR boost for bloom glow
     factionColor.multiplyScalar(3.0);
 
-    const material = new THREE.LineBasicMaterial({
+    const material = new THREE.MeshBasicMaterial({
       color: factionColor,
       transparent: true,
       opacity: 0.9,
       blending: THREE.AdditiveBlending,
       depthWrite: false,
+      side: THREE.DoubleSide,
     });
 
-    const line = new THREE.Line(this._sharedGeometry, material);
-    line.visible = false;
-    line.renderOrder = 50;
-    line.layers.enable(1); // BLOOM_LAYER
-    line.position.set(0, 0.5, 0); // Slightly above turret pivot
+    const mesh = new THREE.Mesh(this._sharedGeometry, material);
+    mesh.visible = false;
+    mesh.renderOrder = 50;
+    mesh.layers.enable(1); // BLOOM_LAYER
+    mesh.position.set(0, 0.5, 0);
 
-    turretGroup.add(line);
+    turretGroup.add(mesh);
 
-    const entry = { mesh: line, material, parent: turretGroup };
+    const entry = { mesh, material, parent: turretGroup };
     this.shields.set(tankId, entry);
     return entry;
   }
