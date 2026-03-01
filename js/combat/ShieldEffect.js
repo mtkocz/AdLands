@@ -11,8 +11,8 @@ class ShieldEffect {
 
     // Shared arc geometry — 120° ribbon (inner + outer radius) centered on -Z
     const segments = 32;
-    const innerRadius = 4.2;
-    const outerRadius = 4.8;
+    const innerRadius = 4.275;
+    const outerRadius = 4.725;
     const arcAngle = Math.PI * 2 / 3; // 120°
     const halfArc = arcAngle / 2;
 
