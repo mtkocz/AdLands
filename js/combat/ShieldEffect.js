@@ -1,7 +1,7 @@
 /**
  * ShieldEffect — 2D arc shield visual for tanks.
  * A 1/3 circle (120°) ribbon in front of the turret, faction-colored with bloom glow.
- * Attach to turretGroup so the arc rotates with the turret.
+ * On activation the arc grows outward from center with a bright pulse at the edge.
  */
 class ShieldEffect {
   constructor(scene, sphereRadius) {
@@ -9,19 +9,23 @@ class ShieldEffect {
     this.sphereRadius = sphereRadius;
     this.shields = new Map();
 
-    // Shared arc geometry — 120° ribbon (inner + outer radius) centered on -Z
+    // Shared arc geometry — 120° ribbon centered on -Z
+    // Store normalized angle (0 = center, 1 = edge) in UV.x for shader
     const segments = 32;
     const innerRadius = 4.325;
     const outerRadius = 4.675;
-    const arcAngle = Math.PI * 2 / 3; // 120°
+    const arcAngle = Math.PI * 2 / 3;
     const halfArc = arcAngle / 2;
 
     const vertCount = (segments + 1) * 2;
     const positions = new Float32Array(vertCount * 3);
+    const uvs = new Float32Array(vertCount * 2);
     const indices = [];
 
     for (let i = 0; i <= segments; i++) {
-      const angle = -halfArc + (arcAngle * i / segments);
+      const frac = i / segments; // 0 → 1 along arc
+      const normAngle = Math.abs(frac - 0.5) * 2; // 0 at center, 1 at edges
+      const angle = -halfArc + arcAngle * frac;
       const sinA = Math.sin(angle);
       const cosA = -Math.cos(angle);
       const base = i * 2;
@@ -29,10 +33,14 @@ class ShieldEffect {
       positions[base * 3]     = sinA * innerRadius;
       positions[base * 3 + 1] = 0;
       positions[base * 3 + 2] = cosA * innerRadius;
+      uvs[base * 2] = normAngle;
+      uvs[base * 2 + 1] = 0;
 
       positions[(base + 1) * 3]     = sinA * outerRadius;
       positions[(base + 1) * 3 + 1] = 0;
       positions[(base + 1) * 3 + 2] = cosA * outerRadius;
+      uvs[(base + 1) * 2] = normAngle;
+      uvs[(base + 1) * 2 + 1] = 1;
 
       if (i < segments) {
         const a = base, b = base + 1, c = base + 2, d = base + 3;
@@ -42,9 +50,8 @@ class ShieldEffect {
 
     this._sharedGeometry = new THREE.BufferGeometry();
     this._sharedGeometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+    this._sharedGeometry.setAttribute('uv', new THREE.BufferAttribute(uvs, 2));
     this._sharedGeometry.setIndex(indices);
-
-    this._white = new THREE.Color(1.5, 1.5, 1.5);
   }
 
   getOrCreateShield(tankId, turretGroup, faction) {
@@ -55,10 +62,35 @@ class ShieldEffect {
       : new THREE.Color(0x00ccff);
     factionColor.multiplyScalar(0.9);
 
-    const material = new THREE.MeshBasicMaterial({
-      color: factionColor.clone(),
+    const material = new THREE.ShaderMaterial({
+      uniforms: {
+        uColor: { value: factionColor },
+        uReveal: { value: 1.0 },
+        uPulseEdge: { value: 0.0 },
+      },
+      vertexShader: [
+        'varying float vNormAngle;',
+        'void main() {',
+        '  vNormAngle = uv.x;',
+        '  gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);',
+        '}',
+      ].join('\n'),
+      fragmentShader: [
+        'uniform vec3 uColor;',
+        'uniform float uReveal;',
+        'uniform float uPulseEdge;',
+        'varying float vNormAngle;',
+        'void main() {',
+        '  if (vNormAngle > uReveal) discard;',
+        // Bright pulse at the expanding leading edge
+        '  float edgeDist = abs(vNormAngle - uPulseEdge);',
+        '  float pulse = smoothstep(0.12, 0.0, edgeDist);',
+        '  vec3 col = uColor + pulse * vec3(0.8);',
+        '  float alpha = 0.9 + pulse * 0.6;',
+        '  gl_FragColor = vec4(col, alpha);',
+        '}',
+      ].join('\n'),
       transparent: true,
-      opacity: 0.9,
       blending: THREE.AdditiveBlending,
       depthWrite: false,
       side: THREE.DoubleSide,
@@ -74,7 +106,6 @@ class ShieldEffect {
 
     const entry = {
       mesh, material, parent: turretGroup,
-      factionColor: factionColor,
       wasActive: false,
       deployTime: -1,
     };
@@ -86,7 +117,6 @@ class ShieldEffect {
     const shield = this.shields.get(tankId);
     if (!shield) return;
 
-    // Detect activation — start deploy animation
     if (active && !shield.wasActive) {
       shield.deployTime = 0;
     }
@@ -94,35 +124,24 @@ class ShieldEffect {
 
     shield.mesh.visible = active;
     if (!active) {
-      shield.mesh.scale.set(1, 1, 1);
-      shield.material.opacity = 0.9;
+      shield.material.uniforms.uReveal.value = 1.0;
+      shield.material.uniforms.uPulseEdge.value = 0.0;
       return;
     }
 
-    // Deploy animation: arc sweeps open + white flash → faction color
     if (shield.deployTime >= 0) {
       shield.deployTime += deltaTime;
-      const dur = 0.25; // 250ms
+      const dur = 0.2; // 200ms deploy
 
       if (shield.deployTime < dur) {
         const t = shield.deployTime / dur;
-
-        // Elastic overshoot on X scale (arc sweeps open from center)
-        // Goes 0 → 1.12 → 1.0
-        const p = t * t * (3 - 2 * t); // smoothstep
-        const overshoot = t < 0.7
-          ? t / 0.7 * 1.12
-          : 1.12 - (t - 0.7) / 0.3 * 0.12;
-        shield.mesh.scale.set(overshoot, 1, 1);
-
-        // White flash → faction color
-        const flash = 1 - p;
-        shield.material.color.copy(shield.factionColor).lerp(this._white, flash);
-        shield.material.opacity = 0.9 + 0.5 * flash;
+        // Ease-out quad: fast start, smooth end
+        const ease = 1 - (1 - t) * (1 - t);
+        shield.material.uniforms.uReveal.value = ease;
+        shield.material.uniforms.uPulseEdge.value = ease;
       } else {
-        shield.mesh.scale.set(1, 1, 1);
-        shield.material.color.copy(shield.factionColor);
-        shield.material.opacity = 0.9;
+        shield.material.uniforms.uReveal.value = 1.0;
+        shield.material.uniforms.uPulseEdge.value = 0.0;
         shield.deployTime = -1;
       }
     }
