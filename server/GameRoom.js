@@ -3389,7 +3389,8 @@ class GameRoom {
           }
           const sponsorId = this.clusterSponsorMap.get(change.clusterId);
           const sponsor = sponsorId && this.sponsors.find(s => s.id === sponsorId);
-          const clusterLabel = sponsor && sponsor.name ? sponsor.name : `Sector ${change.clusterId}`;
+          const displayName = sponsor && sponsor.ownerType === "player" ? sponsor.title : sponsor?.name;
+          const clusterLabel = displayName || `Sector ${change.clusterId}`;
           this.tuskChat.onClusterCapture(capturerName, clusterLabel, change.owner, capturerSocketId);
         }
       }

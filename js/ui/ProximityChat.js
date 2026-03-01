@@ -922,11 +922,12 @@ class ChatWindow {
         nameSpan.className = 'msg-name tusk';
         nameSpan.textContent = '👑 Lord Elon:';
 
-        // Parse @mentions and make them clickable
+        // Parse @mentions and sponsor names, make them clickable
         const textSpan = document.createElement('span');
         textSpan.className = 'msg-text';
         textSpan.appendChild(document.createTextNode(' '));
         this._parseMentions(text, textSpan);
+        this._parseSponsorNames(textSpan);
 
         msgEl.appendChild(nameSpan);
         msgEl.appendChild(textSpan);
@@ -974,6 +975,71 @@ class ChatWindow {
         if (lastIndex < text.length) {
             container.appendChild(document.createTextNode(text.slice(lastIndex)));
         }
+    }
+
+    /**
+     * Scan text nodes inside a container for sponsor names and wrap matches
+     * in clickable spans. Runs after _parseMentions so it only touches plain
+     * text nodes (not already-wrapped @mention spans).
+     * @param {HTMLElement} container
+     */
+    _parseSponsorNames(container) {
+        // Collect sponsor names from planet data (if available)
+        const sponsorNames = this._getSponsorNames();
+        if (sponsorNames.length === 0) return;
+
+        // Sort longest first so "Coma Cola Plus" matches before "Coma Cola"
+        sponsorNames.sort((a, b) => b.length - a.length);
+
+        // Build a single regex that matches any sponsor name (case-insensitive)
+        const escaped = sponsorNames.map(n => n.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'));
+        const regex = new RegExp(`(${escaped.join('|')})`, 'gi');
+
+        // Walk text nodes and split on matches
+        const textNodes = [];
+        const walker = document.createTreeWalker(container, NodeFilter.SHOW_TEXT);
+        while (walker.nextNode()) textNodes.push(walker.currentNode);
+
+        for (const node of textNodes) {
+            const text = node.textContent;
+            if (!regex.test(text)) continue;
+            regex.lastIndex = 0; // reset after .test()
+
+            const frag = document.createDocumentFragment();
+            let lastIdx = 0;
+            let match;
+            while ((match = regex.exec(text)) !== null) {
+                if (match.index > lastIdx) {
+                    frag.appendChild(document.createTextNode(text.slice(lastIdx, match.index)));
+                }
+                const span = document.createElement('span');
+                span.className = 'chat-sponsor';
+                span.textContent = match[0];
+                span.dataset.sponsorName = match[0];
+                frag.appendChild(span);
+                lastIdx = regex.lastIndex;
+            }
+            if (lastIdx < text.length) {
+                frag.appendChild(document.createTextNode(text.slice(lastIdx)));
+            }
+            node.parentNode.replaceChild(frag, node);
+        }
+    }
+
+    /**
+     * Get all active sponsor names from the planet (if loaded).
+     * @returns {string[]}
+     */
+    _getSponsorNames() {
+        const planet = window._planet;
+        if (!planet || !planet.sponsorClusters) return [];
+        const names = [];
+        for (const [, entry] of planet.sponsorClusters) {
+            const s = entry.sponsor;
+            const name = (s?.ownerType === 'player' && s.title) ? s.title : s?.name;
+            if (name) names.push(name);
+        }
+        return names;
     }
 
     /**

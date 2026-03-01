@@ -4710,6 +4710,16 @@ input:checked + .toggle-slider:before {
     text-decoration: underline;
 }
 
+/* Clickable sponsor names in Tusk messages */
+.chat-sponsor {
+    color: var(--accent-gold);
+    cursor: pointer;
+}
+
+.chat-sponsor:hover {
+    text-decoration: underline;
+}
+
 /* ========================
    COLORBLIND MODES
    ======================== */

@@ -446,6 +446,7 @@
   window.avatarColor = playerAvatarColor;
 
   const planet = new Planet(scene, CONFIG.sphereRadius);
+  window._planet = planet; // Expose for chat sponsor name lookup
   const environment = new Environment(scene, CONFIG.sphereRadius);
   const tank = new Tank(scene, CONFIG.sphereRadius, { hexGroup: planet.hexGroup });
 
@@ -3572,6 +3573,25 @@
   document.addEventListener("keydown", (e) => {
     if (e.key === "Escape" && !intelPopup.classList.contains("hidden")) {
       hideTerritoryIntelPopup();
+    }
+  });
+
+  // Clickable sponsor names in Tusk chat → open territory intel popup
+  document.addEventListener("click", (e) => {
+    const sponsorEl = e.target.closest(".chat-sponsor");
+    if (!sponsorEl) return;
+    const name = sponsorEl.dataset.sponsorName;
+    if (!name) return;
+
+    // Find sponsor + clusterId by display name (title for player territories, name for sponsors)
+    for (const [, entry] of planet.sponsorClusters) {
+      const s = entry.sponsor;
+      const displayName = (s?.ownerType === 'player' && s.title) ? s.title : s?.name;
+      if (displayName === name) {
+        const rect = sponsorEl.getBoundingClientRect();
+        showTerritoryIntelPopup(rect.left, rect.bottom + 4, s, entry.clusterId);
+        return;
+      }
     }
   });
 
