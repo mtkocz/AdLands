@@ -2597,12 +2597,23 @@ class GameRoom {
             p.startPhi = p.phi;
             p.age = 0;
 
+            // Compute world-space position & direction for client visual
+            const R = 480;
+            const rSp = Math.sin(testPhi), rCp = Math.cos(testPhi);
+            const rSt = Math.sin(testTheta), rCt = Math.cos(testTheta);
+            const liftR = R + 2; // Above surface to avoid client hitSurface cull
+            const rSinH = Math.sin(reflectedHeading), rCosH = Math.cos(reflectedHeading);
             this.io.to(this.roomId).emit("shield-reflect", {
               shieldOwnerId: shId,
-              theta: testTheta,
-              phi: testPhi,
-              newHeading: reflectedHeading,
               projectileId: p.id,
+              // World position (lifted above surface)
+              wx: liftR * rSp * rSt,
+              wy: liftR * rCp,
+              wz: liftR * rSp * rCt,
+              // World velocity direction (unit vector)
+              dvx: rSinH * rCt + rCosH * rCp * rSt,
+              dvy: -rCosH * rSp,
+              dvz: -rSinH * rSt + rCosH * rCp * rCt,
             });
             shieldReflected = true;
             break;

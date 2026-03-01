@@ -1309,14 +1309,12 @@ void main() {
 
   /**
    * Spawn a new visual projectile for a shield deflection.
-   * Always creates a fresh projectile at the impact point with reflected heading.
-   * Also removes the original incoming projectile if found.
+   * Server computes world-space position and direction — client just uses them.
    *
-   * @param {Object} data - { projectileId, theta, phi, newHeading, shieldOwnerId }
-   * @param {number} sphereRadius - Planet sphere radius
+   * @param {Object} data - { projectileId, shieldOwnerId, wx, wy, wz, dvx, dvy, dvz }
    * @param {string} faction - Shield owner's faction (for projectile color)
    */
-  spawnDeflectedProjectile(data, sphereRadius, faction) {
+  spawnDeflectedProjectile(data, faction) {
     // Remove the original incoming projectile if we can find it
     for (let i = this.projectiles.length - 1; i >= 0; i--) {
       const p = this.projectiles[i];
@@ -1328,32 +1326,9 @@ void main() {
       }
     }
 
-    // Compute impact world position (lifted 2 wu above surface to avoid hitSurface cull)
-    const liftR = sphereRadius + 2;
-    const sinPhi = Math.sin(data.phi);
-    _muzzleWorld.set(
-      liftR * sinPhi * Math.sin(data.theta),
-      liftR * Math.cos(data.phi),
-      liftR * sinPhi * Math.cos(data.theta)
-    );
-
-    // Convert server heading to world-space velocity direction
-    // Tangent basis on sphere at (theta, phi):
-    //   eTheta = (cos(theta), 0, -sin(theta))
-    //   ePhi   = (cos(phi)*sin(theta), -sin(phi), cos(phi)*cos(theta))
-    const ct = Math.cos(data.theta);
-    const st = Math.sin(data.theta);
-    const cp = Math.cos(data.phi);
-    const sp = Math.sin(data.phi);
-    const sinH = Math.sin(data.newHeading);
-    const cosH = Math.cos(data.newHeading);
-
-    // velocity direction = sin(heading) * eTheta + cos(heading) * ePhi
-    _shotDirWorld.set(
-      sinH * ct + cosH * cp * st,
-      -cosH * sp,
-      -sinH * st + cosH * cp * ct
-    ).normalize();
+    // Use server-computed world position and direction directly
+    _muzzleWorld.set(data.wx, data.wy, data.wz);
+    _shotDirWorld.set(data.dvx, data.dvy, data.dvz).normalize();
 
     // Acquire projectile from pool
     const sizeScale = 1;

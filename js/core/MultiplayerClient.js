@@ -789,17 +789,11 @@
       const shieldTank = remoteTanks.get(data.shieldOwnerId);
       const faction = shieldTank?.faction || (data.shieldOwnerId === net.playerId ? window.playerFaction : 'cobalt');
 
-      // Spawn a new projectile flying in the reflected direction
-      cannonSystem.spawnDeflectedProjectile?.(data, sphereRadius, faction);
+      // Spawn a new projectile flying in the reflected direction (server-computed)
+      cannonSystem.spawnDeflectedProjectile?.(data, faction);
 
       // Small spark at impact point
-      const r = sphereRadius;
-      const sinPhi = Math.sin(data.phi);
-      _reflectWorldPos.set(
-        r * sinPhi * Math.sin(data.theta),
-        r * Math.cos(data.phi),
-        r * sinPhi * Math.cos(data.theta)
-      );
+      _reflectWorldPos.set(data.wx, data.wy, data.wz);
       cannonSystem._spawnExplosion?.(_reflectWorldPos, faction, 0.3);
     };
 
