@@ -1328,12 +1328,13 @@ void main() {
       }
     }
 
-    // Compute impact world position
+    // Compute impact world position (lifted 2 wu above surface to avoid hitSurface cull)
+    const liftR = sphereRadius + 2;
     const sinPhi = Math.sin(data.phi);
     _muzzleWorld.set(
-      sphereRadius * sinPhi * Math.sin(data.theta),
-      sphereRadius * Math.cos(data.phi),
-      sphereRadius * sinPhi * Math.cos(data.theta)
+      liftR * sinPhi * Math.sin(data.theta),
+      liftR * Math.cos(data.phi),
+      liftR * sinPhi * Math.cos(data.theta)
     );
 
     // Convert server heading to world-space velocity direction
