@@ -109,6 +109,7 @@ class ShieldEffect {
       mesh, material, parent: turretGroup,
       wasActive: false,
       deployTime: -1,
+      retractTime: -1,
     };
     this.shields.set(tankId, entry);
     return entry;
@@ -118,30 +119,54 @@ class ShieldEffect {
     const shield = this.shields.get(tankId);
     if (!shield) return;
 
+    // Detect activation edge
     if (active && !shield.wasActive) {
       shield.deployTime = 0;
+      shield.retractTime = -1;
+    }
+    // Detect deactivation edge
+    if (!active && shield.wasActive) {
+      shield.retractTime = 0;
+      shield.deployTime = -1;
     }
     shield.wasActive = active;
 
-    shield.mesh.visible = active;
-    if (!active) {
-      shield.material.uniforms.uReveal.value = 1.0;
-      shield.material.uniforms.uPulseEdge.value = 0.0;
-      shield.material.uniforms.uFlash.value = 0.0;
+    // Retract animation (plays after shield deactivates)
+    if (shield.retractTime >= 0) {
+      shield.retractTime += deltaTime;
+      const dur = 0.15; // 150ms retract (snappier than deploy)
+
+      if (shield.retractTime < dur) {
+        shield.mesh.visible = true;
+        const t = shield.retractTime / dur;
+        // Ease-in: starts slow, accelerates
+        const ease = t * t;
+        shield.material.uniforms.uReveal.value = 1 - ease;
+        shield.material.uniforms.uPulseEdge.value = 1 - ease;
+        shield.material.uniforms.uFlash.value = 0.0;
+      } else {
+        shield.mesh.visible = false;
+        shield.material.uniforms.uReveal.value = 1.0;
+        shield.material.uniforms.uPulseEdge.value = 0.0;
+        shield.material.uniforms.uFlash.value = 0.0;
+        shield.retractTime = -1;
+      }
       return;
     }
 
+    shield.mesh.visible = active;
+    if (!active) return;
+
+    // Deploy animation
     if (shield.deployTime >= 0) {
       shield.deployTime += deltaTime;
       const dur = 0.2; // 200ms deploy
 
       if (shield.deployTime < dur) {
         const t = shield.deployTime / dur;
-        // Ease-out quad: fast start, smooth end
         const ease = 1 - (1 - t) * (1 - t);
         shield.material.uniforms.uReveal.value = ease;
         shield.material.uniforms.uPulseEdge.value = ease;
-        // Flash: peaks at t=0.2 then fades out smoothly
         const flash = t < 0.2 ? t / 0.2 : (1 - t) / 0.8;
         shield.material.uniforms.uFlash.value = flash * 0.7;
       } else {
