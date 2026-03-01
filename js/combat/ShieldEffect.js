@@ -7,7 +7,7 @@ class ShieldEffect {
   constructor(scene, sphereRadius) {
     this.scene = scene;
     this.sphereRadius = sphereRadius;
-    this.shields = new Map(); // tankId → { mesh, material, parent, wasActive, pulseTime }
+    this.shields = new Map();
 
     // Shared arc geometry — 120° ribbon (inner + outer radius) centered on -Z
     const segments = 32;
@@ -16,7 +16,6 @@ class ShieldEffect {
     const arcAngle = Math.PI * 2 / 3; // 120°
     const halfArc = arcAngle / 2;
 
-    // Two vertices per segment (inner and outer edge)
     const vertCount = (segments + 1) * 2;
     const positions = new Float32Array(vertCount * 3);
     const indices = [];
@@ -27,17 +26,14 @@ class ShieldEffect {
       const cosA = -Math.cos(angle);
       const base = i * 2;
 
-      // Inner vertex
       positions[base * 3]     = sinA * innerRadius;
       positions[base * 3 + 1] = 0;
       positions[base * 3 + 2] = cosA * innerRadius;
 
-      // Outer vertex
       positions[(base + 1) * 3]     = sinA * outerRadius;
       positions[(base + 1) * 3 + 1] = 0;
       positions[(base + 1) * 3 + 2] = cosA * outerRadius;
 
-      // Two triangles per quad
       if (i < segments) {
         const a = base, b = base + 1, c = base + 2, d = base + 3;
         indices.push(a, b, c, b, d, c);
@@ -47,22 +43,20 @@ class ShieldEffect {
     this._sharedGeometry = new THREE.BufferGeometry();
     this._sharedGeometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
     this._sharedGeometry.setIndex(indices);
+
+    this._white = new THREE.Color(1.5, 1.5, 1.5);
   }
 
-  /**
-   * Get or create a shield mesh for a tank, attached to its turretGroup.
-   */
   getOrCreateShield(tankId, turretGroup, faction) {
     if (this.shields.has(tankId)) return this.shields.get(tankId);
 
     const factionColor = FACTION_COLORS[faction]
       ? FACTION_COLORS[faction].three.clone()
       : new THREE.Color(0x00ccff);
-    // HDR boost for bloom glow
     factionColor.multiplyScalar(0.9);
 
     const material = new THREE.MeshBasicMaterial({
-      color: factionColor,
+      color: factionColor.clone(),
       transparent: true,
       opacity: 0.9,
       blending: THREE.AdditiveBlending,
@@ -78,53 +72,62 @@ class ShieldEffect {
 
     turretGroup.add(mesh);
 
-    const entry = { mesh, material, parent: turretGroup, wasActive: false, pulseTime: -1 };
+    const entry = {
+      mesh, material, parent: turretGroup,
+      factionColor: factionColor,
+      wasActive: false,
+      deployTime: -1,
+    };
     this.shields.set(tankId, entry);
     return entry;
   }
 
-  /**
-   * Update shield visibility and activation pulse each frame.
-   */
   updateShield(tankId, active, arcAngle, energy, deltaTime) {
     const shield = this.shields.get(tankId);
     if (!shield) return;
 
-    // Detect activation edge — trigger pulse
+    // Detect activation — start deploy animation
     if (active && !shield.wasActive) {
-      shield.pulseTime = 0;
+      shield.deployTime = 0;
     }
     shield.wasActive = active;
 
     shield.mesh.visible = active;
     if (!active) {
-      shield.mesh.scale.setScalar(1);
+      shield.mesh.scale.set(1, 1, 1);
+      shield.material.opacity = 0.9;
       return;
     }
 
-    // Pulse animation: quick scale burst that settles to 1x
-    if (shield.pulseTime >= 0) {
-      shield.pulseTime += deltaTime;
-      const dur = 0.15; // 150ms pulse
-      if (shield.pulseTime < dur) {
-        const t = shield.pulseTime / dur;
-        // Ease-out: starts big, snaps to normal
-        const ease = 1 - (1 - t) * (1 - t);
-        const scale = 1 + 0.5 * (1 - ease); // 1.5 → 1.0
-        shield.mesh.scale.setScalar(scale);
-        // Brief opacity flash
-        shield.material.opacity = 0.9 + 0.6 * (1 - ease);
+    // Deploy animation: arc sweeps open + white flash → faction color
+    if (shield.deployTime >= 0) {
+      shield.deployTime += deltaTime;
+      const dur = 0.25; // 250ms
+
+      if (shield.deployTime < dur) {
+        const t = shield.deployTime / dur;
+
+        // Elastic overshoot on X scale (arc sweeps open from center)
+        // Goes 0 → 1.12 → 1.0
+        const p = t * t * (3 - 2 * t); // smoothstep
+        const overshoot = t < 0.7
+          ? t / 0.7 * 1.12
+          : 1.12 - (t - 0.7) / 0.3 * 0.12;
+        shield.mesh.scale.set(overshoot, 1, 1);
+
+        // White flash → faction color
+        const flash = 1 - p;
+        shield.material.color.copy(shield.factionColor).lerp(this._white, flash);
+        shield.material.opacity = 0.9 + 0.5 * flash;
       } else {
-        shield.mesh.scale.setScalar(1);
+        shield.mesh.scale.set(1, 1, 1);
+        shield.material.color.copy(shield.factionColor);
         shield.material.opacity = 0.9;
-        shield.pulseTime = -1; // Done
+        shield.deployTime = -1;
       }
     }
   }
 
-  /**
-   * Remove and dispose shield for a despawned tank.
-   */
   removeShield(tankId) {
     const shield = this.shields.get(tankId);
     if (!shield) return;
