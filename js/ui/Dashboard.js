@@ -985,6 +985,7 @@ class Dashboard {
                             <div class="controls-hint"><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> <span>Move</span></div>
                             <div class="controls-hint"><kbd>Left Click</kbd> <span>Fire</span></div>
                             <div class="controls-hint"><kbd>1</kbd><kbd>2</kbd><kbd>3</kbd> <span>Switch Loadout</span></div>
+                            <div class="controls-hint"><kbd>SPACE BAR</kbd> <span>Defense</span></div>
                             <div class="controls-hint"><kbd>H</kbd> <span>Hide UI</span></div>
                             <div class="controls-hint"><kbd>Right Drag</kbd> <span>Orbit Camera</span></div>
                         </div>
