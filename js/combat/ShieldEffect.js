@@ -59,7 +59,7 @@ class ShieldEffect {
       ? FACTION_COLORS[faction].three.clone()
       : new THREE.Color(0x00ccff);
     // HDR boost for bloom glow
-    factionColor.multiplyScalar(2.5);
+    factionColor.multiplyScalar(1.5);
 
     const material = new THREE.MeshBasicMaterial({
       color: factionColor,
