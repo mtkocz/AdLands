@@ -783,13 +783,16 @@
       }
     };
 
-    // Shield reflect — redirect the projectile visually
+    // Shield reflect — spawn a deflected projectile at impact point
     const _reflectWorldPos = new THREE.Vector3();
     net.onShieldReflect = (data) => {
-      // Try to find and redirect the visual projectile
-      const redirected = cannonSystem.redirectProjectile?.(data, sphereRadius);
+      const shieldTank = remoteTanks.get(data.shieldOwnerId);
+      const faction = shieldTank?.faction || (data.shieldOwnerId === net.playerId ? window.playerFaction : 'cobalt');
 
-      // Spawn a small spark at impact point regardless
+      // Spawn a new projectile flying in the reflected direction
+      cannonSystem.spawnDeflectedProjectile?.(data, sphereRadius, faction);
+
+      // Small spark at impact point
       const r = sphereRadius;
       const sinPhi = Math.sin(data.phi);
       _reflectWorldPos.set(
@@ -797,8 +800,6 @@
         r * Math.cos(data.phi),
         r * sinPhi * Math.cos(data.theta)
       );
-      const shieldTank = remoteTanks.get(data.shieldOwnerId);
-      const faction = shieldTank?.faction || (data.shieldOwnerId === net.playerId ? window.playerFaction : 'cobalt');
       cannonSystem._spawnExplosion?.(_reflectWorldPos, faction, 0.3);
     };
 

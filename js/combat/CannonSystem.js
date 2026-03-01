@@ -1308,55 +1308,35 @@ void main() {
   }
 
   /**
-   * Redirect a projectile to simulate shield deflection.
-   * Finds the projectile by serverId or nearest position, then updates
-   * its velocity to match the server's reflected heading.
+   * Spawn a new visual projectile for a shield deflection.
+   * Always creates a fresh projectile at the impact point with reflected heading.
+   * Also removes the original incoming projectile if found.
    *
    * @param {Object} data - { projectileId, theta, phi, newHeading, shieldOwnerId }
    * @param {number} sphereRadius - Planet sphere radius
-   * @returns {boolean} true if a projectile was redirected
+   * @param {string} faction - Shield owner's faction (for projectile color)
    */
-  redirectProjectile(data, sphereRadius) {
-    // Try to find by server ID first
-    let proj = null;
-    let foundBy = 'none';
-    for (let i = 0; i < this.projectiles.length; i++) {
-      if (this.projectiles[i].serverId === data.projectileId) {
-        proj = this.projectiles[i];
-        foundBy = 'serverId';
+  spawnDeflectedProjectile(data, sphereRadius, faction) {
+    // Remove the original incoming projectile if we can find it
+    for (let i = this.projectiles.length - 1; i >= 0; i--) {
+      const p = this.projectiles[i];
+      if (p.serverId === data.projectileId) {
+        if (p.light) { p.mesh.remove(p.light); p.light.dispose(); }
+        this.objectPools.releaseProjectile(p.poolItem);
+        this.projectiles.splice(i, 1);
         break;
       }
     }
 
-    // Fallback: find nearest projectile to impact position
-    if (!proj) {
-      const r = sphereRadius;
-      const sinPhi = Math.sin(data.phi);
-      const impactX = r * sinPhi * Math.sin(data.theta);
-      const impactY = r * Math.cos(data.phi);
-      const impactZ = r * sinPhi * Math.cos(data.theta);
-
-      let bestDist = 625; // Max search radius squared (25 wu)
-      for (let i = 0; i < this.projectiles.length; i++) {
-        const p = this.projectiles[i];
-        const dx = p.position.x - impactX;
-        const dy = p.position.y - impactY;
-        const dz = p.position.z - impactZ;
-        const d = dx * dx + dy * dy + dz * dz;
-        if (d < bestDist) {
-          bestDist = d;
-          proj = p;
-          foundBy = 'nearest';
-        }
-      }
-      if (proj) console.log('[Shield] Nearest proj dist:', Math.sqrt(bestDist).toFixed(1), 'wu, total projs:', this.projectiles.length);
-    }
-
-    console.log('[Shield] redirectProjectile:', foundBy, 'projId:', data.projectileId, 'totalProjs:', this.projectiles.length);
-    if (!proj) return false;
+    // Compute impact world position
+    const sinPhi = Math.sin(data.phi);
+    _muzzleWorld.set(
+      sphereRadius * sinPhi * Math.sin(data.theta),
+      sphereRadius * Math.cos(data.phi),
+      sphereRadius * sinPhi * Math.cos(data.theta)
+    );
 
     // Convert server heading to world-space velocity direction
-    // Server heading: 0 = +phi (south), PI/2 = +theta (east)
     // Tangent basis on sphere at (theta, phi):
     //   eTheta = (cos(theta), 0, -sin(theta))
     //   ePhi   = (cos(phi)*sin(theta), -sin(phi), cos(phi)*cos(theta))
@@ -1364,36 +1344,53 @@ void main() {
     const st = Math.sin(data.theta);
     const cp = Math.cos(data.phi);
     const sp = Math.sin(data.phi);
-    const h = data.newHeading;
-    const sinH = Math.sin(h);
-    const cosH = Math.cos(h);
+    const sinH = Math.sin(data.newHeading);
+    const cosH = Math.cos(data.newHeading);
 
-    // World velocity direction = sin(heading) * eTheta + cos(heading) * ePhi
-    const vx = sinH * ct + cosH * cp * st;
-    const vy = -cosH * sp;
-    const vz = -sinH * st + cosH * cp * ct;
+    // velocity direction = sin(heading) * eTheta + cos(heading) * ePhi
+    _shotDirWorld.set(
+      sinH * ct + cosH * cp * st,
+      -cosH * sp,
+      -sinH * st + cosH * cp * ct
+    ).normalize();
 
-    // Keep original speed
-    const speed = proj.velocity.length();
-    proj.velocity.set(vx * speed, vy * speed, vz * speed);
+    // Acquire projectile from pool
+    const sizeScale = 1;
+    const poolItem = this.objectPools.acquireProjectile(faction, sizeScale);
+    poolItem.mesh.position.copy(_muzzleWorld);
 
-    // Move projectile to impact position and reset distance tracking
-    const impR = sphereRadius;
-    const impSinPhi = Math.sin(data.phi);
-    proj.position.set(
-      impR * impSinPhi * Math.sin(data.theta),
-      impR * Math.cos(data.phi),
-      impR * impSinPhi * Math.cos(data.theta)
+    // Orient along velocity
+    _shotTarget.copy(_muzzleWorld).add(_shotDirWorld);
+    poolItem.mesh.lookAt(_shotTarget);
+
+    poolItem.mesh.layers.set(1); // BLOOM_LAYER
+    this.scene.add(poolItem.mesh);
+
+    // Point light
+    const projectileLight = new THREE.PointLight(
+      FACTION_COLORS[faction]?.hex || 0x00ccff,
+      5, 30
     );
-    proj.mesh.position.copy(proj.position);
-    proj.startPosition.copy(proj.position);
-    proj.age = 0;
+    projectileLight.layers.set(0);
+    poolItem.mesh.add(projectileLight);
 
-    // Re-orient mesh along new velocity
-    _shotTarget.copy(proj.position).add(proj.velocity);
-    proj.mesh.lookAt(_shotTarget);
+    const speed = this.config.projectileSpeed;
+    const range = this.config.maxDistance;
 
-    return true;
+    this.projectiles.push({
+      poolItem: poolItem,
+      mesh: poolItem.mesh,
+      light: projectileLight,
+      faction: faction,
+      position: _muzzleWorld.clone(),
+      velocity: _shotDirWorld.multiplyScalar(speed).clone(),
+      startPosition: _muzzleWorld.clone(),
+      maxDistance: range,
+      damage: 1,
+      sizeScale: sizeScale,
+      age: 0,
+      isRemote: true,
+    });
   }
 
   _spawnExplosion(position, faction, sizeScale = 1) {
