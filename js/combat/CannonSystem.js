@@ -1369,6 +1369,66 @@ void main() {
     });
   }
 
+  /**
+   * Spawn a visual projectile using server-computed world-space position/direction.
+   * Used when the firing tank isn't available in remoteTanks (e.g. bots not yet spawned).
+   *
+   * @param {Object} data - { wx, wy, wz, dvx, dvy, dvz, power, projectileId }
+   * @param {string} faction - Firing tank's faction (for projectile color)
+   */
+  spawnProjectileFromServer(data, faction) {
+    const chargePower = data.power || 0;
+    const chargeRatio = chargePower / 10;
+    const speed =
+      this.config.projectileSpeed *
+      (1 + chargeRatio * (this.config.chargeSpeedMultiplier - 1));
+    const range =
+      this.config.maxDistance *
+      (1 + chargeRatio * (this.config.chargeRangeMultiplier - 1));
+    const sizeScale = 1 + chargeRatio * (this.config.chargeSizeMultiplier - 1);
+
+    _muzzleWorld.set(data.wx, data.wy, data.wz);
+    _shotDirWorld.set(data.dvx, data.dvy, data.dvz).normalize();
+
+    const poolItem = this.objectPools.acquireProjectile(faction, sizeScale);
+    poolItem.mesh.position.copy(_muzzleWorld);
+
+    _shotTarget.copy(_muzzleWorld).add(_shotDirWorld);
+    poolItem.mesh.lookAt(_shotTarget);
+
+    poolItem.mesh.layers.set(1); // BLOOM_LAYER
+    this.scene.add(poolItem.mesh);
+
+    const projectileLight = new THREE.PointLight(
+      FACTION_COLORS[faction]?.hex || 0x00ccff,
+      5,
+      30,
+    );
+    projectileLight.layers.set(0);
+    poolItem.mesh.add(projectileLight);
+
+    // Muzzle flare at spawn point
+    this._spawnMuzzleFlare(_muzzleWorld, _shotDirWorld, faction, sizeScale);
+
+    const damage = 1 + chargeRatio * (this.config.chargeDamageMultiplier - 1);
+
+    this.projectiles.push({
+      poolItem: poolItem,
+      mesh: poolItem.mesh,
+      light: projectileLight,
+      faction: faction,
+      position: _muzzleWorld.clone(),
+      velocity: _shotDirWorld.clone().multiplyScalar(speed),
+      startPosition: _muzzleWorld.clone(),
+      maxDistance: range,
+      damage: damage,
+      sizeScale: sizeScale,
+      age: 0,
+      isRemote: true,
+      serverId: data.projectileId,
+    });
+  }
+
   _spawnExplosion(position, faction, sizeScale = 1) {
     // Don't spawn if no planet reference
     if (!this.planet) {

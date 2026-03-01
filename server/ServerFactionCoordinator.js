@@ -140,7 +140,7 @@ class ServerFactionCoordinator {
       return true;
     });
 
-    const numTargets = Math.min(8, Math.ceil(availableBots.length / 4));
+    const numTargets = Math.min(14, Math.ceil(availableBots.length / 3));
     let assignedCount = 0;
 
     for (
@@ -152,8 +152,9 @@ class ServerFactionCoordinator {
       if (assignedCount >= availableBots.length) break;
 
       const botsNeeded = Math.min(
-        Math.max(3, Math.ceil(target.tileCount / 15) + 2),
+        Math.max(2, Math.ceil(target.tileCount / 20) + 1),
         Math.ceil(availableBots.length / numTargets),
+        8,
       );
 
       this.assignedBots.set(target.clusterId, new Set());

@@ -1866,6 +1866,13 @@ class GameRoom {
 
     this.projectiles.push(projectile);
 
+    // Compute world-space muzzle position & direction for client visual
+    const R = 480;
+    const fSp = Math.sin(player.phi), fCp = Math.cos(player.phi);
+    const fSt = Math.sin(player.theta), fCt = Math.cos(player.theta);
+    const fLift = R + 2;
+    const fSinH = Math.sin(fireHeading), fCosH = Math.cos(fireHeading);
+
     // Broadcast the fire event to all clients (for muzzle flash / sound)
     this.io.to(this.roomId).emit("player-fired", {
       id: socketId,
@@ -1874,6 +1881,12 @@ class GameRoom {
       phi: player.phi,
       projectileId: projectile.id,
       power: chargePower,
+      wx: fLift * fSp * fSt,
+      wy: fLift * fCp,
+      wz: fLift * fSp * fCt,
+      dvx: fSinH * fCt + fCosH * fCp * fSt,
+      dvy: -fCosH * fSp,
+      dvz: -fSinH * fSt + fCosH * fCp * fCt,
     });
   }
 

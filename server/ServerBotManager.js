@@ -130,8 +130,8 @@ const BOT_AVOID_ANGLE = Math.PI / 2.5;
 const BOT_AVOID_STRENGTH = 1.0;
 
 // Omnidirectional separation (anti-bunching)
-const BOT_SEPARATION_RADIUS = 0.035;
-const BOT_SEPARATION_STRENGTH = 0.35;
+const BOT_SEPARATION_RADIUS = 0.06;
+const BOT_SEPARATION_STRENGTH = 0.55;
 
 // Terrain navigation
 const BOT_STUCK_CHECK_INTERVAL = 0.5;
@@ -706,7 +706,27 @@ class ServerBotManager {
           bot.pathWaypoints = [];
           bot.aiState = bot.personality > 0.3 ? BOT_STATES.IDLE : BOT_STATES.WANDERING;
           bot.stateTimer = 0;
-        } else if (
+        } else if (bot.stateTimer > 2 && bot.currentClusterId !== null) {
+          // Overcrowding check — if too many friendlies here, leave and find new target
+          let friendlyCount = 0;
+          for (let i = 0; i < this._botArray.length; i++) {
+            const other = this._botArray[i];
+            if (other !== bot && !other.isDead && other.faction === bot.faction &&
+                other.currentClusterId === bot.currentClusterId) {
+              friendlyCount++;
+              if (friendlyCount >= 6) break;
+            }
+          }
+          if (friendlyCount >= 6) {
+            bot.targetClusterId = null;
+            bot.targetPosition = null;
+            bot.pathWaypoints = [];
+            bot.aiState = BOT_STATES.WANDERING;
+            bot.wanderDirection = bot.heading + (Math.random() - 0.5) * Math.PI;
+            bot.stateTimer = 0;
+          }
+        }
+        if (
           bot.targetClusterId !== null &&
           bot.currentClusterId !== bot.targetClusterId
         ) {
@@ -809,13 +829,10 @@ class ServerBotManager {
             bot.wanderDirection += bot.driftOffset * 0.06;
           }
         }
-      } else if (bot.aiState === BOT_STATES.CAPTURING && bot.targetPosition) {
-        const desiredHeading = this._computeDesiredHeadingTo(bot, bot.targetPosition);
-        if (desiredHeading !== null) {
-          let targetDiff = desiredHeading - bot.wanderDirection;
-          while (targetDiff > Math.PI) targetDiff -= Math.PI * 2;
-          while (targetDiff < -Math.PI) targetDiff += Math.PI * 2;
-          bot.wanderDirection += targetDiff * 0.03;
+      } else if (bot.aiState === BOT_STATES.CAPTURING) {
+        // Wander randomly within cluster instead of drifting to center
+        if (Math.random() < 0.03) {
+          bot.wanderDirection += (Math.random() - 0.5) * 1.5;
         }
       }
     }
@@ -1521,6 +1538,13 @@ class ServerBotManager {
       projectiles.push(projectile);
     }
 
+    // Compute world-space muzzle position & direction for client visual
+    const R = 480;
+    const bSp = Math.sin(bot.phi), bCp = Math.cos(bot.phi);
+    const bSt = Math.sin(bot.theta), bCt = Math.cos(bot.theta);
+    const bLift = R + 2;
+    const bSinH = Math.sin(fireHeading), bCosH = Math.cos(fireHeading);
+
     // Broadcast fire event
     this._emit("player-fired", {
       id: bot.id,
@@ -1529,6 +1553,12 @@ class ServerBotManager {
       phi: bot.phi,
       projectileId: projectile.id,
       power: chargePower,
+      wx: bLift * bSp * bSt,
+      wy: bLift * bCp,
+      wz: bLift * bSp * bCt,
+      dvx: bSinH * bCt + bCosH * bCp * bSt,
+      dvy: -bCosH * bSp,
+      dvz: -bSinH * bSt + bCosH * bCp * bCt,
     });
 
     return nextProjectileId;
