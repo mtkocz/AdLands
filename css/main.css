@@ -4712,7 +4712,7 @@ input:checked + .toggle-slider:before {
 
 /* Clickable sponsor names in Tusk messages */
 .chat-sponsor {
-    color: var(--accent-gold);
+    color: var(--text-primary);
     cursor: pointer;
 }
 

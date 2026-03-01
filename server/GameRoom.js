@@ -545,8 +545,21 @@ class GameRoom {
         if (old.timer) {
           this.sponsorHoldTimers.set(sponsorId, { ...old.timer });
         }
+      } else if (old) {
+        // Sponsor existed before but cluster ID shifted — preserve ownership
+        const cluster = wr.clusterData[clusterId];
+        const capacity = cluster ? cluster.tiles.length * 5 : 25;
+        this.clusterCaptureState.set(clusterId, {
+          tics: { ...old.tics },
+          owner: old.owner,
+          capacity,
+          momentum: { rust: 0, cobalt: 0, viridian: 0 },
+        });
+        if (old.timer) {
+          this.sponsorHoldTimers.set(sponsorId, { ...old.timer });
+        }
       } else if (!this.clusterCaptureState.has(clusterId)) {
-        // New or reassigned sponsor — fresh capture state
+        // Genuinely new sponsor — fresh capture state
         const cluster = wr.clusterData[clusterId];
         const capacity = cluster ? cluster.tiles.length * 5 : 25;
         this.clusterCaptureState.set(clusterId, {
