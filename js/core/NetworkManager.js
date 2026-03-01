@@ -637,7 +637,20 @@ class NetworkManager {
     const clientPhi = localTank.state.phi;
     const clientHeading = localTank.state.heading;
 
-    // Snap to server state (server sends local-space theta directly)
+    // Detect true server-side teleport (portal, respawn, etc.) by checking
+    // how far the SERVER position moved since last state update.
+    // Normal movement: ~0.01 rad/tick.  Teleport: >0.05 rad jump.
+    let serverDTheta = this._lastServerTheta !== undefined
+      ? serverPlayerState.t - this._lastServerTheta : 0;
+    while (serverDTheta > Math.PI) serverDTheta -= Math.PI * 2;
+    while (serverDTheta < -Math.PI) serverDTheta += Math.PI * 2;
+    const serverDPhi = this._lastServerPhi !== undefined
+      ? serverPlayerState.p - this._lastServerPhi : 0;
+    const serverJump = Math.abs(serverDTheta) + Math.abs(serverDPhi);
+    this._lastServerTheta = serverPlayerState.t;
+    this._lastServerPhi = serverPlayerState.p;
+
+    // Snap to server state
     localTank.state.theta = serverPlayerState.t;
     localTank.state.phi = serverPlayerState.p;
     localTank.state.heading = serverPlayerState.h;
@@ -660,15 +673,13 @@ class NetworkManager {
       SharedPhysics.applyInput(localTank.state, replayDt);
       SharedPhysics.moveOnSphere(localTank.state, replayDt);
 
-      // Enforce terrain collision (server doesn't check elevation)
+      // Enforce terrain collision
       localTank.checkTerrainCollision(prevTheta, prevPhi, replayDt);
 
       localTank.state.keys = prevKeys;
     }
 
-    // Graduated smooth correction — replaces the old hard snap threshold.
-    // Instead of snapping above 0.015 rad, we blend all errors smoothly.
-    // Larger errors converge faster; small errors converge slowly.
+    // Calculate reconciliation error (replayed position vs client prediction)
     let thetaErr = localTank.state.theta - clientTheta;
     const phiErr = localTank.state.phi - clientPhi;
     // Normalize theta error to [-PI, PI]
@@ -677,13 +688,16 @@ class NetworkManager {
 
     const errMag = Math.abs(thetaErr) + Math.abs(phiErr);
 
-    if (errMag > 0.1) {
-      // Teleport-level error (>48 units): snap immediately (portal, respawn, etc.)
-      // No blending — the server position after replay is already set.
+    if (serverJump > 0.05) {
+      // TRUE TELEPORT — the server position itself jumped (portal, respawn, etc.)
+      // Accept the replayed position as-is (snap immediately).
     } else if (errMag > 0.0005) {
-      // Graduated blend: softer corrections for low tick rates.
-      // blendFactor: 0.1 for tiny errors, up to 0.4 for medium errors.
-      const blendFactor = 0.1 + MathUtils.smoothstep(Math.min(1, errMag / 0.05)) * 0.3;
+      // Prediction drift — graduated blend for ALL error magnitudes.
+      // The old code snapped at errMag > 0.1, which caused visible teleportation
+      // for normal prediction drift (dt mismatch between 6 client substeps vs
+      // 1 server tick, terrain collision divergence, etc.).
+      // Now we blend smoothly: stronger factor for larger errors.
+      const blendFactor = 0.1 + MathUtils.smoothstep(Math.min(1, errMag / 0.1)) * 0.5;
       localTank.state.theta = clientTheta + thetaErr * blendFactor;
       localTank.state.phi = clientPhi + phiErr * blendFactor;
     }

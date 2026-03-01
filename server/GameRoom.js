@@ -3722,8 +3722,30 @@ class GameRoom {
         this._payloadCount++;
       }
 
+      // Send full-precision coords for the recipient's OWN state.
+      // Rounded values are fine for remote players (visual interpolation only),
+      // but the local player needs full precision for accurate reconciliation
+      // replay — rounding errors compound through input re-simulation.
+      const selfState = filtered[socketId];
+      let savedT, savedP, savedH;
+      if (selfState) {
+        savedT = selfState.t;
+        savedP = selfState.p;
+        savedH = selfState.h;
+        selfState.t = player.theta;
+        selfState.p = player.phi;
+        selfState.h = player.heading;
+      }
+
       const socket = this.io.sockets.sockets.get(socketId);
       if (socket) socket.volatile.emit("state", statePayload);
+
+      // Restore rounded values so other players' broadcasts aren't affected
+      if (selfState) {
+        selfState.t = savedT;
+        selfState.p = savedP;
+        selfState.h = savedH;
+      }
     }
   }
 
