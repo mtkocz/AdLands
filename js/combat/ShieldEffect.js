@@ -7,7 +7,7 @@ class ShieldEffect {
   constructor(scene, sphereRadius) {
     this.scene = scene;
     this.sphereRadius = sphereRadius;
-    this.shields = new Map(); // tankId → { mesh, material, parent }
+    this.shields = new Map(); // tankId → { mesh, material, parent, wasActive, pulseTime }
 
     // Shared arc geometry — 120° ribbon (inner + outer radius) centered on -Z
     const segments = 32;
@@ -78,18 +78,48 @@ class ShieldEffect {
 
     turretGroup.add(mesh);
 
-    const entry = { mesh, material, parent: turretGroup };
+    const entry = { mesh, material, parent: turretGroup, wasActive: false, pulseTime: -1 };
     this.shields.set(tankId, entry);
     return entry;
   }
 
   /**
-   * Update shield visibility each frame.
+   * Update shield visibility and activation pulse each frame.
    */
   updateShield(tankId, active, arcAngle, energy, deltaTime) {
     const shield = this.shields.get(tankId);
     if (!shield) return;
+
+    // Detect activation edge — trigger pulse
+    if (active && !shield.wasActive) {
+      shield.pulseTime = 0;
+    }
+    shield.wasActive = active;
+
     shield.mesh.visible = active;
+    if (!active) {
+      shield.mesh.scale.setScalar(1);
+      return;
+    }
+
+    // Pulse animation: quick scale burst that settles to 1x
+    if (shield.pulseTime >= 0) {
+      shield.pulseTime += deltaTime;
+      const dur = 0.15; // 150ms pulse
+      if (shield.pulseTime < dur) {
+        const t = shield.pulseTime / dur;
+        // Ease-out: starts big, snaps to normal
+        const ease = 1 - (1 - t) * (1 - t);
+        const scale = 1 + 0.5 * (1 - ease); // 1.5 → 1.0
+        shield.mesh.scale.setScalar(scale);
+        // Brief opacity flash
+        shield.material.opacity = 0.9 + 0.6 * (1 - ease);
+      } else {
+        shield.mesh.scale.setScalar(1);
+        shield.material.opacity = 0.9;
+        shield.pulseTime = -1; // Done
+      }
+    }
   }
 
   /**
