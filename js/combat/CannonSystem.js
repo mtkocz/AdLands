@@ -1909,10 +1909,18 @@ void main() {
             horizontalDist < hitRadius &&
             Math.abs(heightDiff) < heightTolerance
           ) {
-            // If target has an active shield, skip client-side explosion.
-            // The server will send shield-reflect (to redirect) or player-hit
-            // (for flanking hits) — let the server drive the outcome.
-            if (tank.shieldActive) break;
+            // If target has an active shield, absorb the projectile visually
+            // at the shield contact point. The server will send shield-reflect
+            // to spawn the deflected projectile separately.
+            if (tank.shieldActive) {
+              p.position.copy(_testPos);
+              p.mesh.position.copy(p.position);
+              // Small shield spark (smaller than normal explosion)
+              this._spawnExplosion(p.position, tank.faction, 0.3);
+              shouldExplode = false; // Don't spawn the normal big explosion
+              hitTank = true;
+              break;
+            }
 
             // HIT! Snap projectile to impact point so explosion spawns on target
             p.position.copy(_testPos);
@@ -1973,19 +1981,23 @@ void main() {
 
       if (
         shouldExplode ||
+        hitTank ||
         distance > maxDist ||
         p.age > this.config.maxLifetime ||
         hitSurface
       ) {
-        // Spawn explosion at impact point
-        this._spawnExplosion(p.position, p.faction, p.sizeScale || 1);
+        // Shield hits already spawned their own small spark — skip normal explosion
+        if (!hitTank || shouldExplode) {
+          // Spawn explosion at impact point
+          this._spawnExplosion(p.position, p.faction, p.sizeScale || 1);
 
-        // Spawn impact decal on surface
-        this._spawnImpactDecal(p.position, p.sizeScale || 1);
+          // Spawn impact decal on surface
+          this._spawnImpactDecal(p.position, p.sizeScale || 1);
 
-        // Spawn dust shockwave at explosion point
-        if (this.dustShockwave) {
-          this.dustShockwave.emit(p.position, p.sizeScale || 1);
+          // Spawn dust shockwave at explosion point
+          if (this.dustShockwave) {
+            this.dustShockwave.emit(p.position, p.sizeScale || 1);
+          }
         }
 
         // Trigger impact shake (scales with projectile size)
