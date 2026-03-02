@@ -773,17 +773,16 @@
         }, 150);
       }
 
-      // Spawn projectile visual from server-computed world data (always works,
-      // even if the firing tank isn't in remoteTanks yet — e.g. bots)
-      if (data.wx !== undefined) {
-        const faction = remoteTank?.faction || 'cobalt';
-        cannonSystem.spawnProjectileFromServer?.(data, faction);
-      } else if (remoteTank) {
-        // Fallback for older server that doesn't send world data
+      // Spawn projectile visual — prefer remoteTank path (includes dust/smoke effects),
+      // fall back to server world data when remoteTank isn't available (e.g. bots)
+      if (remoteTank) {
         cannonSystem.spawnRemoteProjectile?.(
           { theta: data.theta, phi: data.phi, turretAngle: data.turretAngle, power: data.power, projectileId: data.projectileId },
           remoteTank
         );
+      } else if (data.wx !== undefined) {
+        const faction = 'cobalt';
+        cannonSystem.spawnProjectileFromServer?.(data, faction);
       }
     };
 
