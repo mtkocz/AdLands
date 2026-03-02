@@ -163,7 +163,6 @@ const FACTION_INDEX = { rust: 0, cobalt: 1, viridian: 2 };
 // Trash talk
 const BOT_CHAT_COOLDOWN = 3500; // Per-bot cooldown between messages (ms)
 const BOT_GLOBAL_CHAT_COOLDOWN = 1000; // Global cooldown so bots don't flood (ms)
-const BOT_CHAT_PROXIMITY_RADIUS = 0.20; // Radians — ~96 world units, proximity hearing range
 
 const BOT_TRASH_TALK = {
   onKill: [
@@ -528,7 +527,6 @@ class ServerBotManager {
    */
   update(dt, players, projectiles, planetRotation, tick, nextProjectileId) {
     const now = Date.now();
-    this._players = players; // Store for proximity chat
     this._pathfindCount = 0; // Reset per-tick pathfind budget
     this._planetRotation = planetRotation; // Store for use in sub-methods
 
@@ -918,30 +916,12 @@ class ServerBotManager {
    * Emit a Socket.IO event. In worker mode, buffers for main thread replay.
    * @param {string} type - Event type (e.g. 'player-joined', 'player-left', 'player-fired', 'chat')
    * @param {Object} data - Event payload
-   * @param {Object} [opts] - Options: { proximity: true, botTheta, botPhi } for proximity chat
    */
-  _emit(type, data, opts) {
+  _emit(type, data) {
     if (this._workerMode) {
-      const evt = { type, data };
-      if (opts) Object.assign(evt, opts);
-      this._pendingEvents.push(evt);
+      this._pendingEvents.push({ type, data });
     } else if (this.io) {
-      if (opts && opts.proximity) {
-        // Proximity emit — only to nearby players
-        const players = this._players;
-        if (players) {
-          for (const [socketId, player] of players) {
-            if (player.isDead || player.waitingForPortal) continue;
-            const dist = this._angularDistance(opts.botTheta, opts.botPhi, player.theta, player.phi);
-            if (dist <= BOT_CHAT_PROXIMITY_RADIUS) {
-              const socket = this.io.sockets.sockets.get(socketId);
-              if (socket) socket.emit(type, data);
-            }
-          }
-        }
-      } else {
-        this.io.to(this.roomId).emit(type, data);
-      }
+      this.io.to(this.roomId).emit(type, data);
     }
   }
 
@@ -1858,10 +1838,9 @@ class ServerBotManager {
   /**
    * Try to send a trash talk message from a bot.
    * Respects per-bot and global cooldowns. RNG gate used for low-priority categories.
-   * @param {boolean} [global=false] - true to broadcast to all, false for proximity only
    * @param {boolean} [guaranteed=false] - true to skip RNG chattiness gate
    */
-  _botChat(bot, category, replacements, global = false, guaranteed = false) {
+  _botChat(bot, category, replacements, guaranteed = false) {
     if (!this._workerMode && !this.io) return;
     const now = Date.now();
 
@@ -1885,9 +1864,10 @@ class ServerBotManager {
     bot.lastChatTime = now;
     this._lastGlobalChatTime = now;
 
-    // Global broadcasts use lobby mode (visible to everyone in all tabs).
-    // Proximity messages randomly pick faction or lobby, matching client-side bot behavior.
-    const mode = global ? "lobby" : (Math.random() < 0.5 ? "lobby" : "faction");
+    // All bot chat broadcasts globally — proximity filtering caused inconsistent
+    // chat panels across players (some saw messages, others didn't).
+    // Cooldowns (1s global, 3.5s per-bot) already prevent flooding.
+    const mode = Math.random() < 0.5 ? "lobby" : "faction";
 
     const chatData = {
       id: bot.id,
@@ -1897,37 +1877,32 @@ class ServerBotManager {
       mode,
     };
 
-    if (process.env.DEBUG_LOG === "1") console.log(`[BotChat] ${bot.name} (${category}, ${mode}${global ? ", global" : ""}): ${text}`);
+    if (process.env.DEBUG_LOG === "1") console.log(`[BotChat] ${bot.name} (${category}, ${mode}): ${text}`);
 
-    if (global) {
-      this._emit("chat", chatData);
-    } else {
-      this._emit("chat", chatData, { proximity: true, botTheta: bot.theta, botPhi: bot.phi });
-    }
+    this._emit("chat", chatData);
   }
 
   /**
    * Called when a bot kills someone.
-   * Guaranteed to fire (only cooldowns can block). 30% chance global.
+   * Guaranteed to fire (only cooldowns can block).
    */
   onBotKill(bot, victimId, players) {
     const victimName = this._resolveName(victimId, players);
     if (!victimName) return;
-    const isGlobal = Math.random() < 0.30;
-    this._botChat(bot, "onKill", { victim: victimName }, isGlobal, true);
+    this._botChat(bot, "onKill", { victim: victimName }, true);
   }
 
   /**
-   * Called when a bot dies. Guaranteed, proximity-only.
+   * Called when a bot dies. Guaranteed.
    */
   onBotDeath(bot, killerId, players) {
     const killerName = this._resolveName(killerId, players);
     if (!killerName) return;
-    this._botChat(bot, "onDeath", { killer: killerName }, false, true);
+    this._botChat(bot, "onDeath", { killer: killerName }, true);
   }
 
   /**
-   * Called when a bot locks onto a combat target. RNG-gated, proximity-only.
+   * Called when a bot locks onto a combat target. RNG-gated.
    */
   onBotCombatEngage(bot, targetId, players) {
     const targetName = this._resolveName(targetId, players);
@@ -1936,10 +1911,10 @@ class ServerBotManager {
   }
 
   /**
-   * Called when a bot's cluster finishes capturing. Guaranteed, proximity-only.
+   * Called when a bot's cluster finishes capturing. Guaranteed.
    */
   onBotCapture(bot) {
-    this._botChat(bot, "onCapture", {}, false, true);
+    this._botChat(bot, "onCapture", {}, true);
   }
 
   /**
@@ -1954,7 +1929,7 @@ class ServerBotManager {
     const alive = this._botArray.filter(b => !b.isDead && !b.isDeploying);
     if (alive.length === 0) return;
     const bot = alive[Math.floor(Math.random() * alive.length)];
-    this._botChat(bot, "idle", {}, true);
+    this._botChat(bot, "idle", {});
   }
 
   // ========================

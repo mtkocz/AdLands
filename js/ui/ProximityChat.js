@@ -218,8 +218,7 @@ class ProximityChat {
             if (this.isInputActive) return;
 
             // Enter = faction chat, Shift+Enter = lobby chat, Alt+Enter = squad chat
-            // Cannot chat while dead
-            if (e.key === 'Enter' && !this.isPlayerDead) {
+            if (e.key === 'Enter') {
                 e.preventDefault();
                 if (e.altKey) {
                     this.chatMode = 'squad';
@@ -306,15 +305,11 @@ class ProximityChat {
     }
 
     /**
-     * Set player dead state - dead players cannot chat
+     * Set player dead state
      * @param {boolean} isDead - Whether the player is dead
      */
     setPlayerDead(isDead) {
         this.isPlayerDead = isDead;
-        // Close chat input if player dies while typing
-        if (isDead && this.isInputActive) {
-            this._closeInput();
-        }
     }
 
     /**

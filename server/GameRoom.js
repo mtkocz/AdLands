@@ -2176,23 +2176,7 @@ class GameRoom {
     }
     // Replay buffered Socket.IO events from worker
     for (const evt of botResult.events) {
-      if (evt.proximity) {
-        // Proximity chat — only send to nearby players
-        for (const [socketId, player] of this.players) {
-          if (this._isUndeployed(player)) continue;
-          let dTheta = evt.botTheta - player.theta;
-          while (dTheta > Math.PI) dTheta -= Math.PI * 2;
-          while (dTheta < -Math.PI) dTheta += Math.PI * 2;
-          const dPhi = evt.botPhi - player.phi;
-          const dist = Math.sqrt(dTheta * dTheta + dPhi * dPhi);
-          if (dist <= 0.20) {
-            const socket = this.io.sockets.sockets.get(socketId);
-            if (socket) socket.emit(evt.type, evt.data);
-          }
-        }
-      } else {
-        this.io.to(this.roomId).emit(evt.type, evt.data);
-      }
+      this.io.to(this.roomId).emit(evt.type, evt.data);
     }
 
     const _t3 = Date.now();
@@ -2859,7 +2843,7 @@ class GameRoom {
 
             // Award kill bounty to human attacker
             if (attacker) {
-              if (attacker.uid) attacker.crypto += 500;
+              attacker.crypto += 500;
               attacker.killStreak = (attacker.killStreak || 0) + 1;
               attacker.totalKills = (attacker.totalKills || 0) + 1;
             }
@@ -3355,10 +3339,8 @@ class GameRoom {
       player._lastTicCryptoTics = currentTics;
 
       if (gained) {
-        const cryptoAwarded = player.uid ? 10 : 0;
-        if (player.uid) {
-          player.crypto += 10; // Territory capture income (authenticated only)
-        }
+        const cryptoAwarded = 10;
+        player.crypto += 10;
         const ticPayload = {
           id: player.currentClusterId,
           t: { r: state.tics.rust, c: state.tics.cobalt, v: state.tics.viridian },
@@ -3503,8 +3485,6 @@ class GameRoom {
     // Award to each alive player and emit event (include cluster IDs for client visuals)
     for (const [id, player] of this.players) {
       if (this._isUndeployed(player)) continue;
-      if (!player.uid) continue; // Guests don't earn crypto
-
       const amount = factionCrypto[player.faction];
       if (amount <= 0) continue;
 
