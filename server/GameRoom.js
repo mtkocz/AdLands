@@ -3636,13 +3636,11 @@ class GameRoom {
         opn.push(botId, bs.n || botId);
       }
       statePayload.op = op;
-      // Send name map every 100 ticks (~10s) to keep bandwidth low
-      if (this.tick % 100 === 0 || !this._opNamesSent) {
-        statePayload.opn = opn;
-        this._opNamesSent = true;
-      } else {
-        delete statePayload.opn;
-      }
+      // Always include names alongside positions — names are needed for
+      // hover tooltips and right-click profile cards on phantom dots.
+      // Previously sent every 100 ticks, but since op is now only sent to
+      // orbital players, the bandwidth cost is acceptable.
+      statePayload.opn = opn;
     } else {
       delete statePayload.op;
       delete statePayload.opn;
@@ -3682,18 +3680,20 @@ class GameRoom {
     // Only send nearby bots to each player to reduce bandwidth and serialization.
     // Human players are always included; bots filtered by distance on the sphere.
     // Orbital-view players skip bot filtering entirely (they use phantom dots from op).
-    // Commanders in ground view get all bots (they see the full battlefield).
+    // Commanders in ground view get a wider radius (they need broader tactical awareness).
     // Uses unit vector dot product for O(1) distance check per entity pair.
     const NEARBY_ENTER_THRESHOLD = 0.65; // cos(~49°) — enter radius
     const NEARBY_LEAVE_THRESHOLD = 0.55; // cos(~57°) — wider leave radius (hysteresis prevents flicker)
+    const CMDR_ENTER_THRESHOLD = 0.15;   // cos(~81°) — commanders see ~3x wider area
+    const CMDR_LEAVE_THRESHOLD = 0.05;   // cos(~87°) — wider leave for commanders
 
     // Per-player tracking of which bots were included last tick (for hysteresis)
     if (!this._playerBotSets) this._playerBotSets = new Map();
 
     // Check if any player needs distance-filtered bots before computing unit vectors
     let anyNeedsFiltering = false;
-    for (const [socketId, player] of this.players) {
-      if (player._viewMode !== "orbital" && this.commanders[player.faction]?.id !== socketId) {
+    for (const [, player] of this.players) {
+      if (player._viewMode !== "orbital") {
         anyNeedsFiltering = true;
         break;
       }
@@ -3751,13 +3751,12 @@ class GameRoom {
       if (isOrbital) {
         // Orbital players see bots via phantom dots (statePayload.op), not individual states.
         // Skip the entire bot distance-filter loop — no bots in filtered payload.
-      } else if (isCommander) {
-        // Commanders see the full battlefield — include all bots without distance filtering
-        for (const botId in botStates) {
-          filtered[botId] = playerStates[botId];
-        }
       } else {
-        // Standard distance-filtered bots with hysteresis
+        // Distance-filtered bots with hysteresis.
+        // Commanders get a wider radius (~81° vs ~49°) for tactical awareness.
+        const enterThresh = isCommander ? CMDR_ENTER_THRESHOLD : NEARBY_ENTER_THRESHOLD;
+        const leaveThresh = isCommander ? CMDR_LEAVE_THRESHOLD : NEARBY_LEAVE_THRESHOLD;
+
         let filterTheta = player.theta;
         let filterPhi = player.phi;
         if (player._previewPortalTile != null) {
@@ -3781,7 +3780,7 @@ class GameRoom {
         for (const botId in botStates) {
           const bv = botUnitVecs[botId];
           const dot = px * bv.x + py * bv.y + pz * bv.z;
-          const threshold = includedBots.has(botId) ? NEARBY_LEAVE_THRESHOLD : NEARBY_ENTER_THRESHOLD;
+          const threshold = includedBots.has(botId) ? leaveThresh : enterThresh;
           if (dot > threshold) {
             filtered[botId] = playerStates[botId];
             includedBots.add(botId);
