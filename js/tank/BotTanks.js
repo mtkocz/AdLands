@@ -2925,6 +2925,7 @@ class BotTanks {
     this._phantomActiveCount = 0;
     this._orbitalPhantomVisible = false;
     this._phantomsRegistered = false;
+    this._phantomUpdateFrame = 0;
 
     // Per-mesh interpolation targets for smooth orbital dot movement
     this._phantomHasTarget = new Uint8Array(POOL_SIZE); // 0 = no target yet (snap), 1 = has previous position
@@ -2991,6 +2992,14 @@ class BotTanks {
 
     const op = mp.orbitalPositions;
     const opn = mp.orbitalPositionNames;
+
+    // Throttle updates to every 3rd frame (server data only arrives ~1/sec anyway).
+    // Always run when new server data arrives to avoid stale positions.
+    const hasNewData = op !== this._lastOpRef;
+    this._phantomUpdateFrame++;
+    if (!hasNewData && (this._phantomUpdateFrame % 3) !== 0) return;
+    // Compensate lerp for skipped frames
+    if (!hasNewData) deltaTime *= 3;
     const factionNames = ["rust", "cobalt", "viridian"];
     const r = this.sphereRadius + 3;
     const hoveredMesh = window.tankLODInteraction?.hoveredDot;

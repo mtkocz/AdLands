@@ -3892,6 +3892,15 @@
       tank.setControlsEnabled(!isOrbitalView);
     }
 
+    // Notify server of view mode transitions so it can skip spatial filtering
+    if (window.networkManager?.connected) {
+      const viewMode = isOrbitalView ? "orbital" : "ground";
+      if (viewMode !== window._lastSentViewMode) {
+        window._lastSentViewMode = viewMode;
+        window.networkManager.sendViewMode(viewMode);
+      }
+    }
+
     // Scale shadow frustum with camera distance so terrain shadows stay visible
     const cameraDistance = gameCamera.getEffectiveDistance();
     environment.setShadowMode(cameraDistance);

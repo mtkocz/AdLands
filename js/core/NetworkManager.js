@@ -500,6 +500,11 @@ class NetworkManager {
     this.socket.emit("preview-portal", { portalTileIndex });
   }
 
+  sendViewMode(mode) {
+    if (!this.connected) return;
+    this.socket.emit("view-mode", { mode });
+  }
+
   /** Request a level-up purchase from the server */
   sendLevelUp() {
     if (!this.connected) return;

@@ -773,16 +773,15 @@
         }, 150);
       }
 
-      // Spawn projectile visual — prefer remoteTank path (includes dust/smoke effects),
-      // fall back to server world data when remoteTank isn't available (e.g. bots)
+      // Spawn projectile visual only if the firing tank is visible on our client.
+      // If it's not in remoteTanks (bot out of range, race condition), skip it —
+      // the projectile is visual-only (server handles hits) and showing it without
+      // a visible tank looks like a ghost shot.
       if (remoteTank) {
         cannonSystem.spawnRemoteProjectile?.(
           { theta: data.theta, phi: data.phi, turretAngle: data.turretAngle, power: data.power, projectileId: data.projectileId },
           remoteTank
         );
-      } else if (data.wx !== undefined) {
-        const faction = 'cobalt';
-        cannonSystem.spawnProjectileFromServer?.(data, faction);
       }
     };
 

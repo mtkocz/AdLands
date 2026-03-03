@@ -354,6 +354,11 @@ io.on("connection", (socket) => {
     mainRoom.handleEnterFastTravel(socket.id);
   });
 
+  // ---- View Mode (orbital vs ground — controls spatial filtering) ----
+  socket.on("view-mode", (data) => {
+    mainRoom.handleViewMode(socket.id, data?.mode);
+  });
+
   // ---- Portal Preview (client looking at a portal before deploying) ----
   socket.on("preview-portal", (data) => {
     mainRoom.handlePreviewPortal(socket.id, data?.portalTileIndex ?? null);

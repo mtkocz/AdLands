@@ -1972,6 +1972,14 @@ class GameRoom {
     }
   }
 
+  handleViewMode(socketId, mode) {
+    const player = this.players.get(socketId);
+    if (!player) return;
+    if (mode === "orbital" || mode === "ground") {
+      player._viewMode = mode;
+    }
+  }
+
   handlePreviewPortal(socketId, portalTileIndex) {
     const player = this.players.get(socketId);
     if (!player || !player.waitingForPortal) return;
@@ -3673,7 +3681,8 @@ class GameRoom {
     // -- Spatial interest management --
     // Only send nearby bots to each player to reduce bandwidth and serialization.
     // Human players are always included; bots filtered by distance on the sphere.
-    // Commanders (who see the whole planet) get all entities.
+    // Orbital-view players skip bot filtering entirely (they use phantom dots from op).
+    // Commanders in ground view get all bots (they see the full battlefield).
     // Uses unit vector dot product for O(1) distance check per entity pair.
     const NEARBY_ENTER_THRESHOLD = 0.65; // cos(~49°) — enter radius
     const NEARBY_LEAVE_THRESHOLD = 0.55; // cos(~57°) — wider leave radius (hysteresis prevents flicker)
@@ -3681,50 +3690,50 @@ class GameRoom {
     // Per-player tracking of which bots were included last tick (for hysteresis)
     if (!this._playerBotSets) this._playerBotSets = new Map();
 
-    // Precompute unit vectors for bot states (theta/phi → xyz on unit sphere)
+    // Check if any player needs distance-filtered bots before computing unit vectors
+    let anyNeedsFiltering = false;
+    for (const [socketId, player] of this.players) {
+      if (player._viewMode !== "orbital" && this.commanders[player.faction]?.id !== socketId) {
+        anyNeedsFiltering = true;
+        break;
+      }
+    }
+
+    // Precompute unit vectors for bot states only when needed for distance filtering
     if (!this._botUnitVecs) this._botUnitVecs = {};
     const botUnitVecs = this._botUnitVecs;
-    for (const botId in botStates) {
-      const bs = botStates[botId];
-      if (!botUnitVecs[botId]) botUnitVecs[botId] = { x: 0, y: 0, z: 0 };
-      const sinP = Math.sin(bs.p);
-      botUnitVecs[botId].x = sinP * Math.cos(bs.t);
-      botUnitVecs[botId].y = Math.cos(bs.p);
-      botUnitVecs[botId].z = sinP * Math.sin(bs.t);
-    }
-    // Clean stale entries
-    for (const id in botUnitVecs) {
-      if (!botStates[id]) delete botUnitVecs[id];
+    if (anyNeedsFiltering) {
+      for (const botId in botStates) {
+        const bs = botStates[botId];
+        if (!botUnitVecs[botId]) botUnitVecs[botId] = { x: 0, y: 0, z: 0 };
+        const sinP = Math.sin(bs.p);
+        botUnitVecs[botId].x = sinP * Math.cos(bs.t);
+        botUnitVecs[botId].y = Math.cos(bs.p);
+        botUnitVecs[botId].z = sinP * Math.sin(bs.t);
+      }
+      // Clean stale entries
+      for (const id in botUnitVecs) {
+        if (!botStates[id]) delete botUnitVecs[id];
+      }
     }
 
     // Collect all human player IDs into an array for fast iteration
     const humanIds = [];
     for (const [id] of this.players) humanIds.push(id);
 
+    // Save orbital data references for per-player toggling
+    const savedOp = statePayload.op;
+    const savedOpn = statePayload.opn;
+
     // Per-player filtered broadcast
     if (!this._filteredPayloads) this._filteredPayloads = new Map();
     const filteredPayloads = this._filteredPayloads;
 
     for (const [socketId, player] of this.players) {
-      // When previewing a portal, use the portal's position for spatial filtering
-      // so the client receives bots near the destination (to check for campers)
-      let filterTheta = player.theta;
-      let filterPhi = player.phi;
-      if (player._previewPortalTile != null) {
-        const portalPos = this.portalPositionsByTile.get(player._previewPortalTile);
-        if (portalPos) {
-          filterTheta = portalPos.theta;
-          filterPhi = portalPos.phi;
-        }
-      }
+      const isOrbital = player._viewMode === "orbital";
+      const isCommander = this.commanders[player.faction]?.id === socketId;
 
-      // Compute unit vector for spatial filtering
-      const pSinP = Math.sin(filterPhi);
-      const px = pSinP * Math.cos(filterTheta);
-      const py = Math.cos(filterPhi);
-      const pz = pSinP * Math.sin(filterTheta);
-
-      // Build filtered players object: all humans + nearby bots
+      // Build filtered players object: all humans + filtered bots
       let filtered = filteredPayloads.get(socketId);
       if (!filtered) {
         filtered = {};
@@ -3739,26 +3748,59 @@ class GameRoom {
         filtered[hid] = playerStates[hid];
       }
 
-      // Include bots: distance-filtered with hysteresis to prevent boundary flicker.
-      // Bots already included use the wider leave threshold; new bots use the tighter enter threshold.
-      let includedBots = this._playerBotSets.get(socketId);
-      if (!includedBots) {
-        includedBots = new Set();
-        this._playerBotSets.set(socketId, includedBots);
-      }
-      for (const botId in botStates) {
-        const bv = botUnitVecs[botId];
-        const dot = px * bv.x + py * bv.y + pz * bv.z;
-        const threshold = includedBots.has(botId) ? NEARBY_LEAVE_THRESHOLD : NEARBY_ENTER_THRESHOLD;
-        if (dot > threshold) {
+      if (isOrbital) {
+        // Orbital players see bots via phantom dots (statePayload.op), not individual states.
+        // Skip the entire bot distance-filter loop — no bots in filtered payload.
+      } else if (isCommander) {
+        // Commanders see the full battlefield — include all bots without distance filtering
+        for (const botId in botStates) {
           filtered[botId] = playerStates[botId];
-          includedBots.add(botId);
-        } else {
-          includedBots.delete(botId);
+        }
+      } else {
+        // Standard distance-filtered bots with hysteresis
+        let filterTheta = player.theta;
+        let filterPhi = player.phi;
+        if (player._previewPortalTile != null) {
+          const portalPos = this.portalPositionsByTile.get(player._previewPortalTile);
+          if (portalPos) {
+            filterTheta = portalPos.theta;
+            filterPhi = portalPos.phi;
+          }
+        }
+
+        const pSinP = Math.sin(filterPhi);
+        const px = pSinP * Math.cos(filterTheta);
+        const py = Math.cos(filterPhi);
+        const pz = pSinP * Math.sin(filterTheta);
+
+        let includedBots = this._playerBotSets.get(socketId);
+        if (!includedBots) {
+          includedBots = new Set();
+          this._playerBotSets.set(socketId, includedBots);
+        }
+        for (const botId in botStates) {
+          const bv = botUnitVecs[botId];
+          const dot = px * bv.x + py * bv.y + pz * bv.z;
+          const threshold = includedBots.has(botId) ? NEARBY_LEAVE_THRESHOLD : NEARBY_ENTER_THRESHOLD;
+          if (dot > threshold) {
+            filtered[botId] = playerStates[botId];
+            includedBots.add(botId);
+          } else {
+            includedBots.delete(botId);
+          }
         }
       }
 
       statePayload.players = filtered;
+
+      // Only send orbital position data to players in orbital view
+      if (isOrbital) {
+        statePayload.op = savedOp;
+        statePayload.opn = savedOpn;
+      } else {
+        statePayload.op = undefined;
+        statePayload.opn = undefined;
+      }
 
       // Track payload size for bandwidth monitoring (sample every 50th emit to avoid expensive stringify)
       if (!this._payloadByteSum) this._payloadByteSum = 0;
@@ -3798,6 +3840,10 @@ class GameRoom {
         selfState.h = savedH;
       }
     }
+
+    // Restore orbital data on shared payload (for next tick's op computation)
+    statePayload.op = savedOp;
+    statePayload.opn = savedOpn;
   }
 
   _getAllPlayerStates() {

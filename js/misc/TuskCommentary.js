@@ -161,7 +161,7 @@ const TUSK_LINES = {
     "Pro tip for newbies: Dying is fine. Dying repeatedly in the same spot is a pattern.",
     "New player advice: Explore the map early. Learn the terrain before it learns you.",
     // Humor
-    "Life tip: If at first you don't succeed, respawn and try again. Clone bills are my problem.",
+    "Life tip: If at first you don't succeed, respawn and try again. We offer attractive financing options for cloning services.",
     "Pro tip: Blaming lag is acceptable up to three times per session. After that, it's you.",
     "Tip: Screaming at your screen doesn't improve accuracy. I've studied this. Extensively.",
     "Here's advice: Sometimes the best strategy is patience. I wouldn't know, but I've heard things.",

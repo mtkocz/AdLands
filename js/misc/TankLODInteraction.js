@@ -22,6 +22,7 @@ class TankLODInteraction {
     this._originalScale = 1.0;
     this._brightenFactor = 1.8; // How much to brighten color on hover
     this._originalMaterial = null; // Store original shared material during hover
+    this._visibleDotsBuffer = []; // Reusable array to avoid .filter() GC pressure
 
     this._createNameTag();
     this._setupEventListeners();
@@ -139,10 +140,18 @@ class TankLODInteraction {
    * @param {number} mouseY - Normalized device coordinate Y (-1 to 1)
    * @returns {Object|null} Player data { playerId, position, faction, username } or null
    */
+  _getVisibleDots() {
+    const buf = this._visibleDotsBuffer;
+    buf.length = 0;
+    for (let i = 0; i < this.dotMeshes.length; i++) {
+      if (this.dotMeshes[i].visible) buf.push(this.dotMeshes[i]);
+    }
+    return buf;
+  }
+
   getClickedPlayer(mouseX, mouseY) {
     this.raycaster.setFromCamera({ x: mouseX, y: mouseY }, this.camera);
-    const visibleDots = this.dotMeshes.filter((d) => d.visible);
-    const intersects = this.raycaster.intersectObjects(visibleDots);
+    const intersects = this.raycaster.intersectObjects(this._getVisibleDots());
 
     if (intersects.length > 0) {
       // Sort by distance (custom raycast methods don't auto-sort)
@@ -178,8 +187,7 @@ class TankLODInteraction {
     }
 
     this.raycaster.setFromCamera(this.mouse, this.camera);
-    const visibleDots = this.dotMeshes.filter((d) => d.visible);
-    const intersects = this.raycaster.intersectObjects(visibleDots);
+    const intersects = this.raycaster.intersectObjects(this._getVisibleDots());
 
     if (intersects.length > 0) {
       // Sort by distance (custom raycast methods don't auto-sort)
