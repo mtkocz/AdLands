@@ -161,8 +161,8 @@ const BOT_HIT_QUICK_REJECT = 0.012; // radians
 const FACTION_INDEX = { rust: 0, cobalt: 1, viridian: 2 };
 
 // Trash talk
-const BOT_CHAT_COOLDOWN = 3500; // Per-bot cooldown between messages (ms)
-const BOT_GLOBAL_CHAT_COOLDOWN = 1000; // Global cooldown so bots don't flood (ms)
+const BOT_CHAT_COOLDOWN = 7000; // Per-bot cooldown between messages (ms)
+const BOT_GLOBAL_CHAT_COOLDOWN = 2000; // Global cooldown so bots don't flood (ms)
 
 const BOT_TRASH_TALK = {
   onKill: [

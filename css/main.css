@@ -33,7 +33,9 @@ body.pre-auth #left-panel-stack,
 body.pre-auth #chat-window,
 body.pre-auth #dashboard-container,
 body.pre-auth #ping-arrows-container,
-body.pre-auth #player-tags-container {
+body.pre-auth #player-tags-container,
+body.pre-auth #commander-tip-panel,
+body.pre-auth #tip-drag-indicator {
     display: none !important;
 }
 
