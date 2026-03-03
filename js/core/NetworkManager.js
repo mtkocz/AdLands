@@ -80,6 +80,7 @@ class NetworkManager {
     this.onCommanderDrawing = null; // (data) => { id, faction, points }
     this.onPlayerProfileSwitched = null; // (data) => { id, name, faction, level, ... }
     this.onTankUpgradeConfirmed = null; // (data) => { type, tier, cost }
+    this.onConnectionFailed = null;    // () => {} — all reconnection attempts exhausted
   }
 
   // ========================
@@ -119,6 +120,15 @@ class NetworkManager {
     this.socket.on("disconnect", (reason) => {
       this.connected = false;
       this._stopPing();
+    });
+
+    this.socket.on("connect_error", (err) => {
+      console.warn("[Network] Connection error:", err.message);
+    });
+
+    this.socket.on("reconnect_failed", () => {
+      console.error("[Network] All reconnection attempts failed");
+      if (this.onConnectionFailed) this.onConnectionFailed();
     });
 
     this.socket.on("kicked", (data) => {

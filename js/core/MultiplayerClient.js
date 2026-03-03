@@ -2107,6 +2107,33 @@
       };
     }
 
+    // Connection timeout — unblock loading screen if server is unreachable
+    let welcomeReceived = false;
+    const CONNECTION_TIMEOUT = 15000; // 15s
+    const connectionTimer = setTimeout(() => {
+      if (!welcomeReceived) {
+        console.warn("[MP] Connection timeout — server unreachable, unblocking loading screen");
+        mp.setSponsorTexturesReady();
+      }
+    }, CONNECTION_TIMEOUT);
+
+    // Handle permanent connection failure (all retries exhausted)
+    net.onConnectionFailed = () => {
+      if (!welcomeReceived) {
+        clearTimeout(connectionTimer);
+        console.warn("[MP] Connection failed — unblocking loading screen");
+        mp.setSponsorTexturesReady();
+      }
+    };
+
+    // Wrap onConnected to clear timeout
+    const originalOnConnected = net.onConnected;
+    net.onConnected = (data) => {
+      welcomeReceived = true;
+      clearTimeout(connectionTimer);
+      if (originalOnConnected) originalOnConnected(data);
+    };
+
     // Connect with Firebase auth token if available
     const connectOpts = {};
     if (window.authManager && window.authManager.idToken) {
