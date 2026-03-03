@@ -1915,7 +1915,14 @@ void main() {
             // Grace period: let projectiles fly for at least 150ms so they're
             // visible in flight before being absorbed by the shield.
             if (tank.shieldActive) {
-              if (p.age < 0.15) break; // Too young — let it fly, check again next frame
+              if (p.age < 0.15) {
+                if (!p._shieldDebugLogged) {
+                  console.log('[DEBUG-SHIELD] grace period skip, age:', p.age.toFixed(3), 'pos length:', p.position.length().toFixed(1), 'visible:', p.mesh.visible);
+                  p._shieldDebugLogged = true;
+                }
+                break; // Too young — let it fly, check again next frame
+              }
+              console.log('[DEBUG-SHIELD] ABSORB at age:', p.age.toFixed(3));
               p.position.copy(_testPos);
               p.mesh.position.copy(p.position);
               // Small shield spark (smaller than normal explosion)
@@ -1989,6 +1996,11 @@ void main() {
         p.age > this.config.maxLifetime ||
         hitSurface
       ) {
+        if (p.isRemote && p.age < 0.3) {
+          console.log('[DEBUG-REMOVE] remote proj removed at age:', p.age.toFixed(3),
+            'reason:', shouldExplode ? 'explode' : hitTank ? 'hitTank' : (distance > maxDist) ? 'maxDist' : hitSurface ? 'hitSurface' : 'lifetime',
+            'posLen:', p.position.length().toFixed(1), 'dist:', distance.toFixed(1));
+        }
         // Shield hits already spawned their own small spark — skip normal explosion
         if (!hitTank || shouldExplode) {
           // Spawn explosion at impact point
