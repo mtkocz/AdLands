@@ -1315,16 +1315,10 @@ void main() {
    * @param {string} faction - Shield owner's faction (for projectile color)
    */
   spawnDeflectedProjectile(data, faction) {
-    // Remove the original incoming projectile if we can find it
-    for (let i = this.projectiles.length - 1; i >= 0; i--) {
-      const p = this.projectiles[i];
-      if (p.serverId === data.projectileId) {
-        if (p.light) { p.mesh.remove(p.light); p.light.dispose(); }
-        this.objectPools.releaseProjectile(p.poolItem);
-        this.projectiles.splice(i, 1);
-        break;
-      }
-    }
+    // Don't remove the incoming projectile — let it fly to the shield
+    // and be absorbed by the client-side shield collision code (with spark).
+    // Removing it here caused it to vanish before any render frame when
+    // player-fired and shield-reflect arrived in the same Socket.IO batch.
 
     // Use server-computed world position and direction directly
     _muzzleWorld.set(data.wx, data.wy, data.wz);

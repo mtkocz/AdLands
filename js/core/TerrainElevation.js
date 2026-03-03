@@ -78,6 +78,10 @@ class TerrainElevation {
   // ========================
 
   generate(tiles, adjacencyMap, portalTileIndices, polarTileIndices) {
+    // Store references for dynamic collision boundary rebuilds
+    this._tiles = tiles;
+    this._adjacencyMap = adjacencyMap;
+
     const eligible = new Set();
     for (let i = 0; i < tiles.length; i++) {
       if (!portalTileIndices.has(i) && !polarTileIndices.has(i)) {
@@ -248,6 +252,9 @@ class TerrainElevation {
 
     // Build spatial hash for runtime position lookups
     this._buildSpatialHash();
+
+    // Precompute polygon collision data for elevated border tiles
+    this._buildCollisionBoundaries(tiles, adjacencyMap);
 
   }
 
@@ -543,6 +550,137 @@ class TerrainElevation {
     return this.tileElevation.get(tileIndex) || 0;
   }
 
+  // ========================
+  // POLYGON COLLISION
+  // ========================
+
+  /**
+   * Precompute great-circle edge normals for elevated tiles that border
+   * flat tiles. These are used for accurate point-in-polygon collision
+   * tests that match the visual tile boundary instead of the Voronoi cell.
+   */
+  _buildCollisionBoundaries(tiles, adjacencyMap) {
+    // Map: tileIndex → Float64Array of edge normals [nx0,ny0,nz0, nx1,ny1,nz1, ...]
+    // null entry = interior elevated tile (always blocked, no polygon test needed)
+    this._collisionPolys = new Map();
+
+    for (const tileIndex of this.elevatedTileSet) {
+      const neighbors = adjacencyMap.get(tileIndex);
+      if (!neighbors) continue;
+
+      // Check if this tile borders any flat tile
+      let isBorder = false;
+      for (const nIdx of neighbors) {
+        if (!this.elevatedTileSet.has(nIdx)) {
+          isBorder = true;
+          break;
+        }
+      }
+
+      if (!isBorder) {
+        // Interior tile — always blocked, no polygon needed
+        this._collisionPolys.set(tileIndex, null);
+        continue;
+      }
+
+      // Border tile — precompute edge normals for polygon test
+      const boundary = tiles[tileIndex].boundary;
+      const n = boundary.length; // 5 (pentagon) or 6 (hexagon)
+
+      // Edge normals via cross product: N = V[i] × V[i+1]
+      // For a point P inside the polygon, dot(N, P) has consistent sign
+      const normals = new Float64Array(n * 3);
+      for (let i = 0; i < n; i++) {
+        const a = boundary[i];
+        const b = boundary[(i + 1) % n];
+        // Cross product a × b
+        normals[i * 3]     = a.y * b.z - a.z * b.y;
+        normals[i * 3 + 1] = a.z * b.x - a.x * b.z;
+        normals[i * 3 + 2] = a.x * b.y - a.y * b.x;
+      }
+
+      // Determine expected sign using tile center
+      const center = tiles[tileIndex].centerPoint;
+      const testDot = normals[0] * center.x + normals[1] * center.y + normals[2] * center.z;
+      const sign = testDot > 0 ? 1 : -1;
+
+      this._collisionPolys.set(tileIndex, { normals, sign, edgeCount: n });
+    }
+  }
+
+  /**
+   * Accurate terrain collision check using tile polygon boundaries.
+   * Returns true if localPos is inside an elevated tile's actual hex boundary.
+   * Falls back to Voronoi (nearest-tile) for interior elevated tiles.
+   */
+  isProbeOnElevatedTerrain(localPos) {
+    if (!this._spatialGrid) return false;
+
+    const r = localPos.length();
+    if (r < 0.001) return false;
+
+    const phi = Math.acos(Math.max(-1, Math.min(1, localPos.y / r)));
+    const theta = Math.atan2(localPos.z, localPos.x) + Math.PI;
+
+    const phiCell = Math.min(
+      this._GRID_PHI - 1,
+      Math.floor((phi / Math.PI) * this._GRID_PHI),
+    );
+    const thetaCell = Math.min(
+      this._GRID_THETA - 1,
+      Math.floor((theta / (Math.PI * 2)) * this._GRID_THETA),
+    );
+
+    // Find nearest tile (same as getNearestTileIndex but inline for perf)
+    let closestArrayIdx = -1;
+    let closestDist = Infinity;
+    const tileCenters = this.planet.tileCenters;
+
+    for (let dp = -1; dp <= 1; dp++) {
+      const pc = phiCell + dp;
+      if (pc < 0 || pc >= this._GRID_PHI) continue;
+      for (let dt = -1; dt <= 1; dt++) {
+        const tc = ((thetaCell + dt) % this._GRID_THETA + this._GRID_THETA) % this._GRID_THETA;
+        const key = pc * this._GRID_THETA + tc;
+        const entries = this._spatialGrid.get(key);
+        if (!entries) continue;
+
+        for (const arrayIdx of entries) {
+          const dist = localPos.distanceToSquared(tileCenters[arrayIdx].position);
+          if (dist < closestDist) {
+            closestDist = dist;
+            closestArrayIdx = arrayIdx;
+          }
+        }
+      }
+    }
+
+    if (closestArrayIdx < 0) return false;
+    const tileIndex = tileCenters[closestArrayIdx].tileIndex;
+
+    // Not elevated → not blocked
+    if (!this.elevatedTileSet.has(tileIndex)) return false;
+
+    const poly = this._collisionPolys.get(tileIndex);
+
+    // Interior elevated tile (null) → always blocked
+    if (poly === null) return true;
+
+    // No collision data → fall back to Voronoi (shouldn't happen)
+    if (!poly) return true;
+
+    // Polygon containment test: check point is on correct side of all edges
+    const { normals, sign, edgeCount } = poly;
+    const px = localPos.x, py = localPos.y, pz = localPos.z;
+
+    for (let i = 0; i < edgeCount; i++) {
+      const dot = normals[i * 3] * px + normals[i * 3 + 1] * py + normals[i * 3 + 2] * pz;
+      if (dot * sign < 0) return false; // Outside this edge → not inside polygon
+    }
+
+    return true; // Inside all edges → blocked
+  }
+
   getExtrusion(elevation) {
     if (elevation <= 0) return 1;
     return 1 + (elevation * this.config.EXTRUSION_HEIGHT) / this.planet.radius;
@@ -632,6 +770,7 @@ class TerrainElevation {
     }
     if (changed.size > 0) {
       this._buildSpatialHash();
+      this._buildCollisionBoundaries(this._tiles, this._adjacencyMap);
     }
     return changed;
   }
@@ -673,6 +812,7 @@ class TerrainElevation {
         }
       }
       this._buildSpatialHash();
+      this._buildCollisionBoundaries(this._tiles, this._adjacencyMap);
     }
     return restored;
   }

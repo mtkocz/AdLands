@@ -64,6 +64,14 @@ class RemoteBodyguard {
     // Build mesh
     RemoteBodyguard._ensureSharedAssets();
     this._buildMesh();
+
+    // Pre-allocated entity descriptor for updateEntityVisual (avoids per-frame GC)
+    this._entity = {
+      theta: 0, phi: 0, heading: 0,
+      group: this.group, bodyGroup: this.bodyGroup,
+      speed: 0, wigglePhase: 0, currentRollAngle: 0,
+      hp: 0, maxHp: 0, isDead: false, lean: this.state.lean,
+    };
   }
 
   // ========================
@@ -316,21 +324,12 @@ class RemoteBodyguard {
       Tank.updateLeanState(this.state.lean, 0, this.state.heading, deltaTime, true);
 
       // Update visual (keeps mesh positioned correctly on rotating planet)
-      const entity = {
-        theta: this.state.theta,
-        phi: this.state.phi,
-        heading: this.state.heading,
-        group: this.group,
-        bodyGroup: this.bodyGroup,
-        speed: 0,
-        wigglePhase: this.state.wigglePhase,
-        currentRollAngle: 0,
-        hp: this.hp,
-        maxHp: this.maxHp,
-        isDead: true,
-        lean: this.state.lean,
-      };
-      Tank.updateEntityVisual(entity, this.sphereRadius);
+      const e = this._entity;
+      e.theta = this.state.theta; e.phi = this.state.phi;
+      e.heading = this.state.heading; e.speed = 0;
+      e.wigglePhase = this.state.wigglePhase;
+      e.hp = this.hp; e.maxHp = this.maxHp; e.isDead = true;
+      Tank.updateEntityVisual(e, this.sphereRadius);
       return;
     }
 
@@ -370,22 +369,13 @@ class RemoteBodyguard {
     // Lean springs
     Tank.updateLeanState(this.state.lean, this.state.speed, this.state.heading, deltaTime, false);
 
-    // Position on sphere
-    const entity = {
-      theta: this.state.theta,
-      phi: this.state.phi,
-      heading: this.state.heading,
-      group: this.group,
-      bodyGroup: this.bodyGroup,
-      speed: this.state.speed,
-      wigglePhase: this.state.wigglePhase,
-      currentRollAngle: 0,
-      hp: this.hp,
-      maxHp: this.maxHp,
-      isDead: false,
-      lean: this.state.lean,
-    };
-    Tank.updateEntityVisual(entity, this.sphereRadius);
+    // Position on sphere — reuse pre-allocated entity (avoids per-frame GC)
+    const e = this._entity;
+    e.theta = this.state.theta; e.phi = this.state.phi;
+    e.heading = this.state.heading; e.speed = this.state.speed;
+    e.wigglePhase = this.state.wigglePhase;
+    e.hp = this.hp; e.maxHp = this.maxHp; e.isDead = false;
+    Tank.updateEntityVisual(e, this.sphereRadius);
   }
 
   // ========================

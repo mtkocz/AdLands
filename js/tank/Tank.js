@@ -119,6 +119,17 @@ class Tank {
       this._createGhostReticle();
     }
 
+    // Pre-allocated entity descriptors to avoid per-frame GC
+    this._moveEntity = {
+      state: { speed: 0 }, heading: 0, theta: 0, phi: 0,
+    };
+    this._visualEntity = {
+      theta: 0, phi: 0, heading: 0,
+      group: this.group, bodyGroup: this.bodyGroup,
+      speed: 0, wigglePhase: 0, currentRollAngle: 0,
+      hp: 0, maxHp: 0, isDead: false, lean: this.state.lean,
+    };
+
     // Initialize position
     this._updateVisual(0);
     if (!options.skipScene) {
@@ -390,19 +401,15 @@ class Tank {
     const prevTheta = this.state.theta;
     const prevPhi = this.state.phi;
 
-    // Use shared static helper with player-style entity shape
-    const entity = {
-      state: { speed: this.state.speed },
-      heading: this.state.heading,
-      theta: this.state.theta,
-      phi: this.state.phi,
-    };
-    Tank.moveEntityOnSphere(
-      entity,
-      deltaTime,
-    );
-    this.state.theta = entity.theta;
-    this.state.phi = entity.phi;
+    // Use shared static helper with pre-allocated entity (avoids per-frame GC)
+    const me = this._moveEntity;
+    me.state.speed = this.state.speed;
+    me.heading = this.state.heading;
+    me.theta = this.state.theta;
+    me.phi = this.state.phi;
+    Tank.moveEntityOnSphere(me, deltaTime);
+    this.state.theta = me.theta;
+    this.state.phi = me.phi;
 
     // Collision with wall sliding
     // Friction is frame-rate independent: Math.pow(base, dt * SERVER_TICK_RATE)
@@ -469,10 +476,7 @@ class Tank {
           );
       if (inPolar) return true;
 
-      const tileIdx = this.planet.terrainElevation.getNearestTileIndex(t.testPos);
-      if (tileIdx >= 0 &&
-        this.planet.terrainElevation.getElevationAtTileIndex(tileIdx) > 0
-      ) {
+      if (this.planet.terrainElevation.isProbeOnElevatedTerrain(t.testPos)) {
         return true;
       }
     }
@@ -496,25 +500,16 @@ class Tank {
     // Update momentum lean springs
     Tank.updateLeanState(this.state.lean, this.state.speed, this.state.heading, deltaTime, this.isDead);
 
-    // Use shared static helper with player-style entity shape
-    const entity = {
-      theta: this.state.theta,
-      phi: this.state.phi,
-      heading: this.state.heading,
-      group: this.group,
-      bodyGroup: this.bodyGroup,
-      speed: this.state.speed,
-      wigglePhase: this.state.wigglePhase,
-      currentRollAngle: 0,
-      hp: this.hp,
-      maxHp: this.maxHp,
-      isDead: this.isDead,
-      lean: this.state.lean,
-    };
-    Tank.updateEntityVisual(entity, this.sphereRadius);
+    // Reuse pre-allocated entity (avoids per-frame GC)
+    const ve = this._visualEntity;
+    ve.theta = this.state.theta; ve.phi = this.state.phi;
+    ve.heading = this.state.heading; ve.speed = this.state.speed;
+    ve.wigglePhase = this.state.wigglePhase; ve.currentRollAngle = 0;
+    ve.hp = this.hp; ve.maxHp = this.maxHp; ve.isDead = this.isDead;
+    Tank.updateEntityVisual(ve, this.sphereRadius);
 
     // Store roll angle for turret compensation
-    this.state.currentRollAngle = entity.currentRollAngle || 0;
+    this.state.currentRollAngle = ve.currentRollAngle || 0;
   }
 
   _updateTurret(camera) {
