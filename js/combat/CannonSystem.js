@@ -1315,28 +1315,36 @@ void main() {
    * @param {string} faction - Shield owner's faction (for projectile color)
    */
   spawnDeflectedProjectile(data, faction) {
-    // Don't remove the incoming projectile — let it fly to the shield
-    // and be absorbed by the client-side shield collision code (with spark).
-    // Removing it here caused it to vanish before any render frame when
-    // player-fired and shield-reflect arrived in the same Socket.IO batch.
+    // Try to mark the incoming projectile for visual redirection.
+    // The projectile keeps flying to the shield, then bounces on contact.
+    for (let i = this.projectiles.length - 1; i >= 0; i--) {
+      const p = this.projectiles[i];
+      if (p.serverId === data.projectileId) {
+        p._deflectData = {
+          wx: data.wx, wy: data.wy, wz: data.wz,
+          dvx: data.dvx, dvy: data.dvy, dvz: data.dvz,
+          faction: faction,
+        };
+        return; // Redirect happens in update() when it reaches the shield
+      }
+    }
 
-    // Use server-computed world position and direction directly
+    // Fallback: incoming projectile already expired — spawn deflected + spark
     _muzzleWorld.set(data.wx, data.wy, data.wz);
+    this._spawnExplosion(_muzzleWorld, faction, 0.5);
+
     _shotDirWorld.set(data.dvx, data.dvy, data.dvz).normalize();
 
-    // Acquire projectile from pool
     const sizeScale = 1;
     const poolItem = this.objectPools.acquireProjectile(faction, sizeScale);
     poolItem.mesh.position.copy(_muzzleWorld);
 
-    // Orient along velocity
     _shotTarget.copy(_muzzleWorld).add(_shotDirWorld);
     poolItem.mesh.lookAt(_shotTarget);
 
     poolItem.mesh.layers.set(1); // BLOOM_LAYER
     this.scene.add(poolItem.mesh);
 
-    // Point light
     const projectileLight = new THREE.PointLight(
       FACTION_COLORS[faction]?.hex || 0x00ccff,
       5, 30
@@ -1829,6 +1837,7 @@ void main() {
 
       let shouldExplode = false;
       let hitTank = false;
+      let deflected = false;
 
       // Swept collision check - test along the projectile's path (use preallocated vectors)
       _moveVector.copy(p.position).sub(_prevPosition);
@@ -1903,20 +1912,45 @@ void main() {
             horizontalDist < hitRadius &&
             Math.abs(heightDiff) < heightTolerance
           ) {
-            // If target has an active shield, absorb the projectile visually
-            // at the shield contact point. The server will send shield-reflect
-            // to spawn the deflected projectile separately.
-            // Grace period: let projectiles fly for at least 150ms so they're
-            // visible in flight before being absorbed by the shield.
+            // Shield collision: projectile bounces off visually
             if (tank.shieldActive) {
-              if (p.age < 0.15) {
-                break; // Too young — let it fly, check again next frame
+              if (p._deflectData) {
+                // Bounce! Redirect at server-computed shield contact point
+                const dd = p._deflectData;
+                p.position.set(dd.wx, dd.wy, dd.wz);
+                p.mesh.position.copy(p.position);
+
+                _shotDirWorld.set(dd.dvx, dd.dvy, dd.dvz).normalize();
+                p.velocity.copy(_shotDirWorld).multiplyScalar(this.config.projectileSpeed);
+
+                _shotTarget.copy(p.position).add(_shotDirWorld);
+                p.mesh.lookAt(_shotTarget);
+
+                // Reset tracking so it flies a full range after bouncing
+                p.startPosition.copy(p.position);
+                p.age = 0;
+
+                // Change faction to shield owner's (prevents re-collision)
+                p.faction = dd.faction;
+                p.mesh.material = this.materials[dd.faction];
+                if (p.light) p.light.color.setHex(FACTION_COLORS[dd.faction]?.hex || 0x00ccff);
+
+                // Shield impact spark
+                this._spawnExplosion(p.position, dd.faction, 0.5);
+
+                delete p._deflectData;
+                deflected = true;
+                break;
               }
+              // Grace period: let projectile fly toward shield before absorbing
+              if (p.age < 0.15) {
+                break;
+              }
+              // Absorb (no deflect data, grace period expired)
               p.position.copy(_testPos);
               p.mesh.position.copy(p.position);
-              // Small shield spark (smaller than normal explosion)
               this._spawnExplosion(p.position, tank.faction, 0.3);
-              shouldExplode = false; // Don't spawn the normal big explosion
+              shouldExplode = false;
               hitTank = true;
               break;
             }
@@ -1936,11 +1970,11 @@ void main() {
           }
         }
 
-        if (hitTank) break;
+        if (hitTank || deflected) break;
       }
 
       // Terrain elevation collision: projectiles hit cliff walls
-      if (!hitTank && this.planet?.terrainElevation) {
+      if (!hitTank && !deflected && this.planet?.terrainElevation) {
         const terrainSteps = Math.max(1, Math.ceil(moveDistance / 0.5));
         for (let step = 0; step <= terrainSteps; step++) {
           const t = step / terrainSteps;

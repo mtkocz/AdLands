@@ -787,18 +787,12 @@
       }
     };
 
-    // Shield reflect — spawn a deflected projectile at impact point
-    const _reflectWorldPos = new THREE.Vector3();
+    // Shield reflect — mark the incoming projectile for a visual bounce,
+    // or spawn a new deflected projectile if the incoming one already expired.
     net.onShieldReflect = (data) => {
       const shieldTank = remoteTanks.get(data.shieldOwnerId);
       const faction = shieldTank?.faction || (data.shieldOwnerId === net.playerId ? window.playerFaction : 'cobalt');
-
-      // Spawn a new projectile flying in the reflected direction (server-computed)
       cannonSystem.spawnDeflectedProjectile?.(data, faction);
-
-      // Small spark at impact point
-      _reflectWorldPos.set(data.wx, data.wy, data.wz);
-      cannonSystem._spawnExplosion?.(_reflectWorldPos, faction, 0.3);
     };
 
     // Preallocated vectors for hit effects and ping positions
