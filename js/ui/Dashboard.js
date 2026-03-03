@@ -1055,14 +1055,6 @@ class Dashboard {
                     </div>
                     <div class="settings-section-content">
                         <div class="setting-row">
-                            <label>Faction</label>
-                            <select id="setting-dev-faction" class="setting-select">
-                                <option value="rust">Rust</option>
-                                <option value="cobalt">Cobalt</option>
-                                <option value="viridian">Viridian</option>
-                            </select>
-                        </div>
-                        <div class="setting-row">
                             <label>Become Commander</label>
                             <button class="setting-btn" id="btn-become-commander">★ Activate</button>
                         </div>
@@ -1542,7 +1534,7 @@ class Dashboard {
     if (data.faction) {
       const factionChanged = this.playerFaction !== data.faction;
       this.playerFaction = data.faction;
-      this._updateFactionDropdown(data.faction);
+
       if (factionChanged) {
         this._resetFactionPanel(data.faction);
       }
@@ -1688,77 +1680,6 @@ class Dashboard {
     // Update avatar border color based on faction
     this._updateAvatarFaction(faction);
 
-    // Setup custom faction dropdown
-    this._setupFactionDropdown(faction);
-  }
-
-  /**
-   * Setup faction selection (now only in Developer section)
-   */
-  _setupFactionDropdown(initialFaction) {
-    // Setup the developer section faction select
-    this._setupDevFactionSelect(initialFaction);
-  }
-
-  /**
-   * Update faction dropdown display (now only updates dev select)
-   */
-  _updateFactionDropdown(faction) {
-    // Update the developer section faction select
-    const devFactionSelect = document.getElementById("setting-dev-faction");
-    if (devFactionSelect) {
-      devFactionSelect.value = faction;
-      this._updateDevFactionSelectColor(devFactionSelect, faction);
-    }
-  }
-
-  /**
-   * Update the dev faction select background color based on faction
-   */
-  _updateDevFactionSelectColor(select, faction) {
-    const colors = {
-      rust: { bg: "rgba(180, 80, 60, 0.6)", border: "#b4503c" },
-      cobalt: { bg: "rgba(60, 100, 180, 0.6)", border: "#3c64b4" },
-      viridian: { bg: "rgba(60, 140, 80, 0.6)", border: "#3c8c50" },
-    };
-    const color = colors[faction] || colors.rust;
-    select.style.backgroundColor = color.bg;
-    select.style.borderColor = color.border;
-  }
-
-  /**
-   * Setup the developer faction select (in Developer settings section)
-   */
-  _setupDevFactionSelect(initialFaction) {
-    const select = document.getElementById("setting-dev-faction");
-    if (!select) return;
-
-    // Set initial value and color
-    select.value = initialFaction;
-    this._updateDevFactionSelectColor(select, initialFaction);
-
-    // Handle change
-    select.addEventListener("change", () => {
-      const newFaction = select.value;
-      this.playerFaction = newFaction;
-
-      // Update select color
-      this._updateDevFactionSelectColor(select, newFaction);
-
-      // Update avatar border color
-      this._updateAvatarFaction(newFaction);
-
-      // Update tank preview with new faction colors
-      this._updateTankPreview();
-
-      // Reset faction panel to reflect new faction
-      this._resetFactionPanel(newFaction);
-
-      // Trigger callback (this updates the game state)
-      if (this.onFactionChange) {
-        this.onFactionChange(newFaction);
-      }
-    });
   }
 
   /**

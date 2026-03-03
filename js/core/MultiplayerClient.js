@@ -778,16 +778,12 @@
       // Spawn projectile visual — prefer remoteTank (has full effects),
       // fall back to server world-space data for bots not yet in remoteTanks
       if (remoteTank) {
-        console.log('[DEBUG-FIRE] spawning via remoteTank, id:', data.id, 'faction:', remoteTank.faction, 'isDead:', remoteTank.isDead);
         cannonSystem.spawnRemoteProjectile?.(
           { theta: data.theta, phi: data.phi, turretAngle: data.turretAngle, power: data.power, projectileId: data.projectileId },
           remoteTank
         );
       } else if (data.wx !== undefined) {
-        console.log('[DEBUG-FIRE] spawning via server data, id:', data.id);
         cannonSystem.spawnProjectileFromServer?.(data, 'cobalt');
-      } else {
-        console.log('[DEBUG-FIRE] NO SPAWN — no remoteTank and no server data, id:', data.id);
       }
     };
 

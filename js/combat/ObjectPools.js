@@ -53,6 +53,10 @@ class ObjectPools {
             this.cannonSystem.materials['rust']  // Placeholder, will be swapped
         );
 
+        // Disable Three.js built-in frustum culling — our manual culling in
+        // CannonSystem.update() handles visibility with a generous sphere radius
+        mesh.frustumCulled = false;
+
         // Clone light (small object, ok to create)
         const light = this.cannonSystem.lights['rust'].clone();
         mesh.add(light);
@@ -119,6 +123,9 @@ class ObjectPools {
         poolItem.light.color.setHex(factionColor);
         poolItem.light.intensity = 5 * sizeScale;
         poolItem.light.distance = 50 * sizeScale;
+
+        // Reset visibility (may have been culled before returning to pool)
+        poolItem.mesh.visible = true;
 
         // Add to scene
         this.scene.add(poolItem.mesh);
