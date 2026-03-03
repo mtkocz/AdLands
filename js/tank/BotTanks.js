@@ -2926,6 +2926,7 @@ class BotTanks {
     this._orbitalPhantomVisible = false;
     this._phantomsRegistered = false;
     this._phantomUpdateFrame = 0;
+    this._knownBotThetas = new Set(); // Reused across frames to avoid GC pressure
 
     // Per-mesh interpolation targets for smooth orbital dot movement
     this._phantomHasTarget = new Uint8Array(POOL_SIZE); // 0 = no target yet (snap), 1 = has previous position
@@ -3000,31 +3001,34 @@ class BotTanks {
     if (!hasNewData && (this._phantomUpdateFrame % 3) !== 0) return;
     // Compensate lerp for skipped frames
     if (!hasNewData) deltaTime *= 3;
+
+    const isTransitioning = !!window.gameCamera?.transitioning;
     const factionNames = ["rust", "cobalt", "viridian"];
     const r = this.sphereRadius + 3;
-    const hoveredMesh = window.tankLODInteraction?.hoveredDot;
+    const hoveredMesh = isTransitioning ? null : window.tankLODInteraction?.hoveredDot;
 
-    // Build set of known bot thetas (bots with full 3D representation)
-    const knownBotThetas = new Set();
-    for (const bot of this.bots) {
+    // Build set of known bot thetas (bots with full 3D representation).
+    // Reuse the Set to avoid per-frame allocation + GC pressure.
+    const knownBotThetas = this._knownBotThetas;
+    knownBotThetas.clear();
+    for (let i = 0; i < this.bots.length; i++) {
+      const bot = this.bots[i];
       if (bot.isDead || bot.isDeploying) continue;
       knownBotThetas.add(Math.round(bot.theta * 10000));
     }
-    // Also exclude remoteTanks (human players + nearby bots already rendered)
+    // Also exclude remoteTanks (human players + nearby bots already rendered).
+    // Use forEach to avoid Map iterator object allocation.
     const remotes = mp.remoteTanks;
     if (remotes) {
-      for (const [id, rt] of remotes) {
-        if (id.startsWith("bot-") && !rt.isDead) {
-          // Use the server-reported theta from last state update
-          if (rt.targetState) {
-            knownBotThetas.add(Math.round(rt.targetState.theta * 10000));
-          }
+      remotes.forEach((rt, id) => {
+        if (id.startsWith("bot-") && !rt.isDead && rt.targetState) {
+          knownBotThetas.add(Math.round(rt.targetState.theta * 10000));
         }
-      }
+      });
     }
 
     // Detect new orbital data from server (reference changes on each broadcast)
-    if (op !== this._lastOpRef) {
+    if (hasNewData) {
       this._lastOpRef = op;
       this._opArriveTime = performance.now();
     }
@@ -3092,8 +3096,6 @@ class BotTanks {
       }
 
       // Update userData for hover tooltip + right-click profile card
-      // opn may be stale (sent every 100 ticks) while op updates every 10 ticks,
-      // so opn[opnIdx] can be undefined when bots spawn/despawn between syncs
       const botId = (opn && opn[opnIdx]) || `phantom-${poolIdx}`;
       const botName = (opn && opn[opnIdx + 1]) || `Bot ${poolIdx}`;
       mesh.userData.playerId = botId;
@@ -3122,8 +3124,9 @@ class BotTanks {
     }
 
     // Force world matrix update on active phantom dots so raycasting works
-    // immediately (hover check fires on mousemove between render frames)
-    if (poolIdx > 0) {
+    // immediately (hover check fires on mousemove between render frames).
+    // Skip during camera transitions — user is zooming, not hovering dots.
+    if (poolIdx > 0 && !isTransitioning) {
       this.planet.hexGroup.updateWorldMatrix(true, false);
       for (let i = 0; i < poolIdx; i++) {
         this._phantomPool[i].updateWorldMatrix(false, false);

@@ -486,8 +486,10 @@
             const halfRtt = net.smoothPing / 2;
             const minDelay = tickMs; // 1 tick minimum; extrapolation covers the rest
             const adaptiveDelay = Math.max(minDelay, Math.min(300, halfRtt + net.jitter * 2 + tickMs));
-            // Slow blend (5%) to prevent oscillation
-            remoteTank.interpolationDelay = remoteTank.interpolationDelay * 0.95 + adaptiveDelay * 0.05;
+            // Blend toward target delay — fast enough to track network changes (~700ms),
+            // slow enough to ignore single-sample noise. Jitter headroom (2x) in
+            // adaptiveDelay already absorbs per-packet variance.
+            remoteTank.interpolationDelay = remoteTank.interpolationDelay * 0.85 + adaptiveDelay * 0.15;
           }
 
           // Sync server-authoritative rank

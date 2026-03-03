@@ -289,9 +289,9 @@ class GameCamera {
       this.surfaceDistance + this.currentSpeedZoom + chargePullbackDistance + territoryPullbackDistance;
     const targetCameraPos = _camTempNormal.copy(this.smoothedPosition).normalize().multiplyScalar(effectiveDistance);
 
-    // Smooth camera position with frame-rate independent easing
-    const lerpFactor = 1 - Math.exp(-this.followLerp * deltaTime);
-    this.camera.position.lerp(targetCameraPos, lerpFactor);
+    // Set camera directly — smoothedPosition lerp already provides smooth following.
+    // A second lerp here would compound the lag, making the camera feel sluggish.
+    this.camera.position.copy(targetCameraPos);
   }
 
   _updateChargePullback(deltaTime) {

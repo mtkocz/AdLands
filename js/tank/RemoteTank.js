@@ -56,6 +56,12 @@ class RemoteTank {
     this._snapCount = 0; // valid entries (0 to _snapCap)
     this.interpolationDelay = 100; // ms — render 100ms behind real-time (1 server tick at 10Hz)
 
+    // Snap-back dampening: when transitioning from extrapolation back to
+    // interpolation, the corrected position can differ from the extrapolated one.
+    // Track whether we were extrapolating so we can blend the correction smoothly.
+    this._wasExtrapolating = false;
+    this._correctionAlpha = 1; // 1 = fully corrected, <1 = blending
+
     // Health
     this.hp = playerData.hp || 100;
     this.maxHp = playerData.maxHp || 100;
@@ -290,19 +296,43 @@ class RemoteTank {
         if (rawT <= 1) {
           // Normal interpolation between two snapshots
           // LINEAR for position — constant velocity between ticks (no pulsing)
-          this.state.phi = fromSnap.phi + (toSnap.phi - fromSnap.phi) * rawT;
-          this.state.theta = MathUtils.lerpAngle2Pi(fromSnap.theta, toSnap.theta, rawT);
+          const newPhi = fromSnap.phi + (toSnap.phi - fromSnap.phi) * rawT;
+          const newTheta = MathUtils.lerpAngle2Pi(fromSnap.theta, toSnap.theta, rawT);
 
           // SMOOTHSTEP for lean-spring inputs — zero derivative at tick boundaries
           // prevents acceleration spikes that the underdamped lean springs amplify
           const st = rawT * rawT * (3 - 2 * rawT);
-          this.state.heading = MathUtils.lerpAngle(fromSnap.heading, toSnap.heading, st);
-          this.state.speed = fromSnap.speed + (toSnap.speed - fromSnap.speed) * st;
-          this.state.turretAngle = MathUtils.lerpAngle(fromSnap.turretAngle, toSnap.turretAngle, st);
+          const newHeading = MathUtils.lerpAngle(fromSnap.heading, toSnap.heading, st);
+          const newSpeed = fromSnap.speed + (toSnap.speed - fromSnap.speed) * st;
+          const newTurretAngle = MathUtils.lerpAngle(fromSnap.turretAngle, toSnap.turretAngle, st);
+
+          // Snap-back dampening: when returning from extrapolation to interpolation,
+          // the corrected position may differ from where extrapolation projected.
+          // Blend the correction over ~100ms to avoid a visible pop.
+          if (this._wasExtrapolating) {
+            this._wasExtrapolating = false;
+            this._correctionAlpha = 0;
+          }
+          if (this._correctionAlpha < 1) {
+            this._correctionAlpha = Math.min(1, this._correctionAlpha + deltaTime * 10); // ~100ms blend
+            const a = this._correctionAlpha;
+            this.state.phi = this.state.phi + (newPhi - this.state.phi) * a;
+            this.state.theta = MathUtils.lerpAngle2Pi(this.state.theta, newTheta, a);
+            this.state.heading = MathUtils.lerpAngle(this.state.heading, newHeading, a);
+            this.state.speed = this.state.speed + (newSpeed - this.state.speed) * a;
+            this.state.turretAngle = MathUtils.lerpAngle(this.state.turretAngle, newTurretAngle, a);
+          } else {
+            this.state.phi = newPhi;
+            this.state.theta = newTheta;
+            this.state.heading = newHeading;
+            this.state.speed = newSpeed;
+            this.state.turretAngle = newTurretAngle;
+          }
         } else {
           // Extrapolation: renderTime is past the latest pair.
           // Project forward from toSnap using its velocity. Cap at 3 ticks
           // of extrapolation to cover worker timing gaps without overshoot.
+          this._wasExtrapolating = true;
           const extraMs = Math.min(renderTime - toSnap.t, span * 3);
           const dt60 = (extraMs / 1000) * 60;
 
@@ -519,6 +549,8 @@ class RemoteTank {
     this.isDead = false;
     this.state.isDead = false;
     this._snapCount = 0;
+    this._wasExtrapolating = false;
+    this._correctionAlpha = 1;
     if (this.state.lean) this.state.lean.initialized = false;
     this.isFading = false;
     this.damageState = "healthy";
@@ -553,6 +585,9 @@ class RemoteTank {
     this.targetState.heading = heading;
     // Clear snapshot buffer so we don't interpolate from old positions
     this._snapCount = 0;
+    // Reset correction blend so teleport is instant
+    this._wasExtrapolating = false;
+    this._correctionAlpha = 1;
     // Reset lean to prevent false acceleration spike
     if (this.state.lean) this.state.lean.initialized = false;
   }

@@ -3851,7 +3851,7 @@
     }
 
     const now = performance.now();
-    const deltaTime = (now - lastFrameTime) / 1000;
+    const deltaTime = Math.min((now - lastFrameTime) / 1000, 0.05); // Cap at 50ms to prevent spike-induced jitter
     lastFrameTime = now;
 
     // Update FPS counter
@@ -3931,8 +3931,11 @@
     );
     sharedFrustum.setFromProjectionMatrix(sharedProjMatrix);
 
-    // Update terrain visibility culling (hide tiles on far side of planet + frustum cull overlays)
-    planet.updateVisibility(camera, sharedFrustum);
+    // Update terrain visibility culling (hide tiles on far side of planet + frustum cull overlays).
+    // During camera transitions (zooming), skip per-tile frustum culling (expensive intersectsObject
+    // calls) and rely on backface culling alone — the brief over-draw is invisible during fast motion.
+    const useFrustumCull = !gameCamera.transitioning ? sharedFrustum : null;
+    planet.updateVisibility(camera, useFrustumCull);
     planet.updateVolumetricLights(deltaTime);
     planet.updatePortalPulse(deltaTime);
 
