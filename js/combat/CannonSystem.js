@@ -1912,7 +1912,10 @@ void main() {
             // If target has an active shield, absorb the projectile visually
             // at the shield contact point. The server will send shield-reflect
             // to spawn the deflected projectile separately.
+            // Grace period: let projectiles fly for at least 150ms so they're
+            // visible in flight before being absorbed by the shield.
             if (tank.shieldActive) {
+              if (p.age < 0.15) break; // Too young — let it fly, check again next frame
               p.position.copy(_testPos);
               p.mesh.position.copy(p.position);
               // Small shield spark (smaller than normal explosion)
