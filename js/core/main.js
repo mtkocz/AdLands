@@ -1539,9 +1539,8 @@
       if (window.dashboard) {
         window.dashboard.playerFaction = faction;
         window.dashboard._updateAvatarFaction(faction);
-        window.dashboard._updateFactionDropdown(faction);
-        window.dashboard._updateTankPreview();
-        window.dashboard._resetFactionPanel(faction);
+        if (window.dashboard._updateTankPreview) window.dashboard._updateTankPreview();
+        if (window.dashboard._resetFactionPanel) window.dashboard._resetFactionPanel(faction);
       }
       if (typeof PresenceTracker !== "undefined") {
         PresenceTracker.setPlayerFaction(faction);
