@@ -1,9 +1,10 @@
 /**
  * ShieldHolosphere — holographic geodesic wireframe sphere that pulses on shield impact.
  * A bright ring ripples outward from the impact point across the sphere surface.
- * Parented to turretGroup so it follows the tank.
+ * Position follows tank, rotation stays independent (world space).
  */
 const _holoImpactWorld = new THREE.Vector3();
+const _holoWorldCenter = new THREE.Vector3();
 const _holoLocalCenter = new THREE.Vector3(0, 0.5, 0);
 
 class ShieldHolosphere {
@@ -15,10 +16,10 @@ class ShieldHolosphere {
   }
 
   emit(impactPos, faction, turretGroup) {
-    // Compute impact direction in turretGroup local space
-    _holoImpactWorld.copy(impactPos);
-    turretGroup.worldToLocal(_holoImpactWorld);
-    const impactDir = _holoImpactWorld.sub(_holoLocalCenter).normalize();
+    // Compute impact direction in world space relative to shield center
+    _holoWorldCenter.copy(_holoLocalCenter);
+    turretGroup.localToWorld(_holoWorldCenter);
+    const impactDir = _holoImpactWorld.subVectors(impactPos, _holoWorldCenter).normalize();
 
     const color = FACTION_COLORS[faction]
       ? FACTION_COLORS[faction].threeLight.clone()
@@ -62,12 +63,12 @@ class ShieldHolosphere {
     });
 
     const mesh = new THREE.Mesh(this._geometry, material);
-    mesh.position.copy(_holoLocalCenter); // Same offset as shield (0, 0.5, 0)
+    mesh.position.copy(_holoWorldCenter);
     mesh.renderOrder = 51;
     mesh.layers.enable(1); // BLOOM_LAYER
-    turretGroup.add(mesh);
+    this.scene.add(mesh);
 
-    this.effects.push({ mesh, material, parent: turretGroup, age: 0, duration: 1.2 });
+    this.effects.push({ mesh, material, turretGroup, age: 0, duration: 1.2 });
   }
 
   update(deltaTime) {
@@ -77,11 +78,16 @@ class ShieldHolosphere {
       const t = e.age / e.duration;
 
       if (t >= 1) {
-        e.parent.remove(e.mesh);
+        this.scene.remove(e.mesh);
         e.material.dispose();
         this.effects.splice(i, 1);
         continue;
       }
+
+      // Follow tank position (rotation stays independent)
+      _holoWorldCenter.copy(_holoLocalCenter);
+      e.turretGroup.localToWorld(_holoWorldCenter);
+      e.mesh.position.copy(_holoWorldCenter);
 
       // Wave sweeps from impact (dot=1) to opposite side (dot=-1)
       e.material.uniforms.uWaveFront.value = 1.0 - t * 2.0;
@@ -95,7 +101,7 @@ class ShieldHolosphere {
 
   dispose() {
     for (const e of this.effects) {
-      e.parent.remove(e.mesh);
+      this.scene.remove(e.mesh);
       e.material.dispose();
     }
     this.effects.length = 0;

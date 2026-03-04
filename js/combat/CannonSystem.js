@@ -1906,6 +1906,12 @@ void main() {
               tank.turretGroup.localToWorld(_clipCenter);
               const shieldClip = _clipCenter.clone();
 
+              // Push explosion position outward to shield surface so it's not fully clipped
+              _horizontalOffset.copy(p.position).sub(shieldClip).normalize();
+              _testPos.copy(shieldClip).addScaledVector(_horizontalOffset, 4.5);
+              p.position.copy(_testPos);
+              p.mesh.position.copy(p.position);
+
               // Full-size explosion + dust wave, clipped by shield sphere
               this._spawnExplosion(p.position, tank.faction, p.sizeScale || 1, shieldClip);
               if (this.dustShockwave) {
