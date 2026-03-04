@@ -981,7 +981,7 @@ class DustShockwave {
       // Animate height: start low (0.3 units), rise to high (2.0 units)
       // Use ease-out easing - rises quickly at first, then slows down
       const startHeight = 0.3; // Below tank bodies (which are ~0.7 units)
-      const endHeight = 1.0; // Above tank bodies but below cliff edges
+      const endHeight = 1.5; // Above tank bodies but below cliff edges
       const heightProgress = 1 - Math.pow(1 - progress, 2); // Quadratic ease-out - fast start, slow end
       const currentHeight = Math.min(
         startHeight + (endHeight - startHeight) * heightProgress,

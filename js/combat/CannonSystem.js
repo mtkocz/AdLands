@@ -107,6 +107,9 @@ class CannonSystem {
     this._explosionGeometry = new THREE.PlaneGeometry(1, 1);
     this._loadExplosionSprite();
 
+    // Shared soft radial glow texture for bloom-only sprites
+    this._glowTexture = this._createGlowTexture();
+
     // ========================
     // MUZZLE FLARE CONFIG
     // ========================
@@ -213,6 +216,25 @@ class CannonSystem {
         depthWrite: false,
       });
     }
+  }
+
+  _createGlowTexture() {
+    const size = 32;
+    const canvas = document.createElement('canvas');
+    canvas.width = size;
+    canvas.height = size;
+    const ctx = canvas.getContext('2d');
+    const half = size / 2;
+    const g = ctx.createRadialGradient(half, half, 0, half, half, half);
+    g.addColorStop(0, 'rgba(255,255,255,1)');
+    g.addColorStop(0.4, 'rgba(255,255,255,0.4)');
+    g.addColorStop(1, 'rgba(255,255,255,0)');
+    ctx.fillStyle = g;
+    ctx.fillRect(0, 0, size, size);
+    const tex = new THREE.CanvasTexture(canvas);
+    tex.minFilter = THREE.LinearFilter;
+    tex.magFilter = THREE.LinearFilter;
+    return tex;
   }
 
   _loadExplosionSprite() {
@@ -1547,6 +1569,7 @@ void main() {
 
     // Bloom-only glow sprite at explosion center (terrain-independent)
     const glowMat = new THREE.SpriteMaterial({
+      map: this._glowTexture,
       color: factionColor,
       transparent: true,
       opacity: 1.0,
@@ -1556,7 +1579,7 @@ void main() {
     });
     const glow = new THREE.Sprite(glowMat);
     glow.position.copy(mesh.position);
-    glow.scale.setScalar(planeSize * 0.5);
+    glow.scale.setScalar(planeSize * 0.4);
     glow.layers.set(1); // BLOOM_LAYER only — not visible in main pass
     this.scene.add(glow);
 
