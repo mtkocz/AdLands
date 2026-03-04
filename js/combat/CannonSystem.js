@@ -35,7 +35,7 @@ const _shotDirWorld = new THREE.Vector3();
 const _shotTarget = new THREE.Vector3();
 const _yAxis = new THREE.Vector3(0, 1, 0);
 const _clipCenter = new THREE.Vector3();
-const _zUp = new THREE.Vector3(0, 0, 1);
+const _cannonZUp = new THREE.Vector3(0, 0, 1);
 
 class CannonSystem {
   constructor(scene, sphereRadius) {
@@ -1461,7 +1461,7 @@ void main() {
       mesh.position.copy(position);
       const surfaceNormal = position.clone().normalize();
       mesh.position.addScaledVector(surfaceNormal, 0.3);
-      mesh.quaternion.setFromUnitVectors(_zUp, surfaceNormal);
+      mesh.quaternion.setFromUnitVectors(_cannonZUp, surfaceNormal);
       this.scene.add(mesh);
 
       this.explosions.push({
@@ -1542,7 +1542,7 @@ void main() {
     mesh.position.copy(position);
     const surfaceNormal = position.clone().normalize();
     mesh.position.addScaledVector(surfaceNormal, 0.3);
-    mesh.quaternion.setFromUnitVectors(_zUp, surfaceNormal);
+    mesh.quaternion.setFromUnitVectors(_cannonZUp, surfaceNormal);
     mesh.rotateZ(Math.random() * Math.PI * 2);
     this.scene.add(mesh);
 
