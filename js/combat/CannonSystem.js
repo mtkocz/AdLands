@@ -249,8 +249,8 @@ class CannonSystem {
       return;
     }
 
-    // Cap decals to limit draw calls — force oldest into rapid fade when full
-    while (this.impactDecals.length >= 60) {
+    // Cap decals — hidden (backface/frustum culled) decals are cheap, so cap is generous
+    while (this.impactDecals.length >= 150) {
       const oldest = this.impactDecals.shift();
       this.planet.hexGroup.remove(oldest.mesh);
       oldest.material.alphaMap = null;
@@ -333,7 +333,7 @@ class CannonSystem {
     });
   }
 
-  _updateImpactDecals(deltaTime) {
+  _updateImpactDecals(deltaTime, frustum) {
     const cfg = this.impactDecalConfig;
     const fadeStart = cfg.lifetime - cfg.fadeOutDuration;
 
@@ -352,17 +352,44 @@ class CannonSystem {
         continue;
       }
 
-      // Calculate age-based opacity
-      let ageOpacity = decal.baseOpacity;
-      if (decal.age > fadeStart) {
-        const fadeProgress = (decal.age - fadeStart) / cfg.fadeOutDuration;
-        ageOpacity = decal.baseOpacity * (1 - fadeProgress);
-      }
-
-      // Distance fade (smooth fade to zero at PROJECTILE_CULL_DISTANCE)
+      // Backface + distance + frustum culling — skip draw calls for invisible decals
       if (this.gameCamera?.camera) {
         decal.mesh.getWorldPosition(_spriteWorldPos);
+
+        // Backface: hide decals on far side of planet
+        _cannonCullNormal.copy(_spriteWorldPos).normalize();
+        _cannonCullDir.copy(_spriteWorldPos).sub(_cameraWorldPos).normalize();
+        if (_cannonCullNormal.dot(_cannonCullDir) > 0.15) {
+          decal.mesh.visible = false;
+          continue;
+        }
+
+        // Distance: hide decals beyond cull distance
         const dist = _spriteWorldPos.distanceTo(_cameraWorldPos);
+        if (dist > PROJECTILE_CULL_DISTANCE) {
+          decal.mesh.visible = false;
+          continue;
+        }
+
+        // Frustum: hide decals outside camera view
+        if (frustum) {
+          _cannonCullSphere.set(_spriteWorldPos, cfg.size);
+          if (!frustum.intersectsSphere(_cannonCullSphere)) {
+            decal.mesh.visible = false;
+            continue;
+          }
+        }
+
+        decal.mesh.visible = true;
+
+        // Age-based opacity
+        let ageOpacity = decal.baseOpacity;
+        if (decal.age > fadeStart) {
+          const fadeProgress = (decal.age - fadeStart) / cfg.fadeOutDuration;
+          ageOpacity = decal.baseOpacity * (1 - fadeProgress);
+        }
+
+        // Distance fade (smooth fade approaching cull distance)
         const distanceFade =
           1 -
           Math.max(
@@ -373,11 +400,17 @@ class CannonSystem {
                 (PROJECTILE_CULL_DISTANCE - SPRITE_FADE_START),
             ),
           );
-        ageOpacity *= distanceFade;
+        decal.material.opacity = ageOpacity * distanceFade;
+      } else {
+        // No camera — just apply age fade
+        decal.mesh.visible = true;
+        let ageOpacity = decal.baseOpacity;
+        if (decal.age > fadeStart) {
+          const fadeProgress = (decal.age - fadeStart) / cfg.fadeOutDuration;
+          ageOpacity = decal.baseOpacity * (1 - fadeProgress);
+        }
+        decal.material.opacity = ageOpacity;
       }
-
-      // Set opacity
-      decal.material.opacity = ageOpacity;
     }
   }
 
@@ -520,7 +553,7 @@ class CannonSystem {
     });
   }
 
-  _updateOilPuddles(deltaTime) {
+  _updateOilPuddles(deltaTime, frustum) {
     const cfg = this.oilPuddleConfig;
     const fadeStart = cfg.lifetime - cfg.fadeOutDuration;
 
@@ -542,26 +575,46 @@ class CannonSystem {
       // Spreading phase: grow from 0 to target size
       if (puddle.age < cfg.spreadDuration) {
         const spreadProgress = puddle.age / cfg.spreadDuration;
-        // Ease-out for natural spread (fast start, slow end)
         const eased = 1 - Math.pow(1 - spreadProgress, 3);
         const size = puddle.targetSize * eased;
         puddle.mesh.scale.set(size, size, 1);
       } else {
-        // Ensure at full size after spread
         puddle.mesh.scale.set(puddle.targetSize, puddle.targetSize, 1);
       }
 
-      // Calculate base opacity from age fade
-      let opacity = 1.0;
-      if (puddle.age > fadeStart) {
-        const fadeProgress = (puddle.age - fadeStart) / cfg.fadeOutDuration;
-        opacity = 1.0 - fadeProgress;
-      }
-
-      // Distance fade (smooth fade to zero at PROJECTILE_CULL_DISTANCE)
+      // Backface + distance + frustum culling
       if (this.gameCamera?.camera) {
         puddle.mesh.getWorldPosition(_spriteWorldPos);
+
+        _cannonCullNormal.copy(_spriteWorldPos).normalize();
+        _cannonCullDir.copy(_spriteWorldPos).sub(_cameraWorldPos).normalize();
+        if (_cannonCullNormal.dot(_cannonCullDir) > 0.15) {
+          puddle.mesh.visible = false;
+          continue;
+        }
+
         const dist = _spriteWorldPos.distanceTo(_cameraWorldPos);
+        if (dist > PROJECTILE_CULL_DISTANCE) {
+          puddle.mesh.visible = false;
+          continue;
+        }
+
+        if (frustum) {
+          _cannonCullSphere.set(_spriteWorldPos, puddle.targetSize);
+          if (!frustum.intersectsSphere(_cannonCullSphere)) {
+            puddle.mesh.visible = false;
+            continue;
+          }
+        }
+
+        puddle.mesh.visible = true;
+
+        let opacity = 1.0;
+        if (puddle.age > fadeStart) {
+          const fadeProgress = (puddle.age - fadeStart) / cfg.fadeOutDuration;
+          opacity = 1.0 - fadeProgress;
+        }
+
         const distanceFade =
           1 -
           Math.max(
@@ -572,10 +625,16 @@ class CannonSystem {
                 (PROJECTILE_CULL_DISTANCE - SPRITE_FADE_START),
             ),
           );
-        opacity *= distanceFade;
+        puddle.material.opacity = opacity * distanceFade;
+      } else {
+        puddle.mesh.visible = true;
+        let opacity = 1.0;
+        if (puddle.age > fadeStart) {
+          const fadeProgress = (puddle.age - fadeStart) / cfg.fadeOutDuration;
+          opacity = 1.0 - fadeProgress;
+        }
+        puddle.material.opacity = opacity;
       }
-
-      puddle.material.opacity = opacity;
     }
   }
 
@@ -2033,10 +2092,10 @@ void main() {
     this._updateMuzzleEffects(deltaTime, frustum);
 
     // Update impact decals
-    this._updateImpactDecals(deltaTime);
+    this._updateImpactDecals(deltaTime, frustum);
 
     // Update oil puddles
-    this._updateOilPuddles(deltaTime);
+    this._updateOilPuddles(deltaTime, frustum);
   }
 
   // ========================
