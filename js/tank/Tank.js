@@ -1661,8 +1661,8 @@ Tank.updateLeanState = function (lean, speed, heading, deltaTime, isDead) {
   if (headingDelta < -Math.PI) headingDelta += Math.PI * 2;
 
   const turnRate = headingDelta / deltaTime;
-  const speedFactor = Math.sign(speed) * Math.min(Math.abs(speed) / 0.0004, 1.0);
-  let steerTarget = turnRate * speedFactor * cfg.STEER_LEAN_GAIN;
+  const speedFactor = Math.min(Math.abs(speed) / 0.0004, 1.0);
+  let steerTarget = -(turnRate * speedFactor * cfg.STEER_LEAN_GAIN);
   steerTarget = Math.max(-cfg.MAX_STEER_LEAN, Math.min(cfg.MAX_STEER_LEAN, steerTarget));
 
   const steerError = steerTarget - lean.steerAngle;

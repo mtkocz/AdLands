@@ -1532,6 +1532,7 @@ void main() {
         '}',
       ].join('\n'),
       transparent: true,
+      depthTest: true,
       depthWrite: false,
       blending: THREE.AdditiveBlending,
       side: THREE.DoubleSide,
