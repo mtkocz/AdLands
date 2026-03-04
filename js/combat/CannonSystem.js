@@ -1225,13 +1225,12 @@ void main() {
       );
     }
 
-    // Spawn dust shockwave at tank's ground position (parented to tank)
+    // Spawn dust shockwave at tank's ground position
     if (this.dustShockwave) {
       // 25% smaller for tank firing: (0.6 + chargeRatio * 0.4) * 0.75
       this.dustShockwave.emit(
         tank.group._cachedWorldPos || tank.group.position,
         (0.6 + chargeRatio * 0.4) * 0.75,
-        tank.group,
       );
     }
 
@@ -1345,7 +1344,6 @@ void main() {
       this.dustShockwave.emit(
         remoteTank.group._cachedWorldPos || remoteTank.group.position,
         (0.6 + chargeRatio * 0.4) * 0.75,
-        remoteTank.group,
       );
     }
 
@@ -1552,6 +1550,7 @@ void main() {
     const planeSize = cfg.baseSize * sizeScale;
     const mesh = new THREE.Mesh(this._explosionGeometry, material);
     mesh.scale.set(planeSize, planeSize, 1);
+    mesh.layers.enable(1); // BLOOM_LAYER — shader-based terrain clip handles both passes
     mesh.renderOrder = 1000;
 
     // Position + orient flat on surface (same as dust wave)
