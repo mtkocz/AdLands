@@ -247,27 +247,12 @@ class CannonSystem {
       return;
     }
 
-    // Cap decals to limit draw calls — force oldest into fade-out when full
-    const fadeStart = this.impactDecalConfig.lifetime - this.impactDecalConfig.fadeOutDuration;
-    while (this.impactDecals.length >= 30) {
-      // Force the oldest non-fading decal into rapid fade-out
-      let forced = false;
-      for (const d of this.impactDecals) {
-        if (d.age < fadeStart) {
-          d.age = this.impactDecalConfig.lifetime - 1; // 1 second left to fade
-          forced = true;
-          break;
-        }
-      }
-      // If all are already fading, remove the oldest
-      if (!forced) {
-        const oldest = this.impactDecals.shift();
-        this.planet.hexGroup.remove(oldest.mesh);
-        oldest.material.alphaMap = null;
-        oldest.material.dispose();
-      } else {
-        break;
-      }
+    // Cap decals to limit draw calls — force oldest into rapid fade when full
+    while (this.impactDecals.length >= 60) {
+      const oldest = this.impactDecals.shift();
+      this.planet.hexGroup.remove(oldest.mesh);
+      oldest.material.alphaMap = null;
+      oldest.material.dispose();
     }
 
     const normal = position.clone().normalize();
@@ -1495,6 +1480,8 @@ void main() {
     const planetRadius = this.sphereRadius;
     const shieldCenter = clipCenter;
     const shieldRadius = 4.5;
+    // Unique cache key so Three.js compiles modified shader variants separately
+    material.customProgramCacheKey = () => 'explosionClip' + (shieldCenter ? '_shield' : '');
     material.onBeforeCompile = (shader) => {
       shader.uniforms.uPlanetRadius = { value: planetRadius };
       if (shieldCenter) {
