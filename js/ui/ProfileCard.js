@@ -445,6 +445,12 @@ class ProfileCard {
 
     this.currentPlayerId = playerId;
 
+    // Close territory intel popup if open
+    const intelPopup = document.getElementById("territory-intel-popup");
+    if (intelPopup && !intelPopup.classList.contains("hidden")) {
+      intelPopup.classList.add("hidden");
+    }
+
     // Build and display card
     this.cardElement.innerHTML = this._buildCardHTML(displayPlayer);
     this._attachBadgeTooltipEvents();

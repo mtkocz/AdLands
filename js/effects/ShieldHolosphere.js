@@ -1,0 +1,98 @@
+/**
+ * ShieldHolosphere — holographic geodesic wireframe sphere that pulses on shield impact.
+ * A bright ring ripples outward from the impact point across the sphere surface.
+ */
+class ShieldHolosphere {
+  constructor(scene) {
+    this.scene = scene;
+    this.effects = [];
+    // Shared geodesic sphere — detail 1 = 80 triangles, radius matches clip sphere
+    this._geometry = new THREE.IcosahedronGeometry(4.5, 1);
+  }
+
+  emit(sphereCenter, impactPos, faction) {
+    const impactDir = new THREE.Vector3()
+      .subVectors(impactPos, sphereCenter).normalize();
+
+    const color = FACTION_COLORS[faction]
+      ? FACTION_COLORS[faction].threeLight.clone()
+      : new THREE.Color(0x00ccff);
+
+    const material = new THREE.ShaderMaterial({
+      uniforms: {
+        uColor:     { value: color },
+        uImpactDir: { value: impactDir },
+        uWaveFront: { value: 1.0 },
+        uOpacity:   { value: 0.0 },
+      },
+      vertexShader: [
+        'uniform vec3 uImpactDir;',
+        'varying float vDot;',
+        'void main() {',
+        '  vec3 localDir = normalize(position);',
+        '  vDot = dot(localDir, uImpactDir);',
+        '  gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);',
+        '}',
+      ].join('\n'),
+      fragmentShader: [
+        'uniform vec3 uColor;',
+        'uniform float uWaveFront;',
+        'uniform float uOpacity;',
+        'varying float vDot;',
+        'void main() {',
+        '  float dist = abs(vDot - uWaveFront);',
+        '  float ring = smoothstep(0.3, 0.0, dist);',
+        '  float brightness = 0.08 + ring * 0.92;',
+        '  vec3 col = uColor * brightness * 2.5;',
+        '  float alpha = brightness * uOpacity;',
+        '  gl_FragColor = vec4(col, alpha);',
+        '}',
+      ].join('\n'),
+      wireframe: true,
+      transparent: true,
+      blending: THREE.AdditiveBlending,
+      depthWrite: false,
+      side: THREE.DoubleSide,
+    });
+
+    const mesh = new THREE.Mesh(this._geometry, material);
+    mesh.position.copy(sphereCenter);
+    mesh.renderOrder = 51;
+    mesh.layers.enable(1); // BLOOM_LAYER
+    this.scene.add(mesh);
+
+    this.effects.push({ mesh, material, age: 0, duration: 0.6 });
+  }
+
+  update(deltaTime) {
+    for (let i = this.effects.length - 1; i >= 0; i--) {
+      const e = this.effects[i];
+      e.age += deltaTime;
+      const t = e.age / e.duration;
+
+      if (t >= 1) {
+        this.scene.remove(e.mesh);
+        e.material.dispose();
+        this.effects.splice(i, 1);
+        continue;
+      }
+
+      // Wave sweeps from impact (dot=1) to opposite side (dot=-1)
+      e.material.uniforms.uWaveFront.value = 1.0 - t * 2.0;
+
+      // Opacity: quick fade-in, then gradual fade-out
+      const fadeIn = Math.min(t / 0.05, 1.0);
+      const fadeOut = t > 0.5 ? 1.0 - (t - 0.5) / 0.5 : 1.0;
+      e.material.uniforms.uOpacity.value = fadeIn * fadeOut;
+    }
+  }
+
+  dispose() {
+    for (const e of this.effects) {
+      this.scene.remove(e.mesh);
+      e.material.dispose();
+    }
+    this.effects.length = 0;
+    this._geometry.dispose();
+  }
+}

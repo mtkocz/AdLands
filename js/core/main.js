@@ -504,6 +504,7 @@
   dustShockwave.setSunLight(environment.sunLight); // Set sun light for shadow direction
   dustShockwave.setCamera(gameCamera); // Set camera for distance fade
   dustShockwave.setPlanet(planet); // For cliff height capping of effects
+  const shieldHolosphere = new ShieldHolosphere(scene);
   fastTravel.setDustShockwave(dustShockwave);
 
   // Capture pulse wave effect (sonar-ping during territory capture)
@@ -549,6 +550,7 @@
   cannonSystem.setPlayerTank(tank);
   cannonSystem.setBotTanks(botTanks);
   cannonSystem.setDustShockwave(dustShockwave);
+  cannonSystem.shieldHolosphere = shieldHolosphere;
   cannonSystem.setPlanet(planet);
 
   // Weapon Slot System (computes loadout modifiers for combat)
@@ -3321,6 +3323,10 @@
   }
 
   function showTerritoryIntelPopup(clickX, clickY, sponsor, clusterId) {
+    // Close profile card if open
+    if (window.profileCard?.isVisible) {
+      window.profileCard.hide();
+    }
     resetIntelPopupState();
     const logoEl = document.getElementById("intel-logo");
     const logoSrc = sponsor.logoImage || (sponsor.ownerType === "player" ? sponsor.patternImage : null);
@@ -3994,6 +4000,7 @@
     tankDamageEffects.update(deltaTime, sharedFrustum, camera);
     treadDust.update(deltaTime, camera, isOrbitalView, sharedFrustum);
     dustShockwave.update(deltaTime, sharedFrustum);
+    shieldHolosphere.update(deltaTime);
     capturePulse.update(deltaTime, sharedFrustum, camera);
     tankCollision.update(deltaTime, sharedFrustum, camera);
     tankHeadlights.update(deltaTime, camera);

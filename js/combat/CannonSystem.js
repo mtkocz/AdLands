@@ -1911,6 +1911,9 @@ void main() {
               if (this.dustShockwave) {
                 this.dustShockwave.emit(p.position, p.sizeScale || 1, null, shieldClip);
               }
+              if (this.shieldHolosphere) {
+                this.shieldHolosphere.emit(shieldClip, p.position, tank.faction);
+              }
               shouldExplode = false;
               hitTank = true;
               break;
