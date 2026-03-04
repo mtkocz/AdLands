@@ -131,8 +131,8 @@ class CannonSystem {
     this.impactDecalConfig = {
       size: 10.5, // Base size in units
       color: 0x000000, // Black
-      lifetime: 10, // Fade out after 10 seconds
-      fadeOutDuration: 2, // Fade out over 2 seconds
+      lifetime: 20, // Total decal lifetime in seconds
+      fadeOutDuration: 18, // Start fading at 2s, slow fade over 18s
     };
     this.impactDecalGeometry = new THREE.PlaneGeometry(1, 1);
 
@@ -1436,7 +1436,7 @@ void main() {
       transparent: true,
       opacity: 1,
       depthWrite: false,
-      depthTest: true,
+      depthTest: false,
       blending: THREE.AdditiveBlending,
       sizeAttenuation: true,
       rotation: Math.random() * Math.PI * 2,
@@ -1889,44 +1889,49 @@ void main() {
             .addScaledVector(_tankSurfaceNormal, -heightDiff);
           const horizontalDist = _horizontalOffset.length();
 
+          // Shield collision: wider radius (4.5) matching shield visual arc
+          if (
+            tank.shieldActive &&
+            horizontalDist < 4.5 &&
+            Math.abs(heightDiff) < heightTolerance
+          ) {
+            p.position.copy(_testPos);
+            p.mesh.position.copy(p.position);
+
+            // Clip sphere: turret center in world space, shield radius 4.5
+            _clipCenter.set(0, 0.5, 0);
+            tank.turretGroup.localToWorld(_clipCenter);
+            const shieldClip = _clipCenter.clone();
+
+            // Push explosion position outward to shield surface, at tank height
+            _horizontalOffset.copy(p.position).sub(shieldClip).normalize();
+            _testPos.copy(shieldClip).addScaledVector(_horizontalOffset, 4.5);
+            _testPos.normalize().multiplyScalar(_tankWorldPos.length());
+            p.position.copy(_testPos);
+            p.mesh.position.copy(p.position);
+
+            // Full-size explosion + dust wave, clipped by shield sphere
+            this._spawnExplosion(p.position, tank.faction, p.sizeScale || 1, shieldClip);
+            if (this.dustShockwave) {
+              this.dustShockwave.emit(p.position, p.sizeScale || 1, null, shieldClip);
+            }
+            if (this.shieldHolosphere) {
+              this.shieldHolosphere.emit(p.position, tank.faction, tank.turretGroup);
+            }
+            // Shield block earns 10 crypto — floating number at tank position
+            if (tank === this.playerTank && window.cryptoVisuals) {
+              window.cryptoVisuals._spawnFloatingNumber(10, shieldClip);
+            }
+            shouldExplode = false;
+            hitTank = true;
+            break;
+          }
+
+          // Body hitbox check
           if (
             horizontalDist < hitRadius &&
             Math.abs(heightDiff) < heightTolerance
           ) {
-            // Shield collision: projectile absorbed with full explosion (no damage)
-            if (tank.shieldActive) {
-              p.position.copy(_testPos);
-              p.mesh.position.copy(p.position);
-
-              // Clip sphere: turret center in world space, shield radius 4.5
-              _clipCenter.set(0, 0.5, 0);
-              tank.turretGroup.localToWorld(_clipCenter);
-              const shieldClip = _clipCenter.clone();
-
-              // Push explosion position outward to shield surface, at tank height
-              _horizontalOffset.copy(p.position).sub(shieldClip).normalize();
-              _testPos.copy(shieldClip).addScaledVector(_horizontalOffset, 4.5);
-              _testPos.normalize().multiplyScalar(_tankWorldPos.length());
-              p.position.copy(_testPos);
-              p.mesh.position.copy(p.position);
-
-              // Full-size explosion + dust wave, clipped by shield sphere
-              this._spawnExplosion(p.position, tank.faction, p.sizeScale || 1, shieldClip);
-              if (this.dustShockwave) {
-                this.dustShockwave.emit(p.position, p.sizeScale || 1, null, shieldClip);
-              }
-              if (this.shieldHolosphere) {
-                this.shieldHolosphere.emit(p.position, tank.faction, tank.turretGroup);
-              }
-              // Shield block earns 10 crypto — floating number at tank position
-              if (tank === this.playerTank && window.cryptoVisuals) {
-                window.cryptoVisuals._spawnFloatingNumber(10, shieldClip);
-              }
-              shouldExplode = false;
-              hitTank = true;
-              break;
-            }
-
             // HIT! Snap projectile to impact point so explosion spawns on target
             p.position.copy(_testPos);
             p.mesh.position.copy(p.position);
