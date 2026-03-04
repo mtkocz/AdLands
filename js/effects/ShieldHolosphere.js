@@ -41,9 +41,9 @@ class ShieldHolosphere {
         'varying float vDot;',
         'void main() {',
         '  float dist = abs(vDot - uWaveFront);',
-        '  float ring = smoothstep(0.3, 0.0, dist);',
-        '  float brightness = 0.08 + ring * 0.92;',
-        '  vec3 col = uColor * brightness * 2.5;',
+        '  float ring = smoothstep(0.5, 0.0, dist);',
+        '  float brightness = 0.04 + ring * 0.46;',
+        '  vec3 col = uColor * brightness * 1.6;',
         '  float alpha = brightness * uOpacity;',
         '  gl_FragColor = vec4(col, alpha);',
         '}',
@@ -61,7 +61,7 @@ class ShieldHolosphere {
     mesh.layers.enable(1); // BLOOM_LAYER
     this.scene.add(mesh);
 
-    this.effects.push({ mesh, material, age: 0, duration: 0.6 });
+    this.effects.push({ mesh, material, age: 0, duration: 1.2 });
   }
 
   update(deltaTime) {
@@ -80,9 +80,9 @@ class ShieldHolosphere {
       // Wave sweeps from impact (dot=1) to opposite side (dot=-1)
       e.material.uniforms.uWaveFront.value = 1.0 - t * 2.0;
 
-      // Opacity: quick fade-in, then gradual fade-out
-      const fadeIn = Math.min(t / 0.05, 1.0);
-      const fadeOut = t > 0.5 ? 1.0 - (t - 0.5) / 0.5 : 1.0;
+      // Opacity: gentle fade-in, then gradual fade-out
+      const fadeIn = Math.min(t / 0.1, 1.0);
+      const fadeOut = t > 0.35 ? 1.0 - (t - 0.35) / 0.65 : 1.0;
       e.material.uniforms.uOpacity.value = fadeIn * fadeOut;
     }
   }
