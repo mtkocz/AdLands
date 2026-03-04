@@ -1914,6 +1914,10 @@ void main() {
               if (this.shieldHolosphere) {
                 this.shieldHolosphere.emit(shieldClip, p.position, tank.faction);
               }
+              // Shield block costs 10 crypto — show floating spend number for local player
+              if (tank === this.playerTank && window.cryptoVisuals) {
+                window.cryptoVisuals._spawnFloatingNumber(-10, shieldClip);
+              }
               shouldExplode = false;
               hitTank = true;
               break;

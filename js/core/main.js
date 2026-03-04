@@ -3963,7 +3963,7 @@
     botTanks.setLODOptions(lodOptions);
 
     // Update orbital phantom dots (distant bots from server, visible in orbital view)
-    botTanks.updateOrbitalPhantoms(isOrbitalView, isHumanCommander, playerFaction, deltaTime);
+    botTanks.updateOrbitalPhantoms(isOrbitalView);
 
     // LOD dot interaction (hover/right-click) - always active for all players
     tankLODInteraction.setActive(true);

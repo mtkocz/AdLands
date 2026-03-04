@@ -2614,8 +2614,9 @@ class GameRoom {
 
           const halfArc = shPlayer.shieldArcAngle / 2 + 0.18; // +10° buffer for turret lag
           if (Math.abs(angleDiff) < halfArc) {
-            // Shield hit — destroy projectile (no damage to shield owner)
+            // Shield hit — destroy projectile, cost 10 crypto per block
             projs[i] = projs[projs.length - 1]; projs.pop();
+            this._deductCrypto(shPlayer, 10);
             shieldReflected = true;
             break;
           }

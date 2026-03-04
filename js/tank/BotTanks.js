@@ -540,11 +540,19 @@ class BotTanks {
                     vUv = uv;
 
                     // Get world position for shadow calculation
-                    vec4 worldPos = modelMatrix * vec4(0.0, 0.0, 0.0, 1.0);
+                    #ifdef USE_INSTANCING
+                        vec4 worldPos = modelMatrix * instanceMatrix * vec4(0.0, 0.0, 0.0, 1.0);
+                    #else
+                        vec4 worldPos = modelMatrix * vec4(0.0, 0.0, 0.0, 1.0);
+                    #endif
                     vWorldPosition = worldPos.xyz;
 
                     // Billboard: make the plane always face the camera
-                    vec4 mvPosition = modelViewMatrix * vec4(0.0, 0.0, 0.0, 1.0);
+                    #ifdef USE_INSTANCING
+                        vec4 mvPosition = modelViewMatrix * instanceMatrix * vec4(0.0, 0.0, 0.0, 1.0);
+                    #else
+                        vec4 mvPosition = modelViewMatrix * vec4(0.0, 0.0, 0.0, 1.0);
+                    #endif
                     vec2 scale = vec2(
                         length(modelMatrix[0].xyz),
                         length(modelMatrix[1].xyz)
@@ -2926,74 +2934,81 @@ class BotTanks {
     const POOL_SIZE = 300;
     const hitRadius = this._lodDotRadius * 2;
 
-    this._phantomPool = [];
     this._phantomActiveCount = 0;
     this._orbitalPhantomVisible = false;
-    this._phantomsRegistered = false;
     this._phantomUpdateFrame = 0;
     this._knownBotThetas = new Set(); // Reused across frames to avoid GC pressure
 
-    // Per-mesh interpolation targets for smooth orbital dot movement
-    this._phantomHasTarget = new Uint8Array(POOL_SIZE); // 0 = no target yet (snap), 1 = has previous position
+    // 3 InstancedMesh (one per faction) — replaces 300 individual phantom meshes
+    this._phantomInstanced = {};
+    const factionNames = ["rust", "cobalt", "viridian"];
+    this._phantomMatrix = new THREE.Matrix4(); // Reusable temp for setMatrixAt
+    for (const faction of factionNames) {
+      const im = new THREE.InstancedMesh(
+        this._lodDotGeometry,
+        this._lodDotMaterials[faction],
+        POOL_SIZE,
+      );
+      im.count = 0;
+      im.castShadow = false;
+      im.receiveShadow = false;
+      im.frustumCulled = false;
+      im.renderOrder = 10;
+      this._phantomInstanced[faction] = im;
+      this.planet.hexGroup.add(im);
+    }
 
-    // Preallocated temps for phantom enemy LOD box transform computation
-    this._phantomBoxTemp = {
-      pos: new THREE.Vector3(),
-      up: new THREE.Vector3(),
-      east: new THREE.Vector3(),
-      north: new THREE.Vector3(),
-      forward: new THREE.Vector3(),
-      right: new THREE.Vector3(),
-      worldUp: new THREE.Vector3(0, 1, 0),
-      zAxis: new THREE.Vector3(0, 0, 1),
-      rotMatrix: new THREE.Matrix4(),
-      quat: new THREE.Quaternion(),
-      scale: new THREE.Vector3(1, 1, 1),
-      composed: new THREE.Matrix4(),
-      final: new THREE.Matrix4(),
-    };
+    // CPU-side data for hover detection (avoids raycasting 300 meshes)
+    this._phantomPositions = new Float32Array(POOL_SIZE * 3); // world-space xyz
+    this._phantomData = new Array(POOL_SIZE); // { botId, botName, faction }
+    for (let i = 0; i < POOL_SIZE; i++) {
+      this._phantomData[i] = { botId: "", botName: "", faction: "" };
+    }
+    this._phantomTotalCount = 0; // Total active phantoms across all factions
 
-    // Pre-allocated temp objects for phantom raycast (shared across all pool meshes)
+    // Single hover dot mesh — shown when mouse is over a phantom dot
+    // Registered with TankLODInteraction for right-click profile card support
+    this._phantomHoverDot = new THREE.Mesh(
+      this._lodDotGeometry,
+      this._lodDotMaterials["rust"],
+    );
+    this._phantomHoverDot.visible = false;
+    this._phantomHoverDot.castShadow = false;
+    this._phantomHoverDot.receiveShadow = false;
+    this._phantomHoverDot.frustumCulled = false;
+    this._phantomHoverDot.renderOrder = 11; // Above instanced dots
+    this._phantomHoverDot.userData = { playerId: "", faction: "", username: "", squad: null, isCommander: false };
+
+    // Custom sphere-based raycast for the hover dot
     const _rcWorldPos = new THREE.Vector3();
     const _rcSphere = new THREE.Sphere(new THREE.Vector3(), hitRadius);
     const _rcIntersectPoint = new THREE.Vector3();
-
-    for (let i = 0; i < POOL_SIZE; i++) {
-      const mesh = new THREE.Mesh(
-        this._lodDotGeometry,
-        this._lodDotMaterials["rust"],
-      );
-      mesh.visible = false;
-      mesh.castShadow = false;
-      mesh.receiveShadow = false;
-      mesh.frustumCulled = false;
-      mesh.renderOrder = 10;
-
-      // Custom sphere-based raycast (identical to per-bot lodDot in Tank.js)
-      mesh.raycast = function (raycaster, intersects) {
-        if (!this.visible) return;
-        this.getWorldPosition(_rcWorldPos);
-        _rcSphere.center.copy(_rcWorldPos);
-        if (raycaster.ray.intersectSphere(_rcSphere, _rcIntersectPoint)) {
-          const distance = raycaster.ray.origin.distanceTo(_rcWorldPos);
-          if (distance >= (raycaster.near || 0) && distance <= (raycaster.far || Infinity)) {
-            intersects.push({ distance, point: _rcIntersectPoint.clone(), object: this });
-          }
+    this._phantomHoverDot.raycast = function (raycaster, intersects) {
+      if (!this.visible) return;
+      this.getWorldPosition(_rcWorldPos);
+      _rcSphere.center.copy(_rcWorldPos);
+      if (raycaster.ray.intersectSphere(_rcSphere, _rcIntersectPoint)) {
+        const distance = raycaster.ray.origin.distanceTo(_rcWorldPos);
+        if (distance >= (raycaster.near || 0) && distance <= (raycaster.far || Infinity)) {
+          intersects.push({ distance, point: _rcIntersectPoint.clone(), object: this });
         }
-      };
+      }
+    };
 
-      mesh.userData = { playerId: "", faction: "", username: "", squad: null, isCommander: false };
+    this.planet.hexGroup.add(this._phantomHoverDot);
 
-      this.planet.hexGroup.add(mesh);
-      this._phantomPool.push(mesh);
-    }
+    // Pre-allocated temp for CPU hover ray test
+    this._phantomHoverRay = new THREE.Ray();
+    this._phantomHoverTempVec = new THREE.Vector3();
+    this._phantomHitRadius = hitRadius;
+    this._phantomHoverIdx = -1; // Index of currently hovered phantom (-1 = none)
   }
 
   /**
    * Update orbital phantom dots from server-reported positions.
    * Called every frame from the render loop.
    */
-  updateOrbitalPhantoms(isOrbitalView, isHumanCommander, viewerFaction, deltaTime) {
+  updateOrbitalPhantoms(isOrbitalView) {
     const mp = window._mpState;
     if (!mp || !mp.orbitalPositions) {
       this._hideOrbitalPhantoms();
@@ -3005,12 +3020,10 @@ class BotTanks {
       return;
     }
 
-    // Lazy-register all pool meshes with TankLODInteraction (once)
-    if (!this._phantomsRegistered && window.tankLODInteraction) {
-      for (const mesh of this._phantomPool) {
-        window.tankLODInteraction.registerDot(mesh);
-      }
-      this._phantomsRegistered = true;
+    // Lazy-register hover dot with TankLODInteraction (once)
+    if (!this._phantomHoverRegistered && window.tankLODInteraction) {
+      window.tankLODInteraction.registerDot(this._phantomHoverDot);
+      this._phantomHoverRegistered = true;
     }
 
     const op = mp.orbitalPositions;
@@ -3020,17 +3033,16 @@ class BotTanks {
     // Always run when new server data arrives to avoid stale positions.
     const hasNewData = op !== this._lastOpRef;
     this._phantomUpdateFrame++;
-    if (!hasNewData && (this._phantomUpdateFrame % 3) !== 0) return;
-    // Compensate lerp for skipped frames
-    if (!hasNewData) deltaTime *= 3;
+    if (!hasNewData && (this._phantomUpdateFrame % 3) !== 0) {
+      // Still update hover detection even on skipped frames
+      this._updatePhantomHover();
+      return;
+    }
 
-    const isTransitioning = !!window.gameCamera?.transitioning;
     const factionNames = ["rust", "cobalt", "viridian"];
     const r = this.sphereRadius + 3;
-    const hoveredMesh = isTransitioning ? null : window.tankLODInteraction?.hoveredDot;
 
     // Build set of known bot thetas (bots with full 3D representation).
-    // Reuse the Set to avoid per-frame allocation + GC pressure.
     const knownBotThetas = this._knownBotThetas;
     knownBotThetas.clear();
     for (let i = 0; i < this.bots.length; i++) {
@@ -3038,8 +3050,6 @@ class BotTanks {
       if (bot.isDead || bot.isDeploying) continue;
       knownBotThetas.add(Math.round(bot.theta * 10000));
     }
-    // Also exclude remoteTanks (human players + nearby bots already rendered).
-    // Use forEach to avoid Map iterator object allocation.
     const remotes = mp.remoteTanks;
     if (remotes) {
       remotes.forEach((rt, id) => {
@@ -3049,21 +3059,18 @@ class BotTanks {
       });
     }
 
-    // Detect new orbital data from server (reference changes on each broadcast)
+    // Detect new orbital data from server
     if (hasNewData) {
       this._lastOpRef = op;
       this._opArriveTime = performance.now();
     }
-    // Time elapsed since last server orbital update — used for dead-reckoning
     const opAge = (performance.now() - (this._opArriveTime || 0)) / 1000;
-    // Scale dt to 60fps convention used by server physics (speed * dt60)
     const drAge = opAge * 60;
 
-    let poolIdx = 0;
-
-    // Track instanced LOD box counts for enemy phantom bots
-    const lodBoxCounts = { rust: 0, cobalt: 0, viridian: 0 };
-    const pbt = this._phantomBoxTemp;
+    // Per-faction instance counts
+    const instCounts = { rust: 0, cobalt: 0, viridian: 0 };
+    let totalPhantoms = 0;
+    const mat = this._phantomMatrix;
 
     for (let i = 0, opnIdx = 0; i < op.length; i += 5, opnIdx += 2) {
       const baseTheta = op[i];
@@ -3082,103 +3089,144 @@ class BotTanks {
       const phi = basePhi + (-Math.cos(heading) * speed * drAge);
       const theta = baseTheta + (-Math.sin(heading) * speed * drAge) / safeSinPhi;
 
-      // Enemy faction bots (non-commander) → render as instanced LOD box
-      if (!isHumanCommander && faction !== viewerFaction) {
-        const im = this._instancedLodBox[faction];
-        const boxIdx = lodBoxCounts[faction];
-        if (boxIdx < im.instanceMatrix.count) {
-          // Lower into ground to match surface level (same offset as _updateBotVisual)
-          const boxR = this.sphereRadius - 0.4;
-          pbt.pos.set(
-            boxR * Math.sin(phi) * Math.cos(theta),
-            boxR * Math.cos(phi),
-            boxR * Math.sin(phi) * Math.sin(theta),
-          );
-
-          // Surface normal = normalized position (up direction on sphere)
-          pbt.up.copy(pbt.pos).normalize();
-
-          // Tangent plane basis: east = worldUp × up, north = up × east
-          if (Math.abs(pbt.up.y) > 0.999) {
-            pbt.east.crossVectors(pbt.zAxis, pbt.up).normalize();
-          } else {
-            pbt.east.crossVectors(pbt.worldUp, pbt.up).normalize();
-          }
-          pbt.north.crossVectors(pbt.up, pbt.east).normalize();
-
-          // Forward direction from heading
-          pbt.forward.set(0, 0, 0)
-            .addScaledVector(pbt.north, Math.cos(heading))
-            .addScaledVector(pbt.east, Math.sin(heading))
-            .normalize();
-          pbt.right.crossVectors(pbt.forward, pbt.up).normalize();
-
-          // Build rotation: columns = right, up, -forward (Three.js convention)
-          // Set matrix elements directly to avoid clone().negate() allocation
-          const me = pbt.rotMatrix.elements;
-          me[0] = pbt.right.x;  me[4] = pbt.up.x;  me[8]  = -pbt.forward.x;  me[12] = 0;
-          me[1] = pbt.right.y;  me[5] = pbt.up.y;  me[9]  = -pbt.forward.y;  me[13] = 0;
-          me[2] = pbt.right.z;  me[6] = pbt.up.z;  me[10] = -pbt.forward.z;  me[14] = 0;
-          me[3] = 0;            me[7] = 0;          me[11] = 0;              me[15] = 1;
-          pbt.quat.setFromRotationMatrix(pbt.rotMatrix);
-
-          // Compose full transform and apply LOD box offset
-          pbt.composed.compose(pbt.pos, pbt.quat, pbt.scale);
-          pbt.final.copy(pbt.composed).multiply(this._lodBoxOffset);
-          im.setMatrixAt(boxIdx, pbt.final);
-          lodBoxCounts[faction]++;
-        }
-        continue;
-      }
-
-      // Same faction (or commander) → render as phantom dot
-      if (poolIdx >= this._phantomPool.length) break;
-      const mesh = this._phantomPool[poolIdx];
-
       // Convert to hexGroup local-space Cartesian
-      const tx = r * Math.sin(phi) * Math.cos(theta);
+      const sinP = Math.sin(phi);
+      const tx = r * sinP * Math.cos(theta);
       const ty = r * Math.cos(phi);
-      const tz = r * Math.sin(phi) * Math.sin(theta);
+      const tz = r * sinP * Math.sin(theta);
 
-      if (!this._phantomHasTarget[poolIdx] || !mesh.visible) {
-        // First frame or re-activated — snap directly
-        mesh.position.set(tx, ty, tz);
-        this._phantomHasTarget[poolIdx] = 1;
-      } else {
-        // Smooth lerp toward dead-reckoned position
-        const dx = tx - mesh.position.x;
-        const dy = ty - mesh.position.y;
-        const dz = tz - mesh.position.z;
-        const distSq = dx * dx + dy * dy + dz * dz;
+      // Set instance matrix (translation only, no rotation/scale — billboard shader handles orientation)
+      const im = this._phantomInstanced[faction];
+      const idx = instCounts[faction];
+      if (idx >= 300) continue;
 
-        // Snap if target jumped far (bot died/spawned, pool reassigned)
-        if (distSq > 400) {
-          mesh.position.set(tx, ty, tz);
-        } else {
-          const t = Math.min(1, 8 * deltaTime);
-          mesh.position.x += dx * t;
-          mesh.position.y += dy * t;
-          mesh.position.z += dz * t;
-        }
+      mat.makeTranslation(tx, ty, tz);
+      im.setMatrixAt(idx, mat);
+      instCounts[faction]++;
+
+      // Store position + data for CPU hover detection
+      if (totalPhantoms < 300) {
+        const off = totalPhantoms * 3;
+        this._phantomPositions[off] = tx;
+        this._phantomPositions[off + 1] = ty;
+        this._phantomPositions[off + 2] = tz;
+
+        const pd = this._phantomData[totalPhantoms];
+        pd.botId = (opn && opn[opnIdx]) || `phantom-${totalPhantoms}`;
+        pd.botName = (opn && opn[opnIdx + 1]) || `Bot ${totalPhantoms}`;
+        pd.faction = faction;
+        totalPhantoms++;
       }
+    }
 
-      // Swap faction material (skip if this dot is currently hovered to preserve hover effect)
-      if (mesh !== hoveredMesh) {
-        const targetMat = this._lodDotMaterials[faction];
-        if (mesh.material !== targetMat) mesh.material = targetMat;
+    // Update instance counts and mark buffers dirty
+    for (const faction of factionNames) {
+      const im = this._phantomInstanced[faction];
+      im.count = instCounts[faction];
+      if (im.count > 0) {
+        im.instanceMatrix.needsUpdate = true;
       }
+    }
 
-      // Update userData for hover tooltip + right-click profile card
-      const botId = (opn && opn[opnIdx]) || `phantom-${poolIdx}`;
-      const botName = (opn && opn[opnIdx + 1]) || `Bot ${poolIdx}`;
-      mesh.userData.playerId = botId;
-      mesh.userData.faction = faction;
-      mesh.userData.username = botName;
+    this._phantomTotalCount = totalPhantoms;
+    this._phantomActiveCount = totalPhantoms;
+    this._orbitalPhantomVisible = true;
+
+    // Update hover detection
+    this._updatePhantomHover();
+  }
+
+  /**
+   * CPU-side hover detection for phantom dots.
+   * Tests mouse ray against stored phantom positions instead of raycasting 300 meshes.
+   * Positions the single hover dot mesh when a hit is found.
+   */
+  _updatePhantomHover() {
+    const interaction = window.tankLODInteraction;
+    if (!interaction || !interaction.active) return;
+    if (window.gameCamera?.isOrbiting?.()) return;
+    if (window.gameCamera?.transitioning) return;
+
+    const camera = interaction.camera;
+    if (!camera) return;
+
+    // Build ray from camera through current mouse position
+    const ray = this._phantomHoverRay;
+    const tempVec = this._phantomHoverTempVec;
+    ray.origin.setFromMatrixPosition(camera.matrixWorld);
+    tempVec.set(interaction.mouse.x, interaction.mouse.y, 0.5)
+      .unproject(camera)
+      .sub(ray.origin)
+      .normalize();
+    ray.direction.copy(tempVec);
+
+    // Phantom positions are in hexGroup local space — transform to world on the fly
+    const hexGroup = this.planet.hexGroup;
+    hexGroup.updateWorldMatrix(true, false);
+    const wm = hexGroup.matrixWorld;
+
+    const hitRadiusSq = this._phantomHitRadius * this._phantomHitRadius;
+    let closestDist = Infinity;
+    let closestIdx = -1;
+
+    // Test ray-sphere intersection for each phantom position
+    for (let i = 0; i < this._phantomTotalCount; i++) {
+      const off = i * 3;
+      // Transform local position to world space
+      tempVec.set(
+        this._phantomPositions[off],
+        this._phantomPositions[off + 1],
+        this._phantomPositions[off + 2],
+      ).applyMatrix4(wm);
+
+      // Ray-sphere test: find closest point on ray to sphere center
+      const diff_x = tempVec.x - ray.origin.x;
+      const diff_y = tempVec.y - ray.origin.y;
+      const diff_z = tempVec.z - ray.origin.z;
+      const tca = diff_x * ray.direction.x + diff_y * ray.direction.y + diff_z * ray.direction.z;
+      if (tca < 0) continue; // Behind camera
+
+      const d2 = (diff_x * diff_x + diff_y * diff_y + diff_z * diff_z) - tca * tca;
+      if (d2 > hitRadiusSq) continue; // Misses sphere
+
+      if (tca < closestDist) {
+        closestDist = tca;
+        closestIdx = i;
+      }
+    }
+
+    const hoverDot = this._phantomHoverDot;
+
+    if (closestIdx >= 0) {
+      const off = closestIdx * 3;
+      const pd = this._phantomData[closestIdx];
+
+      // Position hover dot at the hit phantom's location (local space)
+      hoverDot.position.set(
+        this._phantomPositions[off],
+        this._phantomPositions[off + 1],
+        this._phantomPositions[off + 2],
+      );
+      hoverDot.visible = true;
+      hoverDot.updateWorldMatrix(false, false);
+
+      // Set hover dot material to match faction (brightened for hover effect)
+      const targetMat = this._lodDotMaterials[pd.faction];
+      if (hoverDot.material !== targetMat) {
+        hoverDot.material = targetMat;
+      }
+      // Scale up for hover effect
+      hoverDot.scale.setScalar(1.6);
+
+      // Update userData for TankLODInteraction tooltip + right-click
+      hoverDot.userData.playerId = pd.botId;
+      hoverDot.userData.faction = pd.faction;
+      hoverDot.userData.username = pd.botName;
 
       // Register in ProfileCard cache for right-click support
-      if (window.profileCard && botId.startsWith("bot-") && !window.profileCard.playerCache.has(botId)) {
-        window.profileCard.playerCache.set(botId, {
-          id: botId, name: botName, faction,
+      if (window.profileCard && pd.botId.startsWith("bot-") && !window.profileCard.playerCache.has(pd.botId)) {
+        window.profileCard.playerCache.set(pd.botId, {
+          id: pd.botId, name: pd.botName, faction: pd.faction,
           level: 1, crypto: 0, cryptoToNext: 15000,
           title: "Contractor", rank: null, squad: null,
           isOnline: true, badges: [], avatarColor: null,
@@ -3186,51 +3234,43 @@ class BotTanks {
         });
       }
 
-      mesh.visible = true;
-      poolIdx++;
-    }
-
-    // Hide unused pool entries and reset their interpolation state
-    for (let i = poolIdx; i < this._phantomPool.length; i++) {
-      this._phantomPool[i].visible = false;
-      this._phantomHasTarget[i] = 0;
-    }
-
-    // Force world matrix update on active phantom dots so raycasting works
-    // immediately (hover check fires on mousemove between render frames).
-    // Skip during camera transitions — user is zooming, not hovering dots.
-    if (poolIdx > 0 && !isTransitioning) {
-      this.planet.hexGroup.updateWorldMatrix(true, false);
-      for (let i = 0; i < poolIdx; i++) {
-        this._phantomPool[i].updateWorldMatrix(false, false);
+      // Drive TankLODInteraction hover state to the hover dot
+      if (interaction.hoveredDot !== hoverDot) {
+        interaction._clearHoverEffect();
+        interaction.hoveredDot = hoverDot;
+        // Don't call _applyHoverEffect — we handle scale/material ourselves
       }
-    }
-
-    // Update instanced LOD box counts and mark buffers dirty (enemy phantom boxes)
-    for (const faction of factionNames) {
-      const im = this._instancedLodBox[faction];
-      im.count = lodBoxCounts[faction];
-      if (im.count > 0) {
-        im.instanceMatrix.needsUpdate = true;
+      interaction._showNameTag();
+      this._phantomHoverIdx = closestIdx;
+    } else {
+      // No hit — hide hover dot and clear interaction state
+      if (hoverDot.visible) {
+        hoverDot.visible = false;
+        hoverDot.scale.setScalar(1.0);
       }
+      if (this._phantomHoverIdx >= 0 && interaction.hoveredDot === hoverDot) {
+        interaction._clearHoverEffect();
+        interaction.hoveredDot = null;
+        interaction.nameTag.style.display = "none";
+      }
+      this._phantomHoverIdx = -1;
     }
-
-    this._phantomActiveCount = poolIdx;
-    this._orbitalPhantomVisible = true;
   }
 
   _hideOrbitalPhantoms() {
     if (!this._orbitalPhantomVisible) return;
-    for (let i = 0; i < this._phantomPool.length; i++) {
-      this._phantomPool[i].visible = false;
-    }
-    // Reset instanced LOD box counts (enemy phantom boxes)
+    // Hide all phantom InstancedMesh objects
     for (const faction of ["rust", "cobalt", "viridian"]) {
-      this._instancedLodBox[faction].count = 0;
+      this._phantomInstanced[faction].count = 0;
     }
+    // Hide hover dot
+    if (this._phantomHoverDot) {
+      this._phantomHoverDot.visible = false;
+      this._phantomHoverDot.scale.setScalar(1.0);
+    }
+    this._phantomTotalCount = 0;
     this._phantomActiveCount = 0;
     this._orbitalPhantomVisible = false;
-    // Reset interpolation so dots snap on next activation
-    if (this._phantomHasTarget) this._phantomHasTarget.fill(0);
+    this._phantomHoverIdx = -1;
   }
 }
