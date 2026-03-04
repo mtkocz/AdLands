@@ -1541,7 +1541,6 @@ void main() {
     const planeSize = cfg.baseSize * sizeScale;
     const mesh = new THREE.Mesh(this._explosionGeometry, material);
     mesh.scale.set(planeSize, planeSize, 1);
-    mesh.layers.enable(1); // BLOOM_LAYER
     mesh.renderOrder = 1000;
 
     // Position + orient flat on surface (same as dust wave)
