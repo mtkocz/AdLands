@@ -1478,18 +1478,7 @@ void main() {
     factionColor.lerp(new THREE.Color(1, 1, 1), 0.35); // Lighten 35% toward white
     factionColor.multiplyScalar(1.5); // Brighten for bloom
 
-    // Compute actual terrain surface radius at explosion position
-    let surfaceRadius = this.sphereRadius;
-    if (this.planet?.terrainElevation) {
-      const localPos = position.clone();
-      this.planet.hexGroup.worldToLocal(localPos);
-      const elevation = this.planet.terrainElevation.getElevationAtPosition(localPos);
-      if (elevation > 0) {
-        surfaceRadius += elevation * this.planet.terrainElevation.config.EXTRUSION_HEIGHT;
-      }
-    }
-
-    // Build clip uniforms
+    // Build clip uniforms (shield sphere only)
     const clipUniforms = {};
     let clipFrag = '';
     if (clipCenter) {
@@ -1507,7 +1496,6 @@ void main() {
         uUvOffset: { value: new THREE.Vector2(0, 1 - 1 / cfg.rows) },
         uUvRepeat: { value: new THREE.Vector2(1 / cfg.columns, 1 / cfg.rows) },
         ...clipUniforms,
-        uPlanetRadius: { value: surfaceRadius },
       },
       vertexShader: [
         'uniform vec2 uUvOffset;',
@@ -1525,7 +1513,6 @@ void main() {
         'uniform vec3 uColor;',
         'uniform float uOpacity;',
         'uniform sampler2D uAlphaMap;',
-        'uniform float uPlanetRadius;',
         clipCenter ? 'uniform vec3 uClipSphereCenter;' : '',
         clipCenter ? 'uniform float uClipSphereRadius;' : '',
         'varying vec2 vUv;',
@@ -1534,9 +1521,7 @@ void main() {
         '  vec4 tex = texture2D(uAlphaMap, vUv);',
         '  if (tex.a < 0.01) discard;',
         clipFrag,
-        '  float terrainDist = length(vWorldPosition) - uPlanetRadius;',
-        '  float terrainFade = smoothstep(0.0, 0.5, terrainDist);',
-        clipCenter ? '  float finalAlpha = tex.a * uOpacity * clipFade * terrainFade;' : '  float finalAlpha = tex.a * uOpacity * terrainFade;',
+        clipCenter ? '  float finalAlpha = tex.a * uOpacity * clipFade;' : '  float finalAlpha = tex.a * uOpacity;',
         '  gl_FragColor = vec4(uColor * tex.rgb, finalAlpha);',
         '}',
       ].join('\n'),
@@ -1550,7 +1535,6 @@ void main() {
     const planeSize = cfg.baseSize * sizeScale;
     const mesh = new THREE.Mesh(this._explosionGeometry, material);
     mesh.scale.set(planeSize, planeSize, 1);
-    mesh.layers.enable(1); // BLOOM_LAYER — shader-based terrain clip handles both passes
     mesh.renderOrder = 1000;
 
     // Position + orient flat on surface (same as dust wave)
@@ -1561,10 +1545,27 @@ void main() {
     mesh.rotateZ(Math.random() * Math.PI * 2);
     this.scene.add(mesh);
 
+    // Bloom-only glow sprite at explosion center (terrain-independent)
+    const glowMat = new THREE.SpriteMaterial({
+      color: factionColor,
+      transparent: true,
+      opacity: 1.0,
+      blending: THREE.AdditiveBlending,
+      depthTest: false,
+      depthWrite: false,
+    });
+    const glow = new THREE.Sprite(glowMat);
+    glow.position.copy(mesh.position);
+    glow.scale.setScalar(planeSize * 0.5);
+    glow.layers.set(1); // BLOOM_LAYER only — not visible in main pass
+    this.scene.add(glow);
+
     // Store for animation
     this.explosions.push({
       sprite: mesh,
       material: material,
+      glow: glow,
+      glowMaterial: glowMat,
       age: 0,
       duration: cfg.duration,
       currentFrame: 0,
@@ -1709,6 +1710,10 @@ void main() {
       if (exp.age >= exp.duration) {
         this.scene.remove(exp.sprite);
         exp.material.dispose();
+        if (exp.glow) {
+          this.scene.remove(exp.glow);
+          exp.glowMaterial.dispose();
+        }
         if (exp.light) {
           this.scene.remove(exp.light);
           exp.light.dispose();
@@ -1723,12 +1728,14 @@ void main() {
       _cannonCullDir.copy(_spriteWorldPos).sub(_cameraWorldPos).normalize();
       if (_cannonCullNormal.dot(_cannonCullDir) > 0.15) {
         exp.sprite.visible = false;
+        if (exp.glow) exp.glow.visible = false;
         if (exp.light) exp.light.visible = false;
         continue;
       }
       if (frustum) {
         _cannonCullSphere.set(_spriteWorldPos, cfg.baseSize);
         exp.sprite.visible = frustum.intersectsSphere(_cannonCullSphere);
+        if (exp.glow) exp.glow.visible = exp.sprite.visible;
         if (exp.light) exp.light.visible = exp.sprite.visible;
         if (!exp.sprite.visible) continue;
       }
@@ -1778,6 +1785,12 @@ void main() {
         // Scale up during animation
         const s = cfg.baseSize * (1 + progress * 0.3);
         exp.sprite.scale.set(s, s, 1);
+
+        // Sync bloom glow
+        if (exp.glow) {
+          exp.glowMaterial.opacity = exp.material.uniforms.uOpacity.value;
+          exp.glow.scale.setScalar(s * 0.5);
+        }
       } else {
         // Simple fade for non-textured fallback (MeshBasicMaterial)
         exp.material.opacity = (1 - progress) * distanceFade;

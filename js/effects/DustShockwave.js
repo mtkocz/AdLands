@@ -203,7 +203,6 @@ class DustShockwave {
             uniform vec3 uFillColor;
             uniform vec3 uClipSphereCenter;
             uniform float uClipSphereRadius;
-            uniform float uPlanetRadius;
 
             varying vec2 vUv;
             varying vec3 vWorldPosition;
@@ -219,11 +218,6 @@ class DustShockwave {
                     float clipDist = distance(vWorldPosition, uClipSphereCenter);
                     clipFade = smoothstep(uClipSphereRadius - 0.3, uClipSphereRadius + 0.3, clipDist);
                 }
-
-                // Terrain clipping — soft fade near/below planet surface
-                float terrainDist = length(vWorldPosition) - uPlanetRadius;
-                float terrainFade = smoothstep(0.0, 0.5, terrainDist);
-                clipFade *= terrainFade;
 
                 // Terminator-aware coloring (same as TreadDust)
                 vec3 surfaceNormal = normalize(vWorldPosition);
@@ -496,16 +490,6 @@ class DustShockwave {
     const cfg = this.config;
 
     // Compute actual terrain surface radius at position
-    let surfaceRadius = this.sphereRadius;
-    if (this.planet?.terrainElevation) {
-      const localPos = position.clone();
-      this.planet.hexGroup.worldToLocal(localPos);
-      const elevation = this.planet.terrainElevation.getElevationAtPosition(localPos);
-      if (elevation > 0) {
-        surfaceRadius += elevation * this.planet.terrainElevation.config.EXTRUSION_HEIGHT;
-      }
-    }
-
     // ShaderMaterial with terminator-aware coloring
     const material = new THREE.ShaderMaterial({
       uniforms: {
@@ -517,7 +501,6 @@ class DustShockwave {
         uFillColor: { value: this.lightingConfig.fillColor.clone() },
         uClipSphereCenter: { value: clipCenter ? clipCenter.clone() : new THREE.Vector3() },
         uClipSphereRadius: { value: clipCenter ? 4.5 : 0 },
-        uPlanetRadius: { value: surfaceRadius },
       },
       vertexShader: this._getVertexShader(),
       fragmentShader: this._getFragmentShader(),
@@ -582,17 +565,6 @@ class DustShockwave {
 
     const cfg = this.dustwaveConfig;
 
-    // Compute actual terrain surface radius at position
-    let surfaceRadius = this.sphereRadius;
-    if (this.planet?.terrainElevation) {
-      const localPos = position.clone();
-      this.planet.hexGroup.worldToLocal(localPos);
-      const elevation = this.planet.terrainElevation.getElevationAtPosition(localPos);
-      if (elevation > 0) {
-        surfaceRadius += elevation * this.planet.terrainElevation.config.EXTRUSION_HEIGHT;
-      }
-    }
-
     // Reuse pooled material or create new ShaderMaterial
     let material;
     if (this._dustwaveMaterialPool.length > 0) {
@@ -605,7 +577,6 @@ class DustShockwave {
       material.uniforms.uFillColor.value.copy(this.lightingConfig.fillColor);
       // Reset clip sphere (disabled by default)
       material.uniforms.uClipSphereRadius.value = 0;
-      material.uniforms.uPlanetRadius.value = surfaceRadius;
     } else {
       material = new THREE.ShaderMaterial({
         uniforms: {
@@ -619,7 +590,6 @@ class DustShockwave {
           uFillColor: { value: this.lightingConfig.fillColor.clone() },
           uClipSphereCenter: { value: new THREE.Vector3() },
           uClipSphereRadius: { value: 0 },
-          uPlanetRadius: { value: this.sphereRadius },
         },
         vertexShader: this._getSpriteSheetVertexShader(),
         fragmentShader: this._getFragmentShader(),
@@ -683,7 +653,6 @@ class DustShockwave {
         shadowMesh.material.onBeforeCompile = (shader) => {
           shader.uniforms.uClipSphereCenter = { value: cc };
           shader.uniforms.uClipSphereRadius = { value: 4.5 };
-          shader.uniforms.uPlanetRadius = { value: surfaceRadius };
           shader.vertexShader = shader.vertexShader.replace(
             'void main() {',
             'varying vec3 vClipWorldPos;\nvoid main() {'
@@ -694,11 +663,11 @@ class DustShockwave {
           );
           shader.fragmentShader = shader.fragmentShader.replace(
             'void main() {',
-            'uniform vec3 uClipSphereCenter;\nuniform float uClipSphereRadius;\nuniform float uPlanetRadius;\nvarying vec3 vClipWorldPos;\nvoid main() {'
+            'uniform vec3 uClipSphereCenter;\nuniform float uClipSphereRadius;\nvarying vec3 vClipWorldPos;\nvoid main() {'
           );
           shader.fragmentShader = shader.fragmentShader.replace(
             '#include <premultiplied_alpha_fragment>',
-            '#include <premultiplied_alpha_fragment>\n  float clipDist = distance(vClipWorldPos, uClipSphereCenter);\n  float clipFade = (uClipSphereRadius > 0.0) ? smoothstep(uClipSphereRadius - 0.3, uClipSphereRadius + 0.3, clipDist) : 1.0;\n  float terrainDist = length(vClipWorldPos) - uPlanetRadius;\n  float terrainFade = smoothstep(0.0, 0.5, terrainDist);\n  gl_FragColor.a *= clipFade * terrainFade;'
+            '#include <premultiplied_alpha_fragment>\n  float clipDist = distance(vClipWorldPos, uClipSphereCenter);\n  float clipFade = (uClipSphereRadius > 0.0) ? smoothstep(uClipSphereRadius - 0.3, uClipSphereRadius + 0.3, clipDist) : 1.0;\n  gl_FragColor.a *= clipFade;'
           );
         };
       }
@@ -991,10 +960,16 @@ class DustShockwave {
         sprite.sprite.visible = true;
       }
 
-      // Distance fade
+      // Distance fade + early opacity boost
+      // Sprite sheet first frames have low alpha (dust forming) — boost opacity
+      // so the effect appears instantly at full density instead of fading in
       const distanceFade = this._getDistanceFade(sprite.sprite);
+      const boostEnd = 0.5; // seconds
+      const earlyBoost = sprite.age < boostEnd
+        ? 2.0 - (sprite.age / boostEnd) // 2.0 → 1.0
+        : 1.0;
       if (sprite.material.uniforms) {
-        sprite.material.uniforms.uOpacity.value = distanceFade;
+        sprite.material.uniforms.uOpacity.value = distanceFade * earlyBoost;
       }
 
       // Calculate current frame based on age
