@@ -2925,10 +2925,9 @@ class BotTanks {
   // ========================
 
   /**
-   * Pre-allocate a pool of billboard shader Mesh dots for distant bots.
-   * These are identical to the per-bot lodDot meshes: same geometry, same
-   * ShaderMaterial, same custom sphere raycast — so they look and interact
-   * identically. Registered with TankLODInteraction for hover/right-click.
+   * Set up 3 InstancedMesh (one per faction) for orbital phantom dots.
+   * All ~300 distant bots render in just 3 draw calls instead of 300.
+   * A single hover dot mesh handles tooltip + right-click interaction.
    */
   _setupOrbitalPhantoms() {
     const POOL_SIZE = 300;
