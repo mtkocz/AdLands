@@ -136,13 +136,6 @@ class Tank {
     this._visualTheta = this.state.theta;
     this._visualPhi = this.state.phi;
 
-    // Fixed timestep accumulator (matches server's 10Hz tick rate).
-    // Physics runs at exactly 0.1s steps so client prediction produces
-    // identical results to the server simulation. Visual rendering interpolates.
-    this._physicsAccumulator = 0;
-    this._physicsDt = 0.1; // Must match server tickDelta
-    this._physicsTickCount = 0; // How many physics ticks fired this frame
-    this._didPhysicsTick = false; // Whether any physics tick fired this frame
 
     // Initialize position
     this._updateVisual(0);
@@ -173,24 +166,12 @@ class Tank {
     // Shield — active while Space held
     this.shieldActive = !!this.state.keys.q;
 
-    // Fixed timestep physics (10Hz, matching server tick rate).
-    // This eliminates prediction drift from dt mismatch — client runs the
-    // exact same number of steps at the exact same dt as the server.
-    this._physicsTickCount = 0;
-    this._physicsAccumulator += deltaTime;
-
-    // Cap accumulator to prevent spiral of death (max 3 ticks catch-up)
-    if (this._physicsAccumulator > this._physicsDt * 3) {
-      this._physicsAccumulator = this._physicsDt * 3;
-    }
-
-    while (this._physicsAccumulator >= this._physicsDt) {
-      this._updatePhysics(this._physicsDt);
-      this._moveOnSphere(this._physicsDt);
-      this._physicsAccumulator -= this._physicsDt;
-      this._physicsTickCount++;
-    }
-    this._didPhysicsTick = this._physicsTickCount > 0;
+    // Run physics every frame with variable dt for smooth local movement.
+    // Uses SharedPhysics (same code as server) to minimize prediction drift.
+    // The small Euler integration error from variable dt vs server's fixed 0.1s
+    // is negligible and absorbed by the visual smoothing layer.
+    this._updatePhysics(deltaTime);
+    this._moveOnSphere(deltaTime);
 
     // Visual + turret always run at render framerate (60Hz)
     this._updateVisual(deltaTime);

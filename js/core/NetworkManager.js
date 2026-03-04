@@ -27,8 +27,9 @@ class NetworkManager {
     this.inputSeq = 0;
     this.pendingInputs = [];
 
-    // Input sending is driven by Tank's fixed timestep (10Hz = 100ms).
-    // No throttle needed — each call to sendInput corresponds to one physics tick.
+    // Input send throttle: match server tick rate (20Hz = 50ms)
+    this._lastInputSendTime = 0;
+    this._inputSendInterval = 50; // ms — matches 20 tick/sec server
 
     // Callback to get current planet rotation (set by MultiplayerClient).
     // Used to convert server world-space theta to hexGroup local-space.
@@ -446,17 +447,21 @@ class NetworkManager {
       seq: this.inputSeq,
     };
 
-    // Store for reconciliation replay. Each entry now corresponds to exactly
-    // one fixed-timestep physics tick (dt = 0.1), matching the server's tick.
+    // Store for client-side prediction reconciliation (every frame)
     this.pendingInputs.push({
       seq: this.inputSeq,
       keys: { ...input.keys },
       turretAngle: turretAngle,
-      dt: dt || 0.1,
+      dt: dt || 1 / 60,
     });
 
-    // Send every input — called at 10Hz from fixed timestep, matching server
-    this.socket.emit("input", input);
+    // Throttle network sends to match server tick rate (20Hz)
+    // Each input contains full key state, so server only needs the latest
+    const now = performance.now();
+    if (now - this._lastInputSendTime >= this._inputSendInterval) {
+      this.socket.emit("input", input);
+      this._lastInputSendTime = now;
+    }
 
     return this.inputSeq;
   }

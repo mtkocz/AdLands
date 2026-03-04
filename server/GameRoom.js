@@ -3688,13 +3688,6 @@ class GameRoom {
     const CMDR_ENTER_THRESHOLD = 0.15;   // cos(~81°) — commanders see ~3x wider area
     const CMDR_LEAVE_THRESHOLD = 0.05;   // cos(~87°) — wider leave for commanders
 
-    // Tiered update rates: distant bots update less frequently to reduce bandwidth.
-    // Close bots (dot > 0.85): every tick (10Hz)
-    // Medium bots (dot 0.75-0.85): every 2nd tick (5Hz)
-    // Far bots (dot < 0.75): every 3rd tick (~3.3Hz)
-    const TIER_CLOSE = 0.85;   // ~32° — full update rate
-    const TIER_MEDIUM = 0.75;  // ~41° — half update rate
-
     // Per-player tracking of which bots were included last tick (for hysteresis)
     if (!this._playerBotSets) this._playerBotSets = new Map();
 
@@ -3790,23 +3783,8 @@ class GameRoom {
           const dot = px * bv.x + py * bv.y + pz * bv.z;
           const threshold = includedBots.has(botId) ? leaveThresh : enterThresh;
           if (dot > threshold) {
+            filtered[botId] = playerStates[botId];
             includedBots.add(botId);
-            // Tiered update rates: distant bots sent less often to save bandwidth.
-            // Stagger by bot ID character to prevent all bots updating on the same tick.
-            if (dot > TIER_CLOSE) {
-              // Close: every tick (10Hz)
-              filtered[botId] = playerStates[botId];
-            } else if (dot > TIER_MEDIUM) {
-              // Medium: every 2nd tick (5Hz), staggered
-              if ((this.tick + (botId.charCodeAt(4) || 0)) % 2 === 0) {
-                filtered[botId] = playerStates[botId];
-              }
-            } else {
-              // Far: every 3rd tick (~3.3Hz), staggered
-              if ((this.tick + (botId.charCodeAt(4) || 0)) % 3 === 0) {
-                filtered[botId] = playerStates[botId];
-              }
-            }
           } else {
             includedBots.delete(botId);
           }
