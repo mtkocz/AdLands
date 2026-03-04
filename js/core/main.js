@@ -4025,6 +4025,10 @@
 
     // Sync missile mode flag on tank (controls turret/reticle behavior)
     const isMissileActive = weaponSlotSystem.getActiveOffenseWeapon() === "missile";
+    if (!isMissileActive && tank.missileMode) {
+      // Switched away from missile — cancel any active lock-on
+      missileSystem.cancelLockOn();
+    }
     tank.missileMode = isMissileActive;
 
     // Update cannon charging and projectiles

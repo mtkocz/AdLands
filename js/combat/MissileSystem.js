@@ -608,39 +608,35 @@ class MissileSystem {
     const tank = this.playerTank;
     if (!tank) return;
 
-    // Use the same local-space calculation as Tank._updateTurret
-    const t = this._tempVec;
+    // Mirror the exact logic from Tank._updateTurret but with a world position
+    // instead of a mouse raycast intersection.
     const tankPos = tank.group._cachedWorldPos || tank.group.position;
-    const normal = this._tempVec2.copy(tankPos).normalize();
+    const normal = this._tempVec.copy(tankPos).normalize();
 
-    // Build stable orientation basis
-    const east = this._tempVec3;
+    // Build stable orientation basis (no wiggle)
+    const east = this._tempVec2;
     if (Math.abs(normal.y) > 0.999) {
       east.set(0, 0, 1).cross(normal).normalize();
     } else {
       east.set(0, 1, 0).cross(normal).normalize();
     }
-    const north = t.crossVectors(normal, east).normalize();
+    const north = this._tempVec3.crossVectors(normal, east).normalize();
 
-    // Forward from heading
-    const forward = this._tempVec2;
-    forward
-      .set(0, 0, 0)
+    // Forward direction from heading
+    const forward = new THREE.Vector3()
       .addScaledVector(north, Math.cos(tank.state.heading))
       .addScaledVector(east, Math.sin(tank.state.heading))
       .normalize();
 
-    const right = this._tempVec3.crossVectors(forward, normal).normalize();
+    const right = new THREE.Vector3().crossVectors(forward, normal).normalize();
 
-    // Build matrix from basis
-    const m = new THREE.Matrix4();
-    m.makeBasis(right, normal, forward);
-    m.setPosition(tankPos);
+    // Build rotation-only matrix (no position — we want to transform a direction)
+    const rotMatrix = new THREE.Matrix4().makeBasis(right, normal, forward);
+    const invRot = rotMatrix.clone().invert();
 
-    // Transform target direction into local space
-    const toTarget = targetWorldPos.clone().sub(tankPos);
-    const inv = m.clone().invert();
-    toTarget.applyMatrix4(inv);
+    // Direction from tank to target in local space
+    const toTarget = new THREE.Vector3().copy(targetWorldPos).sub(tankPos);
+    toTarget.applyMatrix4(invRot);
 
     // Compute turret target angle (same formula as Tank._updateTurret)
     tank.state.turretTargetAngle =

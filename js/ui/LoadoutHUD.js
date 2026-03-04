@@ -136,15 +136,25 @@ class LoadoutHUD {
     const equipped1 = this.wss.equipped[slot1];
     const equipped2 = this.wss.equipped[slot2];
 
-    // Nothing to cycle if zero or one item equipped
+    // Nothing to cycle if nothing equipped
     if (!equipped1 && !equipped2) return;
-    if (!equipped2) { this._setActive(category, slot1); return; }
-    if (!equipped1) { this._setActive(category, slot2); return; }
 
-    // Both equipped: toggle
     const current = this.wss.activeSlots[category];
-    const next = current === slot1 ? slot2 : slot1;
-    this._setActive(category, next);
+
+    if (equipped1 && equipped2) {
+      // Both equipped: toggle between them
+      const next = current === slot1 ? slot2 : slot1;
+      this._setActive(category, next);
+    } else {
+      // Only one slot equipped — toggle on/off (pressing again deactivates → default weapon)
+      const equippedSlot = equipped1 ? slot1 : slot2;
+      if (current === equippedSlot) {
+        // Already active — deactivate (returns to default, e.g. cannon for offense)
+        this._setActive(category, "");
+      } else {
+        this._setActive(category, equippedSlot);
+      }
+    }
   }
 
   _setActive(category, slotId) {
