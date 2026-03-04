@@ -35,6 +35,7 @@ const _shotDirWorld = new THREE.Vector3();
 const _shotTarget = new THREE.Vector3();
 const _yAxis = new THREE.Vector3(0, 1, 0);
 const _clipCenter = new THREE.Vector3();
+const _zUp = new THREE.Vector3(0, 0, 1);
 
 class CannonSystem {
   constructor(scene, sphereRadius) {
@@ -103,6 +104,7 @@ class CannonSystem {
 
     // Load explosion sprite sheet
     this.explosionTexture = null;
+    this._explosionGeometry = new THREE.PlaneGeometry(1, 1);
     this._loadExplosionSprite();
 
     // ========================
@@ -1387,26 +1389,24 @@ void main() {
         "[CANNON] Explosion texture not loaded yet - using fallback",
       );
       // Fallback to solid color if texture not ready
-      const material = new THREE.SpriteMaterial({
+      const material = new THREE.MeshBasicMaterial({
         color: FACTION_COLORS[faction].hex,
         transparent: true,
         opacity: 1,
         depthWrite: false,
         blending: THREE.AdditiveBlending,
+        side: THREE.DoubleSide,
       });
-      if (clipCenter) this._applyShieldClip(material, clipCenter);
-      const sprite = new THREE.Sprite(material);
-      sprite.scale.setScalar(12 * sizeScale);
-      sprite.layers.set(0);
-      const localPosition = position.clone();
-      this.planet.hexGroup.worldToLocal(localPosition);
-      sprite.position.copy(localPosition);
-      const surfaceNormal = localPosition.clone().normalize();
-      sprite.position.addScaledVector(surfaceNormal, 0.3);
-      this.planet.hexGroup.add(sprite);
+      const mesh = new THREE.Mesh(this._explosionGeometry, material);
+      mesh.scale.set(12 * sizeScale, 12 * sizeScale, 1);
+      mesh.position.copy(position);
+      const surfaceNormal = position.clone().normalize();
+      mesh.position.addScaledVector(surfaceNormal, 0.3);
+      mesh.quaternion.setFromUnitVectors(_zUp, surfaceNormal);
+      this.scene.add(mesh);
 
       this.explosions.push({
-        sprite: sprite,
+        sprite: mesh,
         material: material,
         age: 0,
         duration: 1.0,
@@ -1416,108 +1416,87 @@ void main() {
 
     const cfg = this.explosionConfig;
 
-    // Clone texture for independent UV control
-    const texture = this.explosionTexture.clone();
-    texture.repeat.set(1 / cfg.columns, 1 / cfg.rows);
-    texture.offset.set(0, 1 - 1 / cfg.rows); // Start at first frame
-    texture.minFilter = THREE.NearestFilter;
-    texture.magFilter = THREE.NearestFilter;
-    texture.needsUpdate = true;
-
     // Apply faction color tinting
     const factionColor = this.factionColors[faction].clone();
     factionColor.lerp(new THREE.Color(1, 1, 1), 0.35); // Lighten 35% toward white
     factionColor.multiplyScalar(1.5); // Brighten for bloom
 
-    // Create material with texture
-    const material = new THREE.SpriteMaterial({
-      map: texture,
-      color: factionColor, // Tinted with faction color
+    // Build clip uniforms
+    const clipUniforms = {};
+    let clipFrag = '';
+    if (clipCenter) {
+      clipUniforms.uClipSphereCenter = { value: clipCenter };
+      clipUniforms.uClipSphereRadius = { value: 4.5 };
+      clipFrag = 'if (uClipSphereRadius > 0.0 && distance(vWorldPosition, uClipSphereCenter) < uClipSphereRadius) discard;';
+    }
+
+    // ShaderMaterial — flat mesh on surface, same approach as DustShockwave
+    const material = new THREE.ShaderMaterial({
+      uniforms: {
+        uColor: { value: factionColor },
+        uOpacity: { value: 1.0 },
+        uAlphaMap: { value: this.explosionTexture },
+        uUvOffset: { value: new THREE.Vector2(0, 1 - 1 / cfg.rows) },
+        uUvRepeat: { value: new THREE.Vector2(1 / cfg.columns, 1 / cfg.rows) },
+        ...clipUniforms,
+      },
+      vertexShader: [
+        'uniform vec2 uUvOffset;',
+        'uniform vec2 uUvRepeat;',
+        'varying vec2 vUv;',
+        'varying vec3 vWorldPosition;',
+        'void main() {',
+        '  vUv = uv * uUvRepeat + uUvOffset;',
+        '  vec4 worldPos = modelMatrix * vec4(position, 1.0);',
+        '  vWorldPosition = worldPos.xyz;',
+        '  gl_Position = projectionMatrix * viewMatrix * worldPos;',
+        '}',
+      ].join('\n'),
+      fragmentShader: [
+        'uniform vec3 uColor;',
+        'uniform float uOpacity;',
+        'uniform sampler2D uAlphaMap;',
+        clipCenter ? 'uniform vec3 uClipSphereCenter;' : '',
+        clipCenter ? 'uniform float uClipSphereRadius;' : '',
+        'varying vec2 vUv;',
+        'varying vec3 vWorldPosition;',
+        'void main() {',
+        '  vec4 tex = texture2D(uAlphaMap, vUv);',
+        '  if (tex.a < 0.01) discard;',
+        clipFrag,
+        '  gl_FragColor = vec4(uColor * tex.rgb, tex.a * uOpacity);',
+        '}',
+      ].join('\n'),
       transparent: true,
-      opacity: 1,
       depthWrite: false,
-      depthTest: false,
       blending: THREE.AdditiveBlending,
-      sizeAttenuation: true,
-      rotation: Math.random() * Math.PI * 2,
+      side: THREE.DoubleSide,
     });
-    this._applyExplosionClip(material, clipCenter);
 
-    const sprite = new THREE.Sprite(material);
-    sprite.scale.setScalar(cfg.baseSize * sizeScale);
-    sprite.layers.enable(1); // BLOOM_LAYER for glow + layer 0 for depth clipping
-    sprite.renderOrder = 1000; // Render on top of blast decals
+    const planeSize = cfg.baseSize * sizeScale;
+    const mesh = new THREE.Mesh(this._explosionGeometry, material);
+    mesh.scale.set(planeSize, planeSize, 1);
+    mesh.layers.enable(1); // BLOOM_LAYER
+    mesh.renderOrder = 1000;
 
-    // Position in local space
-    const localPosition = position.clone();
-    this.planet.hexGroup.worldToLocal(localPosition);
-    sprite.position.copy(localPosition);
-
-    // Offset above surface (0.3 matches dust wave height)
-    const surfaceNormal = localPosition.clone().normalize();
-    sprite.position.addScaledVector(surfaceNormal, 0.3);
-
-    // Add to scene
-    this.planet.hexGroup.add(sprite);
+    // Position + orient flat on surface (same as dust wave)
+    mesh.position.copy(position);
+    const surfaceNormal = position.clone().normalize();
+    mesh.position.addScaledVector(surfaceNormal, 0.3);
+    mesh.quaternion.setFromUnitVectors(_zUp, surfaceNormal);
+    mesh.rotateZ(Math.random() * Math.PI * 2);
+    this.scene.add(mesh);
 
     // Store for animation
     this.explosions.push({
-      sprite: sprite,
+      sprite: mesh,
       material: material,
-      texture: texture,
       age: 0,
       duration: cfg.duration,
       currentFrame: 0,
     });
   }
 
-  /**
-   * Inject clipping into SpriteMaterial via onBeforeCompile.
-   * Always clips fragments inside the planet surface (terrain/cliff walls).
-   * Optionally clips inside a shield sphere when clipCenter is provided.
-   */
-  _applyExplosionClip(material, clipCenter) {
-    const planetRadius = this.sphereRadius;
-    const shieldCenter = clipCenter;
-    const shieldRadius = 4.5;
-    // Unique cache key so Three.js compiles modified shader variants separately
-    material.customProgramCacheKey = () => 'explosionClip' + (shieldCenter ? '_shield' : '');
-    material.onBeforeCompile = (shader) => {
-      shader.uniforms.uPlanetRadius = { value: planetRadius };
-      if (shieldCenter) {
-        shader.uniforms.uClipCenter = { value: shieldCenter };
-        shader.uniforms.uClipRadius = { value: shieldRadius };
-      }
-
-      // Vertex: compute world position of each billboard fragment
-      shader.vertexShader = shader.vertexShader.replace(
-        'void main() {',
-        'varying vec3 vClipWorldPos;\nvoid main() {'
-      );
-      shader.vertexShader = shader.vertexShader.replace(
-        'gl_Position = projectionMatrix * mvPosition;',
-        [
-          'gl_Position = projectionMatrix * mvPosition;',
-          'vec3 _cwc = (modelMatrix * vec4(0.0, 0.0, 0.0, 1.0)).xyz;',
-          'vec3 _cr = vec3(viewMatrix[0][0], viewMatrix[1][0], viewMatrix[2][0]);',
-          'vec3 _cu = vec3(viewMatrix[0][1], viewMatrix[1][1], viewMatrix[2][1]);',
-          'vClipWorldPos = _cwc + _cr * rotatedPosition.x + _cu * rotatedPosition.y;',
-        ].join('\n')
-      );
-
-      // Fragment: discard inside planet surface + optionally inside shield sphere
-      const fragUniforms = ['uniform float uPlanetRadius;'];
-      const fragClip = ['  if (length(vClipWorldPos) < uPlanetRadius) discard;'];
-      if (shieldCenter) {
-        fragUniforms.push('uniform vec3 uClipCenter;', 'uniform float uClipRadius;');
-        fragClip.push('  if (length(vClipWorldPos - uClipCenter) < uClipRadius) discard;');
-      }
-      shader.fragmentShader = shader.fragmentShader.replace(
-        'void main() {',
-        [...fragUniforms, 'varying vec3 vClipWorldPos;', 'void main() {', ...fragClip].join('\n')
-      );
-    };
-  }
 
   _spawnLODExplosion(position, faction, sizeScale = 1) {
     const cfg = this.lodExplosionConfig;
@@ -1654,13 +1633,10 @@ void main() {
 
       // Check if done
       if (exp.age >= exp.duration) {
-        this.planet.hexGroup.remove(exp.sprite);
+        this.scene.remove(exp.sprite);
         exp.material.dispose();
-        if (exp.texture) {
-          exp.texture.dispose();
-        }
         if (exp.light) {
-          this.planet.hexGroup.remove(exp.light);
+          this.scene.remove(exp.light);
           exp.light.dispose();
         }
         this.explosions.splice(i, 1);
@@ -1702,38 +1678,37 @@ void main() {
           );
       }
 
-      // Animate sprite sheet if we have texture
-      if (exp.texture && exp.currentFrame !== undefined) {
+      // Animate sprite sheet via UV offset uniform
+      if (exp.currentFrame !== undefined) {
         const frame = Math.min(
           Math.floor(progress * cfg.totalFrames),
           cfg.totalFrames - 1,
         );
 
-        // Only update UV if frame changed
         if (frame !== exp.currentFrame) {
           exp.currentFrame = frame;
-
-          // Calculate UV offset for current frame
           const col = frame % cfg.columns;
           const row = Math.floor(frame / cfg.columns);
-
-          exp.texture.offset.set(col / cfg.columns, 1 - (row + 1) / cfg.rows);
+          exp.material.uniforms.uUvOffset.value.set(
+            col / cfg.columns, 1 - (row + 1) / cfg.rows
+          );
         }
 
         // Fade out in last 20% of animation, multiplied by distance fade
         if (progress > 0.8) {
-          exp.material.opacity = (1 - (progress - 0.8) / 0.2) * distanceFade;
+          exp.material.uniforms.uOpacity.value = (1 - (progress - 0.8) / 0.2) * distanceFade;
         } else {
-          exp.material.opacity = distanceFade;
+          exp.material.uniforms.uOpacity.value = distanceFade;
         }
 
         // Scale up during animation
-        exp.sprite.scale.setScalar(cfg.baseSize * (1 + progress * 0.3));
+        const s = cfg.baseSize * (1 + progress * 0.3);
+        exp.sprite.scale.set(s, s, 1);
       } else {
-        // Simple fade for non-textured fallback
+        // Simple fade for non-textured fallback (MeshBasicMaterial)
         exp.material.opacity = (1 - progress) * distanceFade;
         const baseScale = 12;
-        exp.sprite.scale.setScalar(baseScale * (1 + progress * 0.5));
+        exp.sprite.scale.set(baseScale * (1 + progress * 0.5), baseScale * (1 + progress * 0.5), 1);
       }
 
       // Fade point light with the explosion
