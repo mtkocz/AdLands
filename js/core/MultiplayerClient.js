@@ -65,6 +65,12 @@
     // Remote bodyguard instances: bodyguardId → RemoteBodyguard
     const remoteBodyguards = new Map();
 
+    // Player-distance culling: skip rendering/LOD for objects far from the local player.
+    // 400 units ≈ 49° arc on the sphere — matches server's bot spatial filter radius.
+    const PLAYER_RENDER_DIST_SQ = 400 * 400;
+    const _playerWorldPos = new THREE.Vector3();
+    const _remoteWorldPos = new THREE.Vector3();
+
     // Helper: compute damage state string from HP values (mirrors Tank._updateDamageState thresholds)
     function computeDamageState(hp, maxHp) {
       if (hp <= 0) return "dead";
@@ -108,10 +114,24 @@
         }
       }
 
+      // Compute player world position once for distance culling
+      tank.group.getWorldPosition(_playerWorldPos);
+      const isOrbital = lodOptions && lodOptions.isOrbitalView;
+
       // Update all remote tanks (interpolation + LOD + death fade)
       for (const [id, remoteTank] of remoteTanks) {
         remoteTank.update(deltaTime);
         remoteTank.updateFade();
+
+        // Player-distance culling: hide tanks far from player (skip in orbital view)
+        if (!isOrbital && remoteTank.group) {
+          remoteTank.group.getWorldPosition(_remoteWorldPos);
+          if (_remoteWorldPos.distanceToSquared(_playerWorldPos) > PLAYER_RENDER_DIST_SQ) {
+            remoteTank.group.visible = false;
+            continue; // Skip LOD computation for distant tanks
+          }
+        }
+
         if (camera) {
           remoteTank.updateLOD(camera, frustum, lodOptions);
         }
@@ -121,6 +141,14 @@
       for (const [id, bg] of remoteBodyguards) {
         bg.update(deltaTime);
         bg.updateFade();
+
+        // Player-distance culling for bodyguards
+        if (!isOrbital && bg.group) {
+          bg.group.getWorldPosition(_remoteWorldPos);
+          if (_remoteWorldPos.distanceToSquared(_playerWorldPos) > PLAYER_RENDER_DIST_SQ) {
+            bg.group.visible = false;
+          }
+        }
       }
 
       // Update territory ring HUD
@@ -768,6 +796,15 @@
       if (data.id === net.playerId) return; // We already played our own effects
 
       const remoteTank = remoteTanks.get(data.id);
+
+      // Skip projectile visuals for tanks far from the player (not worth spawning)
+      if (remoteTank?.group) {
+        remoteTank.group.getWorldPosition(_remoteWorldPos);
+        tank.group.getWorldPosition(_playerWorldPos);
+        if (_remoteWorldPos.distanceToSquared(_playerWorldPos) > PLAYER_RENDER_DIST_SQ) {
+          return;
+        }
+      }
 
       // Barrel recoil effect (only if we have the remote tank mesh)
       if (remoteTank?.barrelMesh) {
