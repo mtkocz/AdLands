@@ -1906,12 +1906,10 @@ void main() {
               tank.turretGroup.localToWorld(_clipCenter);
               const shieldClip = _clipCenter.clone();
 
-              // Push explosion position outward to shield surface so it's not fully clipped
-              // Then shift down toward ground along surface normal
+              // Push explosion position outward to shield surface, at tank height
               _horizontalOffset.copy(p.position).sub(shieldClip).normalize();
               _testPos.copy(shieldClip).addScaledVector(_horizontalOffset, 4.5);
-              _tankSurfaceNormal.copy(_tankWorldPos).normalize();
-              _testPos.addScaledVector(_tankSurfaceNormal, -1.5);
+              _testPos.normalize().multiplyScalar(_tankWorldPos.length());
               p.position.copy(_testPos);
               p.mesh.position.copy(p.position);
 
