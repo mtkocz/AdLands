@@ -1,7 +1,11 @@
 /**
  * ShieldHolosphere — holographic geodesic wireframe sphere that pulses on shield impact.
  * A bright ring ripples outward from the impact point across the sphere surface.
+ * Parented to turretGroup so it follows the tank.
  */
+const _holoImpactWorld = new THREE.Vector3();
+const _holoLocalCenter = new THREE.Vector3(0, 0.5, 0);
+
 class ShieldHolosphere {
   constructor(scene) {
     this.scene = scene;
@@ -10,9 +14,11 @@ class ShieldHolosphere {
     this._geometry = new THREE.IcosahedronGeometry(4.5, 1);
   }
 
-  emit(sphereCenter, impactPos, faction) {
-    const impactDir = new THREE.Vector3()
-      .subVectors(impactPos, sphereCenter).normalize();
+  emit(impactPos, faction, turretGroup) {
+    // Compute impact direction in turretGroup local space
+    _holoImpactWorld.copy(impactPos);
+    turretGroup.worldToLocal(_holoImpactWorld);
+    const impactDir = _holoImpactWorld.sub(_holoLocalCenter).normalize();
 
     const color = FACTION_COLORS[faction]
       ? FACTION_COLORS[faction].threeLight.clone()
@@ -21,7 +27,7 @@ class ShieldHolosphere {
     const material = new THREE.ShaderMaterial({
       uniforms: {
         uColor:     { value: color },
-        uImpactDir: { value: impactDir },
+        uImpactDir: { value: impactDir.clone() },
         uWaveFront: { value: 1.0 },
         uOpacity:   { value: 0.0 },
       },
@@ -56,12 +62,12 @@ class ShieldHolosphere {
     });
 
     const mesh = new THREE.Mesh(this._geometry, material);
-    mesh.position.copy(sphereCenter);
+    mesh.position.copy(_holoLocalCenter); // Same offset as shield (0, 0.5, 0)
     mesh.renderOrder = 51;
     mesh.layers.enable(1); // BLOOM_LAYER
-    this.scene.add(mesh);
+    turretGroup.add(mesh);
 
-    this.effects.push({ mesh, material, age: 0, duration: 1.2 });
+    this.effects.push({ mesh, material, parent: turretGroup, age: 0, duration: 1.2 });
   }
 
   update(deltaTime) {
@@ -71,7 +77,7 @@ class ShieldHolosphere {
       const t = e.age / e.duration;
 
       if (t >= 1) {
-        this.scene.remove(e.mesh);
+        e.parent.remove(e.mesh);
         e.material.dispose();
         this.effects.splice(i, 1);
         continue;
@@ -89,7 +95,7 @@ class ShieldHolosphere {
 
   dispose() {
     for (const e of this.effects) {
-      this.scene.remove(e.mesh);
+      e.parent.remove(e.mesh);
       e.material.dispose();
     }
     this.effects.length = 0;

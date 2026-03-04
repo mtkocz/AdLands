@@ -1912,11 +1912,11 @@ void main() {
                 this.dustShockwave.emit(p.position, p.sizeScale || 1, null, shieldClip);
               }
               if (this.shieldHolosphere) {
-                this.shieldHolosphere.emit(shieldClip, p.position, tank.faction);
+                this.shieldHolosphere.emit(p.position, tank.faction, tank.turretGroup);
               }
-              // Shield block costs 10 crypto — show floating spend number for local player
+              // Shield block earns 10 crypto — floating number at tank position
               if (tank === this.playerTank && window.cryptoVisuals) {
-                window.cryptoVisuals._spawnFloatingNumber(-10, shieldClip);
+                window.cryptoVisuals._spawnFloatingNumber(10, shieldClip);
               }
               shouldExplode = false;
               hitTank = true;
