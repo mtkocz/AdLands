@@ -9,13 +9,16 @@ class ShieldEffect {
     this.sphereRadius = sphereRadius;
     this.shields = new Map();
 
-    // Shared arc geometry — 120° ribbon centered on -Z
+    // Shared arc geometry — 150° ribbon centered on -Z (wider than 120° target
+    // to allow overshoot bounce animation on deploy)
     // Store normalized angle (0 = center, 1 = edge) in UV.x for shader
     const segments = 32;
     const innerRadius = 4.325;
     const outerRadius = 4.675;
-    const arcAngle = Math.PI * 2 / 3;
+    const arcAngle = Math.PI * 5 / 6; // 150°
     const halfArc = arcAngle / 2;
+    // uReveal target: show 120° out of 150° geometry = 0.8
+    this._targetReveal = (Math.PI * 2 / 3) / arcAngle;
 
     const vertCount = (segments + 1) * 2;
     const positions = new Float32Array(vertCount * 3);
@@ -138,17 +141,16 @@ class ShieldEffect {
 
       if (shield.retractTime < dur) {
         shield.mesh.visible = true;
-        shield.mesh.scale.set(1, 1, 1); // Reset any deploy overshoot
         const t = shield.retractTime / dur;
         // Ease-in: starts slow, accelerates
         const ease = t * t;
-        shield.material.uniforms.uReveal.value = 1 - ease;
-        shield.material.uniforms.uPulseEdge.value = 1 - ease;
+        const rev = this._targetReveal * (1 - ease);
+        shield.material.uniforms.uReveal.value = rev;
+        shield.material.uniforms.uPulseEdge.value = rev;
         shield.material.uniforms.uFlash.value = 0.0;
       } else {
         shield.mesh.visible = false;
-        shield.mesh.scale.set(1, 1, 1);
-        shield.material.uniforms.uReveal.value = 1.0;
+        shield.material.uniforms.uReveal.value = this._targetReveal;
         shield.material.uniforms.uPulseEdge.value = -1.0;
         shield.material.uniforms.uFlash.value = 0.0;
         shield.retractTime = -1;
@@ -159,7 +161,7 @@ class ShieldEffect {
     shield.mesh.visible = active;
     if (!active) return;
 
-    // Deploy animation
+    // Deploy animation — arc overshoots past 120° then bounces back
     if (shield.deployTime >= 0) {
       shield.deployTime += deltaTime;
       const dur = 0.3; // 300ms deploy with overshoot bounce
@@ -167,24 +169,20 @@ class ShieldEffect {
       if (shield.deployTime < dur) {
         const t = shield.deployTime / dur;
 
-        // Reveal: fast ease-out, completes by t=0.5
-        const revealT = Math.min(1, t * 2);
-        const revealEase = 1 - (1 - revealT) * (1 - revealT);
-        shield.material.uniforms.uReveal.value = revealEase;
-        shield.material.uniforms.uPulseEdge.value = revealEase;
+        // Back-ease-out: overshoots ~19% then settles to 1.0
+        const s = 2.5;
+        const t1 = t - 1;
+        const bounce = t1 * t1 * ((s + 1) * t1 + s) + 1;
+        // Apply to target reveal (0.8) — overshoots to ~0.95 (≈143°) then settles to 0.8 (120°)
+        const rev = this._targetReveal * bounce;
+        shield.material.uniforms.uReveal.value = rev;
+        shield.material.uniforms.uPulseEdge.value = rev;
 
         // Flash
         const flash = t < 0.1 ? t / 0.1 : Math.max(0, (0.4 - t) / 0.3);
         shield.material.uniforms.uFlash.value = flash * 1.4;
-
-        // Scale: back-ease-out — overshoots ~15% then settles to 1.0
-        const s = 2.5;
-        const t1 = t - 1;
-        const scaleVal = t1 * t1 * ((s + 1) * t1 + s) + 1;
-        shield.mesh.scale.set(scaleVal, 1, scaleVal);
       } else {
-        shield.mesh.scale.set(1, 1, 1);
-        shield.material.uniforms.uReveal.value = 1.0;
+        shield.material.uniforms.uReveal.value = this._targetReveal;
         shield.material.uniforms.uPulseEdge.value = -1.0;
         shield.material.uniforms.uFlash.value = 0.0;
         shield.deployTime = -1;
