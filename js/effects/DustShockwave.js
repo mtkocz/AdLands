@@ -212,8 +212,12 @@ class DustShockwave {
                 float alpha = texture2D(uAlphaMap, vUv).r;
                 if (alpha < 0.01) discard;
 
-                // Shield sphere clipping (radius 0 = disabled)
-                if (uClipSphereRadius > 0.0 && distance(vWorldPosition, uClipSphereCenter) < uClipSphereRadius) discard;
+                // Shield sphere clipping — soft gradient fade
+                float clipFade = 1.0;
+                if (uClipSphereRadius > 0.0) {
+                    float clipDist = distance(vWorldPosition, uClipSphereCenter);
+                    clipFade = smoothstep(uClipSphereRadius - 0.3, uClipSphereRadius + 0.3, clipDist);
+                }
 
                 // Terminator-aware coloring (same as TreadDust)
                 vec3 surfaceNormal = normalize(vWorldPosition);
@@ -229,7 +233,7 @@ class DustShockwave {
 
                 vec3 litColor = mix(nightColor, dayColor, dayFactor);
 
-                gl_FragColor = vec4(litColor, alpha * uOpacity);
+                gl_FragColor = vec4(litColor, alpha * uOpacity * clipFade);
             }
         `;
   }
@@ -658,7 +662,11 @@ class DustShockwave {
           );
           shader.fragmentShader = shader.fragmentShader.replace(
             'void main() {',
-            'uniform vec3 uClipSphereCenter;\nuniform float uClipSphereRadius;\nvarying vec3 vClipWorldPos;\nvoid main() {\n  if (distance(vClipWorldPos, uClipSphereCenter) < uClipSphereRadius) discard;'
+            'uniform vec3 uClipSphereCenter;\nuniform float uClipSphereRadius;\nvarying vec3 vClipWorldPos;\nvoid main() {'
+          );
+          shader.fragmentShader = shader.fragmentShader.replace(
+            '#include <premultiplied_alpha_fragment>',
+            '#include <premultiplied_alpha_fragment>\n  float clipDist = distance(vClipWorldPos, uClipSphereCenter);\n  float clipFade = (uClipSphereRadius > 0.0) ? smoothstep(uClipSphereRadius - 0.3, uClipSphereRadius + 0.3, clipDist) : 1.0;\n  gl_FragColor.a *= clipFade;'
           );
         };
       }

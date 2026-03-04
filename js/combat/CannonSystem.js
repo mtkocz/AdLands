@@ -1486,7 +1486,7 @@ void main() {
     if (clipCenter) {
       clipUniforms.uClipSphereCenter = { value: clipCenter };
       clipUniforms.uClipSphereRadius = { value: 4.5 };
-      clipFrag = 'if (uClipSphereRadius > 0.0 && distance(vWorldPosition, uClipSphereCenter) < uClipSphereRadius) discard;';
+      clipFrag = 'float clipDist = distance(vWorldPosition, uClipSphereCenter); float clipFade = (uClipSphereRadius > 0.0) ? smoothstep(uClipSphereRadius - 0.3, uClipSphereRadius + 0.3, clipDist) : 1.0;';
     }
 
     // ShaderMaterial — flat mesh on surface, same approach as DustShockwave
@@ -1523,7 +1523,8 @@ void main() {
         '  vec4 tex = texture2D(uAlphaMap, vUv);',
         '  if (tex.a < 0.01) discard;',
         clipFrag,
-        '  gl_FragColor = vec4(uColor * tex.rgb, tex.a * uOpacity);',
+        clipCenter ? '  float finalAlpha = tex.a * uOpacity * clipFade;' : '  float finalAlpha = tex.a * uOpacity;',
+        '  gl_FragColor = vec4(uColor * tex.rgb, finalAlpha);',
         '}',
       ].join('\n'),
       transparent: true,

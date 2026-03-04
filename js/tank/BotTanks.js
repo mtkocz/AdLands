@@ -3007,7 +3007,7 @@ class BotTanks {
    * Update orbital phantom dots from server-reported positions.
    * Called every frame from the render loop.
    */
-  updateOrbitalPhantoms(isOrbitalView) {
+  updateOrbitalPhantoms(isOrbitalView, isHumanCommander = false, viewerFaction = null) {
     const mp = window._mpState;
     if (!mp || !mp.orbitalPositions) {
       this._hideOrbitalPhantoms();
@@ -3081,6 +3081,9 @@ class BotTanks {
 
       // Skip bots with full 3D representation
       if (knownBotThetas.has(Math.round(baseTheta * 10000))) continue;
+
+      // Non-commanders only see own faction phantom dots (enemies hidden)
+      if (!isHumanCommander && viewerFaction && faction !== viewerFaction) continue;
 
       // Dead-reckon: project position forward using heading + speed
       const sinPhi = Math.sin(basePhi);
