@@ -947,6 +947,11 @@
           }
         }
 
+        // Remove the matching remote projectile visual so it doesn't keep
+        // flying past the target after the server already destroyed it
+        if (data.projectileId != null) {
+          cannonSystem.removeProjectileByServerId?.(data.projectileId);
+        }
       }
     };
 

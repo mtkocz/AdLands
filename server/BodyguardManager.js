@@ -35,8 +35,8 @@ const BODYGUARD_CONFIG = {
 const BG_HALF_LEN = 2.75;
 const BG_HALF_WID = 1.5;
 // Hit detection half-dimensions (oriented-box)
-const BG_HIT_HALF_LEN = 3.5;
-const BG_HIT_HALF_WID = 3.0;
+const BG_HIT_HALF_LEN = 3.25;
+const BG_HIT_HALF_WID = 2.25;
 const BG_HIT_QUICK_REJECT = 0.012; // radians
 
 class BodyguardManager {

@@ -18,8 +18,8 @@ const SPATIAL_CELL_PHI = Math.PI / SPATIAL_GRID_PHI;
 const SPATIAL_CELL_THETA = (Math.PI * 2) / SPATIAL_GRID_THETA;
 
 // Hit detection constants (must match ServerBotManager)
-const BOT_HIT_HALF_LEN = 3.5;
-const BOT_HIT_HALF_WID = 3.0;
+const BOT_HIT_HALF_LEN = 3.25;
+const BOT_HIT_HALF_WID = 2.25;
 const BOT_HIT_QUICK_REJECT = 0.012;
 
 // Position Float32Array stride (must match ServerBotManager.getPositionsFlat)

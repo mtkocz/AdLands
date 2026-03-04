@@ -153,8 +153,8 @@ const BOT_RESPAWN_TIME_MIN = 8000;
 const BOT_RESPAWN_TIME_MAX = 12000;
 
 // Hit detection (oriented-box, matches BodyguardManager)
-const BOT_HIT_HALF_LEN = 3.5;
-const BOT_HIT_HALF_WID = 3.0;
+const BOT_HIT_HALF_LEN = 3.25;
+const BOT_HIT_HALF_WID = 2.25;
 const BOT_HIT_QUICK_REJECT = 0.012; // radians
 
 // Faction index lookup (for positions Float32Array flags encoding)

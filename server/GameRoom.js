@@ -2555,14 +2555,14 @@ class GameRoom {
       // Oriented-box collision: tank body is 5.5 long × 3 wide on radius 480 sphere.
       // Uses heading to check forward/right extents (same approach as terrain probes).
       const R = 480;
-      const HALF_LEN = 3.5;   // Forward/back half-extent in world units (2.75 + latency margin)
-      const HALF_WID = 3.0;   // Left/right half-extent in world units (1.5 + latency margin, matches client hitRadius)
-      const QUICK_REJECT = 0.015; // ~7.2 world units — skip distant players fast
+      const HALF_LEN = 3.25;  // Forward/back half-extent in world units (2.75 actual + 0.5 latency margin)
+      const HALF_WID = 2.25;  // Left/right half-extent in world units (1.5 actual + 0.75 latency margin)
+      const QUICK_REJECT = 0.012; // ~5.76 world units — skip distant players fast
 
       // Swept collision: check multiple points along the path to prevent tunneling
       const moveDist = sphericalDistance(prevTheta, prevPhi, p.theta, p.phi);
-      // Step every ~1.0 world units (well under half of narrow box dim) to catch edge hits
-      const numSteps = Math.max(1, Math.ceil(moveDist / 0.0015));
+      // Step every ~0.48 world units (well under half of narrow box dim) to catch edge hits
+      const numSteps = Math.max(1, Math.ceil(moveDist / 0.001));
       let hitPlayer = false;
 
       // Theta wraparound: compute shortest delta for proper interpolation
@@ -2694,6 +2694,7 @@ class GameRoom {
             hp: player.hp,
             theta: p.theta,
             phi: p.phi,
+            projectileId: p.id,
           });
 
           if (player.hp <= 0) {
@@ -2819,6 +2820,7 @@ class GameRoom {
             hp: Math.max(0, botHp - damage),
             theta: p.theta,
             phi: p.phi,
+            projectileId: p.id,
           });
 
           // Check if this hit likely killed the bot (approximate — worker confirms next tick)
@@ -2863,6 +2865,7 @@ class GameRoom {
             hp: bgHit.hp,
             theta: p.theta,
             phi: p.phi,
+            projectileId: p.id,
           });
 
           if (result.killed) {

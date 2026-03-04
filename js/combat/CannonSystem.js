@@ -1436,7 +1436,7 @@ void main() {
       transparent: true,
       opacity: 1,
       depthWrite: false,
-      depthTest: false,
+      depthTest: true,
       blending: THREE.AdditiveBlending,
       sizeAttenuation: true,
       rotation: Math.random() * Math.PI * 2,
@@ -1867,9 +1867,8 @@ void main() {
         // Get tank's surface normal (direction from planet center to tank)
         _tankSurfaceNormal.copy(_tankWorldPos).normalize();
 
-        // Tank footprint radius (based on tank dimensions: 3 width, 5.5 length)
-        // Slightly larger than server's HALF_WID (2.5) for visual generosity
-        const hitRadius = 3.0;
+        // Tank footprint radius — matches server's HALF_WID for consistent hit visuals
+        const hitRadius = 2.25;
 
         // Height tolerance (allows hits above/below tank center)
         const heightTolerance = 3.0;
@@ -2059,6 +2058,30 @@ void main() {
   // ========================
   // PUBLIC API
   // ========================
+
+  /**
+   * Remove a remote projectile by its server-assigned ID.
+   * Called when the server confirms a hit so the client doesn't keep
+   * rendering a projectile that the server already destroyed.
+   * @param {number} serverId - The projectile ID from the server
+   */
+  removeProjectileByServerId(serverId) {
+    if (serverId == null) return;
+    for (let i = this.projectiles.length - 1; i >= 0; i--) {
+      const p = this.projectiles[i];
+      if (p.serverId === serverId) {
+        // Clean up point light
+        if (p.light) {
+          p.mesh.remove(p.light);
+          p.light.dispose();
+        }
+        // Return to pool and remove
+        this.objectPools.releaseProjectile(p.poolItem);
+        this.projectiles.splice(i, 1);
+        return;
+      }
+    }
+  }
 
   /**
    * Spawn an explosion effect at a given position
