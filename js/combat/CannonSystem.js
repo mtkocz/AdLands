@@ -1907,8 +1907,11 @@ void main() {
               const shieldClip = _clipCenter.clone();
 
               // Push explosion position outward to shield surface so it's not fully clipped
+              // Then shift down toward ground along surface normal
               _horizontalOffset.copy(p.position).sub(shieldClip).normalize();
               _testPos.copy(shieldClip).addScaledVector(_horizontalOffset, 4.5);
+              _tankSurfaceNormal.copy(_tankWorldPos).normalize();
+              _testPos.addScaledVector(_tankSurfaceNormal, -1.5);
               p.position.copy(_testPos);
               p.mesh.position.copy(p.position);
 
