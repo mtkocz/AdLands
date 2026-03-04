@@ -247,12 +247,27 @@ class CannonSystem {
       return;
     }
 
-    // Cap decals to limit draw calls — recycle oldest when full
+    // Cap decals to limit draw calls — force oldest into fade-out when full
+    const fadeStart = this.impactDecalConfig.lifetime - this.impactDecalConfig.fadeOutDuration;
     while (this.impactDecals.length >= 30) {
-      const oldest = this.impactDecals.shift();
-      this.planet.hexGroup.remove(oldest.mesh);
-      oldest.material.alphaMap = null;
-      oldest.material.dispose();
+      // Force the oldest non-fading decal into rapid fade-out
+      let forced = false;
+      for (const d of this.impactDecals) {
+        if (d.age < fadeStart) {
+          d.age = this.impactDecalConfig.lifetime - 1; // 1 second left to fade
+          forced = true;
+          break;
+        }
+      }
+      // If all are already fading, remove the oldest
+      if (!forced) {
+        const oldest = this.impactDecals.shift();
+        this.planet.hexGroup.remove(oldest.mesh);
+        oldest.material.alphaMap = null;
+        oldest.material.dispose();
+      } else {
+        break;
+      }
     }
 
     const normal = position.clone().normalize();
@@ -1441,7 +1456,7 @@ void main() {
       sizeAttenuation: true,
       rotation: Math.random() * Math.PI * 2,
     });
-    if (clipCenter) this._applyShieldClip(material, clipCenter);
+    this._applyExplosionClip(material, clipCenter);
 
     const sprite = new THREE.Sprite(material);
     sprite.scale.setScalar(cfg.baseSize * sizeScale);
@@ -1472,16 +1487,20 @@ void main() {
   }
 
   /**
-   * Inject spherical clip into a SpriteMaterial via onBeforeCompile.
-   * Discards fragments inside the shield's radius from the turret center,
-   * following the shield's curvature.
+   * Inject clipping into SpriteMaterial via onBeforeCompile.
+   * Always clips fragments inside the planet surface (terrain/cliff walls).
+   * Optionally clips inside a shield sphere when clipCenter is provided.
    */
-  _applyShieldClip(material, clipCenter) {
-    const center = clipCenter;
-    const radius = 4.5; // Shield arc average radius
+  _applyExplosionClip(material, clipCenter) {
+    const planetRadius = this.sphereRadius;
+    const shieldCenter = clipCenter;
+    const shieldRadius = 4.5;
     material.onBeforeCompile = (shader) => {
-      shader.uniforms.uClipCenter = { value: center };
-      shader.uniforms.uClipRadius = { value: radius };
+      shader.uniforms.uPlanetRadius = { value: planetRadius };
+      if (shieldCenter) {
+        shader.uniforms.uClipCenter = { value: shieldCenter };
+        shader.uniforms.uClipRadius = { value: shieldRadius };
+      }
 
       // Vertex: compute world position of each billboard fragment
       shader.vertexShader = shader.vertexShader.replace(
@@ -1499,16 +1518,16 @@ void main() {
         ].join('\n')
       );
 
-      // Fragment: discard inside shield sphere
+      // Fragment: discard inside planet surface + optionally inside shield sphere
+      const fragUniforms = ['uniform float uPlanetRadius;'];
+      const fragClip = ['  if (length(vClipWorldPos) < uPlanetRadius) discard;'];
+      if (shieldCenter) {
+        fragUniforms.push('uniform vec3 uClipCenter;', 'uniform float uClipRadius;');
+        fragClip.push('  if (length(vClipWorldPos - uClipCenter) < uClipRadius) discard;');
+      }
       shader.fragmentShader = shader.fragmentShader.replace(
         'void main() {',
-        [
-          'uniform vec3 uClipCenter;',
-          'uniform float uClipRadius;',
-          'varying vec3 vClipWorldPos;',
-          'void main() {',
-          '  if (length(vClipWorldPos - uClipCenter) < uClipRadius) discard;',
-        ].join('\n')
+        [...fragUniforms, 'varying vec3 vClipWorldPos;', 'void main() {', ...fragClip].join('\n')
       );
     };
   }
