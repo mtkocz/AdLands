@@ -220,11 +220,6 @@ class NetworkManager {
       if (this.onPlayerRespawned) this.onPlayerRespawned(data);
     });
 
-    // Projectile reflected off a shield
-    this.socket.on("shield-reflect", (data) => {
-      if (this.onShieldReflect) this.onShieldReflect(data);
-    });
-
     // Chat message
     this.socket.on("chat", (data) => {
       if (this.onChatMessage) this.onChatMessage(data);
@@ -683,18 +678,20 @@ class NetworkManager {
     localTank.state.speed = serverPlayerState.s;
 
     // Re-apply unprocessed inputs (client-side prediction replay).
-    // With fixed timestep (dt = 0.1) and SharedPhysics, this replay produces
-    // identical results to the server simulation — no drift.
+    // SharedPhysics produces identical results to the server simulation.
+    // IMPORTANT: We intentionally skip terrain collision during replay because
+    // the client and server use different terrain lookup algorithms (polygon
+    // test vs rasterized grid). Applying the client's check here would cause
+    // the replayed position to diverge from the server's, producing constant
+    // jitter near walls. The server position is already post-collision, and
+    // normal prediction (Tank._moveOnSphere) still applies terrain collision
+    // for responsive local feel.
     for (const input of this.pendingInputs) {
       const prevKeys = { ...localTank.state.keys };
       localTank.state.keys = input.keys;
 
-      const prevTheta = localTank.state.theta;
-      const prevPhi = localTank.state.phi;
-
       SharedPhysics.applyInput(localTank.state, input.dt);
       SharedPhysics.moveOnSphere(localTank.state, input.dt);
-      localTank.checkTerrainCollision(prevTheta, prevPhi, input.dt);
 
       localTank.state.keys = prevKeys;
     }

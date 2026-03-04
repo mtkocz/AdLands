@@ -2600,40 +2600,8 @@ class GameRoom {
 
           const halfArc = shPlayer.shieldArcAngle / 2 + 0.18; // +10° buffer for turret lag
           if (Math.abs(angleDiff) < halfArc) {
-            // Shield hit — reflect projectile
-            let normalAngle = angleToProj;
-            while (normalAngle < 0) normalAngle += Math.PI * 2;
-            while (normalAngle >= Math.PI * 2) normalAngle -= Math.PI * 2;
-
-            let reflectedHeading = 2 * normalAngle - p.heading + Math.PI;
-            while (reflectedHeading < 0) reflectedHeading += Math.PI * 2;
-            while (reflectedHeading >= Math.PI * 2) reflectedHeading -= Math.PI * 2;
-
-            p.heading = reflectedHeading;
-            p.ownerId = shId;           // Shield holder gets kill credit
-            p.ownerFaction = "__none__"; // Can hit anyone now
-            p.startTheta = p.theta;
-            p.startPhi = p.phi;
-            p.age = 0;
-
-            // Compute world-space position & direction for client visual
-            const R = 480;
-            const rSp = Math.sin(testPhi), rCp = Math.cos(testPhi);
-            const rSt = Math.sin(testTheta), rCt = Math.cos(testTheta);
-            const liftR = R + 2; // Above surface to avoid client hitSurface cull
-            const rSinH = Math.sin(reflectedHeading), rCosH = Math.cos(reflectedHeading);
-            this.io.to(this.roomId).emit("shield-reflect", {
-              shieldOwnerId: shId,
-              projectileId: p.id,
-              // World position (lifted above surface)
-              wx: liftR * rSp * rSt,
-              wy: liftR * rCp,
-              wz: liftR * rSp * rCt,
-              // World velocity direction (unit vector)
-              dvx: rSinH * rCt + rCosH * rCp * rSt,
-              dvy: -rCosH * rSp,
-              dvz: -rSinH * rSt + rCosH * rCp * rCt,
-            });
+            // Shield hit — destroy projectile (no damage to shield owner)
+            projs[i] = projs[projs.length - 1]; projs.pop();
             shieldReflected = true;
             break;
           }

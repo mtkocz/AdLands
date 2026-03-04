@@ -1308,70 +1308,6 @@ void main() {
   }
 
   /**
-   * Spawn a new visual projectile for a shield deflection.
-   * Server computes world-space position and direction — client just uses them.
-   *
-   * @param {Object} data - { projectileId, shieldOwnerId, wx, wy, wz, dvx, dvy, dvz }
-   * @param {string} faction - Shield owner's faction (for projectile color)
-   */
-  spawnDeflectedProjectile(data, faction) {
-    // Try to mark the incoming projectile for visual redirection.
-    // The projectile keeps flying to the shield, then bounces on contact.
-    for (let i = this.projectiles.length - 1; i >= 0; i--) {
-      const p = this.projectiles[i];
-      if (p.serverId === data.projectileId) {
-        p._deflectData = {
-          wx: data.wx, wy: data.wy, wz: data.wz,
-          dvx: data.dvx, dvy: data.dvy, dvz: data.dvz,
-          faction: faction,
-        };
-        return; // Redirect happens in update() when it reaches the shield
-      }
-    }
-
-    // Fallback: incoming projectile already expired — spawn deflected + spark
-    _muzzleWorld.set(data.wx, data.wy, data.wz);
-    this._spawnExplosion(_muzzleWorld, faction, 0.5);
-
-    _shotDirWorld.set(data.dvx, data.dvy, data.dvz).normalize();
-
-    const sizeScale = 1;
-    const poolItem = this.objectPools.acquireProjectile(faction, sizeScale);
-    poolItem.mesh.position.copy(_muzzleWorld);
-
-    _shotTarget.copy(_muzzleWorld).add(_shotDirWorld);
-    poolItem.mesh.lookAt(_shotTarget);
-
-    poolItem.mesh.layers.set(1); // BLOOM_LAYER
-    this.scene.add(poolItem.mesh);
-
-    const projectileLight = new THREE.PointLight(
-      FACTION_COLORS[faction]?.hex || 0x00ccff,
-      5, 30
-    );
-    projectileLight.layers.set(0);
-    poolItem.mesh.add(projectileLight);
-
-    const speed = this.config.projectileSpeed;
-    const range = this.config.maxDistance;
-
-    this.projectiles.push({
-      poolItem: poolItem,
-      mesh: poolItem.mesh,
-      light: projectileLight,
-      faction: faction,
-      position: _muzzleWorld.clone(),
-      velocity: _shotDirWorld.multiplyScalar(speed).clone(),
-      startPosition: _muzzleWorld.clone(),
-      maxDistance: range,
-      damage: 1,
-      sizeScale: sizeScale,
-      age: 0,
-      isRemote: true,
-    });
-  }
-
-  /**
    * Spawn a visual projectile using server-computed world-space position/direction.
    * Used when the firing tank isn't available in remoteTanks (e.g. bots not yet spawned).
    *
@@ -1837,7 +1773,8 @@ void main() {
 
       let shouldExplode = false;
       let hitTank = false;
-      let deflected = false;
+
+
 
       // Swept collision check - test along the projectile's path (use preallocated vectors)
       _moveVector.copy(p.position).sub(_prevPosition);
@@ -1912,41 +1849,10 @@ void main() {
             horizontalDist < hitRadius &&
             Math.abs(heightDiff) < heightTolerance
           ) {
-            // Shield collision: projectile bounces off visually
+            // Shield collision: projectile absorbed with spark (no damage)
             if (tank.shieldActive) {
-              if (p._deflectData) {
-                // Bounce! Redirect at server-computed shield contact point
-                const dd = p._deflectData;
-                p.position.set(dd.wx, dd.wy, dd.wz);
-                p.mesh.position.copy(p.position);
-
-                _shotDirWorld.set(dd.dvx, dd.dvy, dd.dvz).normalize();
-                p.velocity.copy(_shotDirWorld).multiplyScalar(this.config.projectileSpeed);
-
-                _shotTarget.copy(p.position).add(_shotDirWorld);
-                p.mesh.lookAt(_shotTarget);
-
-                // Reset tracking so it flies a full range after bouncing
-                p.startPosition.copy(p.position);
-                p.age = 0;
-
-                // Change faction to shield owner's (prevents re-collision)
-                p.faction = dd.faction;
-                p.mesh.material = this.materials[dd.faction];
-                if (p.light) p.light.color.setHex(FACTION_COLORS[dd.faction]?.hex || 0x00ccff);
-
-                // Shield impact spark
-                this._spawnExplosion(p.position, dd.faction, 0.5);
-
-                delete p._deflectData;
-                deflected = true;
-                break;
-              }
-              // Grace period: let projectile fly toward shield before absorbing
-              if (p.age < 0.15) {
-                break;
-              }
-              // Absorb (no deflect data, grace period expired)
+              // Grace period: let projectile fly toward shield visually
+              if (p.age < 0.15) break;
               p.position.copy(_testPos);
               p.mesh.position.copy(p.position);
               this._spawnExplosion(p.position, tank.faction, 0.3);
@@ -1970,11 +1876,11 @@ void main() {
           }
         }
 
-        if (hitTank || deflected) break;
+        if (hitTank) break;
       }
 
       // Terrain elevation collision: projectiles hit cliff walls
-      if (!hitTank && !deflected && this.planet?.terrainElevation) {
+      if (!hitTank && this.planet?.terrainElevation) {
         const terrainSteps = Math.max(1, Math.ceil(moveDistance / 0.5));
         for (let step = 0; step <= terrainSteps; step++) {
           const t = step / terrainSteps;

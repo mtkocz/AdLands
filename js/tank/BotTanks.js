@@ -688,9 +688,14 @@ class BotTanks {
                 varying vec3 vWorldNormal;
 
                 void main() {
-                    vec4 worldPos = modelMatrix * vec4(position, 1.0);
+                    #ifdef USE_INSTANCING
+                        vec4 worldPos = modelMatrix * instanceMatrix * vec4(position, 1.0);
+                        vWorldNormal = normalize(mat3(modelMatrix) * mat3(instanceMatrix) * normal);
+                    #else
+                        vec4 worldPos = modelMatrix * vec4(position, 1.0);
+                        vWorldNormal = normalize(mat3(modelMatrix) * normal);
+                    #endif
                     vWorldPosition = worldPos.xyz;
-                    vWorldNormal = normalize(mat3(modelMatrix) * normal);
                     gl_Position = projectionMatrix * viewMatrix * worldPos;
                 }
             `,
@@ -2931,6 +2936,23 @@ class BotTanks {
     // Per-mesh interpolation targets for smooth orbital dot movement
     this._phantomHasTarget = new Uint8Array(POOL_SIZE); // 0 = no target yet (snap), 1 = has previous position
 
+    // Preallocated temps for phantom enemy LOD box transform computation
+    this._phantomBoxTemp = {
+      pos: new THREE.Vector3(),
+      up: new THREE.Vector3(),
+      east: new THREE.Vector3(),
+      north: new THREE.Vector3(),
+      forward: new THREE.Vector3(),
+      right: new THREE.Vector3(),
+      worldUp: new THREE.Vector3(0, 1, 0),
+      zAxis: new THREE.Vector3(0, 0, 1),
+      rotMatrix: new THREE.Matrix4(),
+      quat: new THREE.Quaternion(),
+      scale: new THREE.Vector3(1, 1, 1),
+      composed: new THREE.Matrix4(),
+      final: new THREE.Matrix4(),
+    };
+
     // Pre-allocated temp objects for phantom raycast (shared across all pool meshes)
     const _rcWorldPos = new THREE.Vector3();
     const _rcSphere = new THREE.Sphere(new THREE.Vector3(), hitRadius);
@@ -3039,6 +3061,10 @@ class BotTanks {
 
     let poolIdx = 0;
 
+    // Track instanced LOD box counts for enemy phantom bots
+    const lodBoxCounts = { rust: 0, cobalt: 0, viridian: 0 };
+    const pbt = this._phantomBoxTemp;
+
     for (let i = 0, opnIdx = 0; i < op.length; i += 5, opnIdx += 2) {
       const baseTheta = op[i];
       const basePhi = op[i + 1];
@@ -3047,20 +3073,67 @@ class BotTanks {
       const fi = op[i + 4];
       const faction = factionNames[fi];
 
-      // Filter: commanders see all, regular players see own faction only
-      if (!isHumanCommander && faction !== viewerFaction) continue;
-
       // Skip bots with full 3D representation
       if (knownBotThetas.has(Math.round(baseTheta * 10000))) continue;
-
-      if (poolIdx >= this._phantomPool.length) break;
-      const mesh = this._phantomPool[poolIdx];
 
       // Dead-reckon: project position forward using heading + speed
       const sinPhi = Math.sin(basePhi);
       const safeSinPhi = Math.abs(sinPhi) < 0.01 ? 0.01 : sinPhi;
       const phi = basePhi + (-Math.cos(heading) * speed * drAge);
       const theta = baseTheta + (-Math.sin(heading) * speed * drAge) / safeSinPhi;
+
+      // Enemy faction bots (non-commander) → render as instanced LOD box
+      if (!isHumanCommander && faction !== viewerFaction) {
+        const im = this._instancedLodBox[faction];
+        const boxIdx = lodBoxCounts[faction];
+        if (boxIdx < im.instanceMatrix.count) {
+          // Lower into ground to match surface level (same offset as _updateBotVisual)
+          const boxR = this.sphereRadius - 0.4;
+          pbt.pos.set(
+            boxR * Math.sin(phi) * Math.cos(theta),
+            boxR * Math.cos(phi),
+            boxR * Math.sin(phi) * Math.sin(theta),
+          );
+
+          // Surface normal = normalized position (up direction on sphere)
+          pbt.up.copy(pbt.pos).normalize();
+
+          // Tangent plane basis: east = worldUp × up, north = up × east
+          if (Math.abs(pbt.up.y) > 0.999) {
+            pbt.east.crossVectors(pbt.zAxis, pbt.up).normalize();
+          } else {
+            pbt.east.crossVectors(pbt.worldUp, pbt.up).normalize();
+          }
+          pbt.north.crossVectors(pbt.up, pbt.east).normalize();
+
+          // Forward direction from heading
+          pbt.forward.set(0, 0, 0)
+            .addScaledVector(pbt.north, Math.cos(heading))
+            .addScaledVector(pbt.east, Math.sin(heading))
+            .normalize();
+          pbt.right.crossVectors(pbt.forward, pbt.up).normalize();
+
+          // Build rotation: columns = right, up, -forward (Three.js convention)
+          // Set matrix elements directly to avoid clone().negate() allocation
+          const me = pbt.rotMatrix.elements;
+          me[0] = pbt.right.x;  me[4] = pbt.up.x;  me[8]  = -pbt.forward.x;  me[12] = 0;
+          me[1] = pbt.right.y;  me[5] = pbt.up.y;  me[9]  = -pbt.forward.y;  me[13] = 0;
+          me[2] = pbt.right.z;  me[6] = pbt.up.z;  me[10] = -pbt.forward.z;  me[14] = 0;
+          me[3] = 0;            me[7] = 0;          me[11] = 0;              me[15] = 1;
+          pbt.quat.setFromRotationMatrix(pbt.rotMatrix);
+
+          // Compose full transform and apply LOD box offset
+          pbt.composed.compose(pbt.pos, pbt.quat, pbt.scale);
+          pbt.final.copy(pbt.composed).multiply(this._lodBoxOffset);
+          im.setMatrixAt(boxIdx, pbt.final);
+          lodBoxCounts[faction]++;
+        }
+        continue;
+      }
+
+      // Same faction (or commander) → render as phantom dot
+      if (poolIdx >= this._phantomPool.length) break;
+      const mesh = this._phantomPool[poolIdx];
 
       // Convert to hexGroup local-space Cartesian
       const tx = r * Math.sin(phi) * Math.cos(theta);
@@ -3133,6 +3206,15 @@ class BotTanks {
       }
     }
 
+    // Update instanced LOD box counts and mark buffers dirty (enemy phantom boxes)
+    for (const faction of factionNames) {
+      const im = this._instancedLodBox[faction];
+      im.count = lodBoxCounts[faction];
+      if (im.count > 0) {
+        im.instanceMatrix.needsUpdate = true;
+      }
+    }
+
     this._phantomActiveCount = poolIdx;
     this._orbitalPhantomVisible = true;
   }
@@ -3141,6 +3223,10 @@ class BotTanks {
     if (!this._orbitalPhantomVisible) return;
     for (let i = 0; i < this._phantomPool.length; i++) {
       this._phantomPool[i].visible = false;
+    }
+    // Reset instanced LOD box counts (enemy phantom boxes)
+    for (const faction of ["rust", "cobalt", "viridian"]) {
+      this._instancedLodBox[faction].count = 0;
     }
     this._phantomActiveCount = 0;
     this._orbitalPhantomVisible = false;
