@@ -1480,6 +1480,17 @@ void main() {
     factionColor.lerp(new THREE.Color(1, 1, 1), 0.35); // Lighten 35% toward white
     factionColor.multiplyScalar(1.5); // Brighten for bloom
 
+    // Compute actual terrain surface radius at explosion position
+    let surfaceRadius = this.sphereRadius;
+    if (this.planet?.terrainElevation) {
+      const localPos = position.clone();
+      this.planet.hexGroup.worldToLocal(localPos);
+      const elevation = this.planet.terrainElevation.getElevationAtPosition(localPos);
+      if (elevation > 0) {
+        surfaceRadius += elevation * this.planet.terrainElevation.config.EXTRUSION_HEIGHT;
+      }
+    }
+
     // Build clip uniforms
     const clipUniforms = {};
     let clipFrag = '';
@@ -1498,7 +1509,7 @@ void main() {
         uUvOffset: { value: new THREE.Vector2(0, 1 - 1 / cfg.rows) },
         uUvRepeat: { value: new THREE.Vector2(1 / cfg.columns, 1 / cfg.rows) },
         ...clipUniforms,
-        uPlanetRadius: { value: this.sphereRadius },
+        uPlanetRadius: { value: surfaceRadius },
       },
       vertexShader: [
         'uniform vec2 uUvOffset;',

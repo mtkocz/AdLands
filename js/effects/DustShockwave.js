@@ -495,18 +495,29 @@ class DustShockwave {
 
     const cfg = this.config;
 
+    // Compute actual terrain surface radius at position
+    let surfaceRadius = this.sphereRadius;
+    if (this.planet?.terrainElevation) {
+      const localPos = position.clone();
+      this.planet.hexGroup.worldToLocal(localPos);
+      const elevation = this.planet.terrainElevation.getElevationAtPosition(localPos);
+      if (elevation > 0) {
+        surfaceRadius += elevation * this.planet.terrainElevation.config.EXTRUSION_HEIGHT;
+      }
+    }
+
     // ShaderMaterial with terminator-aware coloring
     const material = new THREE.ShaderMaterial({
       uniforms: {
         uColor: { value: new THREE.Color(cfg.color) },
-        uOpacity: { value: 0 },
+        uOpacity: { value: cfg.opacity },
         uAlphaMap: { value: this.shockwaveTexture },
         uSunDirection: { value: this.lightingConfig.sunDirection.clone() },
         uSunColor: { value: this.lightingConfig.sunColor.clone() },
         uFillColor: { value: this.lightingConfig.fillColor.clone() },
         uClipSphereCenter: { value: clipCenter ? clipCenter.clone() : new THREE.Vector3() },
         uClipSphereRadius: { value: clipCenter ? 4.5 : 0 },
-        uPlanetRadius: { value: this.sphereRadius },
+        uPlanetRadius: { value: surfaceRadius },
       },
       vertexShader: this._getVertexShader(),
       fragmentShader: this._getFragmentShader(),
@@ -571,6 +582,17 @@ class DustShockwave {
 
     const cfg = this.dustwaveConfig;
 
+    // Compute actual terrain surface radius at position
+    let surfaceRadius = this.sphereRadius;
+    if (this.planet?.terrainElevation) {
+      const localPos = position.clone();
+      this.planet.hexGroup.worldToLocal(localPos);
+      const elevation = this.planet.terrainElevation.getElevationAtPosition(localPos);
+      if (elevation > 0) {
+        surfaceRadius += elevation * this.planet.terrainElevation.config.EXTRUSION_HEIGHT;
+      }
+    }
+
     // Reuse pooled material or create new ShaderMaterial
     let material;
     if (this._dustwaveMaterialPool.length > 0) {
@@ -583,6 +605,7 @@ class DustShockwave {
       material.uniforms.uFillColor.value.copy(this.lightingConfig.fillColor);
       // Reset clip sphere (disabled by default)
       material.uniforms.uClipSphereRadius.value = 0;
+      material.uniforms.uPlanetRadius.value = surfaceRadius;
     } else {
       material = new THREE.ShaderMaterial({
         uniforms: {
@@ -660,7 +683,7 @@ class DustShockwave {
         shadowMesh.material.onBeforeCompile = (shader) => {
           shader.uniforms.uClipSphereCenter = { value: cc };
           shader.uniforms.uClipSphereRadius = { value: 4.5 };
-          shader.uniforms.uPlanetRadius = { value: this.sphereRadius };
+          shader.uniforms.uPlanetRadius = { value: surfaceRadius };
           shader.vertexShader = shader.vertexShader.replace(
             'void main() {',
             'varying vec3 vClipWorldPos;\nvoid main() {'
