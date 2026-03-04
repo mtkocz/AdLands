@@ -203,6 +203,7 @@ class DustShockwave {
             uniform vec3 uFillColor;
             uniform vec3 uClipSphereCenter;
             uniform float uClipSphereRadius;
+            uniform float uPlanetRadius;
 
             varying vec2 vUv;
             varying vec3 vWorldPosition;
@@ -218,6 +219,11 @@ class DustShockwave {
                     float clipDist = distance(vWorldPosition, uClipSphereCenter);
                     clipFade = smoothstep(uClipSphereRadius - 0.3, uClipSphereRadius + 0.3, clipDist);
                 }
+
+                // Terrain clipping — soft fade near/below planet surface
+                float terrainDist = length(vWorldPosition) - uPlanetRadius;
+                float terrainFade = smoothstep(0.0, 0.5, terrainDist);
+                clipFade *= terrainFade;
 
                 // Terminator-aware coloring (same as TreadDust)
                 vec3 surfaceNormal = normalize(vWorldPosition);
@@ -500,6 +506,7 @@ class DustShockwave {
         uFillColor: { value: this.lightingConfig.fillColor.clone() },
         uClipSphereCenter: { value: clipCenter ? clipCenter.clone() : new THREE.Vector3() },
         uClipSphereRadius: { value: clipCenter ? 4.5 : 0 },
+        uPlanetRadius: { value: this.sphereRadius },
       },
       vertexShader: this._getVertexShader(),
       fragmentShader: this._getFragmentShader(),
@@ -589,6 +596,7 @@ class DustShockwave {
           uFillColor: { value: this.lightingConfig.fillColor.clone() },
           uClipSphereCenter: { value: new THREE.Vector3() },
           uClipSphereRadius: { value: 0 },
+          uPlanetRadius: { value: this.sphereRadius },
         },
         vertexShader: this._getSpriteSheetVertexShader(),
         fragmentShader: this._getFragmentShader(),
@@ -652,6 +660,7 @@ class DustShockwave {
         shadowMesh.material.onBeforeCompile = (shader) => {
           shader.uniforms.uClipSphereCenter = { value: cc };
           shader.uniforms.uClipSphereRadius = { value: 4.5 };
+          shader.uniforms.uPlanetRadius = { value: this.sphereRadius };
           shader.vertexShader = shader.vertexShader.replace(
             'void main() {',
             'varying vec3 vClipWorldPos;\nvoid main() {'
@@ -662,11 +671,11 @@ class DustShockwave {
           );
           shader.fragmentShader = shader.fragmentShader.replace(
             'void main() {',
-            'uniform vec3 uClipSphereCenter;\nuniform float uClipSphereRadius;\nvarying vec3 vClipWorldPos;\nvoid main() {'
+            'uniform vec3 uClipSphereCenter;\nuniform float uClipSphereRadius;\nuniform float uPlanetRadius;\nvarying vec3 vClipWorldPos;\nvoid main() {'
           );
           shader.fragmentShader = shader.fragmentShader.replace(
             '#include <premultiplied_alpha_fragment>',
-            '#include <premultiplied_alpha_fragment>\n  float clipDist = distance(vClipWorldPos, uClipSphereCenter);\n  float clipFade = (uClipSphereRadius > 0.0) ? smoothstep(uClipSphereRadius - 0.3, uClipSphereRadius + 0.3, clipDist) : 1.0;\n  gl_FragColor.a *= clipFade;'
+            '#include <premultiplied_alpha_fragment>\n  float clipDist = distance(vClipWorldPos, uClipSphereCenter);\n  float clipFade = (uClipSphereRadius > 0.0) ? smoothstep(uClipSphereRadius - 0.3, uClipSphereRadius + 0.3, clipDist) : 1.0;\n  float terrainDist = length(vClipWorldPos) - uPlanetRadius;\n  float terrainFade = smoothstep(0.0, 0.5, terrainDist);\n  gl_FragColor.a *= clipFade * terrainFade;'
           );
         };
       }
