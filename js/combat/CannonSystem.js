@@ -1445,7 +1445,7 @@ void main() {
 
     const sprite = new THREE.Sprite(material);
     sprite.scale.setScalar(cfg.baseSize * sizeScale);
-    sprite.layers.set(1); // BLOOM_LAYER - explosions should bloom
+    sprite.layers.enable(1); // BLOOM_LAYER for glow + layer 0 for depth clipping
     sprite.renderOrder = 1000; // Render on top of blast decals
 
     // Position in local space
@@ -1895,8 +1895,6 @@ void main() {
           ) {
             // Shield collision: projectile absorbed with full explosion (no damage)
             if (tank.shieldActive) {
-              // Grace period: let projectile fly toward shield visually
-              if (p.age < 0.15) break;
               p.position.copy(_testPos);
               p.mesh.position.copy(p.position);
 
