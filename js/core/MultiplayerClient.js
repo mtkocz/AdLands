@@ -229,6 +229,13 @@
       }
     };
 
+    // Hook into missile fire events
+    mp.onMissileFire = (turretAngle, searchRadius) => {
+      if (net.isMultiplayer) {
+        net.sendMissileFire(turretAngle, searchRadius);
+      }
+    };
+
     // ========================
     // SERVER EVENT HANDLERS
     // ========================
@@ -817,6 +824,14 @@
         }, 150);
       }
 
+      // Route to missile system if this is a missile fire event
+      if (data.type === "missile") {
+        if (window.missileSystem) {
+          window.missileSystem.spawnRemoteMissile(data, remoteTank);
+        }
+        return;
+      }
+
       // Spawn projectile visual — prefer remoteTank (has full effects),
       // fall back to server world-space data for bots not yet in remoteTanks
       if (remoteTank) {
@@ -987,7 +1002,11 @@
         // Remove the matching remote projectile visual so it doesn't keep
         // flying past the target after the server already destroyed it
         if (data.projectileId != null) {
-          cannonSystem.removeProjectileByServerId?.(data.projectileId);
+          if (data.isMissile && window.missileSystem) {
+            window.missileSystem.removeByServerId(data.projectileId);
+          } else {
+            cannonSystem.removeProjectileByServerId?.(data.projectileId);
+          }
         }
       }
     };

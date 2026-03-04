@@ -122,6 +122,7 @@ class GameRoom {
       respawn: 150,
       cannonBase: 5,
       cannonPerCharge: 1,
+      missile: 15,
       slotUnlock: {
         'defense-1': 15000,
         'tactical-1': 30000,
@@ -1905,6 +1906,315 @@ class GameRoom {
     });
   }
 
+  // ---- Missile Fire ----
+
+  handleMissileFire(socketId, fireTurretAngle, searchRadius) {
+    const player = this.players.get(socketId);
+    if (!player || this._isUndeployed(player)) return;
+
+    // Cannot fire while shield is active
+    if (player.shieldActive) return;
+
+    // Enforce server-side cooldown (2 seconds for missiles)
+    const now = Date.now();
+    if (now - (player.lastMissileTime || 0) < 2000) return;
+
+    // Economy: deduct missile cost
+    if (player.crypto < this.costs.missile) {
+      this._denyAction(socketId, "missile", this.costs.missile);
+      return;
+    }
+
+    // Find nearest enemy within search radius (server validates)
+    const maxSearchRad = Math.min((searchRadius || 120) / 480, 0.25); // Cap at ~120 world units
+    const target = this._findNearestEnemyForMissile(socketId, player, maxSearchRad);
+    if (!target) return; // No target = no fire
+
+    this._deductCrypto(player, this.costs.missile);
+    player.lastMissileTime = now;
+    player.lastActivityAt = now;
+
+    const missile = {
+      id: this.nextProjectileId++,
+      type: "missile",
+      ownerId: socketId,
+      ownerFaction: player.faction,
+      theta: player.theta,
+      phi: player.phi,
+      startTheta: player.theta,
+      startPhi: player.phi,
+      heading: 0,
+      speed: 0.002, // Tank sprint speed (maxSpeed * sprintMultiplier)
+      age: 0,
+      maxAge: 15,
+      phase: 0, // 0=launch, 1=cruise
+      launchDuration: 0.5,
+      damage: Math.round(25 * 1.5), // 38 damage (missile multiplier)
+      targetId: target.id,
+    };
+
+    this.projectiles.push(missile);
+
+    // Compute world-space launch position for client visual
+    const R = 480;
+    const fSp = Math.sin(player.phi), fCp = Math.cos(player.phi);
+    const fSt = Math.sin(player.theta), fCt = Math.cos(player.theta);
+    const fLift = R + 2;
+
+    this.io.to(this.roomId).emit("player-fired", {
+      id: socketId,
+      type: "missile",
+      turretAngle: fireTurretAngle,
+      theta: player.theta,
+      phi: player.phi,
+      projectileId: missile.id,
+      targetId: target.id,
+      wx: fLift * fSp * fSt,
+      wy: fLift * fCp,
+      wz: fLift * fSp * fCt,
+    });
+  }
+
+  _findNearestEnemyForMissile(socketId, player, maxDistRad) {
+    let closest = null;
+    let closestDist = Infinity;
+
+    // Check players
+    for (const [id, p] of this.players) {
+      if (id === socketId) continue;
+      if (this._isUndeployed(p) || p.isDead) continue;
+      if (p.faction === player.faction) continue;
+      const dist = sphericalDistance(player.theta, player.phi, p.theta, p.phi);
+      if (dist < closestDist && dist <= maxDistRad) {
+        closest = { id, theta: p.theta, phi: p.phi, isBot: false };
+        closestDist = dist;
+      }
+    }
+
+    // Check bots
+    const botStates = this.botBridge.getStatesForBroadcast();
+    for (const botId in botStates) {
+      const bs = botStates[botId];
+      if (bs.f === player.faction || bs.d === 1) continue;
+      const dist = sphericalDistance(player.theta, player.phi, bs.t, bs.p);
+      if (dist < closestDist && dist <= maxDistRad) {
+        closest = { id: botId, theta: bs.t, phi: bs.p, isBot: true };
+        closestDist = dist;
+      }
+    }
+
+    return closest;
+  }
+
+  _updateMissileProjectile(p, dt, i, projs) {
+    // Phase 0: Launch (no movement on sphere, client shows vertical ascent)
+    if (p.phase === 0) {
+      if (p.age >= p.launchDuration) {
+        p.phase = 1;
+      }
+      return; // No collision during launch
+    }
+
+    // Phase 1: Cruise/Homing — re-acquire nearest target each tick
+    const owner = this.players.get(p.ownerId);
+    if (!owner) {
+      // Owner disconnected, remove missile
+      projs[i] = projs[projs.length - 1]; projs.pop();
+      return;
+    }
+
+    // Find nearest enemy from MISSILE position (not owner position)
+    let target = null;
+    let targetDist = Infinity;
+
+    for (const [id, pl] of this.players) {
+      if (id === p.ownerId || this._isUndeployed(pl) || pl.isDead) continue;
+      if (pl.faction === p.ownerFaction) continue;
+      const dist = sphericalDistance(p.theta, p.phi, pl.theta, pl.phi);
+      if (dist < targetDist) {
+        target = { id, theta: pl.theta, phi: pl.phi, isBot: false };
+        targetDist = dist;
+      }
+    }
+
+    const botStates = this.botBridge.getStatesForBroadcast();
+    for (const botId in botStates) {
+      const bs = botStates[botId];
+      if (bs.f === p.ownerFaction || bs.d === 1) continue;
+      const dist = sphericalDistance(p.theta, p.phi, bs.t, bs.p);
+      if (dist < targetDist) {
+        target = { id: botId, theta: bs.t, phi: bs.p, isBot: true };
+        targetDist = dist;
+      }
+    }
+
+    if (!target) {
+      // No targets left, expire missile
+      projs[i] = projs[projs.length - 1]; projs.pop();
+      return;
+    }
+
+    p.targetId = target.id;
+
+    // Compute heading toward target on sphere
+    const sinPhi = Math.sin(p.phi);
+    const safeSin = Math.abs(sinPhi) < 0.01 ? 0.01 * Math.sign(sinPhi || 1) : sinPhi;
+    let dTheta = target.theta - p.theta;
+    while (dTheta > Math.PI) dTheta -= Math.PI * 2;
+    while (dTheta < -Math.PI) dTheta += Math.PI * 2;
+    const dPhi = target.phi - p.phi;
+    const northOff = -dPhi;
+    const eastOff = dTheta * safeSin;
+    p.heading = Math.atan2(-eastOff, northOff);
+
+    // Move missile on sphere
+    moveOnSphere(p, dt);
+
+    // Check arrival — distance in world units (~2.4 world units = 0.005 rad on R=480)
+    const arrivalDist = sphericalDistance(p.theta, p.phi, target.theta, target.phi);
+    const ARRIVAL_THRESHOLD = 0.005; // ~2.4 world units on R=480
+
+    if (arrivalDist < ARRIVAL_THRESHOLD) {
+      // Impact! Apply damage — bypass shields entirely
+      const damage = p.damage || 38;
+
+      if (target.isBot) {
+        // Bot hit
+        const botState = botStates[target.id];
+        const botHp = botState ? botState.hp : 100;
+        const botFaction = botState ? botState.f : "rust";
+        const botName = this.botBridge.getBotName(target.id) || "Bot";
+
+        const attacker = this.players.get(p.ownerId);
+        const attackerName = attacker ? attacker.name : "Unknown";
+        this.botBridge.applyDamage(target.id, damage, p.ownerId, attackerName);
+
+        if (attacker) {
+          attacker.crypto += Math.floor(damage);
+        }
+
+        this.io.to(this.roomId).emit("player-hit", {
+          targetId: target.id,
+          attackerId: p.ownerId,
+          damage,
+          hp: Math.max(0, botHp - damage),
+          theta: p.theta,
+          phi: p.phi,
+          projectileId: p.id,
+          isMissile: true,
+        });
+
+        if (botHp - damage <= 0) {
+          this.io.to(this.roomId).emit("player-killed", {
+            victimId: target.id,
+            killerId: p.ownerId,
+            victimFaction: botFaction,
+            killerFaction: p.ownerFaction,
+            victimName: botName,
+            killerName: attackerName,
+          });
+          if (attacker) {
+            attacker.crypto += 500;
+            attacker.killStreak = (attacker.killStreak || 0) + 1;
+            attacker.totalKills = (attacker.totalKills || 0) + 1;
+          }
+        }
+      } else {
+        // Player hit
+        const hitPlayer = this.players.get(target.id);
+        if (hitPlayer && !hitPlayer.isDead) {
+          hitPlayer.hp -= damage;
+
+          const attacker = this.players.get(p.ownerId);
+          if (attacker) {
+            const isTargetCommander = this.commanders[hitPlayer.faction]?.id === target.id;
+            attacker.crypto += Math.floor(damage * (isTargetCommander ? 10 : 1));
+          }
+
+          this.io.to(this.roomId).emit("player-hit", {
+            targetId: target.id,
+            attackerId: p.ownerId,
+            damage,
+            hp: hitPlayer.hp,
+            theta: p.theta,
+            phi: p.phi,
+            projectileId: p.id,
+            isMissile: true,
+          });
+
+          if (hitPlayer.hp <= 0) {
+            hitPlayer.hp = 0;
+            hitPlayer.isDead = true;
+            hitPlayer.speed = 0;
+            hitPlayer._lastTicCluster = undefined;
+            hitPlayer._lastTicCryptoTics = undefined;
+
+            const killer = this.players.get(p.ownerId);
+            const killerName = killer ? killer.name : "Unknown";
+            const victimName = hitPlayer.name;
+
+            this.io.to(this.roomId).emit("player-killed", {
+              victimId: target.id,
+              killerId: p.ownerId,
+              victimFaction: hitPlayer.faction,
+              killerFaction: p.ownerFaction,
+              victimName,
+              killerName,
+            });
+
+            if (killer) {
+              killer.killStreak = (killer.killStreak || 0) + 1;
+              killer.totalKills = (killer.totalKills || 0) + 1;
+              const isVictimCommander = this.commanders[hitPlayer.faction]?.id === target.id;
+              if (killer.uid) {
+                killer.crypto += 500 * (isVictimCommander ? 10 : 1);
+              }
+              this.tuskChat.onKill(killerName, victimName, p.ownerFaction, hitPlayer.faction, p.ownerId, target.id);
+              if (killer.killStreak >= 3) {
+                this.tuskChat.onKillStreak(killerName, killer.killStreak, p.ownerId);
+              }
+              const milestones = [10, 25, 50, 100, 150, 200];
+              if (milestones.includes(killer.totalKills)) {
+                this.tuskChat.onPlayerMilestone(killerName, killer.totalKills, p.ownerId);
+              }
+              if (hitPlayer.lastKilledBy === p.ownerId) {
+                this.tuskChat.onRevengeKill(killerName, victimName, p.ownerId, target.id);
+              }
+            }
+
+            hitPlayer.killStreak = 0;
+            hitPlayer.deathCount = (hitPlayer.deathCount || 0) + 1;
+            hitPlayer.lastKilledBy = p.ownerId;
+
+            const deathWindow = 300000;
+            if (hitPlayer.deathCount === 1) hitPlayer.deathStreakStart = Date.now();
+            if (hitPlayer.deathCount >= 3 && Date.now() - hitPlayer.deathStreakStart < deathWindow) {
+              const minutes = Math.floor((Date.now() - hitPlayer.deathStreakStart) / 60000) || 1;
+              this.tuskChat.onDeathStreak(victimName, hitPlayer.deathCount, minutes, target.id);
+            }
+            if (hitPlayer.deathStreakStart && Date.now() - hitPlayer.deathStreakStart >= deathWindow) {
+              hitPlayer.deathCount = 1;
+              hitPlayer.deathStreakStart = Date.now();
+            }
+
+            for (const faction of FACTIONS) {
+              if (this.commanders[faction]?.id === target.id) {
+                this.bodyguardManager.killAllForFaction(faction);
+                break;
+              }
+            }
+
+            this._markRanksDirty();
+            setTimeout(() => this._respawnPlayer(target.id), 10300);
+          }
+        }
+      }
+
+      // Remove missile after impact
+      projs[i] = projs[projs.length - 1]; projs.pop();
+    }
+  }
+
   handleProfile(socketId, profileData) {
     const player = this.players.get(socketId);
     if (!player) return;
@@ -2533,6 +2843,12 @@ class GameRoom {
 
       if (p.age >= p.maxAge) {
         projs[i] = projs[projs.length - 1]; projs.pop();
+        continue;
+      }
+
+      // Missiles have their own update logic (homing, no shield collision)
+      if (p.type === "missile") {
+        this._updateMissileProjectile(p, dt, i, projs);
         continue;
       }
 

@@ -216,7 +216,7 @@ class DustShockwave {
                 float clipFade = 1.0;
                 if (uClipSphereRadius > 0.0) {
                     float clipDist = distance(vWorldPosition, uClipSphereCenter);
-                    clipFade = smoothstep(uClipSphereRadius - 0.3, uClipSphereRadius + 0.3, clipDist);
+                    clipFade = smoothstep(uClipSphereRadius - 0.8, uClipSphereRadius + 0.8, clipDist);
                 }
 
                 // Terminator-aware coloring (same as TreadDust)
@@ -667,7 +667,7 @@ class DustShockwave {
           );
           shader.fragmentShader = shader.fragmentShader.replace(
             '#include <premultiplied_alpha_fragment>',
-            '#include <premultiplied_alpha_fragment>\n  float clipDist = distance(vClipWorldPos, uClipSphereCenter);\n  float clipFade = (uClipSphereRadius > 0.0) ? smoothstep(uClipSphereRadius - 0.3, uClipSphereRadius + 0.3, clipDist) : 1.0;\n  gl_FragColor.a *= clipFade;'
+            '#include <premultiplied_alpha_fragment>\n  float clipDist = distance(vClipWorldPos, uClipSphereCenter);\n  float clipFade = (uClipSphereRadius > 0.0) ? smoothstep(uClipSphereRadius - 0.8, uClipSphereRadius + 0.8, clipDist) : 1.0;\n  gl_FragColor.a *= clipFade;'
           );
         };
       }

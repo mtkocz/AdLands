@@ -199,6 +199,15 @@ class WeaponSlotSystem {
   }
 
   /**
+   * Get the currently active offense weapon type.
+   * @returns {string} e.g. "cannon", "missile", "50cal", "flamethrower"
+   */
+  getActiveOffenseWeapon() {
+    const slotId = this.activeSlots.offense;
+    return this.equipped[slotId] || "cannon";
+  }
+
+  /**
    * Compute combat modifiers from active slots + tank upgrades.
    * Only one slot per category is "live" — the active slot.
    * Called by CannonSystem before damage/fire-rate calculations.

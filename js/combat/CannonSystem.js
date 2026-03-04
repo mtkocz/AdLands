@@ -1485,7 +1485,7 @@ void main() {
     if (clipCenter) {
       clipUniforms.uClipSphereCenter = { value: clipCenter };
       clipUniforms.uClipSphereRadius = { value: 4.5 };
-      clipFrag = 'float clipDist = distance(vWorldPosition, uClipSphereCenter); float clipFade = (uClipSphereRadius > 0.0) ? smoothstep(uClipSphereRadius - 0.3, uClipSphereRadius + 0.3, clipDist) : 1.0;';
+      clipFrag = 'float clipDist = distance(vWorldPosition, uClipSphereCenter); float clipFade = (uClipSphereRadius > 0.0) ? smoothstep(uClipSphereRadius - 0.8, uClipSphereRadius + 0.8, clipDist) : 1.0;';
     }
 
     // ShaderMaterial — flat mesh on surface, same approach as DustShockwave

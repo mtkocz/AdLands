@@ -484,6 +484,20 @@ class NetworkManager {
   }
 
   /**
+   * Send a missile fire event to server.
+   * @param {number} turretAngle - Current turret angle
+   * @param {number} searchRadius - Lock-on search radius in world units
+   */
+  sendMissileFire(turretAngle, searchRadius) {
+    if (!this.connected) return;
+    this.socket.emit("fire", {
+      type: "missile",
+      turretAngle: turretAngle,
+      searchRadius: searchRadius || 0,
+    });
+  }
+
+  /**
    * Send a chat message with mode (faction/lobby/squad).
    * @param {string} text - Message text
    * @param {string} mode - Chat mode: 'faction', 'lobby', or 'squad'

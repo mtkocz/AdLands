@@ -339,7 +339,11 @@ io.on("connection", (socket) => {
 
   // ---- Fire ----
   socket.on("fire", (data) => {
-    mainRoom.handleFire(socket.id, data?.power || 0, data?.turretAngle);
+    if (data?.type === "missile") {
+      mainRoom.handleMissileFire(socket.id, data?.turretAngle, data?.searchRadius || 0);
+    } else {
+      mainRoom.handleFire(socket.id, data?.power || 0, data?.turretAngle);
+    }
   });
 
   // ---- Profile (badges, crypto) ----

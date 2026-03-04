@@ -179,9 +179,13 @@ class Tank {
 
     // Visual + turret always run at render framerate (60Hz)
     this._updateVisual(deltaTime);
-    this._updateTurret(camera);
+    if (!this.missileMode) {
+      this._updateTurret(camera);
+      this._updateGhostReticle(camera);
+    } else if (this.ghostReticle) {
+      this.ghostReticle.style.display = "none";
+    }
     this._updateTurretSpring(deltaTime);
-    this._updateGhostReticle(camera);
     this.updateRecoil(deltaTime);
   }
 
@@ -1661,7 +1665,7 @@ Tank.updateLeanState = function (lean, speed, heading, deltaTime, isDead) {
   if (headingDelta < -Math.PI) headingDelta += Math.PI * 2;
 
   const turnRate = headingDelta / deltaTime;
-  const dirSign = speed >= 0 ? 1 : -1;
+  const dirSign = speed >= 0 ? -1 : 1;
   const speedFactor = Math.min(Math.abs(speed) / 0.0004, 1.0);
   let steerTarget = turnRate * speedFactor * dirSign * cfg.STEER_LEAN_GAIN;
   steerTarget = Math.max(-cfg.MAX_STEER_LEAN, Math.min(cfg.MAX_STEER_LEAN, steerTarget));

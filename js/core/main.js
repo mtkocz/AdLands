@@ -566,6 +566,18 @@
   const cryptoSystem = new CryptoSystem();
   cannonSystem.setCryptoSystem(cryptoSystem);
 
+  // Missile System (homing missiles — separate from cannon projectiles)
+  const missileSystem = new MissileSystem(scene, CONFIG.sphereRadius);
+  missileSystem.playerTank = tank;
+  missileSystem.botTanks = botTanks;
+  missileSystem.cannonSystem = cannonSystem;
+  missileSystem.dustShockwave = dustShockwave;
+  missileSystem.gameCamera = gameCamera;
+  missileSystem.planet = planet;
+  missileSystem.weaponSlotSystem = weaponSlotSystem;
+  missileSystem.cryptoSystem = cryptoSystem;
+  window.missileSystem = missileSystem;
+
   // Connect tread tracks to cannon system for oil puddle detection
   treadTracks.setCannonSystem(cannonSystem);
 
@@ -1190,13 +1202,33 @@
       gameCamera.mode === "surface"
     ) {
       if (!isUIClick(e)) {
-        cannonSystem.startCharge();
+        const isMissile = weaponSlotSystem && weaponSlotSystem.getActiveOffenseWeapon() === "missile";
+        if (isMissile && window.missileSystem) {
+          window.missileSystem.startLockOn();
+        } else {
+          cannonSystem.startCharge();
+        }
       }
     }
   });
 
   window.addEventListener("mouseup", (e) => {
     if (e.button === 0) {
+      // Missile release
+      if (window.missileSystem && window.missileSystem.isLocking()) {
+        if (
+          tank.controlsEnabled &&
+          !tank.isDead &&
+          !tank.shieldActive &&
+          gameCamera.mode === "surface"
+        ) {
+          window.missileSystem.releaseLockOn(tank, playerFaction);
+        } else {
+          window.missileSystem.cancelLockOn();
+        }
+        return;
+      }
+      // Cannon release
       if (cannonSystem.isCharging()) {
         // Only fire if still in surface mode with controls enabled, alive, and not shielding
         if (
@@ -1220,6 +1252,7 @@
   // Cancel charge if controls become disabled (e.g., fast travel)
   window.addEventListener("blur", () => {
     cannonSystem.cancelCharge();
+    if (window.missileSystem) window.missileSystem.cancelLockOn();
   });
 
   // Chat window (right side panel)
@@ -3990,10 +4023,15 @@
       botTanks.updateChat(now);
     }
 
+    // Sync missile mode flag on tank (controls turret/reticle behavior)
+    const isMissileActive = weaponSlotSystem.getActiveOffenseWeapon() === "missile";
+    tank.missileMode = isMissileActive;
+
     // Update cannon charging and projectiles
     cannonSystem.updateCharge(deltaTime, tank, playerFaction);
     cannonSystem.isOrbitalView = isOrbitalView; // Set for LOD explosion decisions
     cannonSystem.update(deltaTime, sharedFrustum);
+    missileSystem.update(deltaTime, sharedFrustum, camera);
 
     // Update visual effects
     treadTracks.update(tank, deltaTime, camera, isOrbitalView, sharedFrustum);
