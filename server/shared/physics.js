@@ -137,6 +137,76 @@
     );
   }
 
+  // ---- Terrain Collision (shared grid-based lookup) ----
+
+  var TANK_HALF_LEN = 2.75;
+  var TANK_HALF_WID = 1.5;
+  var _terrainProbes = [[0, 0], [0, 0], [0, 0], [0, 0], [0, 0]]; // pre-allocated
+
+  /**
+   * O(1) terrain blocked check using a precomputed blocked grid.
+   * Identical on server (WorldGenerator) and client (received on join).
+   * @param {number} theta
+   * @param {number} phi
+   * @param {Uint8Array} grid - blocked grid (1 = blocked)
+   * @param {number} gridT - grid width (theta resolution)
+   * @param {number} gridP - grid height (phi resolution)
+   * @returns {boolean}
+   */
+  function isGridBlocked(theta, phi, grid, gridT, gridP) {
+    var t = theta % (Math.PI * 2);
+    if (t < 0) t += Math.PI * 2;
+    var ti = (t / (Math.PI * 2) * gridT) | 0;
+    if (ti >= gridT) ti = gridT - 1;
+    var pi = (phi / Math.PI * gridP) | 0;
+    if (pi >= gridP) pi = gridP - 1;
+    if (pi < 0) pi = 0;
+    return grid[pi * gridT + ti] === 1;
+  }
+
+  /**
+   * Check if a tank at (theta, phi) with given heading/speed is blocked by terrain.
+   * Uses 5 probe points (center + 4 corners) in 2D spherical coordinates.
+   * Must produce identical results on client and server.
+   *
+   * @param {number} theta
+   * @param {number} phi
+   * @param {number} heading
+   * @param {number} speed
+   * @param {Uint8Array} grid
+   * @param {number} gridT
+   * @param {number} gridP
+   * @param {number} R - sphere radius (480)
+   * @returns {boolean}
+   */
+  function isTerrainBlockedAt(theta, phi, heading, speed, grid, gridT, gridP, R) {
+    var sinPhi = Math.sin(phi);
+    var safeSinPhi = Math.abs(sinPhi) < 0.01 ? 0.01 * Math.sign(sinPhi || 1) : sinPhi;
+    var dir = speed > 0 ? 1 : speed < 0 ? -1 : 0;
+    var cosH = Math.cos(heading);
+    var sinH = Math.sin(heading);
+    var fwdPhi = -cosH;
+    var fwdTh  = -sinH / safeSinPhi;
+    var rgtPhi =  sinH;
+    var rgtTh  = -cosH / safeSinPhi;
+
+    // 5 probes: center + 4 corners of tank body
+    _terrainProbes[0][0] = 0;                    _terrainProbes[0][1] = 0;
+    _terrainProbes[1][0] = TANK_HALF_LEN * dir;  _terrainProbes[1][1] = -TANK_HALF_WID;
+    _terrainProbes[2][0] = TANK_HALF_LEN * dir;  _terrainProbes[2][1] =  TANK_HALF_WID;
+    _terrainProbes[3][0] = -TANK_HALF_LEN * dir; _terrainProbes[3][1] = -TANK_HALF_WID;
+    _terrainProbes[4][0] = -TANK_HALF_LEN * dir; _terrainProbes[4][1] =  TANK_HALF_WID;
+
+    for (var i = 0; i < 5; i++) {
+      var fwd = _terrainProbes[i][0];
+      var rgt = _terrainProbes[i][1];
+      var pPhi = phi + (fwdPhi * fwd + rgtPhi * rgt) / R;
+      var pTh  = theta + (fwdTh * fwd + rgtTh * rgt) / R;
+      if (isGridBlocked(pTh, pPhi, grid, gridT, gridP)) return true;
+    }
+    return false;
+  }
+
   // ---- Exports ----
   exports.FACTIONS = FACTIONS;
   exports.TANK_PHYSICS = TANK_PHYSICS;
@@ -146,6 +216,8 @@
   exports.applyInput = applyInput;
   exports.moveOnSphere = moveOnSphere;
   exports.sphericalDistance = sphericalDistance;
+  exports.isGridBlocked = isGridBlocked;
+  exports.isTerrainBlockedAt = isTerrainBlockedAt;
 
   // UMD: works as CommonJS (Node) or global (browser)
 })(typeof module !== "undefined" ? module.exports : (window.SharedPhysics = {}));

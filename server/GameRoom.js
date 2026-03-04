@@ -891,6 +891,13 @@ class GameRoom {
       },
     });
 
+    // Send terrain blocked grid for client-side collision (matches server's grid exactly)
+    socket.emit("terrain-grid", {
+      gridT: this.worldGen._BLOCKED_GRID_T,
+      gridP: this.worldGen._BLOCKED_GRID_P,
+      R: 480,
+    }, Buffer.from(this.worldGen._blockedGrid.buffer));
+
     // Tell everyone else about the new player (waiting — don't spawn yet)
     socket.to(this.roomId).emit("player-joined", {
       id: player.id,
@@ -1063,6 +1070,13 @@ class GameRoom {
         })),
       },
     });
+
+    // Send terrain blocked grid for client-side collision (matches server's grid exactly)
+    socket.emit("terrain-grid", {
+      gridT: this.worldGen._BLOCKED_GRID_T,
+      gridP: this.worldGen._BLOCKED_GRID_P,
+      R: 480,
+    }, Buffer.from(this.worldGen._blockedGrid.buffer));
 
     // Notify other players
     if (!saved.waitingForPortal) {

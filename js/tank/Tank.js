@@ -84,6 +84,10 @@ class Tank {
     // Multiplayer mode: when true, skip local physics (server is authoritative)
     this.multiplayerMode = false;
 
+    // Server terrain grid — when set, _isTerrainBlocked uses the same grid-based
+    // lookup as the server, eliminating collision prediction mismatches.
+    this._terrainGrid = null; // { data: Uint8Array, gridT, gridP, R }
+
     // Create tank mesh
     this.group = new THREE.Group();
     this.turretGroup = null;
@@ -198,6 +202,16 @@ class Tank {
   }
 
   /**
+   * Set the server's terrain blocked grid for collision detection.
+   * When set, _isTerrainBlocked uses SharedPhysics.isTerrainBlockedAt
+   * (grid-based O(1) lookup) — identical to the server's check.
+   * @param {{ data: Uint8Array, gridT: number, gridP: number, R: number }} grid
+   */
+  setTerrainGrid(grid) {
+    this._terrainGrid = grid;
+  }
+
+  /**
    * Check if current position is on elevated terrain and revert if so.
    * Used by MP reconciliation replay to enforce terrain collision.
    * @param {number} prevTheta - theta before the move
@@ -206,7 +220,7 @@ class Tank {
    * @returns {boolean} true if collision detected and position reverted
    */
   checkTerrainCollision(prevTheta, prevPhi, deltaTime) {
-    if (!this.planet?.terrainElevation) {
+    if (!this.planet?.terrainElevation && !this._terrainGrid) {
       // Fallback: phi-based polar check when no terrain system
       const fallbackLimit = (10 * Math.PI) / 180; // 10° hard limit
       if (this.state.phi < fallbackLimit || this.state.phi > Math.PI - fallbackLimit) {
@@ -402,6 +416,17 @@ class Tank {
   }
 
   _isTerrainBlocked(theta, phi) {
+    // Use server's grid-based check when available (multiplayer) — ensures
+    // prediction and reconciliation produce identical collision results.
+    if (this._terrainGrid) {
+      const g = this._terrainGrid;
+      return SharedPhysics.isTerrainBlockedAt(
+        theta, phi, this.state.heading, this.state.speed,
+        g.data, g.gridT, g.gridP, g.R
+      );
+    }
+
+    // Fallback: polygon-based check for singleplayer or before grid arrives
     if (!this.planet || !this.planet.terrainElevation) return false;
     const r = this.sphereRadius;
     const t = Tank._terrainTemp;
@@ -431,7 +456,6 @@ class Tank {
         cy + fwd_y * f + rgt_y * rgt,
         cz + fwd_z * f + rgt_z * rgt,
       );
-      // Position is already in hexGroup local-space (theta is local-space)
 
       const inPolar = this.planet.isInsidePolarHole
         ? this.planet.isInsidePolarHole(t.testPos)

@@ -162,6 +162,18 @@ class NetworkManager {
       if (this.onConnected) this.onConnected(data);
     });
 
+    // Terrain blocked grid — server sends right after welcome.
+    // Used for client-side terrain collision that exactly matches the server.
+    this.socket.on("terrain-grid", (meta, gridBuf) => {
+      this.terrainGrid = {
+        data: new Uint8Array(gridBuf),
+        gridT: meta.gridT,
+        gridP: meta.gridP,
+        R: meta.R,
+      };
+      if (this.onTerrainGrid) this.onTerrainGrid(this.terrainGrid);
+    });
+
     // Another player joined
     this.socket.on("player-joined", (data) => {
       if (this.onPlayerJoined) this.onPlayerJoined(data);

@@ -359,6 +359,11 @@
       }
     };
 
+    // Terrain grid received — pass to tank for server-matching collision checks
+    net.onTerrainGrid = (grid) => {
+      tank.setTerrainGrid(grid);
+    };
+
     net.onPlayerJoined = (data) => {
       if (data.waitingForPortal) return; // Don't spawn until they choose a portal
       spawnRemoteTank(data);
