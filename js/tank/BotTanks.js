@@ -488,7 +488,7 @@ class BotTanks {
         maxPerFaction,
       );
       im.count = 0;
-      im.castShadow = true;
+      im.castShadow = false;
       im.receiveShadow = false;
       im.frustumCulled = false; // We handle culling per-bot
       this._instancedLodBox[faction] = im;

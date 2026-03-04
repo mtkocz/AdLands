@@ -462,10 +462,11 @@ class Tank {
     }
 
     // Smooth visual position toward physics position.
-    // Lerp factor: ~65% per frame at 60fps — responsive enough for normal movement
-    // (sub-pixel lag) but absorbs reconciliation jumps over 2-3 frames.
+    // Lerp factor: ~95% per frame at 60fps — nearly instant tracking with just
+    // enough smoothing to absorb tiny reconciliation micro-corrections (~1px)
+    // over a single frame instead of showing a discrete jump.
     if (deltaTime > 0) {
-      const smooth = 1 - Math.pow(0.35, deltaTime * 60);
+      const smooth = 1 - Math.pow(0.05, deltaTime * 60);
 
       // Theta wraps at 2π — find shortest path
       let dTheta = this.state.theta - this._visualTheta;

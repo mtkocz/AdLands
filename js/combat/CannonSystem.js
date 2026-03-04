@@ -34,6 +34,9 @@ const _shotDirection = new THREE.Vector3();
 const _shotDirWorld = new THREE.Vector3();
 const _shotTarget = new THREE.Vector3();
 const _yAxis = new THREE.Vector3(0, 1, 0);
+const _clipPlaneNormal = new THREE.Vector3();
+const _clipPlanePoint = new THREE.Vector3();
+const _clipPlane = new THREE.Plane();
 
 class CannonSystem {
   constructor(scene, sphereRadius) {
@@ -1367,7 +1370,7 @@ void main() {
     });
   }
 
-  _spawnExplosion(position, faction, sizeScale = 1) {
+  _spawnExplosion(position, faction, sizeScale = 1, clipPlane = null) {
     // Don't spawn if no planet reference
     if (!this.planet) {
       console.warn("[CANNON] Cannot spawn explosion - no planet reference");
@@ -1393,6 +1396,7 @@ void main() {
         depthWrite: false,
         blending: THREE.AdditiveBlending,
       });
+      if (clipPlane) material.clippingPlanes = [clipPlane];
       const sprite = new THREE.Sprite(material);
       sprite.scale.setScalar(12 * sizeScale);
       sprite.layers.set(0);
@@ -1439,6 +1443,7 @@ void main() {
       sizeAttenuation: true,
       rotation: Math.random() * Math.PI * 2,
     });
+    if (clipPlane) material.clippingPlanes = [clipPlane];
 
     const sprite = new THREE.Sprite(material);
     sprite.scale.setScalar(cfg.baseSize * sizeScale);
@@ -1855,7 +1860,18 @@ void main() {
               if (p.age < 0.15) break;
               p.position.copy(_testPos);
               p.mesh.position.copy(p.position);
-              this._spawnExplosion(p.position, tank.faction, 0.3);
+
+              // Compute clip plane so explosion doesn't bleed through shield
+              // Shield faces -Z in turret-local space
+              _clipPlaneNormal.set(0, 0, -1);
+              tank.turretGroup.localToWorld(_clipPlaneNormal);
+              _clipPlanePoint.set(0, 0, 0);
+              tank.turretGroup.localToWorld(_clipPlanePoint);
+              _clipPlaneNormal.sub(_clipPlanePoint).normalize();
+              _clipPlanePoint.addScaledVector(_clipPlaneNormal, 4.5);
+              _clipPlane.setFromNormalAndCoplanarPoint(_clipPlaneNormal, _clipPlanePoint);
+
+              this._spawnExplosion(p.position, tank.faction, 0.3, _clipPlane.clone());
               shouldExplode = false;
               hitTank = true;
               break;

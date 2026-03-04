@@ -200,6 +200,7 @@
   });
 
   renderer.setSize(window.innerWidth, window.innerHeight);
+  renderer.localClippingEnabled = true;
   renderer.shadowMap.enabled = true;
   renderer.shadowMap.type = THREE.PCFSoftShadowMap;
   document.body.appendChild(renderer.domElement);
