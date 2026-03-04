@@ -396,7 +396,7 @@ io.on("connection", (socket) => {
 
   // ---- Active Slot Change (loadout HUD cycling) ----
   socket.on("active-slot-change", (data) => {
-    if (data?.category && data?.slotId) {
+    if (data?.category && typeof data?.slotId === 'string') {
       mainRoom.handleActiveSlotChange(socket.id, data.category, data.slotId);
     }
   });

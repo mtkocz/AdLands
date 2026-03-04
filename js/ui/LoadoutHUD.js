@@ -34,13 +34,9 @@ class LoadoutHUD {
     this._tabs = {}; // category → { el, slotsEl, activeNameEl, slot1El, slot2El }
 
     this._container = document.getElementById("loadout-hud");
-    console.log("[LoadoutHUD] container:", this._container);
     if (this._container) {
       this._buildDOM();
       this._bindKeys();
-      console.log("[LoadoutHUD] initialized, keys [1][2][3] bound");
-    } else {
-      console.warn("[LoadoutHUD] #loadout-hud element not found in DOM");
     }
   }
 
@@ -99,14 +95,6 @@ class LoadoutHUD {
 
   _bindKeys() {
     window.addEventListener("keydown", (e) => {
-      // Only log for keys we care about
-      if (e.key === "1" || e.key === "2" || e.key === "3") {
-        const tag = document.activeElement?.tagName;
-        const authEl = document.getElementById("auth-screen");
-        const authHidden = authEl ? authEl.classList.contains("auth-hidden") : "no-el";
-        console.log("[LoadoutHUD] key=" + e.key, "activeTag=" + tag, "authHidden=" + authHidden);
-      }
-
       // Standard guards: skip if typing in input fields
       const tag = document.activeElement?.tagName;
       if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return;
@@ -118,7 +106,6 @@ class LoadoutHUD {
       const category = this._keyMap[e.key];
       if (!category) return;
 
-      console.log("[LoadoutHUD] PASSED guards, showing:", category);
       e.preventDefault();
 
       if (!this.visible) this._show();

@@ -179,8 +179,8 @@ class Tank {
 
     // Visual + turret always run at render framerate (60Hz)
     this._updateVisual(deltaTime);
+    this._updateTurret(camera);
     if (!this.missileMode) {
-      this._updateTurret(camera);
       this._updateGhostReticle(camera);
     } else if (this.ghostReticle) {
       this.ghostReticle.style.display = "none";
@@ -582,6 +582,13 @@ class Tank {
   _updateTurretSpring(deltaTime) {
     const tp = this.turretPhysics;
     const s = this.state;
+
+    // NaN guard — reset if corrupted (prevents permanent turret loss)
+    if (isNaN(s.turretAngle) || isNaN(s.turretTargetAngle)) {
+      s.turretAngle = 0;
+      s.turretTargetAngle = 0;
+      s.turretAngularVelocity = 0;
+    }
 
     // Shortest angular delta (wraps at +/-PI)
     let delta = s.turretTargetAngle - s.turretAngle;

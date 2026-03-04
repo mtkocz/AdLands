@@ -380,9 +380,6 @@ class MissileSystem {
     this._currentSearchRadius = this.config.searchRadiusMin;
     this._lockedTarget = null;
     this._lastLockedTank = null;
-
-    // Set tank to missile mode (hides ghost reticle, stops mouse turret tracking)
-    if (this.playerTank) this.playerTank.missileMode = true;
   }
 
   isLocking() {
@@ -608,12 +605,13 @@ class MissileSystem {
     const tank = this.playerTank;
     if (!tank) return;
 
-    // Mirror the exact logic from Tank._updateTurret but with a world position
-    // instead of a mouse raycast intersection.
+    // Save target coordinates BEFORE reusing temp vectors (targetWorldPos may alias _tempVec2)
+    const tx = targetWorldPos.x, ty = targetWorldPos.y, tz = targetWorldPos.z;
+
     const tankPos = tank.group._cachedWorldPos || tank.group.position;
     const normal = this._tempVec.copy(tankPos).normalize();
 
-    // Build stable orientation basis (no wiggle)
+    // Build stable orientation basis (mirrors Tank._updateTurret logic)
     const east = this._tempVec2;
     if (Math.abs(normal.y) > 0.999) {
       east.set(0, 0, 1).cross(normal).normalize();
@@ -630,13 +628,14 @@ class MissileSystem {
 
     const right = new THREE.Vector3().crossVectors(forward, normal).normalize();
 
-    // Build rotation-only matrix (no position — we want to transform a direction)
+    // Build rotation matrix + position (same pattern as Tank._updateTurret)
     const rotMatrix = new THREE.Matrix4().makeBasis(right, normal, forward);
-    const invRot = rotMatrix.clone().invert();
+    rotMatrix.setPosition(tankPos);
+    const invMatrix = rotMatrix.clone().invert();
 
-    // Direction from tank to target in local space
-    const toTarget = new THREE.Vector3().copy(targetWorldPos).sub(tankPos);
-    toTarget.applyMatrix4(invRot);
+    // Direction from tank to target in local space (using saved coordinates)
+    const toTarget = new THREE.Vector3(tx - tankPos.x, ty - tankPos.y, tz - tankPos.z);
+    toTarget.applyMatrix4(invMatrix);
 
     // Compute turret target angle (same formula as Tank._updateTurret)
     tank.state.turretTargetAngle =

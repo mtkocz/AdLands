@@ -1735,7 +1735,7 @@ class GameRoom {
     const validCategories = ['offense', 'defense', 'tactical'];
     if (!validCategories.includes(category)) return;
 
-    const validSlots = [`${category}-1`, `${category}-2`];
+    const validSlots = [`${category}-1`, `${category}-2`, ''];
     if (!validSlots.includes(slotId)) return;
 
     if (!player.activeSlots) {
