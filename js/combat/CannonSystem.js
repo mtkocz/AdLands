@@ -1402,7 +1402,7 @@ void main() {
       this.planet.hexGroup.worldToLocal(localPosition);
       sprite.position.copy(localPosition);
       const surfaceNormal = localPosition.clone().normalize();
-      sprite.position.addScaledVector(surfaceNormal, 0.5);
+      sprite.position.addScaledVector(surfaceNormal, 0.3);
       this.planet.hexGroup.add(sprite);
 
       this.explosions.push({
@@ -1453,9 +1453,9 @@ void main() {
     this.planet.hexGroup.worldToLocal(localPosition);
     sprite.position.copy(localPosition);
 
-    // Offset above surface
+    // Offset above surface (0.3 matches dust wave height)
     const surfaceNormal = localPosition.clone().normalize();
-    sprite.position.addScaledVector(surfaceNormal, 0.5);
+    sprite.position.addScaledVector(surfaceNormal, 0.3);
 
     // Add to scene
     this.planet.hexGroup.add(sprite);
