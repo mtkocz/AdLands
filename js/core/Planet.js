@@ -136,7 +136,9 @@ class Planet {
       if (this.polarTileIndices.has(index)) return;
       const boundary = tile.boundary;
       const n = boundary.length;
-      const es = 1; // Base radius — watertight shell for bloom occlusion
+      // Use actual terrain elevation so bloom occluder matches cliff faces
+      const elevation = this.terrainElevation ? (this.terrainElevation.tileElevation.get(index) || 0) : 0;
+      const es = this.terrainElevation ? this.terrainElevation.getExtrusion(elevation) : 1;
 
       for (let i = 0; i < n; i++) {
         allPositions.push(
