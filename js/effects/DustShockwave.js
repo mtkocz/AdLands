@@ -201,6 +201,8 @@ class DustShockwave {
             uniform vec3 uSunDirection;
             uniform vec3 uSunColor;
             uniform vec3 uFillColor;
+            uniform vec3 uClipSphereCenter;
+            uniform float uClipSphereRadius;
 
             varying vec2 vUv;
             varying vec3 vWorldPosition;
@@ -209,6 +211,9 @@ class DustShockwave {
                 // Sample alpha from sprite sheet
                 float alpha = texture2D(uAlphaMap, vUv).r;
                 if (alpha < 0.01) discard;
+
+                // Shield sphere clipping (radius 0 = disabled)
+                if (uClipSphereRadius > 0.0 && distance(vWorldPosition, uClipSphereCenter) < uClipSphereRadius) discard;
 
                 // Terminator-aware coloring (same as TreadDust)
                 vec3 surfaceNormal = normalize(vWorldPosition);
@@ -475,7 +480,7 @@ class DustShockwave {
    * @param {number} scale - Size multiplier (default 1)
    * @param {THREE.Object3D} parent - Optional parent to attach shockwave to (e.g., tank group)
    */
-  emit(position, scale = 1, parent = null) {
+  emit(position, scale = 1, parent = null, clipCenter = null) {
     if (!this.shockwaveTexture) return;
 
     const cfg = this.config;
@@ -489,6 +494,8 @@ class DustShockwave {
         uSunDirection: { value: this.lightingConfig.sunDirection.clone() },
         uSunColor: { value: this.lightingConfig.sunColor.clone() },
         uFillColor: { value: this.lightingConfig.fillColor.clone() },
+        uClipSphereCenter: { value: clipCenter ? clipCenter.clone() : new THREE.Vector3() },
+        uClipSphereRadius: { value: clipCenter ? 4.5 : 0 },
       },
       vertexShader: this._getVertexShader(),
       fragmentShader: this._getFragmentShader(),
@@ -539,7 +546,7 @@ class DustShockwave {
     });
 
     // Also spawn sprite sheet animation
-    this._emitDustwaveSprite(position, scale, parent);
+    this._emitDustwaveSprite(position, scale, parent, clipCenter);
   }
 
   /**
@@ -548,7 +555,7 @@ class DustShockwave {
    * @param {number} scale - Size multiplier
    * @param {THREE.Object3D} parent - Optional parent to attach to
    */
-  _emitDustwaveSprite(position, scale = 1, parent = null) {
+  _emitDustwaveSprite(position, scale = 1, parent = null, clipCenter = null) {
     if (!this.dustwaveTexture) return;
 
     const cfg = this.dustwaveConfig;
@@ -563,6 +570,8 @@ class DustShockwave {
       material.uniforms.uSunDirection.value.copy(this.lightingConfig.sunDirection);
       material.uniforms.uSunColor.value.copy(this.lightingConfig.sunColor);
       material.uniforms.uFillColor.value.copy(this.lightingConfig.fillColor);
+      // Reset clip sphere (disabled by default)
+      material.uniforms.uClipSphereRadius.value = 0;
     } else {
       material = new THREE.ShaderMaterial({
         uniforms: {
@@ -574,6 +583,8 @@ class DustShockwave {
           uSunDirection: { value: this.lightingConfig.sunDirection.clone() },
           uSunColor: { value: this.lightingConfig.sunColor.clone() },
           uFillColor: { value: this.lightingConfig.fillColor.clone() },
+          uClipSphereCenter: { value: new THREE.Vector3() },
+          uClipSphereRadius: { value: 0 },
         },
         vertexShader: this._getSpriteSheetVertexShader(),
         fragmentShader: this._getFragmentShader(),
@@ -581,6 +592,12 @@ class DustShockwave {
         depthWrite: false,
         blending: THREE.NormalBlending,
       });
+    }
+
+    // Apply shield sphere clipping if provided
+    if (clipCenter) {
+      material.uniforms.uClipSphereCenter.value.copy(clipCenter);
+      material.uniforms.uClipSphereRadius.value = 4.5;
     }
 
     // Create mesh using shared geometry
@@ -624,6 +641,27 @@ class DustShockwave {
       // Orient shadow mesh
       shadowMesh.quaternion.setFromUnitVectors(_zUp, normal);
       shadowMesh.rotateZ(Math.random() * Math.PI * 2);
+
+      // Inject shield sphere clipping into shadow (MeshBasicMaterial)
+      if (clipCenter) {
+        const cc = clipCenter.clone();
+        shadowMesh.material.onBeforeCompile = (shader) => {
+          shader.uniforms.uClipSphereCenter = { value: cc };
+          shader.uniforms.uClipSphereRadius = { value: 4.5 };
+          shader.vertexShader = shader.vertexShader.replace(
+            'void main() {',
+            'varying vec3 vClipWorldPos;\nvoid main() {'
+          );
+          shader.vertexShader = shader.vertexShader.replace(
+            '#include <worldpos_vertex>',
+            '#include <worldpos_vertex>\nvClipWorldPos = (modelMatrix * vec4(transformed, 1.0)).xyz;'
+          );
+          shader.fragmentShader = shader.fragmentShader.replace(
+            'void main() {',
+            'uniform vec3 uClipSphereCenter;\nuniform float uClipSphereRadius;\nvarying vec3 vClipWorldPos;\nvoid main() {\n  if (distance(vClipWorldPos, uClipSphereCenter) < uClipSphereRadius) discard;'
+          );
+        };
+      }
 
       this.scene.add(shadowMesh);
     }

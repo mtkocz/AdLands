@@ -1894,19 +1894,23 @@ void main() {
             horizontalDist < hitRadius &&
             Math.abs(heightDiff) < heightTolerance
           ) {
-            // Shield collision: projectile absorbed with spark (no damage)
+            // Shield collision: projectile absorbed with full explosion (no damage)
             if (tank.shieldActive) {
               // Grace period: let projectile fly toward shield visually
               if (p.age < 0.15) break;
               p.position.copy(_testPos);
               p.mesh.position.copy(p.position);
 
-              // Compute clip sphere so explosion doesn't bleed through shield
-              // Shield center is at (0, 0.5, 0) in turret-local, radius 4.5
+              // Clip sphere: turret center in world space, shield radius 4.5
               _clipCenter.set(0, 0.5, 0);
               tank.turretGroup.localToWorld(_clipCenter);
+              const shieldClip = _clipCenter.clone();
 
-              this._spawnExplosion(p.position, tank.faction, 0.3, _clipCenter.clone());
+              // Full-size explosion + dust wave, clipped by shield sphere
+              this._spawnExplosion(p.position, tank.faction, p.sizeScale || 1, shieldClip);
+              if (this.dustShockwave) {
+                this.dustShockwave.emit(p.position, p.sizeScale || 1, null, shieldClip);
+              }
               shouldExplode = false;
               hitTank = true;
               break;

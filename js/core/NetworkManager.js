@@ -683,10 +683,6 @@ class NetworkManager {
     this._lastServerTheta = serverPlayerState.t;
     this._lastServerPhi = serverPlayerState.p;
 
-    // Save current predicted position before replay
-    const predictedTheta = localTank.state.theta;
-    const predictedPhi = localTank.state.phi;
-
     // Replay from server authoritative state
     localTank.state.theta = serverPlayerState.t;
     localTank.state.phi = serverPlayerState.p;
@@ -707,30 +703,18 @@ class NetworkManager {
       localTank.state.keys = prevKeys;
     }
 
-    // Compare replayed position with current prediction.
-    // The server uses dt=0.1 (one big step) while the client predicts at
-    // dt≈0.017 (six small steps). This dt mismatch causes tiny position errors
-    // every tick. Without thresholding, these micro-corrections produce visible
-    // 10Hz stutter. Only correct when the error is large enough to matter.
-    let dTheta = localTank.state.theta - predictedTheta;
-    while (dTheta > Math.PI) dTheta -= Math.PI * 2;
-    while (dTheta < -Math.PI) dTheta += Math.PI * 2;
-    const dPhi = localTank.state.phi - predictedPhi;
-    const error = Math.abs(dTheta) + Math.abs(dPhi);
-
+    // Midpoint integration in SharedPhysics makes the position integration
+    // timestep-independent (S*dt + a*dt²/2 is identical for 1×0.1s and 6×0.0167s).
+    // Combined with the shared terrain grid, replayed and predicted positions
+    // now match to float precision. We snap to the replayed position and let
+    // the visual smoothing layer (95%/frame) absorb any sub-pixel difference.
     if (serverJump > 0.05) {
-      // Teleport — snap visual too
+      // Teleport (portal, respawn) — snap visual too
       localTank._visualTheta = localTank.state.theta;
       localTank._visualPhi = localTank.state.phi;
-    } else if (error < 0.002) {
-      // Error below ~1 world unit — trust the prediction to avoid micro-jumps.
-      // Heading/speed are accepted from replay (server-authoritative) since
-      // they don't cause visible position jumps.
-      localTank.state.theta = predictedTheta;
-      localTank.state.phi = predictedPhi;
     }
-    // else: meaningful error — accept replayed position, visual smoothing
-    // (95% per frame) absorbs the correction over 1-2 render frames.
+    // Otherwise: physics state is already at the replayed position (snapped).
+    // Visual smoothing in _updateVisual() handles the rest.
   }
 
   // ========================

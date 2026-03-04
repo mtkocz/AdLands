@@ -34,6 +34,13 @@
    * @param {number} deltaTime - seconds since last tick
    */
   function applyInput(tank, deltaTime) {
+    // Save pre-update speed and heading for midpoint integration.
+    // moveOnSphere() will average old and new values, making the position
+    // integration independent of timestep subdivision (eliminates drift
+    // between server dt=0.1 and client dt=0.0167).
+    tank._prevSpeed = tank.speed;
+    tank._prevHeading = tank.heading;
+
     const keys = tank.keys;
     const dt60 = deltaTime * 60;
 
@@ -89,8 +96,25 @@
     if (minPhi === undefined) minPhi = POLAR_PHI_LIMIT;
     if (maxPhi === undefined) maxPhi = Math.PI - POLAR_PHI_LIMIT;
 
-    const speed = entity.speed;
-    const heading = entity.heading;
+    // Midpoint integration: average pre- and post-applyInput values.
+    // This makes total displacement S*dt + a*dt²/2 identical regardless of
+    // how the timestep is subdivided (1×0.1s on server = 6×0.0167s on client).
+    // Falls back to current values for entities that don't call applyInput
+    // (e.g. projectiles with constant speed).
+    const speed = entity._prevSpeed !== undefined
+      ? (entity._prevSpeed + entity.speed) * 0.5
+      : entity.speed;
+
+    var heading;
+    if (entity._prevHeading !== undefined) {
+      var hDiff = entity.heading - entity._prevHeading;
+      if (hDiff > Math.PI) hDiff -= Math.PI * 2;
+      else if (hDiff < -Math.PI) hDiff += Math.PI * 2;
+      heading = entity._prevHeading + hDiff * 0.5;
+    } else {
+      heading = entity.heading;
+    }
+
     const phi = entity.phi;
 
     const dt60 = deltaTime * 60;
