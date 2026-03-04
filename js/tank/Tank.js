@@ -136,6 +136,14 @@ class Tank {
     this._visualTheta = this.state.theta;
     this._visualPhi = this.state.phi;
 
+    // Fixed timestep accumulator (matches server's 10Hz tick rate).
+    // Physics runs at exactly 0.1s steps so client prediction produces
+    // identical results to the server simulation. Visual rendering interpolates.
+    this._physicsAccumulator = 0;
+    this._physicsDt = 0.1; // Must match server tickDelta
+    this._physicsTickCount = 0; // How many physics ticks fired this frame
+    this._didPhysicsTick = false; // Whether any physics tick fired this frame
+
     // Initialize position
     this._updateVisual(0);
     if (!options.skipScene) {
@@ -165,11 +173,26 @@ class Tank {
     // Shield — active while Space held
     this.shieldActive = !!this.state.keys.q;
 
-    // Local physics + terrain collision run in both SP and MP.
-    // In MP, server reconciliation corrects any prediction drift each tick.
-    this._updatePhysics(deltaTime);
-    this._moveOnSphere(deltaTime);
-    // Visual + turret always run
+    // Fixed timestep physics (10Hz, matching server tick rate).
+    // This eliminates prediction drift from dt mismatch — client runs the
+    // exact same number of steps at the exact same dt as the server.
+    this._physicsTickCount = 0;
+    this._physicsAccumulator += deltaTime;
+
+    // Cap accumulator to prevent spiral of death (max 3 ticks catch-up)
+    if (this._physicsAccumulator > this._physicsDt * 3) {
+      this._physicsAccumulator = this._physicsDt * 3;
+    }
+
+    while (this._physicsAccumulator >= this._physicsDt) {
+      this._updatePhysics(this._physicsDt);
+      this._moveOnSphere(this._physicsDt);
+      this._physicsAccumulator -= this._physicsDt;
+      this._physicsTickCount++;
+    }
+    this._didPhysicsTick = this._physicsTickCount > 0;
+
+    // Visual + turret always run at render framerate (60Hz)
     this._updateVisual(deltaTime);
     this._updateTurret(camera);
     this._updateTurretSpring(deltaTime);
@@ -357,52 +380,9 @@ class Tank {
   _updatePhysics(deltaTime) {
     if (!this.controlsEnabled || window._modalOpen) return;
 
-    const { keys } = this.state;
-    const p = this.physics;
-
-    // Scale physics by deltaTime (normalized to 60 FPS baseline)
-    const dt60 = deltaTime * 60;
-
-    // Apply weapon slot speed modifier
-    let baseMaxSpeed = p.maxSpeed;
-    if (window.weaponSlotSystem) {
-      baseMaxSpeed *= window.weaponSlotSystem.getModifiers().speedMultiplier;
-    }
-
-    // Sprint mode (5x speed when holding shift)
-    const currentMaxSpeed = keys.shift ? baseMaxSpeed * 5 : baseMaxSpeed;
-
-    // Steering (only when keys pressed) - scaled by deltaTime
-    if (keys.a) this.state.heading -= p.turnRate * dt60;
-    if (keys.d) this.state.heading += p.turnRate * dt60;
-
-    // Normalize heading to [0, 2π]
-    while (this.state.heading < 0) this.state.heading += Math.PI * 2;
-    while (this.state.heading >= Math.PI * 2) this.state.heading -= Math.PI * 2;
-
-    // Acceleration / Deceleration - scaled by deltaTime
-    if (keys.s) {
-      // Accelerate forward
-      this.state.speed += p.acceleration * dt60;
-      if (this.state.speed > currentMaxSpeed) {
-        this.state.speed = currentMaxSpeed;
-      }
-    } else if (keys.w) {
-      // Accelerate reverse
-      this.state.speed -= p.acceleration * dt60;
-      if (this.state.speed < -currentMaxSpeed) {
-        this.state.speed = -currentMaxSpeed;
-      }
-    } else {
-      // No input - decelerate toward zero
-      if (this.state.speed > 0) {
-        this.state.speed -= p.deceleration * dt60;
-        if (this.state.speed < 0) this.state.speed = 0;
-      } else if (this.state.speed < 0) {
-        this.state.speed += p.deceleration * dt60;
-        if (this.state.speed > 0) this.state.speed = 0;
-      }
-    }
+    // Use SharedPhysics for prediction — identical code path as server and
+    // reconciliation replay. Prevents prediction drift from physics mismatches.
+    SharedPhysics.applyInput(this.state, deltaTime);
   }
 
   _moveOnSphere(deltaTime) {
@@ -410,15 +390,9 @@ class Tank {
     const prevTheta = this.state.theta;
     const prevPhi = this.state.phi;
 
-    // Use shared static helper with pre-allocated entity (avoids per-frame GC)
-    const me = this._moveEntity;
-    me.state.speed = this.state.speed;
-    me.heading = this.state.heading;
-    me.theta = this.state.theta;
-    me.phi = this.state.phi;
-    Tank.moveEntityOnSphere(me, deltaTime);
-    this.state.theta = me.theta;
-    this.state.phi = me.phi;
+    // Use SharedPhysics for movement — identical code path as server and
+    // reconciliation replay. Eliminates prediction drift from code divergence.
+    SharedPhysics.moveOnSphere(this.state, deltaTime);
 
     // Collision with wall sliding
     // Friction is frame-rate independent: Math.pow(base, dt * SERVER_TICK_RATE)

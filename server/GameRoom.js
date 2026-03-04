@@ -18,6 +18,7 @@ const TerrainElevation = require("./shared/TerrainElevation");
 const TuskGlobalChat = require("./TuskGlobalChat");
 const BodyguardManager = require("./BodyguardManager");
 const BotWorkerBridge = require("./BotWorkerBridge");
+const BinaryStateProtocol = require("./shared/BinaryStateProtocol");
 const DEBUG_LOG = process.env.DEBUG_LOG === "1";
 
 // Shield constants
@@ -3613,7 +3614,7 @@ class GameRoom {
     }
 
     // -- Celestial data (shared by all clients — computed once) --
-    if (!this._statePayload) this._statePayload = { tick: 0, players: null, bg: null, pr: 0, ma: [], sa: [], ba: [], tc: 0, bfc: null };
+    if (!this._statePayload) this._statePayload = { tick: 0, bg: null, pr: 0, ma: [], sa: [], ba: [], tc: 0, bfc: null, ids: null, names: null, seq: 0, r: 0, rt: 0 };
     const statePayload = this._statePayload;
     statePayload.tick = this.tick;
     statePayload.bg = this.bodyguardManager.getStatesForBroadcast();
@@ -3686,6 +3687,13 @@ class GameRoom {
     const NEARBY_LEAVE_THRESHOLD = 0.55; // cos(~57°) — wider leave radius (hysteresis prevents flicker)
     const CMDR_ENTER_THRESHOLD = 0.15;   // cos(~81°) — commanders see ~3x wider area
     const CMDR_LEAVE_THRESHOLD = 0.05;   // cos(~87°) — wider leave for commanders
+
+    // Tiered update rates: distant bots update less frequently to reduce bandwidth.
+    // Close bots (dot > 0.85): every tick (10Hz)
+    // Medium bots (dot 0.75-0.85): every 2nd tick (5Hz)
+    // Far bots (dot < 0.75): every 3rd tick (~3.3Hz)
+    const TIER_CLOSE = 0.85;   // ~32° — full update rate
+    const TIER_MEDIUM = 0.75;  // ~41° — half update rate
 
     // Per-player tracking of which bots were included last tick (for hysteresis)
     if (!this._playerBotSets) this._playerBotSets = new Map();
@@ -3782,15 +3790,28 @@ class GameRoom {
           const dot = px * bv.x + py * bv.y + pz * bv.z;
           const threshold = includedBots.has(botId) ? leaveThresh : enterThresh;
           if (dot > threshold) {
-            filtered[botId] = playerStates[botId];
             includedBots.add(botId);
+            // Tiered update rates: distant bots sent less often to save bandwidth.
+            // Stagger by bot ID character to prevent all bots updating on the same tick.
+            if (dot > TIER_CLOSE) {
+              // Close: every tick (10Hz)
+              filtered[botId] = playerStates[botId];
+            } else if (dot > TIER_MEDIUM) {
+              // Medium: every 2nd tick (5Hz), staggered
+              if ((this.tick + (botId.charCodeAt(4) || 0)) % 2 === 0) {
+                filtered[botId] = playerStates[botId];
+              }
+            } else {
+              // Far: every 3rd tick (~3.3Hz), staggered
+              if ((this.tick + (botId.charCodeAt(4) || 0)) % 3 === 0) {
+                filtered[botId] = playerStates[botId];
+              }
+            }
           } else {
             includedBots.delete(botId);
           }
         }
       }
-
-      statePayload.players = filtered;
 
       // Only send orbital position data to players in orbital view
       if (isOrbital) {
@@ -3801,43 +3822,68 @@ class GameRoom {
         statePayload.opn = undefined;
       }
 
-      // Track payload size for bandwidth monitoring (sample every 50th emit to avoid expensive stringify)
+      // Build ordered arrays for binary encoding
+      const ids = Object.keys(filtered);
+      const entityCount = ids.length;
+
+      // Collect entity state array for binary encoding.
+      // For the local player's own entity, use full-precision values
+      // (float32 already provides ~7 significant digits, better than the
+      // 4-decimal rounding used for remote entities in playerStates).
+      if (!this._binaryEntities) this._binaryEntities = [];
+      const binaryEntities = this._binaryEntities;
+      binaryEntities.length = entityCount;
+
+      const names = {};
+      for (let i = 0; i < entityCount; i++) {
+        const id = ids[i];
+        const state = filtered[id];
+        if (id === socketId) {
+          // Full precision for self (avoid rounding in playerStates)
+          if (!this._selfStateProxy) this._selfStateProxy = {};
+          const proxy = this._selfStateProxy;
+          proxy.t = player.theta;
+          proxy.p = player.phi;
+          proxy.h = player.heading;
+          proxy.s = player.speed;
+          proxy.ta = player.turretAngle;
+          proxy.hp = state.hp;
+          proxy.f = state.f;
+          proxy.sh = state.sh;
+          proxy.d = state.d;
+          binaryEntities[i] = proxy;
+        } else {
+          binaryEntities[i] = state;
+        }
+        // Collect bot names for metadata
+        if (state.n) names[id] = state.n;
+      }
+
+      const binaryBuf = BinaryStateProtocol.encode(binaryEntities);
+
+      // Build metadata (everything that isn't per-entity position data)
+      statePayload.ids = ids;
+      statePayload.names = names;
+      // Self-only fields
+      const selfState = filtered[socketId];
+      statePayload.seq = selfState ? selfState.seq : 0;
+      statePayload.r = selfState ? (selfState.r || 0) : 0;
+      statePayload.rt = selfState ? (selfState.rt || 0) : 0;
+
+      // Track payload size for bandwidth monitoring (sample every 50th emit)
       if (!this._payloadByteSum) this._payloadByteSum = 0;
       if (!this._payloadEntitySum) this._payloadEntitySum = 0;
       if (!this._payloadCount) this._payloadCount = 0;
       if (!this._payloadEmitCount) this._payloadEmitCount = 0;
       this._payloadEmitCount++;
-      const entityCount = Object.keys(filtered).length;
       if (this._payloadEmitCount % 50 === 0) {
-        this._payloadByteSum += JSON.stringify(statePayload).length;
+        this._payloadByteSum += JSON.stringify(statePayload).length + binaryBuf.byteLength;
         this._payloadEntitySum += entityCount;
         this._payloadCount++;
       }
 
-      // Send full-precision coords for the recipient's OWN state.
-      // Rounded values are fine for remote players (visual interpolation only),
-      // but the local player needs full precision for accurate reconciliation
-      // replay — rounding errors compound through input re-simulation.
-      const selfState = filtered[socketId];
-      let savedT, savedP, savedH;
-      if (selfState) {
-        savedT = selfState.t;
-        savedP = selfState.p;
-        savedH = selfState.h;
-        selfState.t = player.theta;
-        selfState.p = player.phi;
-        selfState.h = player.heading;
-      }
-
       const socket = this.io.sockets.sockets.get(socketId);
-      if (socket) socket.volatile.emit("state", statePayload);
-
-      // Restore rounded values so other players' broadcasts aren't affected
-      if (selfState) {
-        selfState.t = savedT;
-        selfState.p = savedP;
-        selfState.h = savedH;
-      }
+      if (socket) socket.volatile.emit("state", statePayload, binaryBuf);
     }
 
     // Restore orbital data on shared payload (for next tick's op computation)

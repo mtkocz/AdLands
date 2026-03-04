@@ -27,9 +27,8 @@ class NetworkManager {
     this.inputSeq = 0;
     this.pendingInputs = [];
 
-    // Input send throttle: match server tick rate (20Hz = 50ms)
-    this._lastInputSendTime = 0;
-    this._inputSendInterval = 50; // ms — matches 20 tick/sec server
+    // Input sending is driven by Tank's fixed timestep (10Hz = 100ms).
+    // No throttle needed — each call to sendInput corresponds to one physics tick.
 
     // Callback to get current planet rotation (set by MultiplayerClient).
     // Used to convert server world-space theta to hexGroup local-space.
@@ -177,10 +176,27 @@ class NetworkManager {
       if (this.onPlayerLeft) this.onPlayerLeft(data.id);
     });
 
-    // World state update (20 times/sec from server)
-    this.socket.on("state", (data) => {
-      this.lastServerState = data;
-      if (this.onStateUpdate) this.onStateUpdate(data);
+    // World state update (10 times/sec from server).
+    // Payload: JSON metadata + binary ArrayBuffer for entity positions.
+    this.socket.on("state", (meta, binaryBuf) => {
+      // Decode binary entity data into the players object
+      if (binaryBuf && meta.ids) {
+        meta.players = BinaryStateProtocol.decode(binaryBuf, meta.ids);
+        // Attach bot names from metadata
+        if (meta.names) {
+          for (const id in meta.names) {
+            if (meta.players[id]) meta.players[id].n = meta.names[id];
+          }
+        }
+        // Attach self-only fields (seq, rank) to own entity
+        if (this.playerId && meta.players[this.playerId]) {
+          meta.players[this.playerId].seq = meta.seq;
+          meta.players[this.playerId].r = meta.r;
+          meta.players[this.playerId].rt = meta.rt;
+        }
+      }
+      this.lastServerState = meta;
+      if (this.onStateUpdate) this.onStateUpdate(meta);
     });
 
     // Someone fired
@@ -430,21 +446,17 @@ class NetworkManager {
       seq: this.inputSeq,
     };
 
-    // Store for client-side prediction reconciliation (every frame)
+    // Store for reconciliation replay. Each entry now corresponds to exactly
+    // one fixed-timestep physics tick (dt = 0.1), matching the server's tick.
     this.pendingInputs.push({
       seq: this.inputSeq,
       keys: { ...input.keys },
       turretAngle: turretAngle,
-      dt: dt || 1 / 60,
+      dt: dt || 0.1,
     });
 
-    // Throttle network sends to match server tick rate (20Hz)
-    // Each input contains full key state, so server only needs the latest
-    const now = performance.now();
-    if (now - this._lastInputSendTime >= this._inputSendInterval) {
-      this.socket.emit("input", input);
-      this._lastInputSendTime = now;
-    }
+    // Send every input — called at 10Hz from fixed timestep, matching server
+    this.socket.emit("input", input);
 
     return this.inputSeq;
   }
@@ -647,14 +659,8 @@ class NetworkManager {
     // Remove all inputs the server has already processed
     this.pendingInputs = this.pendingInputs.filter((i) => i.seq > serverSeq);
 
-    // Save client's predicted state before reconciliation
-    const clientTheta = localTank.state.theta;
-    const clientPhi = localTank.state.phi;
-    const clientHeading = localTank.state.heading;
-
     // Detect true server-side teleport (portal, respawn, etc.) by checking
     // how far the SERVER position moved since last state update.
-    // Normal movement: ~0.01 rad/tick.  Teleport: >0.05 rad jump.
     let serverDTheta = this._lastServerTheta !== undefined
       ? serverPlayerState.t - this._lastServerTheta : 0;
     while (serverDTheta > Math.PI) serverDTheta -= Math.PI * 2;
@@ -665,76 +671,38 @@ class NetworkManager {
     this._lastServerTheta = serverPlayerState.t;
     this._lastServerPhi = serverPlayerState.p;
 
-    // Snap to server state
+    // Snap to server authoritative state
     localTank.state.theta = serverPlayerState.t;
     localTank.state.phi = serverPlayerState.p;
     localTank.state.heading = serverPlayerState.h;
     localTank.state.speed = serverPlayerState.s;
 
-    // Re-apply unprocessed inputs (client-side prediction replay)
-    // Each input stores its original frame deltaTime for accurate replay
+    // Re-apply unprocessed inputs (client-side prediction replay).
+    // With fixed timestep (dt = 0.1) and SharedPhysics, this replay produces
+    // identical results to the server simulation — no drift.
     for (const input of this.pendingInputs) {
-      const replayDt = input.dt;
-
-      // Temporarily set keys to this input's keys
       const prevKeys = { ...localTank.state.keys };
       localTank.state.keys = input.keys;
 
-      // Save position before move for terrain collision revert
       const prevTheta = localTank.state.theta;
       const prevPhi = localTank.state.phi;
 
-      // Re-run physics for this input using its original frame delta
-      SharedPhysics.applyInput(localTank.state, replayDt);
-      SharedPhysics.moveOnSphere(localTank.state, replayDt);
-
-      // Enforce terrain collision
-      localTank.checkTerrainCollision(prevTheta, prevPhi, replayDt);
+      SharedPhysics.applyInput(localTank.state, input.dt);
+      SharedPhysics.moveOnSphere(localTank.state, input.dt);
+      localTank.checkTerrainCollision(prevTheta, prevPhi, input.dt);
 
       localTank.state.keys = prevKeys;
     }
 
-    // Calculate reconciliation error (replayed position vs client prediction)
-    let thetaErr = localTank.state.theta - clientTheta;
-    const phiErr = localTank.state.phi - clientPhi;
-    // Normalize theta error to [-PI, PI]
-    while (thetaErr > Math.PI) thetaErr -= Math.PI * 2;
-    while (thetaErr < -Math.PI) thetaErr += Math.PI * 2;
+    // The replayed position IS the correct physics state — accept it directly.
+    // Tank._updateVisual's existing smoothing (65% per frame) absorbs any
+    // micro-corrections over 2-3 render frames without visible jitter.
 
-    const errMag = Math.abs(thetaErr) + Math.abs(phiErr);
-
+    // On teleport, also snap visual position to prevent the smoothing from
+    // creating a visible slide from the old position.
     if (serverJump > 0.05) {
-      // TRUE TELEPORT — the server position itself jumped (portal, respawn, etc.)
-      // Accept the replayed position as-is (snap immediately).
-    } else if (errMag > 0.0005) {
-      // Prediction drift — graduated blend for ALL error magnitudes.
-      // The old code snapped at errMag > 0.1, which caused visible teleportation
-      // for normal prediction drift (dt mismatch between 6 client substeps vs
-      // 1 server tick, terrain collision divergence, etc.).
-      // Now we blend smoothly: stronger factor for larger errors.
-      const blendFactor = 0.1 + MathUtils.smoothstep(Math.min(1, errMag / 0.1)) * 0.5;
-      const blendedTheta = clientTheta + thetaErr * blendFactor;
-      const blendedPhi = clientPhi + phiErr * blendFactor;
-
-      // Terrain safety: if the blended position lands inside terrain,
-      // keep the client's predicted position (which was collision-safe)
-      // instead of oscillating between blended and collision-reverted states.
-      localTank.state.theta = blendedTheta;
-      localTank.state.phi = blendedPhi;
-      if (localTank._isTerrainBlocked &&
-          localTank._isTerrainBlocked(blendedTheta, blendedPhi)) {
-        localTank.state.theta = clientTheta;
-        localTank.state.phi = clientPhi;
-      }
-    }
-    // Ignore sub-pixel errors (< 0.0005 rad ≈ 0.24 units) — eliminates micro-jitter
-
-    // Smooth heading correction — prevents turret/body orientation flicker
-    let headingErr = localTank.state.heading - clientHeading;
-    while (headingErr > Math.PI) headingErr -= Math.PI * 2;
-    while (headingErr < -Math.PI) headingErr += Math.PI * 2;
-    if (Math.abs(headingErr) < 0.5 && Math.abs(headingErr) > 0.005) {
-      localTank.state.heading = MathUtils.lerpAngle(clientHeading, localTank.state.heading, 0.2);
+      localTank._visualTheta = localTank.state.theta;
+      localTank._visualPhi = localTank.state.phi;
     }
   }
 

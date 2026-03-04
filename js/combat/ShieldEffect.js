@@ -138,6 +138,7 @@ class ShieldEffect {
 
       if (shield.retractTime < dur) {
         shield.mesh.visible = true;
+        shield.mesh.scale.set(1, 1, 1); // Reset any deploy overshoot
         const t = shield.retractTime / dur;
         // Ease-in: starts slow, accelerates
         const ease = t * t;
@@ -146,6 +147,7 @@ class ShieldEffect {
         shield.material.uniforms.uFlash.value = 0.0;
       } else {
         shield.mesh.visible = false;
+        shield.mesh.scale.set(1, 1, 1);
         shield.material.uniforms.uReveal.value = 1.0;
         shield.material.uniforms.uPulseEdge.value = -1.0;
         shield.material.uniforms.uFlash.value = 0.0;
@@ -160,16 +162,28 @@ class ShieldEffect {
     // Deploy animation
     if (shield.deployTime >= 0) {
       shield.deployTime += deltaTime;
-      const dur = 0.2; // 200ms deploy
+      const dur = 0.3; // 300ms deploy with overshoot bounce
 
       if (shield.deployTime < dur) {
         const t = shield.deployTime / dur;
-        const ease = 1 - (1 - t) * (1 - t);
-        shield.material.uniforms.uReveal.value = ease;
-        shield.material.uniforms.uPulseEdge.value = ease;
-        const flash = t < 0.2 ? t / 0.2 : (1 - t) / 0.8;
+
+        // Reveal: fast ease-out, completes by t=0.5
+        const revealT = Math.min(1, t * 2);
+        const revealEase = 1 - (1 - revealT) * (1 - revealT);
+        shield.material.uniforms.uReveal.value = revealEase;
+        shield.material.uniforms.uPulseEdge.value = revealEase;
+
+        // Flash
+        const flash = t < 0.1 ? t / 0.1 : Math.max(0, (0.4 - t) / 0.3);
         shield.material.uniforms.uFlash.value = flash * 1.4;
+
+        // Scale: back-ease-out — overshoots ~15% then settles to 1.0
+        const s = 2.5;
+        const t1 = t - 1;
+        const scaleVal = t1 * t1 * ((s + 1) * t1 + s) + 1;
+        shield.mesh.scale.set(scaleVal, 1, scaleVal);
       } else {
+        shield.mesh.scale.set(1, 1, 1);
         shield.material.uniforms.uReveal.value = 1.0;
         shield.material.uniforms.uPulseEdge.value = -1.0;
         shield.material.uniforms.uFlash.value = 0.0;

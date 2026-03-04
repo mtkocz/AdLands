@@ -78,9 +78,8 @@
     // INPUT SENDING
     // ========================
 
-    // Throttle input sending to ~60 times/sec max (matches frame rate)
-    let lastInputTime = 0;
-    const INPUT_INTERVAL = 1000 / 60;
+    // Input sending is now driven by Tank's fixed timestep physics ticks (10Hz).
+    // Each physics tick produces one pendingInput with dt matching the server.
 
     // Track current cluster for territory ring HUD (throttled)
     let lastHUDUpdateTime = 0;
@@ -99,12 +98,13 @@
       if (!net.isMultiplayer) return;
 
       const now = performance.now();
-      if (now - lastInputTime >= INPUT_INTERVAL) {
-        lastInputTime = now;
 
-        // Don't send inputs during fast travel (prevents stale prediction buffer)
-        if (!(mp.fastTravel && mp.fastTravel.active)) {
-          net.sendInput(tank.state.keys, tank.state.turretAngle, deltaTime);
+      // Send one input per physics tick (10Hz, matching server).
+      // On lag spikes, multiple physics ticks may fire in one frame —
+      // each needs its own input + sequence number for correct reconciliation.
+      if (tank._physicsTickCount > 0 && !(mp.fastTravel && mp.fastTravel.active)) {
+        for (let i = 0; i < tank._physicsTickCount; i++) {
+          net.sendInput(tank.state.keys, tank.state.turretAngle, tank._physicsDt);
         }
       }
 
