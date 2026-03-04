@@ -1436,7 +1436,7 @@ void main() {
       transparent: true,
       opacity: 1,
       depthWrite: false,
-      depthTest: false,
+      depthTest: true,
       blending: THREE.AdditiveBlending,
       sizeAttenuation: true,
       rotation: Math.random() * Math.PI * 2,
