@@ -671,41 +671,54 @@ class NetworkManager {
     this._lastServerTheta = serverPlayerState.t;
     this._lastServerPhi = serverPlayerState.p;
 
-    // Snap to server authoritative state
+    // Save current predicted position before replay
+    const predictedTheta = localTank.state.theta;
+    const predictedPhi = localTank.state.phi;
+
+    // Replay from server authoritative state
     localTank.state.theta = serverPlayerState.t;
     localTank.state.phi = serverPlayerState.p;
     localTank.state.heading = serverPlayerState.h;
     localTank.state.speed = serverPlayerState.s;
 
-    // Re-apply unprocessed inputs (client-side prediction replay).
-    // SharedPhysics produces identical results to the server simulation.
-    // IMPORTANT: We intentionally skip terrain collision during replay because
-    // the client and server use different terrain lookup algorithms (polygon
-    // test vs rasterized grid). Applying the client's check here would cause
-    // the replayed position to diverge from the server's, producing constant
-    // jitter near walls. The server position is already post-collision, and
-    // normal prediction (Tank._moveOnSphere) still applies terrain collision
-    // for responsive local feel.
     for (const input of this.pendingInputs) {
       const prevKeys = { ...localTank.state.keys };
       localTank.state.keys = input.keys;
 
+      const prevTheta = localTank.state.theta;
+      const prevPhi = localTank.state.phi;
+
       SharedPhysics.applyInput(localTank.state, input.dt);
       SharedPhysics.moveOnSphere(localTank.state, input.dt);
+      localTank.checkTerrainCollision(prevTheta, prevPhi, input.dt);
 
       localTank.state.keys = prevKeys;
     }
 
-    // The replayed position IS the correct physics state — accept it directly.
-    // Tank._updateVisual's existing smoothing (65% per frame) absorbs any
-    // micro-corrections over 2-3 render frames without visible jitter.
+    // Compare replayed position with current prediction.
+    // The server uses dt=0.1 (one big step) while the client predicts at
+    // dt≈0.017 (six small steps). This dt mismatch causes tiny position errors
+    // every tick. Without thresholding, these micro-corrections produce visible
+    // 10Hz stutter. Only correct when the error is large enough to matter.
+    let dTheta = localTank.state.theta - predictedTheta;
+    while (dTheta > Math.PI) dTheta -= Math.PI * 2;
+    while (dTheta < -Math.PI) dTheta += Math.PI * 2;
+    const dPhi = localTank.state.phi - predictedPhi;
+    const error = Math.abs(dTheta) + Math.abs(dPhi);
 
-    // On teleport, also snap visual position to prevent the smoothing from
-    // creating a visible slide from the old position.
     if (serverJump > 0.05) {
+      // Teleport — snap visual too
       localTank._visualTheta = localTank.state.theta;
       localTank._visualPhi = localTank.state.phi;
+    } else if (error < 0.002) {
+      // Error below ~1 world unit — trust the prediction to avoid micro-jumps.
+      // Heading/speed are accepted from replay (server-authoritative) since
+      // they don't cause visible position jumps.
+      localTank.state.theta = predictedTheta;
+      localTank.state.phi = predictedPhi;
     }
+    // else: meaningful error — accept replayed position, visual smoothing
+    // (95% per frame) absorbs the correction over 1-2 render frames.
   }
 
   // ========================

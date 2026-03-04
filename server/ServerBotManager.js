@@ -1775,11 +1775,11 @@ class ServerBotManager {
         state = {};
         this._stateCache[id] = state;
       }
-      state.t = Math.round(bot.theta * 10000) / 10000;
-      state.p = Math.round(bot.phi * 10000) / 10000;
-      state.h = Math.round(bot.heading * 10000) / 10000;
+      state.t = bot.theta;
+      state.p = bot.phi;
+      state.h = bot.heading;
       state.s = bot.speed;
-      state.ta = Math.round(bot.turretAngle * 10000) / 10000;
+      state.ta = bot.turretAngle;
       state.hp = bot.hp;
       state.d = bot.isDead ? 1 : 0;
       state.f = bot.faction;

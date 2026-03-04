@@ -3567,11 +3567,11 @@ class GameRoom {
         state = {};
         playerStates[id] = state;
       }
-      state.t = Math.round(p.theta * 10000) / 10000;
-      state.p = Math.round(p.phi * 10000) / 10000;
-      state.h = Math.round(p.heading * 10000) / 10000;
+      state.t = p.theta;
+      state.p = p.phi;
+      state.h = p.heading;
       state.s = p.speed;
-      state.ta = Math.round(p.turretAngle * 10000) / 10000;
+      state.ta = p.turretAngle;
       state.hp = p.hp;
       state.d = p.waitingForPortal ? 2 : (p.isDead ? 1 : 0);
       state.seq = p.lastInputSeq;

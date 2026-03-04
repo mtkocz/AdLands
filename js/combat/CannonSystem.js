@@ -34,9 +34,7 @@ const _shotDirection = new THREE.Vector3();
 const _shotDirWorld = new THREE.Vector3();
 const _shotTarget = new THREE.Vector3();
 const _yAxis = new THREE.Vector3(0, 1, 0);
-const _clipPlaneNormal = new THREE.Vector3();
-const _clipPlanePoint = new THREE.Vector3();
-const _clipPlane = new THREE.Plane();
+const _clipCenter = new THREE.Vector3();
 
 class CannonSystem {
   constructor(scene, sphereRadius) {
@@ -1370,7 +1368,7 @@ void main() {
     });
   }
 
-  _spawnExplosion(position, faction, sizeScale = 1, clipPlane = null) {
+  _spawnExplosion(position, faction, sizeScale = 1, clipCenter = null) {
     // Don't spawn if no planet reference
     if (!this.planet) {
       console.warn("[CANNON] Cannot spawn explosion - no planet reference");
@@ -1396,7 +1394,7 @@ void main() {
         depthWrite: false,
         blending: THREE.AdditiveBlending,
       });
-      if (clipPlane) material.clippingPlanes = [clipPlane];
+      if (clipCenter) this._applyShieldClip(material, clipCenter);
       const sprite = new THREE.Sprite(material);
       sprite.scale.setScalar(12 * sizeScale);
       sprite.layers.set(0);
@@ -1443,7 +1441,7 @@ void main() {
       sizeAttenuation: true,
       rotation: Math.random() * Math.PI * 2,
     });
-    if (clipPlane) material.clippingPlanes = [clipPlane];
+    if (clipCenter) this._applyShieldClip(material, clipCenter);
 
     const sprite = new THREE.Sprite(material);
     sprite.scale.setScalar(cfg.baseSize * sizeScale);
@@ -1471,6 +1469,48 @@ void main() {
       duration: cfg.duration,
       currentFrame: 0,
     });
+  }
+
+  /**
+   * Inject spherical clip into a SpriteMaterial via onBeforeCompile.
+   * Discards fragments inside the shield's radius from the turret center,
+   * following the shield's curvature.
+   */
+  _applyShieldClip(material, clipCenter) {
+    const center = clipCenter;
+    const radius = 4.5; // Shield arc average radius
+    material.onBeforeCompile = (shader) => {
+      shader.uniforms.uClipCenter = { value: center };
+      shader.uniforms.uClipRadius = { value: radius };
+
+      // Vertex: compute world position of each billboard fragment
+      shader.vertexShader = shader.vertexShader.replace(
+        'void main() {',
+        'varying vec3 vClipWorldPos;\nvoid main() {'
+      );
+      shader.vertexShader = shader.vertexShader.replace(
+        'gl_Position = projectionMatrix * mvPosition;',
+        [
+          'gl_Position = projectionMatrix * mvPosition;',
+          'vec3 _cwc = (modelMatrix * vec4(0.0, 0.0, 0.0, 1.0)).xyz;',
+          'vec3 _cr = vec3(viewMatrix[0][0], viewMatrix[1][0], viewMatrix[2][0]);',
+          'vec3 _cu = vec3(viewMatrix[0][1], viewMatrix[1][1], viewMatrix[2][1]);',
+          'vClipWorldPos = _cwc + _cr * rotatedPosition.x + _cu * rotatedPosition.y;',
+        ].join('\n')
+      );
+
+      // Fragment: discard inside shield sphere
+      shader.fragmentShader = shader.fragmentShader.replace(
+        'void main() {',
+        [
+          'uniform vec3 uClipCenter;',
+          'uniform float uClipRadius;',
+          'varying vec3 vClipWorldPos;',
+          'void main() {',
+          '  if (length(vClipWorldPos - uClipCenter) < uClipRadius) discard;',
+        ].join('\n')
+      );
+    };
   }
 
   _spawnLODExplosion(position, faction, sizeScale = 1) {
@@ -1861,17 +1901,12 @@ void main() {
               p.position.copy(_testPos);
               p.mesh.position.copy(p.position);
 
-              // Compute clip plane so explosion doesn't bleed through shield
-              // Shield faces -Z in turret-local space
-              _clipPlaneNormal.set(0, 0, -1);
-              tank.turretGroup.localToWorld(_clipPlaneNormal);
-              _clipPlanePoint.set(0, 0, 0);
-              tank.turretGroup.localToWorld(_clipPlanePoint);
-              _clipPlaneNormal.sub(_clipPlanePoint).normalize();
-              _clipPlanePoint.addScaledVector(_clipPlaneNormal, 4.5);
-              _clipPlane.setFromNormalAndCoplanarPoint(_clipPlaneNormal, _clipPlanePoint);
+              // Compute clip sphere so explosion doesn't bleed through shield
+              // Shield center is at (0, 0.5, 0) in turret-local, radius 4.5
+              _clipCenter.set(0, 0.5, 0);
+              tank.turretGroup.localToWorld(_clipCenter);
 
-              this._spawnExplosion(p.position, tank.faction, 0.3, _clipPlane.clone());
+              this._spawnExplosion(p.position, tank.faction, 0.3, _clipCenter.clone());
               shouldExplode = false;
               hitTank = true;
               break;
