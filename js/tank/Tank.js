@@ -130,6 +130,12 @@ class Tank {
       hp: 0, maxHp: 0, isDead: false, lean: this.state.lean,
     };
 
+    // Visual position smoothing — decouples rendered position from physics state
+    // to absorb reconciliation micro-corrections without visible jitter.
+    // Normal movement lag is sub-pixel; sudden jumps are smoothed over 2-3 frames.
+    this._visualTheta = this.state.theta;
+    this._visualPhi = this.state.phi;
+
     // Initialize position
     this._updateVisual(0);
     if (!options.skipScene) {
@@ -266,6 +272,9 @@ class Tank {
     this.state.phi = phi;
     this.state.speed = 0;
     this.state.turretAngularVelocity = 0;
+    // Snap visual position to avoid 1-frame lag after teleport
+    this._visualTheta = theta;
+    this._visualPhi = phi;
     this._updateVisual(0);
   }
 
@@ -497,12 +506,39 @@ class Tank {
       this.state.wigglePhase += deltaTime * (12 + speedRatio * 18);
     }
 
+    // Smooth visual position toward physics position.
+    // Lerp factor: ~65% per frame at 60fps — responsive enough for normal movement
+    // (sub-pixel lag) but absorbs reconciliation jumps over 2-3 frames.
+    if (deltaTime > 0) {
+      const smooth = 1 - Math.pow(0.35, deltaTime * 60);
+
+      // Theta wraps at 2π — find shortest path
+      let dTheta = this.state.theta - this._visualTheta;
+      if (dTheta > Math.PI) dTheta -= Math.PI * 2;
+      else if (dTheta < -Math.PI) dTheta += Math.PI * 2;
+
+      const dPhi = this.state.phi - this._visualPhi;
+
+      // Snap on teleport (large jump > ~24 units)
+      if (Math.abs(dTheta) + Math.abs(dPhi) > 0.05) {
+        this._visualTheta = this.state.theta;
+        this._visualPhi = this.state.phi;
+      } else {
+        this._visualTheta += dTheta * smooth;
+        this._visualPhi += dPhi * smooth;
+      }
+
+      // Keep visual theta wrapped
+      if (this._visualTheta > Math.PI * 2) this._visualTheta -= Math.PI * 2;
+      else if (this._visualTheta < 0) this._visualTheta += Math.PI * 2;
+    }
+
     // Update momentum lean springs
     Tank.updateLeanState(this.state.lean, this.state.speed, this.state.heading, deltaTime, this.isDead);
 
     // Reuse pre-allocated entity (avoids per-frame GC)
     const ve = this._visualEntity;
-    ve.theta = this.state.theta; ve.phi = this.state.phi;
+    ve.theta = this._visualTheta; ve.phi = this._visualPhi;
     ve.heading = this.state.heading; ve.speed = this.state.speed;
     ve.wigglePhase = this.state.wigglePhase; ve.currentRollAngle = 0;
     ve.hp = this.hp; ve.maxHp = this.maxHp; ve.isDead = this.isDead;

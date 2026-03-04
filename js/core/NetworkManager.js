@@ -713,8 +713,19 @@ class NetworkManager {
       // 1 server tick, terrain collision divergence, etc.).
       // Now we blend smoothly: stronger factor for larger errors.
       const blendFactor = 0.1 + MathUtils.smoothstep(Math.min(1, errMag / 0.1)) * 0.5;
-      localTank.state.theta = clientTheta + thetaErr * blendFactor;
-      localTank.state.phi = clientPhi + phiErr * blendFactor;
+      const blendedTheta = clientTheta + thetaErr * blendFactor;
+      const blendedPhi = clientPhi + phiErr * blendFactor;
+
+      // Terrain safety: if the blended position lands inside terrain,
+      // keep the client's predicted position (which was collision-safe)
+      // instead of oscillating between blended and collision-reverted states.
+      localTank.state.theta = blendedTheta;
+      localTank.state.phi = blendedPhi;
+      if (localTank._isTerrainBlocked &&
+          localTank._isTerrainBlocked(blendedTheta, blendedPhi)) {
+        localTank.state.theta = clientTheta;
+        localTank.state.phi = clientPhi;
+      }
     }
     // Ignore sub-pixel errors (< 0.0005 rad ≈ 0.24 units) — eliminates micro-jitter
 

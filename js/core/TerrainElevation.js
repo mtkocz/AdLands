@@ -669,16 +669,19 @@ class TerrainElevation {
     // No collision data → fall back to Voronoi (shouldn't happen)
     if (!poly) return true;
 
-    // Polygon containment test: check point is on correct side of all edges
+    // Polygon containment test: check point is on correct side of all edges.
+    // Small positive epsilon shrinks the effective polygon slightly inward,
+    // preventing flickering for probes right at the tile boundary.
     const { normals, sign, edgeCount } = poly;
     const px = localPos.x, py = localPos.y, pz = localPos.z;
+    const eps = 0.5; // ~0.5 world units of boundary margin
 
     for (let i = 0; i < edgeCount; i++) {
       const dot = normals[i * 3] * px + normals[i * 3 + 1] * py + normals[i * 3 + 2] * pz;
-      if (dot * sign < 0) return false; // Outside this edge → not inside polygon
+      if (dot * sign < eps) return false; // Outside or at boundary → not blocked
     }
 
-    return true; // Inside all edges → blocked
+    return true; // Firmly inside all edges → blocked
   }
 
   getExtrusion(elevation) {
