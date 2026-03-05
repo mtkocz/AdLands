@@ -848,6 +848,7 @@ class TerrainElevation {
     const normals = [];
     const colors = [];
     const uvs = [];
+    const noiseUvs = [];
     const indices = [];
     // Separate arrays for the ground apron (no shadow casting)
     const apronPos = [];
@@ -939,6 +940,19 @@ class TerrainElevation {
         0,     vTile,  // lowA
       );
 
+      // Noise UVs: same tangent-plane projection at noise scale + random offset
+      const ns = this.planet._noiseScale;
+      const noiseOffU = this.random();
+      const noiseOffV = this.random();
+      const uNoise = edgeLen * ns;
+      const vNoise = wallHeight * ns;
+      noiseUvs.push(
+        noiseOffU,          noiseOffV,
+        uNoise + noiseOffU, noiseOffV,
+        uNoise + noiseOffU, vNoise + noiseOffV,
+        noiseOffU,          vNoise + noiseOffV,
+      );
+
       // Standard winding: front face matches the outward normal direction.
       indices.push(
         baseIndex, baseIndex + 1, baseIndex + 2,
@@ -997,6 +1011,10 @@ class TerrainElevation {
     geometry.setAttribute(
       "uv",
       new THREE.Float32BufferAttribute(uvs, 2),
+    );
+    geometry.setAttribute(
+      "aNoiseUV",
+      new THREE.Float32BufferAttribute(noiseUvs, 2),
     );
     geometry.setIndex(indices);
     geometry.computeBoundingSphere();

@@ -1348,61 +1348,46 @@ class Planet {
   }
 
   /**
-   * Patch a MeshStandardMaterial with triplanar noise sampling.
-   * Used for cliff walls and polar walls. Triplanar projection avoids
-   * distortion by blending 3 axis-aligned planes weighted by the face normal.
+   * Patch a MeshStandardMaterial with per-face noise sampling for walls.
+   * Uses pre-computed aNoiseUV attribute (tangent-plane projected per quad).
    * @param {THREE.MeshStandardMaterial} material
    */
   _patchWallNoise(material) {
     const noiseDiffuseMap = this._noiseDiffuseMap;
     const noiseRoughMap = this._noiseRoughnessMap;
-    const noiseScale = this._noiseScale;
+
     material.onBeforeCompile = (shader) => {
       shader.uniforms.triNoiseDiffuseMap = { value: noiseDiffuseMap };
       shader.uniforms.triNoiseRoughMap = { value: noiseRoughMap };
-      shader.uniforms.triNoiseScale = { value: noiseScale };
 
       shader.vertexShader = shader.vertexShader.replace(
         "#include <common>",
-        "#include <common>\nvarying vec3 vTriObjPos;",
+        `#include <common>
+        attribute vec2 aNoiseUV;
+        varying vec2 vNoiseUV;`,
       );
       shader.vertexShader = shader.vertexShader.replace(
         "#include <begin_vertex>",
-        "#include <begin_vertex>\nvTriObjPos = position;",
+        "#include <begin_vertex>\nvNoiseUV = aNoiseUV;",
       );
 
       shader.fragmentShader = shader.fragmentShader.replace(
         "#include <common>",
         `#include <common>
-        varying vec3 vTriObjPos;
+        varying vec2 vNoiseUV;
         uniform sampler2D triNoiseDiffuseMap;
-        uniform sampler2D triNoiseRoughMap;
-        uniform float triNoiseScale;`,
+        uniform sampler2D triNoiseRoughMap;`,
       );
       shader.fragmentShader = shader.fragmentShader.replace(
         "#include <roughnessmap_fragment>",
         `float roughnessFactor = roughness;
-        {
-          vec3 wn = abs(normalize(cross(dFdx(vTriObjPos), dFdy(vTriObjPos))));
-          wn = wn / (wn.x + wn.y + wn.z);
-          roughnessFactor *= (
-            texture2D(triNoiseRoughMap, vTriObjPos.yz * triNoiseScale).g * wn.x +
-            texture2D(triNoiseRoughMap, vTriObjPos.xz * triNoiseScale).g * wn.y +
-            texture2D(triNoiseRoughMap, vTriObjPos.xy * triNoiseScale).g * wn.z
-          );
-        }`,
+        roughnessFactor *= texture2D(triNoiseRoughMap, vNoiseUV).g;`,
       );
       // Multiply diffuse noise into final output color (before tonemapping)
       shader.fragmentShader = shader.fragmentShader.replace(
         "#include <tonemapping_fragment>",
         `{
-          vec3 wn = abs(normalize(cross(dFdx(vTriObjPos), dFdy(vTriObjPos))));
-          wn = wn / (wn.x + wn.y + wn.z);
-          vec3 wallNoise = (
-            texture2D(triNoiseDiffuseMap, vTriObjPos.yz * triNoiseScale).rgb * wn.x +
-            texture2D(triNoiseDiffuseMap, vTriObjPos.xz * triNoiseScale).rgb * wn.y +
-            texture2D(triNoiseDiffuseMap, vTriObjPos.xy * triNoiseScale).rgb * wn.z
-          ) * 2.0;
+          vec3 wallNoise = texture2D(triNoiseDiffuseMap, vNoiseUV).rgb * 2.0;
           gl_FragColor.rgb *= mix(vec3(1.0), wallNoise, 3.0);
         }
         #include <tonemapping_fragment>`,
@@ -1824,8 +1809,10 @@ class Planet {
     const normals = [];
     const colors = [];
     const uvs = [];
+    const noiseUvs = [];
     const indices = [];
     const scale = (this.radius - thickness) / this.radius;
+    const ns = this._noiseScale;
 
     const _outerA = new THREE.Vector3();
     const _outerB = new THREE.Vector3();
@@ -1862,6 +1849,18 @@ class Planet {
         uTile, 0,      // outerB
         uTile, vTile,  // innerB
         0,     vTile,  // innerA
+      );
+
+      // Noise UVs: same tangent-plane projection at noise scale + random offset
+      const noiseOffU = this.random();
+      const noiseOffV = this.random();
+      const uNoise = edgeLen * ns;
+      const vNoise = wallDepth * ns;
+      noiseUvs.push(
+        noiseOffU,          noiseOffV,
+        uNoise + noiseOffU, noiseOffV,
+        uNoise + noiseOffU, vNoise + noiseOffV,
+        noiseOffU,          vNoise + noiseOffV,
       );
 
       _edgeDir.subVectors(_outerB, _outerA).normalize();
@@ -1920,6 +1919,10 @@ class Planet {
     wallGeometry.setAttribute(
       "uv",
       new THREE.Float32BufferAttribute(uvs, 2),
+    );
+    wallGeometry.setAttribute(
+      "aNoiseUV",
+      new THREE.Float32BufferAttribute(noiseUvs, 2),
     );
     wallGeometry.setIndex(indices);
 
