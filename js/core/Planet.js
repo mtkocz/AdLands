@@ -153,7 +153,54 @@ class Planet {
       vertexOffset += n;
     });
 
-    // 2. Polar crust walls (rim of polar openings)
+    // 2. Cliff side walls (vertical faces between tiles at different elevations)
+    if (this.terrainElevation) {
+      const edgeMap = new Map();
+      for (let tileIdx = 0; tileIdx < this._tiles.length; tileIdx++) {
+        if (this.polarTileIndices.has(tileIdx)) continue;
+        const boundary = this._tiles[tileIdx].boundary;
+        for (let i = 0; i < boundary.length; i++) {
+          const v1 = boundary[i];
+          const v2 = boundary[(i + 1) % boundary.length];
+          const k1 = `${v1.x},${v1.y},${v1.z}`;
+          const k2 = `${v2.x},${v2.y},${v2.z}`;
+          const edgeKey = k1 < k2 ? `${k1}|${k2}` : `${k2}|${k1}`;
+          if (!edgeMap.has(edgeKey)) edgeMap.set(edgeKey, []);
+          edgeMap.get(edgeKey).push({ tileIdx, v1, v2 });
+        }
+      }
+
+      for (const [, entries] of edgeMap) {
+        if (entries.length !== 2) continue;
+        const elevA = this.terrainElevation.tileElevation.get(entries[0].tileIdx) || 0;
+        const elevB = this.terrainElevation.tileElevation.get(entries[1].tileIdx) || 0;
+        if (elevA === elevB) continue;
+
+        const high = elevA > elevB ? entries[0] : entries[1];
+        const highScale = this.terrainElevation.getExtrusion(Math.max(elevA, elevB));
+        const lowScale = this.terrainElevation.getExtrusion(Math.min(elevA, elevB));
+
+        const v1x = parseFloat(high.v1.x), v1y = parseFloat(high.v1.y), v1z = parseFloat(high.v1.z);
+        const v2x = parseFloat(high.v2.x), v2y = parseFloat(high.v2.y), v2z = parseFloat(high.v2.z);
+
+        allPositions.push(
+          v1x * highScale, v1y * highScale, v1z * highScale,
+          v2x * highScale, v2y * highScale, v2z * highScale,
+          v2x * lowScale,  v2y * lowScale,  v2z * lowScale,
+          v1x * lowScale,  v1y * lowScale,  v1z * lowScale,
+        );
+        // Both winding orders so it occludes from either side
+        allIndices.push(
+          vertexOffset, vertexOffset + 1, vertexOffset + 2,
+          vertexOffset, vertexOffset + 2, vertexOffset + 3,
+          vertexOffset, vertexOffset + 2, vertexOffset + 1,
+          vertexOffset, vertexOffset + 3, vertexOffset + 2,
+        );
+        vertexOffset += 4;
+      }
+    }
+
+    // 3. Polar crust walls (rim of polar openings)
     const edges = this._findPolarBoundaryEdges(this._tiles);
     const scale = (this.radius - CRUST_THICKNESS) / this.radius;
     for (const edge of edges) {
@@ -1283,11 +1330,11 @@ class Planet {
         `float roughnessFactor = roughness;
         roughnessFactor *= texture2D(triNoiseRoughMap, vNoiseUV).g;`,
       );
-      // Multiply diffuse noise into final output color
+      // Multiply diffuse noise into final output color (before tonemapping)
       shader.fragmentShader = shader.fragmentShader.replace(
-        "#include <output_fragment>",
-        `#include <output_fragment>
-        gl_FragColor.rgb *= texture2D(triNoiseDiffuseMap, vNoiseUV).rgb * 2.0;`,
+        "#include <tonemapping_fragment>",
+        `gl_FragColor.rgb *= texture2D(triNoiseDiffuseMap, vNoiseUV).rgb * 2.0;
+        #include <tonemapping_fragment>`,
       );
     };
   }
@@ -1335,17 +1382,17 @@ class Planet {
           roughnessFactor *= texture2D(triNoiseRoughMap, uv).g;
         }`,
       );
-      // Multiply diffuse noise into final output color
+      // Multiply diffuse noise into final output color (before tonemapping)
       shader.fragmentShader = shader.fragmentShader.replace(
-        "#include <output_fragment>",
-        `#include <output_fragment>
-        {
+        "#include <tonemapping_fragment>",
+        `{
           float horizR = length(vTriObjPos.xz);
           float theta = atan(vTriObjPos.z, vTriObjPos.x);
           float r = length(vTriObjPos);
           vec2 uv = vec2(theta * horizR, r) * triNoiseScale;
           gl_FragColor.rgb *= texture2D(triNoiseDiffuseMap, uv).rgb * 2.0;
-        }`,
+        }
+        #include <tonemapping_fragment>`,
       );
     };
   }
