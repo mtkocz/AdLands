@@ -221,7 +221,7 @@ class TankDamageEffects {
     // ========================
 
     _createSmokeSystem() {
-        const maxParticles = 313;
+        const maxParticles = 391;
 
         this.smoke = {
             maxParticles,
@@ -286,7 +286,7 @@ class TankDamageEffects {
                     // Fade in quickly, stay visible longer, then fade out
                     float fadeIn = smoothstep(0.0, 0.05, lifeRatio);
                     float fadeOut = 1.0 - smoothstep(0.6, 1.0, lifeRatio);
-                    vAlpha = fadeIn * fadeOut * 0.478 * aOpacity * distanceFade;
+                    vAlpha = fadeIn * fadeOut * 0.3585 * aOpacity * distanceFade;
 
                     // Gray (0) or black (1) smoke - pass brightness to fragment
                     vBrightness = mix(0.45, 0.05, aColor);
@@ -392,7 +392,7 @@ class TankDamageEffects {
             this.smoke.colors[idx] = smokeType === 'black' ? 1.0 : 0.0;
             this.smoke.sizes[idx] = 2.53 + Math.random() * 1.69;
             this.smoke.rotations[idx] = Math.random() * Math.PI * 2;
-            this.smoke.rotationSpeeds[idx] = (Math.random() - 0.5) * 2.0;  // -1 to +1 radians/sec
+            this.smoke.rotationSpeeds[idx] = (Math.random() - 0.5) * (0.5 + Math.random() * 3.5);  // varied: some barely spin, some up to ±2 rad/sec
             this.smoke.opacities[idx] = tankOpacity;  // Initial opacity from tank
             this.smoke.tankIds[idx] = tankId;  // Track which tank owns this particle
 
@@ -638,7 +638,7 @@ class TankDamageEffects {
             this.fire.lifetimes[idx] = 0.3 + Math.random() * 0.4;  // 0.3-0.7 seconds (shorter than smoke)
             this.fire.sizes[idx] = 2.0 + Math.random() * 1.5;
             this.fire.rotations[idx] = Math.random() * Math.PI * 2;
-            this.fire.rotationSpeeds[idx] = (Math.random() - 0.5) * 6.0;  // -3 to +3 radians/sec (faster for fire)
+            this.fire.rotationSpeeds[idx] = (Math.random() - 0.5) * (1.0 + Math.random() * 10.0);  // varied: some slow, some up to ±5.5 rad/sec
 
             this.fire.activeCount++;
         }

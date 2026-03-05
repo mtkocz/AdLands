@@ -687,8 +687,23 @@ class MissileSystem {
       if (m.age > this.config.launchDuration || altitude > m.cruiseAltitude) {
         m.phase = 1;
         m.cruiseAltitude = altitude;
-        // Initialize travel direction for steering (along surface normal initially)
-        m.direction = m.surfaceNormal.clone();
+        // Initialize travel direction toward the target (projected onto tangent plane)
+        // so the forward-hemisphere filter doesn't reject all surface targets
+        const ownerFaction = m.faction || m.ownerFaction;
+        const initTarget = this._findClosestEnemyFromPos(m.position, ownerFaction, null);
+        if (initTarget) {
+          const toTarget = initTarget.worldPos.clone().sub(m.position);
+          // Remove surface-normal component to get horizontal direction
+          const normalComp = toTarget.dot(m.surfaceNormal);
+          toTarget.addScaledVector(m.surfaceNormal, -normalComp);
+          if (toTarget.lengthSq() > 0.001) {
+            m.direction = toTarget.normalize();
+          } else {
+            m.direction = m.surfaceNormal.clone();
+          }
+        } else {
+          m.direction = m.surfaceNormal.clone();
+        }
       }
 
       // Orient mesh: nose (+Y) points along surface normal (upward)
