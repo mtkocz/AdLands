@@ -110,6 +110,7 @@ class FlareSystem {
     this._firePoints = new THREE.Points(geo, mat);
     this._firePoints.frustumCulled = false;
     this._firePoints.renderOrder = 15;
+    this._firePoints.layers.enable(1); // BLOOM_LAYER
     this.scene.add(this._firePoints);
   }
 
@@ -208,7 +209,8 @@ class FlareSystem {
   _acquireMesh(faction) {
     let item = this._meshPool.find(m => !m.inUse);
     if (!item) {
-      const light = new THREE.PointLight(0xffffff, 1.5, 20);
+      const light = new THREE.PointLight(0xffffff, 2.5, 25);
+      light.layers.enable(1); // BLOOM_LAYER
       const group = new THREE.Group();
       group.add(light);
       group.position.set(0, -9999, 0);
