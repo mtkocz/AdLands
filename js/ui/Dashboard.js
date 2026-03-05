@@ -1394,6 +1394,10 @@ class Dashboard {
         } else {
           this.settingsSectionStates = {};
         }
+        // Load loadout selections
+        if (data.loadout) {
+          this.equippedUpgrades = data.loadout;
+        }
       }
     } catch (e) {
       console.warn("[Dashboard] Failed to load state:", e);
@@ -1434,6 +1438,7 @@ class Dashboard {
         visible: this.isVisible,
         panels: panels,
         settingsSections: this.settingsSectionStates || {},
+        loadout: this.equippedUpgrades || {},
       };
       localStorage.setItem("adlands_dashboard_state", JSON.stringify(data));
     } catch (e) {
@@ -3825,6 +3830,9 @@ class Dashboard {
 
     // Sync LoadoutHUD active slots
     if (window.loadoutHUD) window.loadoutHUD.syncFromLoadout();
+
+    // Persist to localStorage
+    this._saveState();
   }
 
   /**
@@ -3862,6 +3870,9 @@ class Dashboard {
 
     // Sync LoadoutHUD active slots
     if (window.loadoutHUD) window.loadoutHUD.syncFromLoadout();
+
+    // Persist to localStorage
+    this._saveState();
   }
 
   /**

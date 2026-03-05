@@ -150,7 +150,7 @@ class MissileSystem {
     }
 
     // Point light for glow
-    const light = new THREE.PointLight(0xffffff, 3, 30);
+    const light = new THREE.PointLight(0xffffff, 1, 15);
     light.position.set(0, -0.6, 0); // At tail
     group.add(light);
 
@@ -334,7 +334,8 @@ class MissileSystem {
   }
 
   // Find closest enemy from a missile's world position (for in-flight retargeting)
-  _findClosestEnemyFromPos(missilePos, ownerFaction) {
+  // missileDir: current travel direction (if provided, only targets in forward hemisphere)
+  _findClosestEnemyFromPos(missilePos, ownerFaction, missileDir) {
     let closest = null;
     let closestDist = Infinity;
 
@@ -345,6 +346,11 @@ class MissileSystem {
         if (!bot.hitbox) continue;
         bot.hitbox.updateWorldMatrix(true, false);
         const pos = bot.hitbox.getWorldPosition(this._tempVec3);
+        // Skip targets behind the missile (prevents U-turns back toward owner)
+        if (missileDir) {
+          const toTarget = this._tempVec.copy(pos).sub(missilePos);
+          if (toTarget.dot(missileDir) < 0) continue;
+        }
         const dist = pos.distanceTo(missilePos);
         if (dist < closestDist) {
           closest = { tank: bot, worldPos: pos.clone(), distance: dist };
@@ -358,6 +364,11 @@ class MissileSystem {
         if (remoteTank.isDead || remoteTank.faction === ownerFaction) continue;
         const pos = this._getTargetWorldPos(remoteTank);
         if (!pos) continue;
+        // Skip targets behind the missile
+        if (missileDir) {
+          const toTarget = this._tempVec.copy(pos).sub(missilePos);
+          if (toTarget.dot(missileDir) < 0) continue;
+        }
         const dist = pos.distanceTo(missilePos);
         if (dist < closestDist) {
           closest = {
@@ -519,8 +530,17 @@ class MissileSystem {
   removeByServerId(projectileId) {
     for (let i = this.missiles.length - 1; i >= 0; i--) {
       if (this.missiles[i].serverId === projectileId) {
-        this._releasePoolItem(this.missiles[i].poolItem);
-        this.missiles.splice(i, 1);
+        this._destroyMissile(i, this.missiles[i].position);
+        return;
+      }
+    }
+  }
+
+  // Remove the local player's missile (serverId is null — can't match by ID)
+  removeLocalMissile() {
+    for (let i = this.missiles.length - 1; i >= 0; i--) {
+      if (!this.missiles[i].isRemote) {
+        this._destroyMissile(i, this.missiles[i].position);
         return;
       }
     }
@@ -678,10 +698,10 @@ class MissileSystem {
     } else if (m.phase === 1) {
       // CRUISE / HOMING: Steer toward target at altitude
       const ownerFaction = m.faction || m.ownerFaction;
-      const target = this._findClosestEnemyFromPos(m.position, ownerFaction);
+      const target = this._findClosestEnemyFromPos(m.position, ownerFaction, m.direction);
 
       if (!target) {
-        // No targets — fly straight, will timeout
+        // No targets in forward hemisphere — fly straight, will timeout
         const moveSpeed = this.config.missileSpeed * dt60;
         m.position.addScaledVector(m.direction, moveSpeed);
         m.poolItem.group.position.copy(m.position);
@@ -731,9 +751,9 @@ class MissileSystem {
         m.diveTarget = targetSurface.clone();
       }
     } else if (m.phase === 2) {
-      // TERMINAL DIVE: Steer downward toward ground target
+      // TERMINAL DIVE: Steer downward toward ground target (no forward filter — committed to dive)
       const ownerFaction = m.faction || m.ownerFaction;
-      const target = this._findClosestEnemyFromPos(m.position, ownerFaction);
+      const target = this._findClosestEnemyFromPos(m.position, ownerFaction, null);
       const diveTarget = target ? target.worldPos : m.diveTarget;
 
       const desired = this._tempVec3
@@ -881,7 +901,7 @@ class MissileSystem {
           // Warm color gradient: yellow core -> orange -> red
           vec3 coreColor = vec3(1.0, 0.9, 0.3);
           vec3 outerColor = vec3(1.0, 0.3, 0.05);
-          vec3 color = mix(coreColor, outerColor, vLifeRatio) * 1.5; // Subtle HDR for bloom
+          vec3 color = mix(coreColor, outerColor, vLifeRatio) * 0.8;
           float dist = max(abs(rotatedCoord.x), abs(rotatedCoord.y));
           float alpha = vAlpha * (1.0 - dist * 1.5);
           gl_FragColor = vec4(color, alpha);
@@ -907,8 +927,10 @@ class MissileSystem {
       if (ab.activeCount >= ab.maxParticles) break;
       const i = ab.activeCount;
 
-      // Tail position (behind missile body)
-      const tailOffset = missile.poolItem.group.getWorldDirection(this._tempVec).multiplyScalar(-0.8);
+      // Tail position (behind missile body) — use actual travel direction, not getWorldDirection
+      // (getWorldDirection returns group -Z which is wrong after _meshOrientQuat multiply)
+      const travelDir = missile.direction || missile.surfaceNormal;
+      const tailOffset = this._tempVec.copy(travelDir).multiplyScalar(-0.8);
       const pos = this._tempVec2.copy(missile.position).add(tailOffset);
 
       // Random spread
@@ -1078,7 +1100,9 @@ class MissileSystem {
       if (smoke.activeCount >= smoke.maxParticles) break;
       const i = smoke.activeCount;
 
-      const tailOffset = missile.poolItem.group.getWorldDirection(this._tempVec).multiplyScalar(-1.0);
+      // Use actual travel direction (not getWorldDirection — wrong after _meshOrientQuat)
+      const travelDir = missile.direction || missile.surfaceNormal;
+      const tailOffset = this._tempVec.copy(travelDir).multiplyScalar(-1.0);
       const pos = this._tempVec2.copy(missile.position).add(tailOffset);
 
       pos.x += (Math.random() - 0.5) * 0.5;

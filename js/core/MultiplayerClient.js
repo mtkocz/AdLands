@@ -999,11 +999,16 @@
           }
         }
 
-        // Remove the matching remote projectile visual so it doesn't keep
+        // Remove the matching projectile visual so it doesn't keep
         // flying past the target after the server already destroyed it
         if (data.projectileId != null) {
           if (data.isMissile && window.missileSystem) {
-            window.missileSystem.removeByServerId(data.projectileId);
+            if (data.attackerId === net.playerId) {
+              // Local player's missile — has no serverId, destroy by local flag
+              window.missileSystem.removeLocalMissile();
+            } else {
+              window.missileSystem.removeByServerId(data.projectileId);
+            }
           } else {
             cannonSystem.removeProjectileByServerId?.(data.projectileId);
           }
