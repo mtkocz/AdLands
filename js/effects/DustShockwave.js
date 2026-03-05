@@ -607,7 +607,8 @@ class DustShockwave {
 
     // Create mesh using shared geometry
     const mesh = new THREE.Mesh(this.geometry, material);
-    const planeSize = cfg.baseSize * scale;
+    // All dustwave sprites spawn at the same size (ignore scale parameter)
+    const planeSize = cfg.baseSize;
     mesh.scale.set(planeSize, planeSize, 1);
     mesh.renderOrder = 10; // Start above overlays (1-2) to avoid faction color tinting
 

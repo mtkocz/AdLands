@@ -246,9 +246,20 @@ class FlareSystem {
     const flare = this._createFlareVisual(surfacePos, normal, faction, true);
     this.flares.push(flare);
 
-    // Small dust wave at launch point
+    // Small dust wave at launch point (half size of standard)
     if (this.dustShockwave) {
-      this.dustShockwave.emit(surfacePos.clone(), 0.025);
+      this.dustShockwave.emit(surfacePos.clone(), 0.5);
+      // Scale down the sprite + shadow that emit() just pushed
+      const sprites = this.dustShockwave.dustwaveSprites;
+      if (sprites.length > 0) {
+        const last = sprites[sprites.length - 1];
+        const half = last.baseSize * 0.5;
+        last.sprite.scale.set(half, half, 1);
+        last.baseSize = half;
+        if (last.shadowSprite) {
+          last.shadowSprite.scale.multiplyScalar(0.5);
+        }
+      }
     }
 
     if (window._mp && window._mp.socket) {
