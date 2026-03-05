@@ -1266,15 +1266,19 @@ class Planet {
     diffuseTex.magFilter = THREE.NearestFilter;
     this._noiseDiffuseMap = diffuseTex;
 
-    // Roughness noise: same pattern mapped to 0.7–1.0 range (179–255)
+    // Roughness noise: independent random pattern, 0.7–1.0 range (179–255)
+    const roughRandomValues = new Float32Array(size * size);
+    for (let i = 0; i < roughRandomValues.length; i++) {
+      roughRandomValues[i] = Math.random();
+    }
     const roughCanvas = document.createElement("canvas");
     roughCanvas.width = size;
     roughCanvas.height = size;
     const roughCtx = roughCanvas.getContext("2d");
     const roughImg = roughCtx.getImageData(0, 0, size, size);
     const rd = roughImg.data;
-    for (let i = 0; i < randomValues.length; i++) {
-      const v = Math.floor(217 + (randomValues[i] - 0.5) * 76);
+    for (let i = 0; i < roughRandomValues.length; i++) {
+      const v = Math.floor(217 + (roughRandomValues[i] - 0.5) * 76);
       rd[i * 4] = rd[i * 4 + 1] = rd[i * 4 + 2] = v;
       rd[i * 4 + 3] = 255;
     }
