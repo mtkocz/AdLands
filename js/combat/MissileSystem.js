@@ -680,6 +680,10 @@ class MissileSystem {
 
   _updateMissile(m, dt) {
     const dt60 = dt * 60;
+    const farAway = m._camDist > 260;
+
+    // Hide mesh when camera is far (orbital view) — simulation still runs
+    m.poolItem.group.visible = !farAway;
 
     if (m.phase === 0) {
       // VERTICAL LAUNCH: Rise along surface normal
@@ -808,12 +812,8 @@ class MissileSystem {
     // Update mesh position
     m.poolItem.group.position.copy(m.position);
 
-    // Hide missile mesh + skip particles when camera is far (orbital view)
-    if (m._camDist > 260) {
-      m.poolItem.group.visible = false;
-      return;
-    }
-    m.poolItem.group.visible = true;
+    // Skip particle emission when camera is far (orbital view)
+    if (farAway) return;
 
     // Emit particles (phases 0-2, but most visible during 1 and 2)
     if (m.phase >= 0) {
@@ -904,9 +904,9 @@ class MissileSystem {
           float fadeOut = 1.0 - smoothstep(0.4, 1.0, lifeRatio);
           float distToCamera = distance(position, uCameraPos);
           float distanceFade = 1.0 - smoothstep(100.0, 260.0, distToCamera);
-          vAlpha = fadeIn * fadeOut * distanceFade;
+          vAlpha = fadeIn * fadeOut * distanceFade * 0.3;
           vec4 mvPosition = modelViewMatrix * vec4(position, 1.0);
-          gl_PointSize = aSize * (1.0 + lifeRatio * 0.5) * (300.0 / -mvPosition.z);
+          gl_PointSize = aSize * (1.0 + lifeRatio * 0.3) * (150.0 / -mvPosition.z);
           gl_Position = projectionMatrix * mvPosition;
         }
       `,
@@ -947,8 +947,8 @@ class MissileSystem {
 
   _emitAfterburner(missile) {
     const ab = this._ab;
-    // Emit 2-4 particles per frame from missile tail
-    const count = 2 + Math.floor(Math.random() * 3);
+    // Emit 1-2 particles per frame from missile tail
+    const count = 1 + Math.floor(Math.random() * 2);
     for (let n = 0; n < count; n++) {
       if (ab.activeCount >= ab.maxParticles) break;
       const i = ab.activeCount;
@@ -975,7 +975,7 @@ class MissileSystem {
 
       ab.ages[i] = 0;
       ab.lifetimes[i] = 0.1 + Math.random() * 0.15; // 0.1-0.25s
-      ab.sizes[i] = 0.2 + Math.random() * 0.4;
+      ab.sizes[i] = 0.15 + Math.random() * 0.2;
       ab.rotations[i] = Math.random() * Math.PI * 2;
       ab.rotationSpeeds[i] = (Math.random() - 0.5) * 3;
 
