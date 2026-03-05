@@ -306,7 +306,11 @@
         for (const [clusterId, state] of Object.entries(data.captureState)) {
           planet.applyTerritoryState(Number(clusterId), state.owner, state.tics);
         }
+      }
 
+      // Load server-persisted presence data for sponsor line graphs
+      if (data.presenceData && typeof PresenceTracker !== "undefined") {
+        PresenceTracker.loadServerData(data.presenceData);
       }
 
       // Handle reconnection: restore position if player was alive on the surface
@@ -1681,7 +1685,11 @@
         for (const [clusterId, state] of Object.entries(data.captureState)) {
           planet.applyTerritoryState(Number(clusterId), state.owner, state.tics);
         }
+      }
 
+      // Load server-persisted presence data for sponsor line graphs
+      if (data.presenceData && typeof PresenceTracker !== "undefined") {
+        PresenceTracker.loadServerData(data.presenceData);
       }
 
       // Reconcile player territories with admin-authoritative server state

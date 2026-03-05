@@ -249,6 +249,32 @@ const PresenceTracker = {
   },
 
   /**
+   * Load server-authoritative presence data, replacing local data.
+   * Called on connection (welcome) and sponsor reload to sync persistent graph data.
+   * @param {Object} serverPresence - { sponsorId: { startTime, totals, samples } }
+   */
+  loadServerData(serverPresence) {
+    if (!serverPresence || typeof serverPresence !== "object") return;
+
+    const data = this._getData();
+
+    for (const [sponsorId, serverData] of Object.entries(serverPresence)) {
+      if (!serverData.totals || !serverData.startTime) continue;
+      data.sponsors[sponsorId] = {
+        startTime: new Date(serverData.startTime).toISOString(),
+        totals: {
+          rust: serverData.totals.rust || 0,
+          cobalt: serverData.totals.cobalt || 0,
+          viridian: serverData.totals.viridian || 0,
+        },
+        samples: serverData.samples ? serverData.samples.slice() : [],
+      };
+    }
+
+    this._setData(data);
+  },
+
+  /**
    * Clear history for a sponsor (called when sponsor is deleted)
    * @param {string} sponsorId - Sponsor ID
    */

@@ -233,6 +233,11 @@ class GameRoom {
     // Prepare serialized world data to send to clients on connect
     this._worldPayload = this._buildWorldPayload(worldResult);
 
+    // Server-side presence tracking for sponsor line graphs (persisted to Firestore)
+    // sponsorId → { startTime: number, totals: { rust, cobalt, viridian }, samples: [{ t, r, c, v }] }
+    this.sponsorPresence = new Map();
+    this._lastPresenceRecordTime = Date.now();
+
     // Territory capture state: clusterId → { tics, owner, capacity, momentum }
     // Only sponsor clusters are capturable — background cluster is neutral territory
     this.clusterCaptureState = new Map();
@@ -603,6 +608,7 @@ class GameRoom {
     this.io.to(this.roomId).emit("sponsors-reloaded", {
       world: this._worldPayload,
       captureState,
+      presenceData: this._getPresencePayload(),
     });
 
     DEBUG_LOG && console.log(`[Room ${this.roomId}] Sponsors reloaded: ${this.sponsors.length} active, broadcast to clients`);
@@ -875,6 +881,7 @@ class GameRoom {
       planetRotation: this.planetRotation,
       world: this._worldPayload,
       captureState,
+      presenceData: this._getPresencePayload(),
       commanders: this._getCommanderSnapshot(),
       celestial: {
         moons: this.moons.map(m => ({
@@ -1055,6 +1062,7 @@ class GameRoom {
       planetRotation: this.planetRotation,
       world: this._worldPayload,
       captureState,
+      presenceData: this._getPresencePayload(),
       commanders: this._getCommanderSnapshot(),
       celestial: {
         moons: this.moons.map(m => ({
@@ -1369,6 +1377,26 @@ class GameRoom {
   }
 
   /**
+   * Build presence data payload for clients (all sponsor line graph data).
+   * @returns {Object} sponsorId → { startTime, totals, samples }
+   */
+  _getPresencePayload() {
+    const payload = {};
+    for (const [sponsorId, presence] of this.sponsorPresence) {
+      if (presence.samples.length === 0 &&
+          presence.totals.rust === 0 && presence.totals.cobalt === 0 && presence.totals.viridian === 0) {
+        continue;
+      }
+      payload[sponsorId] = {
+        startTime: presence.startTime,
+        totals: { ...presence.totals },
+        samples: presence.samples,
+      };
+    }
+    return payload;
+  }
+
+  /**
    * Save faction capture state to Firestore.
    * Used for periodic auto-save and graceful shutdown.
    * @returns {Promise<void>}
@@ -1399,15 +1427,27 @@ class GameRoom {
         }
       }
 
+      // Sponsor presence data for line graphs (trim to 200 samples per sponsor for Firestore)
+      const presenceData = {};
+      for (const [sponsorId, presence] of this.sponsorPresence) {
+        if (presence.totals.rust === 0 && presence.totals.cobalt === 0 && presence.totals.viridian === 0) continue;
+        presenceData[sponsorId] = {
+          startTime: presence.startTime,
+          totals: { ...presence.totals },
+          samples: presence.samples.slice(-200),
+        };
+      }
+
       await db.collection("gameState").doc("captureState").set({
         roomId: this.roomId,
         savedAt: require("firebase-admin").firestore.FieldValue.serverTimestamp(),
         clusters,
         sponsorTimers,
+        presenceData,
       });
       const count = Object.keys(clusters).length;
       if (count > 0) {
-        DEBUG_LOG && console.log(`[Room ${this.roomId}] Saved capture state (${count} active clusters)`);
+        DEBUG_LOG && console.log(`[Room ${this.roomId}] Saved capture state (${count} active clusters, ${Object.keys(presenceData).length} presence records)`);
       }
     } catch (err) {
       console.warn(`[Room ${this.roomId}] Failed to save capture state:`, err.message);
@@ -1450,7 +1490,22 @@ class GameRoom {
           }
         }
       }
-      DEBUG_LOG && console.log(`[Room ${this.roomId}] Restored capture state (${restored} clusters, ${timersRestored} sponsor timers from ${data.savedAt?.toDate?.() || "unknown"})`);
+      // Restore sponsor presence data for line graphs
+      let presenceRestored = 0;
+      if (data.presenceData) {
+        for (const [sponsorId, saved] of Object.entries(data.presenceData)) {
+          if (saved.totals && saved.startTime) {
+            this.sponsorPresence.set(sponsorId, {
+              startTime: saved.startTime,
+              totals: { rust: saved.totals.rust || 0, cobalt: saved.totals.cobalt || 0, viridian: saved.totals.viridian || 0 },
+              samples: saved.samples || [],
+            });
+            presenceRestored++;
+          }
+        }
+      }
+
+      DEBUG_LOG && console.log(`[Room ${this.roomId}] Restored capture state (${restored} clusters, ${timersRestored} sponsor timers, ${presenceRestored} presence records from ${data.savedAt?.toDate?.() || "unknown"})`);
       return true;
     } catch (err) {
       console.warn(`[Room ${this.roomId}] Failed to load capture state:`, err.message);
@@ -3640,6 +3695,42 @@ class GameRoom {
     this.captureSecondCounter++;
     if (this.captureSecondCounter < this.tickRate / 2) return;
     this.captureSecondCounter = 0;
+
+    // 2-pre. Accumulate presence data for sponsor line graphs
+    for (const [clusterId, counts] of clusterTankCounts) {
+      const sponsorId = this.clusterSponsorMap.get(clusterId);
+      if (!sponsorId) continue;
+
+      if (!this.sponsorPresence.has(sponsorId)) {
+        this.sponsorPresence.set(sponsorId, {
+          startTime: Date.now(),
+          totals: { rust: 0, cobalt: 0, viridian: 0 },
+          samples: [],
+        });
+      }
+
+      const presence = this.sponsorPresence.get(sponsorId);
+      presence.totals.rust += counts.rust;
+      presence.totals.cobalt += counts.cobalt;
+      presence.totals.viridian += counts.viridian;
+    }
+
+    // Record presence sample every 30 seconds
+    const presenceNow = Date.now();
+    if (presenceNow - this._lastPresenceRecordTime >= 30000) {
+      this._lastPresenceRecordTime = presenceNow;
+      for (const [, presence] of this.sponsorPresence) {
+        presence.samples.push({
+          t: presenceNow - presence.startTime,
+          r: presence.totals.rust,
+          c: presence.totals.cobalt,
+          v: presence.totals.viridian,
+        });
+        if (presence.samples.length > 500) {
+          presence.samples = presence.samples.slice(-500);
+        }
+      }
+    }
 
     // 2a. Process capture logic for each cluster with players in it
     const territoryChanges = [];
