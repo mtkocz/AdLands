@@ -30,6 +30,7 @@ class MissileSystem {
       launchDuration: 0.5,     // Seconds in vertical launch phase
       cruiseAltitude: 8,       // World units above surface
       diveDistance: 10,         // Start dive when within this distance
+      turnRate: 1.5,           // Radians/sec — lower = wider turning arc
       searchRadiusMin: 20,     // Starting lock-on range (world units)
       searchRadiusMax: 120,    // Max lock-on range (world units)
       searchExpandTime: 3,     // Seconds to reach max range
@@ -72,6 +73,11 @@ class MissileSystem {
     this._tempQuat = new THREE.Quaternion();
     this._tempQuat2 = new THREE.Quaternion();
     this._upVec = new THREE.Vector3(0, 1, 0);
+
+    // Mesh orientation offset: missile is built along +Y, lookAt points -Z.
+    // Rotate -90° around X so +Y aligns with -Z (nose faces travel direction).
+    this._meshOrientQuat = new THREE.Quaternion()
+      .setFromAxisAngle(new THREE.Vector3(1, 0, 0), -Math.PI / 2);
   }
 
   // ========================
@@ -444,6 +450,7 @@ class MissileSystem {
       cruiseAltitude: this.config.cruiseAltitude,
       targetTank: target.tank,
       targetFaction: target.tank.faction,
+      direction: null,  // Initialized when entering phase 1
       isRemote: false,
       serverId: null,
     };
@@ -493,6 +500,7 @@ class MissileSystem {
       cruiseAltitude: this.config.cruiseAltitude,
       targetTank: null, // Will find target each frame
       targetFaction: null,
+      direction: null,  // Initialized when entering phase 1
       isRemote: true,
       ownerFaction: faction,
       serverId: data.projectileId,
@@ -659,19 +667,23 @@ class MissileSystem {
       if (m.age > this.config.launchDuration || altitude > m.cruiseAltitude) {
         m.phase = 1;
         m.cruiseAltitude = altitude;
+        // Initialize travel direction for steering (along surface normal initially)
+        m.direction = m.surfaceNormal.clone();
       }
 
-      // Orient mesh: initially pointing up, tilting toward horizontal
+      // Orient mesh: nose (+Y) points along surface normal (upward)
       const upQuat = this._tempQuat;
       upQuat.setFromUnitVectors(this._upVec, m.surfaceNormal);
       m.poolItem.group.quaternion.copy(upQuat);
     } else if (m.phase === 1) {
-      // CRUISE / HOMING: Move toward target at altitude
+      // CRUISE / HOMING: Steer toward target at altitude
       const ownerFaction = m.faction || m.ownerFaction;
       const target = this._findClosestEnemyFromPos(m.position, ownerFaction);
 
       if (!target) {
-        // No targets — keep position updated, will timeout
+        // No targets — fly straight, will timeout
+        const moveSpeed = this.config.missileSpeed * dt60;
+        m.position.addScaledVector(m.direction, moveSpeed);
         m.poolItem.group.position.copy(m.position);
         return;
       }
@@ -685,16 +697,19 @@ class MissileSystem {
         .copy(targetNormal)
         .multiplyScalar(this.sphereRadius + m.cruiseAltitude);
 
-      // Direction to target
-      const toTarget = this._tempVec3
+      // Desired direction to target
+      const desired = this._tempVec3
         .copy(targetElevated)
-        .sub(m.position);
-      const distToTarget = toTarget.length();
-      toTarget.normalize();
+        .sub(m.position)
+        .normalize();
 
-      // Move toward target
+      // Smoothly steer toward target (limited turn rate)
+      const maxSteer = this.config.turnRate * dt;
+      m.direction.lerp(desired, Math.min(maxSteer, 1.0)).normalize();
+
+      // Move along current direction
       const moveSpeed = this.config.missileSpeed * dt60;
-      m.position.addScaledVector(toTarget, Math.min(moveSpeed, distToTarget));
+      m.position.addScaledVector(m.direction, moveSpeed);
 
       // Maintain altitude by projecting back to cruise height
       const currentNormal = this._tempVec.copy(m.position).normalize();
@@ -703,10 +718,11 @@ class MissileSystem {
         m.position.copy(currentNormal).multiplyScalar(this.sphereRadius + m.cruiseAltitude);
       }
 
-      // Orient mesh to face direction of travel
-      const lookTarget = this._tempVec2.copy(m.position).add(toTarget);
+      // Orient mesh to face travel direction (lookAt + offset for Y-axis mesh)
+      const lookTarget = this._tempVec2.copy(m.position).add(m.direction);
       m.poolItem.group.position.copy(m.position);
       m.poolItem.group.lookAt(lookTarget);
+      m.poolItem.group.quaternion.multiply(this._meshOrientQuat);
 
       // Check if close enough to dive (distance to SURFACE target)
       const groundDist = m.position.distanceTo(targetSurface);
@@ -715,30 +731,33 @@ class MissileSystem {
         m.diveTarget = targetSurface.clone();
       }
     } else if (m.phase === 2) {
-      // TERMINAL DIVE: Pitch downward toward ground target
-      // Re-acquire target in case it moved
+      // TERMINAL DIVE: Steer downward toward ground target
       const ownerFaction = m.faction || m.ownerFaction;
       const target = this._findClosestEnemyFromPos(m.position, ownerFaction);
       const diveTarget = target ? target.worldPos : m.diveTarget;
 
-      const toTarget = this._tempVec3
+      const desired = this._tempVec3
         .copy(diveTarget)
-        .sub(m.position);
-      const dist = toTarget.length();
-      toTarget.normalize();
+        .sub(m.position)
+        .normalize();
 
-      const moveSpeed = this.config.missileSpeed * 1.2 * dt60; // Slightly faster dive
-      m.position.addScaledVector(toTarget, Math.min(moveSpeed, dist));
+      // Tighter steering during dive (2x turn rate)
+      const maxSteer = this.config.turnRate * 2 * dt;
+      m.direction.lerp(desired, Math.min(maxSteer, 1.0)).normalize();
 
-      // Orient mesh
-      const lookTarget = this._tempVec2.copy(m.position).add(toTarget);
+      const dist = this._tempVec.copy(diveTarget).sub(m.position).length();
+      const moveSpeed = this.config.missileSpeed * 1.2 * dt60;
+      m.position.addScaledVector(m.direction, Math.min(moveSpeed, dist));
+
+      // Orient mesh to face travel direction
+      const lookTarget = this._tempVec2.copy(m.position).add(m.direction);
       m.poolItem.group.position.copy(m.position);
       m.poolItem.group.lookAt(lookTarget);
+      m.poolItem.group.quaternion.multiply(this._meshOrientQuat);
 
       // Check impact (close to surface)
       const altitude = m.position.length() - this.sphereRadius;
       if (altitude < 1.5 || dist < 1.5) {
-        // IMPACT
         const idx = this.missiles.indexOf(m);
         if (idx >= 0) {
           this._destroyMissile(idx, m.position);
@@ -862,7 +881,7 @@ class MissileSystem {
           // Warm color gradient: yellow core -> orange -> red
           vec3 coreColor = vec3(1.0, 0.9, 0.3);
           vec3 outerColor = vec3(1.0, 0.3, 0.05);
-          vec3 color = mix(coreColor, outerColor, vLifeRatio) * 3.0; // HDR for bloom
+          vec3 color = mix(coreColor, outerColor, vLifeRatio) * 1.5; // Subtle HDR for bloom
           float dist = max(abs(rotatedCoord.x), abs(rotatedCoord.y));
           float alpha = vAlpha * (1.0 - dist * 1.5);
           gl_FragColor = vec4(color, alpha);
