@@ -3450,8 +3450,8 @@ class Dashboard {
           pendingImage: territory.pendingImage || null,
           ownerUid: window.authManager?.uid || null,
         };
-        if (this.avatarColor?.startsWith("data:")) {
-          sponsor.logoImage = this.avatarColor;
+        if (territory.patternImage) {
+          sponsor.logoImage = territory.patternImage;
         }
         const created = await SponsorStorage.create(sponsor);
         territory._sponsorStorageId = created.id;
