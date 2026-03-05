@@ -1252,9 +1252,11 @@ class Planet {
    * @param {THREE.MeshStandardMaterial} material
    */
   _patchTriplanarNoise(material) {
+    const noiseDiffuseMap = this._noiseDiffuseMap;
     const noiseRoughMap = this._noiseRoughnessMap;
 
     material.onBeforeCompile = (shader) => {
+      shader.uniforms.triNoiseDiffuseMap = { value: noiseDiffuseMap };
       shader.uniforms.triNoiseRoughMap = { value: noiseRoughMap };
 
       // Pass pre-computed per-tile tangent-plane noise UVs from aNoiseUV attribute
@@ -1273,12 +1275,19 @@ class Planet {
         "#include <common>",
         `#include <common>
         varying vec2 vNoiseUV;
+        uniform sampler2D triNoiseDiffuseMap;
         uniform sampler2D triNoiseRoughMap;`,
       );
       shader.fragmentShader = shader.fragmentShader.replace(
         "#include <roughnessmap_fragment>",
         `float roughnessFactor = roughness;
         roughnessFactor *= texture2D(triNoiseRoughMap, vNoiseUV).g;`,
+      );
+      // Multiply diffuse noise into final output color
+      shader.fragmentShader = shader.fragmentShader.replace(
+        "#include <output_fragment>",
+        `#include <output_fragment>
+        gl_FragColor.rgb *= texture2D(triNoiseDiffuseMap, vNoiseUV).rgb * 2.0;`,
       );
     };
   }
@@ -1290,9 +1299,11 @@ class Planet {
    * @param {THREE.MeshStandardMaterial} material
    */
   _patchWallNoise(material) {
+    const noiseDiffuseMap = this._noiseDiffuseMap;
     const noiseRoughMap = this._noiseRoughnessMap;
     const noiseScale = this._noiseScale;
     material.onBeforeCompile = (shader) => {
+      shader.uniforms.triNoiseDiffuseMap = { value: noiseDiffuseMap };
       shader.uniforms.triNoiseRoughMap = { value: noiseRoughMap };
       shader.uniforms.triNoiseScale = { value: noiseScale };
 
@@ -1309,6 +1320,7 @@ class Planet {
         "#include <common>",
         `#include <common>
         varying vec3 vTriObjPos;
+        uniform sampler2D triNoiseDiffuseMap;
         uniform sampler2D triNoiseRoughMap;
         uniform float triNoiseScale;`,
       );
@@ -1321,6 +1333,18 @@ class Planet {
           float r = length(vTriObjPos);
           vec2 uv = vec2(theta * horizR, r) * triNoiseScale;
           roughnessFactor *= texture2D(triNoiseRoughMap, uv).g;
+        }`,
+      );
+      // Multiply diffuse noise into final output color
+      shader.fragmentShader = shader.fragmentShader.replace(
+        "#include <output_fragment>",
+        `#include <output_fragment>
+        {
+          float horizR = length(vTriObjPos.xz);
+          float theta = atan(vTriObjPos.z, vTriObjPos.x);
+          float r = length(vTriObjPos);
+          vec2 uv = vec2(theta * horizR, r) * triNoiseScale;
+          gl_FragColor.rgb *= texture2D(triNoiseDiffuseMap, uv).rgb * 2.0;
         }`,
       );
     };

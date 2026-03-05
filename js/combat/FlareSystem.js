@@ -1,10 +1,8 @@
 /**
  * AdLands - Flare Countermeasure System
  * Faction-colored decoy flares that lure homing missiles.
- *
- * Activation: Spacebar tap (when flares are active defense weapon)
- * Visual: Faction-colored square particles shooting upward, sparks falling
- * Lifetime: 3 seconds, 5-second cooldown, one active flare per player
+ * Visual style: fighter jet chaff/flare — bright white-hot core with
+ * intense spark trail streaming downward.
  *
  * Dependencies: THREE.js, FACTION_COLORS (factionColors.js)
  */
@@ -32,7 +30,7 @@ class FlareSystem {
   // ---- Particle system (shared across all flares) ----
 
   _createParticleSystem() {
-    const max = 200;
+    const max = 400; // More particles for dense spark trail
     this._ps = {
       maxParticles: max,
       activeCount: 0,
@@ -43,7 +41,7 @@ class FlareSystem {
       rotations: new Float32Array(max),
       rotationSpeeds: new Float32Array(max),
       velocities: new Float32Array(max * 3),
-      colors: new Float32Array(max * 3), // Per-particle RGB
+      colors: new Float32Array(max * 3),
     };
 
     const geo = new THREE.BufferGeometry();
@@ -68,17 +66,22 @@ class FlareSystem {
         varying float vAlpha;
         varying float vRotation;
         varying vec3 vColor;
+        varying float vLifeRatio;
         void main() {
           float lifeRatio = clamp(aAge / max(aLifetime, 0.01), 0.0, 1.0);
           vRotation = aRotation;
-          vColor = aColor;
-          float fadeIn = smoothstep(0.0, 0.1, lifeRatio);
-          float fadeOut = 1.0 - smoothstep(0.5, 1.0, lifeRatio);
+          vLifeRatio = lifeRatio;
+          // Hot white core fades to faction color as spark cools
+          vColor = mix(vec3(1.0, 0.95, 0.8), aColor, lifeRatio * 0.7);
+          float fadeIn = smoothstep(0.0, 0.05, lifeRatio);
+          float fadeOut = 1.0 - smoothstep(0.6, 1.0, lifeRatio);
           float distToCamera = distance(position, uCameraPos);
           float distanceFade = 1.0 - smoothstep(100.0, 260.0, distToCamera);
-          vAlpha = fadeIn * fadeOut * distanceFade * 0.9;
+          vAlpha = fadeIn * fadeOut * distanceFade;
           vec4 mvPosition = modelViewMatrix * vec4(position, 1.0);
-          gl_PointSize = aSize * (1.0 + lifeRatio * 0.3) * (300.0 / -mvPosition.z);
+          // Shrink as they age (hot spark cooling off)
+          float sizeMul = 1.0 - lifeRatio * 0.5;
+          gl_PointSize = aSize * sizeMul * (400.0 / -mvPosition.z);
           gl_Position = projectionMatrix * mvPosition;
         }
       `,
@@ -86,6 +89,7 @@ class FlareSystem {
         varying float vAlpha;
         varying float vRotation;
         varying vec3 vColor;
+        varying float vLifeRatio;
         void main() {
           if (vAlpha < 0.001) discard;
           vec2 coord = gl_PointCoord - vec2(0.5);
@@ -97,8 +101,12 @@ class FlareSystem {
           );
           if (abs(rotatedCoord.x) > 0.4 || abs(rotatedCoord.y) > 0.4) discard;
           float dist = max(abs(rotatedCoord.x), abs(rotatedCoord.y));
-          float alpha = vAlpha * (1.0 - dist * 1.2);
-          gl_FragColor = vec4(vColor, alpha);
+          // Bright core, sharp edge
+          float core = 1.0 - smoothstep(0.0, 0.35, dist);
+          float alpha = vAlpha * (0.5 + core * 0.5);
+          // HDR boost for hot sparks
+          vec3 color = vColor * (1.0 + core * 0.5);
+          gl_FragColor = vec4(color, alpha);
         }
       `,
       transparent: true,
@@ -116,22 +124,22 @@ class FlareSystem {
 
   _createFlareMeshPool() {
     this._meshPool = [];
-    this._flareGeo = new THREE.SphereGeometry(1.5, 6, 6);
+    // Small bright core — the spark trail is the real visual
+    this._flareGeo = new THREE.SphereGeometry(0.4, 4, 4);
     this._flareMats = {};
     for (const faction of ["rust", "cobalt", "viridian"]) {
-      const col = FACTION_COLORS[faction].threeLight;
-      this._flareMats[faction] = new THREE.MeshBasicMaterial({
-        color: col,
-      });
+      // White-hot core with faction tint
+      const col = FACTION_COLORS[faction].threeLight.clone();
+      col.lerp(new THREE.Color(1, 1, 1), 0.6); // Push toward white
+      this._flareMats[faction] = new THREE.MeshBasicMaterial({ color: col });
     }
   }
 
   _acquireMesh(faction) {
-    // Reuse from pool or create new
     let item = this._meshPool.find(m => !m.inUse);
     if (!item) {
       const mesh = new THREE.Mesh(this._flareGeo, this._flareMats.rust);
-      const light = new THREE.PointLight(0xffffff, 2, 20);
+      const light = new THREE.PointLight(0xffffff, 1.5, 25);
       const group = new THREE.Group();
       group.add(mesh);
       group.add(light);
@@ -143,7 +151,7 @@ class FlareSystem {
     item.inUse = true;
     const mat = this._flareMats[faction] || this._flareMats.rust;
     item.mesh.material = mat;
-    item.light.color.copy(mat.color);
+    item.light.color.set(0xffffff);
     item.group.visible = true;
     return item;
   }
@@ -183,7 +191,6 @@ class FlareSystem {
   // ---- Spawn a remote flare ----
 
   spawnRemoteFlare(data) {
-    // Compute surface position from theta/phi
     const R = this.R + 2;
     const sp = Math.sin(data.phi), cp = Math.cos(data.phi);
     const st = Math.sin(data.theta), ct = Math.cos(data.theta);
@@ -200,14 +207,23 @@ class FlareSystem {
     const meshItem = this._acquireMesh(faction);
     meshItem.group.position.copy(surfacePos);
 
+    // Compute two tangent vectors for spread during rise
+    const tangent1 = new THREE.Vector3();
+    const tangent2 = new THREE.Vector3();
+    const up = Math.abs(normal.y) > 0.9 ? new THREE.Vector3(1, 0, 0) : new THREE.Vector3(0, 1, 0);
+    tangent1.crossVectors(normal, up).normalize();
+    tangent2.crossVectors(normal, tangent1).normalize();
+
     return {
       isLocal,
       faction,
       surfacePos: surfacePos.clone(),
       normal: normal.clone(),
+      tangent1,
+      tangent2,
       altitude: 0,
-      targetAltitude: 8, // Cruise altitude (same as missiles)
-      launchDuration: 0.4,
+      targetAltitude: 10,
+      launchDuration: 0.6,
       age: 0,
       maxAge: 3,
       meshItem,
@@ -233,36 +249,38 @@ class FlareSystem {
         continue;
       }
 
-      // Rise phase: 0 to launchDuration
+      // Rise phase: fast launch then slow drift
       if (f.age < f.launchDuration) {
         const t = f.age / f.launchDuration;
-        // Smooth ease-out rise
+        // Quick launch: ease-out
         f.altitude = f.targetAltitude * (1 - (1 - t) * (1 - t));
       } else {
-        f.altitude = f.targetAltitude;
+        // Slow upward drift after launch
+        f.altitude = f.targetAltitude + (f.age - f.launchDuration) * 1.5;
       }
 
       // Position = surfacePos + normal * altitude
       const pos = this._tempVec.copy(f.normal).multiplyScalar(f.altitude).add(f.surfacePos);
       f.meshItem.group.position.copy(pos);
 
-      // Hide in orbital view (camera > 260 units from flare)
+      // Hide in orbital view
       const farAway = camPos ? camPos.distanceTo(pos) > 260 : false;
       f.meshItem.group.visible = !farAway;
 
-      // Flicker the light intensity
+      // Flicker the light (rapid, like burning magnesium)
       if (f.meshItem.light) {
-        f.meshItem.light.intensity = 0.6 + Math.random() * 0.4;
+        const flicker = 0.8 + Math.random() * 0.4 + Math.sin(f.age * 40) * 0.2;
+        f.meshItem.light.intensity = flicker * 1.5;
       }
 
-      // Emit particles (skip in orbital view)
+      // Emit spark trail
       if (!farAway) {
         anyVisible = true;
-        this._emitParticles(f, dt);
+        this._emitSparks(f, dt);
       }
     }
 
-    // Update existing particles
+    // Update particles
     if (anyVisible || this._ps.activeCount > 0) {
       this._points.visible = true;
       this._updateParticles(dt, camera);
@@ -272,41 +290,47 @@ class FlareSystem {
     }
   }
 
-  // ---- Particle emission (sparks falling from flare) ----
+  // ---- Spark trail emission ----
 
-  _emitParticles(flare, dt) {
+  _emitSparks(flare, dt) {
     const ps = this._ps;
-    const factionColor = FACTION_COLORS[flare.faction]?.threeLight || FACTION_COLORS.rust.threeLight;
+    const fc = FACTION_COLORS[flare.faction]?.threeLight || FACTION_COLORS.rust.threeLight;
+    const flarePos = flare.meshItem.group.position;
+    const n = flare.normal;
 
-    // 2-3 sparks per frame
-    const count = 2 + Math.floor(Math.random() * 2);
-    for (let n = 0; n < count; n++) {
+    // Dense spark shower: 4-6 sparks per frame
+    const count = 4 + Math.floor(Math.random() * 3);
+    for (let k = 0; k < count; k++) {
       if (ps.activeCount >= ps.maxParticles) break;
       const idx = ps.activeCount;
 
-      // Emit from flare position with slight random spread
-      const pos = flare.meshItem.group.position;
-      ps.positions[idx * 3] = pos.x + (Math.random() - 0.5) * 0.4;
-      ps.positions[idx * 3 + 1] = pos.y + (Math.random() - 0.5) * 0.4;
-      ps.positions[idx * 3 + 2] = pos.z + (Math.random() - 0.5) * 0.4;
+      // Emit from flare core with spread
+      ps.positions[idx * 3] = flarePos.x + (Math.random() - 0.5) * 0.3;
+      ps.positions[idx * 3 + 1] = flarePos.y + (Math.random() - 0.5) * 0.3;
+      ps.positions[idx * 3 + 2] = flarePos.z + (Math.random() - 0.5) * 0.3;
 
-      // Downward drift along -normal (sparks falling) + random spread
-      const n_x = flare.normal.x, n_y = flare.normal.y, n_z = flare.normal.z;
-      ps.velocities[idx * 3] = -n_x * 3 + (Math.random() - 0.5) * 2;
-      ps.velocities[idx * 3 + 1] = -n_y * 3 + (Math.random() - 0.5) * 2;
-      ps.velocities[idx * 3 + 2] = -n_z * 3 + (Math.random() - 0.5) * 2;
+      // Sparks fall downward (-normal) with lateral spread (like shower of sparks)
+      const fallSpeed = 4 + Math.random() * 6;
+      const spread = 2 + Math.random() * 3;
+      const spreadAngle = Math.random() * Math.PI * 2;
+      const sx = Math.cos(spreadAngle) * spread;
+      const sy = Math.sin(spreadAngle) * spread;
+
+      ps.velocities[idx * 3] = -n.x * fallSpeed + flare.tangent1.x * sx + flare.tangent2.x * sy;
+      ps.velocities[idx * 3 + 1] = -n.y * fallSpeed + flare.tangent1.y * sx + flare.tangent2.y * sy;
+      ps.velocities[idx * 3 + 2] = -n.z * fallSpeed + flare.tangent1.z * sx + flare.tangent2.z * sy;
 
       ps.ages[idx] = 0;
-      ps.lifetimes[idx] = 0.5 + Math.random() * 0.5; // 0.5-1.0s
-      ps.sizes[idx] = 0.3 + Math.random() * 0.3; // 0.3-0.6
+      ps.lifetimes[idx] = 0.3 + Math.random() * 0.5; // Short-lived hot sparks
+      ps.sizes[idx] = 0.4 + Math.random() * 0.5;
       ps.rotations[idx] = Math.random() * Math.PI * 2;
-      ps.rotationSpeeds[idx] = (Math.random() - 0.5) * 4;
+      ps.rotationSpeeds[idx] = (Math.random() - 0.5) * 6;
 
-      // Faction color with slight brightness variation
-      const bright = 0.7 + Math.random() * 0.3;
-      ps.colors[idx * 3] = factionColor.r * bright;
-      ps.colors[idx * 3 + 1] = factionColor.g * bright;
-      ps.colors[idx * 3 + 2] = factionColor.b * bright;
+      // White-hot to faction color
+      const hot = 0.3 + Math.random() * 0.7; // How white vs faction-colored
+      ps.colors[idx * 3] = fc.r + (1.0 - fc.r) * hot;
+      ps.colors[idx * 3 + 1] = fc.g + (1.0 - fc.g) * hot;
+      ps.colors[idx * 3 + 2] = fc.b + (1.0 - fc.b) * hot;
 
       ps.activeCount++;
     }
@@ -342,8 +366,8 @@ class FlareSystem {
         continue;
       }
 
-      // Apply velocity with drag
-      const drag = Math.pow(0.92, dt * 60);
+      // Apply velocity with drag (sparks slow as they cool)
+      const drag = Math.pow(0.90, dt * 60);
       ps.positions[i * 3] += ps.velocities[i * 3] * dt;
       ps.positions[i * 3 + 1] += ps.velocities[i * 3 + 1] * dt;
       ps.positions[i * 3 + 2] += ps.velocities[i * 3 + 2] * dt;
@@ -351,7 +375,6 @@ class FlareSystem {
       ps.velocities[i * 3 + 1] *= drag;
       ps.velocities[i * 3 + 2] *= drag;
 
-      // Update rotation
       ps.rotations[i] += ps.rotationSpeeds[i] * dt;
     }
 
@@ -365,7 +388,6 @@ class FlareSystem {
     geo.attributes.aColor.needsUpdate = true;
     geo.setDrawRange(0, ps.activeCount);
 
-    // Update camera pos uniform
     if (camera) {
       this._points.material.uniforms.uCameraPos.value.copy(camera.position);
     }
@@ -381,8 +403,6 @@ class FlareSystem {
     }));
   }
 
-  // ---- Remove flare by server ID (on flare-hit event) ----
-
   removeFlareById(flareId) {
     const idx = this.flares.findIndex(f => f.serverId === flareId);
     if (idx !== -1) {
@@ -391,8 +411,6 @@ class FlareSystem {
     }
   }
 
-  // ---- Remove local flare (when server confirms hit) ----
-
   removeLocalFlare() {
     const idx = this.flares.findIndex(f => f.isLocal);
     if (idx !== -1) {
@@ -400,8 +418,6 @@ class FlareSystem {
       this.flares.splice(idx, 1);
     }
   }
-
-  // ---- Cleanup ----
 
   dispose() {
     for (const f of this.flares) {
