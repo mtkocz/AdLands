@@ -267,9 +267,10 @@ class WeaponSlotSystem {
         activeSlots: this.activeSlots,
       }, 5000); // 5s debounce
     }
-    // Also update Dashboard's equippedUpgrades for UI sync
+    // Also update Dashboard's equippedUpgrades for UI sync + localStorage persistence
     if (window.dashboard) {
       window.dashboard.equippedUpgrades = { ...this.equipped };
+      window.dashboard._saveState();
     }
   }
 }

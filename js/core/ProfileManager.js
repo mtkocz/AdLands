@@ -82,8 +82,10 @@ class ProfileManager {
     }
 
     // Load loadout into Dashboard and re-render if already initialized
-    if (this.dashboard && profileData?.loadout) {
+    // Only overwrite if Firestore has non-empty loadout (preserve localStorage-restored values)
+    if (this.dashboard && profileData?.loadout && Object.keys(profileData.loadout).length > 0) {
       this.dashboard.equippedUpgrades = { ...profileData.loadout };
+      this.dashboard._saveState(); // Keep localStorage in sync with Firestore
       if (this.dashboard.loadoutInitialized) {
         this.dashboard.updateLoadout(this.dashboard.playerLevel || 1);
       }
