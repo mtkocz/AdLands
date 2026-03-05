@@ -122,7 +122,7 @@ class GameRoom {
       respawn: 150,
       cannonBase: 5,
       cannonPerCharge: 1,
-      missile: 15,
+      missile: 5,
       slotUnlock: {
         'defense-1': 15000,
         'tactical-1': 30000,

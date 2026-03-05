@@ -24,7 +24,7 @@ class MissileSystem {
     // Config
     this.config = {
       cooldown: 2,             // Seconds between shots
-      cost: 15,                // Crypto cost per missile
+      cost: 5,                 // Crypto cost per missile (same as cannon base)
       damage: 38,              // 25 * 1.5 missile multiplier
       missileSpeed: 0.1536,    // World units per frame (80% of tank top speed: 0.0004 * 480 * 0.8)
       launchDuration: 0.5,     // Seconds in vertical launch phase

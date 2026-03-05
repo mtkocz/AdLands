@@ -3691,6 +3691,11 @@ class Dashboard {
     this._renderUpgrades(playerLevel);
     this._updateSlotStates(playerLevel);
     this._initLoadoutDropdowns();
+
+    // Sync localStorage-restored loadout to WeaponSlotSystem (for guests / before Firestore loads)
+    if (window.weaponSlotSystem && Object.keys(this.equippedUpgrades).length > 0) {
+      window.weaponSlotSystem.equipped = { ...this.equippedUpgrades };
+    }
     this._initTankPreview();
   }
 
