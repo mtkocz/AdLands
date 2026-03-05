@@ -481,7 +481,7 @@ function createSponsorRoutes(sponsorStore, gameRoom, { imageUrls, contentHashes,
         const approvedImage = overrides?.patternImage ?? sponsor.pendingImage ?? sponsor.patternImage ?? null;
 
         // Move all pending fields to active in SponsorStore
-        await sponsorStore.update(req.params.id, {
+        const updateFields = {
           name: sponsor.ownerType === "player" ? sponsor.name : (approvedTitle || sponsor.name),
           title: approvedTitle,
           tagline: approvedTagline,
@@ -495,7 +495,12 @@ function createSponsorRoutes(sponsorStore, gameRoom, { imageUrls, contentHashes,
           imageStatus: "approved",
           reviewedAt: new Date().toISOString(),
           rejectionReason: null,
-        });
+        };
+        // Player territories don't have a separate logo — clear any stale logoImage
+        if (sponsor.ownerType === "player") {
+          updateFields.logoImage = null;
+        }
+        await sponsorStore.update(req.params.id, updateFields);
 
         // Re-extract image to static file
         if (approvedImage) {

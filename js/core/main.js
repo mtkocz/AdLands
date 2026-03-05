@@ -3367,7 +3367,9 @@
     }
     resetIntelPopupState();
     const logoEl = document.getElementById("intel-logo");
-    const logoSrc = sponsor.logoImage || sponsor.patternImage || sponsor.patternUrl || null;
+    const logoSrc = (sponsor.ownerType === "player"
+      ? (sponsor.patternImage || sponsor.patternUrl)
+      : (sponsor.logoImage || sponsor.patternImage || sponsor.patternUrl)) || null;
     if (logoSrc) {
       logoEl.src = logoSrc;
       logoEl.classList.remove("hidden");

@@ -5158,7 +5158,7 @@ class GameRoom {
         tagline: s.tagline,
         websiteUrl: s.websiteUrl,
         patternImage: urls.patternUrl || null,
-        logoImage: urls.logoUrl || null,
+        logoImage: (s.ownerType === "player") ? null : (urls.logoUrl || null),
         patternAdjustment: s.patternAdjustment,
         cluster: { tileIndices: s.cluster.tileIndices },
         rewards: s.rewards,
