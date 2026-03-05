@@ -1,8 +1,7 @@
 /**
  * AdLands - Flare Countermeasure System
  * Faction-colored decoy flares that lure homing missiles.
- * Visual style: fighter jet chaff/flare — bright white-hot core with
- * intense spark trail streaming downward.
+ * Visual: glowing tip with fire + smoke trail (same style as missile afterburner).
  *
  * Dependencies: THREE.js, FACTION_COLORS (factionColors.js)
  */
@@ -12,26 +11,25 @@ class FlareSystem {
     this.scene = scene;
     this.R = sphereRadius || 480;
 
-    /** Active flare visuals */
     this.flares = [];
-
-    /** Cooldown tracking (local player only) */
     this.lastFireTime = 0;
-    this.cooldown = 5; // seconds
+    this.cooldown = 5;
 
-    /** Temp vectors */
     this._tempVec = new THREE.Vector3();
     this._tempVec2 = new THREE.Vector3();
 
-    this._createParticleSystem();
+    this._createFireSystem();
+    this._createSmokeSystem();
     this._createFlareMeshPool();
   }
 
-  // ---- Particle system (shared across all flares) ----
+  // ========================
+  // FIRE PARTICLES (afterburner style — yellow core → orange → red)
+  // ========================
 
-  _createParticleSystem() {
-    const max = 400; // More particles for dense spark trail
-    this._ps = {
+  _createFireSystem() {
+    const max = 200;
+    this._fire = {
       maxParticles: max,
       activeCount: 0,
       positions: new Float32Array(max * 3),
@@ -41,16 +39,14 @@ class FlareSystem {
       rotations: new Float32Array(max),
       rotationSpeeds: new Float32Array(max),
       velocities: new Float32Array(max * 3),
-      colors: new Float32Array(max * 3),
     };
 
     const geo = new THREE.BufferGeometry();
-    geo.setAttribute("position", new THREE.BufferAttribute(this._ps.positions, 3));
-    geo.setAttribute("aAge", new THREE.BufferAttribute(this._ps.ages, 1));
-    geo.setAttribute("aLifetime", new THREE.BufferAttribute(this._ps.lifetimes, 1));
-    geo.setAttribute("aSize", new THREE.BufferAttribute(this._ps.sizes, 1));
-    geo.setAttribute("aRotation", new THREE.BufferAttribute(this._ps.rotations, 1));
-    geo.setAttribute("aColor", new THREE.BufferAttribute(this._ps.colors, 3));
+    geo.setAttribute("position", new THREE.BufferAttribute(this._fire.positions, 3));
+    geo.setAttribute("aAge", new THREE.BufferAttribute(this._fire.ages, 1));
+    geo.setAttribute("aLifetime", new THREE.BufferAttribute(this._fire.lifetimes, 1));
+    geo.setAttribute("aSize", new THREE.BufferAttribute(this._fire.sizes, 1));
+    geo.setAttribute("aRotation", new THREE.BufferAttribute(this._fire.rotations, 1));
 
     const mat = new THREE.ShaderMaterial({
       uniforms: {
@@ -62,33 +58,26 @@ class FlareSystem {
         attribute float aLifetime;
         attribute float aSize;
         attribute float aRotation;
-        attribute vec3 aColor;
         varying float vAlpha;
         varying float vRotation;
-        varying vec3 vColor;
         varying float vLifeRatio;
         void main() {
           float lifeRatio = clamp(aAge / max(aLifetime, 0.01), 0.0, 1.0);
           vRotation = aRotation;
           vLifeRatio = lifeRatio;
-          // Hot white core fades to faction color as spark cools
-          vColor = mix(vec3(1.0, 0.95, 0.8), aColor, lifeRatio * 0.7);
-          float fadeIn = smoothstep(0.0, 0.05, lifeRatio);
-          float fadeOut = 1.0 - smoothstep(0.6, 1.0, lifeRatio);
+          float fadeIn = smoothstep(0.0, 0.1, lifeRatio);
+          float fadeOut = 1.0 - smoothstep(0.4, 1.0, lifeRatio);
           float distToCamera = distance(position, uCameraPos);
           float distanceFade = 1.0 - smoothstep(100.0, 260.0, distToCamera);
           vAlpha = fadeIn * fadeOut * distanceFade;
           vec4 mvPosition = modelViewMatrix * vec4(position, 1.0);
-          // Shrink as they age (hot spark cooling off)
-          float sizeMul = 1.0 - lifeRatio * 0.5;
-          gl_PointSize = aSize * sizeMul * (400.0 / -mvPosition.z);
+          gl_PointSize = aSize * (1.0 + lifeRatio * 0.5) * (400.0 / -mvPosition.z);
           gl_Position = projectionMatrix * mvPosition;
         }
       `,
       fragmentShader: `
         varying float vAlpha;
         varying float vRotation;
-        varying vec3 vColor;
         varying float vLifeRatio;
         void main() {
           if (vAlpha < 0.001) discard;
@@ -100,12 +89,12 @@ class FlareSystem {
             coord.x * s + coord.y * c
           );
           if (abs(rotatedCoord.x) > 0.4 || abs(rotatedCoord.y) > 0.4) discard;
+          // Warm color gradient: yellow core -> orange -> red (same as missile)
+          vec3 coreColor = vec3(1.0, 0.9, 0.3);
+          vec3 outerColor = vec3(1.0, 0.3, 0.05);
+          vec3 color = mix(coreColor, outerColor, vLifeRatio) * 0.8;
           float dist = max(abs(rotatedCoord.x), abs(rotatedCoord.y));
-          // Bright core, sharp edge
-          float core = 1.0 - smoothstep(0.0, 0.35, dist);
-          float alpha = vAlpha * (0.5 + core * 0.5);
-          // HDR boost for hot sparks
-          vec3 color = vColor * (1.0 + core * 0.5);
+          float alpha = vAlpha * (1.0 - dist * 1.5);
           gl_FragColor = vec4(color, alpha);
         }
       `,
@@ -114,24 +103,104 @@ class FlareSystem {
       blending: THREE.AdditiveBlending,
     });
 
-    this._points = new THREE.Points(geo, mat);
-    this._points.frustumCulled = false;
-    this._points.renderOrder = 16;
-    this.scene.add(this._points);
+    this._firePoints = new THREE.Points(geo, mat);
+    this._firePoints.frustumCulled = false;
+    this._firePoints.renderOrder = 15;
+    this.scene.add(this._firePoints);
+  }
+
+  // ========================
+  // SMOKE PARTICLES (grey, expanding, same as missile smoke)
+  // ========================
+
+  _createSmokeSystem() {
+    const max = 150;
+    this._smoke = {
+      maxParticles: max,
+      activeCount: 0,
+      positions: new Float32Array(max * 3),
+      ages: new Float32Array(max),
+      lifetimes: new Float32Array(max),
+      sizes: new Float32Array(max),
+      rotations: new Float32Array(max),
+      rotationSpeeds: new Float32Array(max),
+      velocities: new Float32Array(max * 3),
+    };
+
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute("position", new THREE.BufferAttribute(this._smoke.positions, 3));
+    geo.setAttribute("aAge", new THREE.BufferAttribute(this._smoke.ages, 1));
+    geo.setAttribute("aLifetime", new THREE.BufferAttribute(this._smoke.lifetimes, 1));
+    geo.setAttribute("aSize", new THREE.BufferAttribute(this._smoke.sizes, 1));
+    geo.setAttribute("aRotation", new THREE.BufferAttribute(this._smoke.rotations, 1));
+
+    const mat = new THREE.ShaderMaterial({
+      uniforms: {
+        uCameraPos: { value: new THREE.Vector3() },
+        uColor: { value: new THREE.Vector3(0.7, 0.7, 0.7) },
+      },
+      vertexShader: `
+        uniform vec3 uCameraPos;
+        attribute float aAge;
+        attribute float aLifetime;
+        attribute float aSize;
+        attribute float aRotation;
+        varying float vAlpha;
+        varying float vRotation;
+        void main() {
+          float lifeRatio = clamp(aAge / max(aLifetime, 0.01), 0.0, 1.0);
+          vRotation = aRotation;
+          float sizeFactor = 1.0 + lifeRatio * 2.0;
+          float fadeIn = smoothstep(0.0, 0.05, lifeRatio);
+          float fadeOut = 1.0 - smoothstep(0.5, 1.0, lifeRatio);
+          float distToCamera = distance(position, uCameraPos);
+          float distanceFade = 1.0 - smoothstep(100.0, 260.0, distToCamera);
+          vAlpha = fadeIn * fadeOut * 0.25 * distanceFade;
+          vec4 mvPosition = modelViewMatrix * vec4(position, 1.0);
+          gl_PointSize = aSize * sizeFactor * (300.0 / -mvPosition.z);
+          gl_Position = projectionMatrix * mvPosition;
+        }
+      `,
+      fragmentShader: `
+        uniform vec3 uColor;
+        varying float vAlpha;
+        varying float vRotation;
+        void main() {
+          if (vAlpha < 0.001) discard;
+          vec2 coord = gl_PointCoord - vec2(0.5);
+          float c = cos(vRotation);
+          float s = sin(vRotation);
+          vec2 rotatedCoord = vec2(
+            coord.x * c - coord.y * s,
+            coord.x * s + coord.y * c
+          );
+          if (abs(rotatedCoord.x) > 0.4 || abs(rotatedCoord.y) > 0.4) discard;
+          float dist = max(abs(rotatedCoord.x), abs(rotatedCoord.y));
+          float alpha = vAlpha * (1.0 - dist * 1.5);
+          gl_FragColor = vec4(uColor, alpha);
+        }
+      `,
+      transparent: true,
+      depthWrite: false,
+      blending: THREE.NormalBlending,
+    });
+
+    this._smokePoints = new THREE.Points(geo, mat);
+    this._smokePoints.frustumCulled = false;
+    this._smokePoints.renderOrder = 12;
+    this.scene.add(this._smokePoints);
   }
 
   // ---- Flare core mesh pool ----
 
   _createFlareMeshPool() {
     this._meshPool = [];
-    // Small bright core — the spark trail is the real visual
     this._flareGeo = new THREE.SphereGeometry(0.4, 4, 4);
     this._flareMats = {};
     for (const faction of ["rust", "cobalt", "viridian"]) {
-      // White-hot core with faction tint
-      const col = FACTION_COLORS[faction].threeLight.clone();
-      col.lerp(new THREE.Color(1, 1, 1), 0.6); // Push toward white
-      this._flareMats[faction] = new THREE.MeshBasicMaterial({ color: col });
+      this._flareMats[faction] = new THREE.MeshBasicMaterial({
+        color: FACTION_COLORS[faction].vehicle.primary,
+      });
     }
   }
 
@@ -139,7 +208,7 @@ class FlareSystem {
     let item = this._meshPool.find(m => !m.inUse);
     if (!item) {
       const mesh = new THREE.Mesh(this._flareGeo, this._flareMats.rust);
-      const light = new THREE.PointLight(0xffffff, 1.5, 25);
+      const light = new THREE.PointLight(0xffaa33, 1.5, 20);
       const group = new THREE.Group();
       group.add(mesh);
       group.add(light);
@@ -149,9 +218,8 @@ class FlareSystem {
       this._meshPool.push(item);
     }
     item.inUse = true;
-    const mat = this._flareMats[faction] || this._flareMats.rust;
-    item.mesh.material = mat;
-    item.light.color.set(0xffffff);
+    item.mesh.material = this._flareMats[faction] || this._flareMats.rust;
+    item.light.color.setHex(0xffaa33);
     item.group.visible = true;
     return item;
   }
@@ -167,20 +235,16 @@ class FlareSystem {
   fire(tank, faction) {
     const now = performance.now() / 1000;
     if (now - this.lastFireTime < this.cooldown) return false;
-
-    // Only 1 active local flare
     if (this.flares.some(f => f.isLocal)) return false;
 
     this.lastFireTime = now;
 
-    // Get tank world position + normal
     const surfacePos = tank.group.getWorldPosition(this._tempVec);
     const normal = this._tempVec2.copy(surfacePos).normalize();
 
     const flare = this._createFlareVisual(surfacePos, normal, faction, true);
     this.flares.push(flare);
 
-    // Emit to server
     if (window._mp && window._mp.socket) {
       window._mp.socket.emit("fire", { type: "flare" });
     }
@@ -207,23 +271,14 @@ class FlareSystem {
     const meshItem = this._acquireMesh(faction);
     meshItem.group.position.copy(surfacePos);
 
-    // Compute two tangent vectors for spread during rise
-    const tangent1 = new THREE.Vector3();
-    const tangent2 = new THREE.Vector3();
-    const up = Math.abs(normal.y) > 0.9 ? new THREE.Vector3(1, 0, 0) : new THREE.Vector3(0, 1, 0);
-    tangent1.crossVectors(normal, up).normalize();
-    tangent2.crossVectors(normal, tangent1).normalize();
-
     return {
       isLocal,
       faction,
       surfacePos: surfacePos.clone(),
       normal: normal.clone(),
-      tangent1,
-      tangent2,
       altitude: 0,
-      targetAltitude: 10,
-      launchDuration: 0.6,
+      targetAltitude: 8,
+      launchDuration: 0.4,
       age: 0,
       maxAge: 3,
       meshItem,
@@ -242,109 +297,131 @@ class FlareSystem {
       const f = this.flares[i];
       f.age += dt;
 
-      // Expired
       if (f.age >= f.maxAge) {
         this._releaseMesh(f.meshItem);
         this.flares.splice(i, 1);
         continue;
       }
 
-      // Rise phase: fast launch then slow drift
+      // Rise: fast launch then hover
       if (f.age < f.launchDuration) {
         const t = f.age / f.launchDuration;
-        // Quick launch: ease-out
         f.altitude = f.targetAltitude * (1 - (1 - t) * (1 - t));
       } else {
-        // Slow upward drift after launch
-        f.altitude = f.targetAltitude + (f.age - f.launchDuration) * 1.5;
+        f.altitude = f.targetAltitude;
       }
 
       // Position = surfacePos + normal * altitude
       const pos = this._tempVec.copy(f.normal).multiplyScalar(f.altitude).add(f.surfacePos);
       f.meshItem.group.position.copy(pos);
 
-      // Hide in orbital view
       const farAway = camPos ? camPos.distanceTo(pos) > 260 : false;
       f.meshItem.group.visible = !farAway;
 
-      // Flicker the light (rapid, like burning magnesium)
       if (f.meshItem.light) {
-        const flicker = 0.8 + Math.random() * 0.4 + Math.sin(f.age * 40) * 0.2;
-        f.meshItem.light.intensity = flicker * 1.5;
+        f.meshItem.light.intensity = 1.2 + Math.random() * 0.6;
       }
 
-      // Emit spark trail
       if (!farAway) {
         anyVisible = true;
-        this._emitSparks(f, dt);
+        this._emitFire(f);
+        this._emitSmoke(f);
       }
     }
 
-    // Update particles
-    if (anyVisible || this._ps.activeCount > 0) {
-      this._points.visible = true;
-      this._updateParticles(dt, camera);
+    // Update both particle systems
+    const hasFireParticles = anyVisible || this._fire.activeCount > 0;
+    const hasSmokeParticles = anyVisible || this._smoke.activeCount > 0;
+
+    if (hasFireParticles) {
+      this._firePoints.visible = true;
+      this._updateParticles(this._fire, this._firePoints, dt, camera);
     } else {
-      this._points.visible = false;
-      this._points.geometry.setDrawRange(0, 0);
+      this._firePoints.visible = false;
+      this._firePoints.geometry.setDrawRange(0, 0);
+    }
+
+    if (hasSmokeParticles) {
+      this._smokePoints.visible = true;
+      this._updateParticles(this._smoke, this._smokePoints, dt, camera);
+    } else {
+      this._smokePoints.visible = false;
+      this._smokePoints.geometry.setDrawRange(0, 0);
     }
   }
 
-  // ---- Spark trail emission ----
+  // ---- Fire emission (same as missile afterburner) ----
 
-  _emitSparks(flare, dt) {
-    const ps = this._ps;
-    const fc = FACTION_COLORS[flare.faction]?.threeLight || FACTION_COLORS.rust.threeLight;
+  _emitFire(flare) {
+    const ps = this._fire;
     const flarePos = flare.meshItem.group.position;
     const n = flare.normal;
 
-    // Dense spark shower: 4-6 sparks per frame
-    const count = 4 + Math.floor(Math.random() * 3);
+    // 2-3 fire particles per frame from flare core, drifting downward
+    const count = 2 + Math.floor(Math.random() * 2);
     for (let k = 0; k < count; k++) {
       if (ps.activeCount >= ps.maxParticles) break;
       const idx = ps.activeCount;
 
-      // Emit from flare core with spread
+      // Emit from flare position with slight spread
       ps.positions[idx * 3] = flarePos.x + (Math.random() - 0.5) * 0.3;
       ps.positions[idx * 3 + 1] = flarePos.y + (Math.random() - 0.5) * 0.3;
       ps.positions[idx * 3 + 2] = flarePos.z + (Math.random() - 0.5) * 0.3;
 
-      // Sparks fall downward (-normal) with lateral spread (like shower of sparks)
-      const fallSpeed = 4 + Math.random() * 6;
-      const spread = 2 + Math.random() * 3;
-      const spreadAngle = Math.random() * Math.PI * 2;
-      const sx = Math.cos(spreadAngle) * spread;
-      const sy = Math.sin(spreadAngle) * spread;
-
-      ps.velocities[idx * 3] = -n.x * fallSpeed + flare.tangent1.x * sx + flare.tangent2.x * sy;
-      ps.velocities[idx * 3 + 1] = -n.y * fallSpeed + flare.tangent1.y * sx + flare.tangent2.y * sy;
-      ps.velocities[idx * 3 + 2] = -n.z * fallSpeed + flare.tangent1.z * sx + flare.tangent2.z * sy;
+      // Drift downward (-normal) + random spread
+      ps.velocities[idx * 3] = -n.x * 2 + (Math.random() - 0.5) * 2;
+      ps.velocities[idx * 3 + 1] = -n.y * 2 + (Math.random() - 0.5) * 2;
+      ps.velocities[idx * 3 + 2] = -n.z * 2 + (Math.random() - 0.5) * 2;
 
       ps.ages[idx] = 0;
-      ps.lifetimes[idx] = 0.3 + Math.random() * 0.5; // Short-lived hot sparks
-      ps.sizes[idx] = 0.4 + Math.random() * 0.5;
+      ps.lifetimes[idx] = 0.25 + Math.random() * 0.35;
+      ps.sizes[idx] = 0.4 + Math.random() * 0.4;
       ps.rotations[idx] = Math.random() * Math.PI * 2;
-      ps.rotationSpeeds[idx] = (Math.random() - 0.5) * 6;
-
-      // White-hot to faction color
-      const hot = 0.3 + Math.random() * 0.7; // How white vs faction-colored
-      ps.colors[idx * 3] = fc.r + (1.0 - fc.r) * hot;
-      ps.colors[idx * 3 + 1] = fc.g + (1.0 - fc.g) * hot;
-      ps.colors[idx * 3 + 2] = fc.b + (1.0 - fc.b) * hot;
+      ps.rotationSpeeds[idx] = (Math.random() - 0.5) * 3;
 
       ps.activeCount++;
     }
   }
 
-  // ---- Particle update ----
+  // ---- Smoke emission (same as missile smoke) ----
 
-  _updateParticles(dt, camera) {
-    const ps = this._ps;
+  _emitSmoke(flare) {
+    const ps = this._smoke;
+    const flarePos = flare.meshItem.group.position;
+    const n = flare.normal;
 
+    // 1-2 smoke puffs per frame
+    const count = 1 + Math.floor(Math.random() * 2);
+    for (let k = 0; k < count; k++) {
+      if (ps.activeCount >= ps.maxParticles) break;
+      const idx = ps.activeCount;
+
+      // Emit slightly below flare (behind the fire)
+      ps.positions[idx * 3] = flarePos.x - n.x * 0.5 + (Math.random() - 0.5) * 0.5;
+      ps.positions[idx * 3 + 1] = flarePos.y - n.y * 0.5 + (Math.random() - 0.5) * 0.5;
+      ps.positions[idx * 3 + 2] = flarePos.z - n.z * 0.5 + (Math.random() - 0.5) * 0.5;
+
+      // Slow random drift
+      ps.velocities[idx * 3] = (Math.random() - 0.5) * 0.5;
+      ps.velocities[idx * 3 + 1] = (Math.random() - 0.5) * 0.5;
+      ps.velocities[idx * 3 + 2] = (Math.random() - 0.5) * 0.5;
+
+      ps.ages[idx] = 0;
+      ps.lifetimes[idx] = 1.0 + Math.random() * 1.5;
+      ps.sizes[idx] = 1.5 + Math.random() * 1.5;
+      ps.rotations[idx] = Math.random() * Math.PI * 2;
+      ps.rotationSpeeds[idx] = (Math.random() - 0.5) * 1;
+
+      ps.activeCount++;
+    }
+  }
+
+  // ---- Shared particle update (works for both fire and smoke) ----
+
+  _updateParticles(ps, points, dt, camera) {
     for (let i = ps.activeCount - 1; i >= 0; i--) {
       ps.ages[i] += dt;
       if (ps.ages[i] >= ps.lifetimes[i]) {
-        // Swap-remove
         const last = ps.activeCount - 1;
         if (i !== last) {
           ps.positions[i * 3] = ps.positions[last * 3];
@@ -358,16 +435,12 @@ class FlareSystem {
           ps.sizes[i] = ps.sizes[last];
           ps.rotations[i] = ps.rotations[last];
           ps.rotationSpeeds[i] = ps.rotationSpeeds[last];
-          ps.colors[i * 3] = ps.colors[last * 3];
-          ps.colors[i * 3 + 1] = ps.colors[last * 3 + 1];
-          ps.colors[i * 3 + 2] = ps.colors[last * 3 + 2];
         }
         ps.activeCount--;
         continue;
       }
 
-      // Apply velocity with drag (sparks slow as they cool)
-      const drag = Math.pow(0.90, dt * 60);
+      const drag = Math.pow(0.95, dt * 60);
       ps.positions[i * 3] += ps.velocities[i * 3] * dt;
       ps.positions[i * 3 + 1] += ps.velocities[i * 3 + 1] * dt;
       ps.positions[i * 3 + 2] += ps.velocities[i * 3 + 2] * dt;
@@ -378,22 +451,20 @@ class FlareSystem {
       ps.rotations[i] += ps.rotationSpeeds[i] * dt;
     }
 
-    // Update GPU buffers
-    const geo = this._points.geometry;
+    const geo = points.geometry;
     geo.attributes.position.needsUpdate = true;
     geo.attributes.aAge.needsUpdate = true;
     geo.attributes.aLifetime.needsUpdate = true;
     geo.attributes.aSize.needsUpdate = true;
     geo.attributes.aRotation.needsUpdate = true;
-    geo.attributes.aColor.needsUpdate = true;
     geo.setDrawRange(0, ps.activeCount);
 
     if (camera) {
-      this._points.material.uniforms.uCameraPos.value.copy(camera.position);
+      points.material.uniforms.uCameraPos.value.copy(camera.position);
     }
   }
 
-  // ---- Public API for missile targeting ----
+  // ---- Public API ----
 
   getActiveFlares() {
     return this.flares.map(f => ({
@@ -420,20 +491,20 @@ class FlareSystem {
   }
 
   dispose() {
-    for (const f of this.flares) {
-      this._releaseMesh(f.meshItem);
-    }
+    for (const f of this.flares) this._releaseMesh(f.meshItem);
     this.flares.length = 0;
 
-    if (this._points) {
-      this.scene.remove(this._points);
-      this._points.geometry.dispose();
-      this._points.material.dispose();
+    if (this._firePoints) {
+      this.scene.remove(this._firePoints);
+      this._firePoints.geometry.dispose();
+      this._firePoints.material.dispose();
     }
-
-    for (const item of this._meshPool) {
-      this.scene.remove(item.group);
+    if (this._smokePoints) {
+      this.scene.remove(this._smokePoints);
+      this._smokePoints.geometry.dispose();
+      this._smokePoints.material.dispose();
     }
+    for (const item of this._meshPool) this.scene.remove(item.group);
     this._meshPool.length = 0;
   }
 }
