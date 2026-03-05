@@ -818,6 +818,10 @@ class Planet {
       const ns = this._noiseScale;
       const noiseUvs = [];
 
+      // Per-tile random UV offset to break repetitive tiling
+      const noiseOffU = this.random();
+      const noiseOffV = this.random();
+
       for (let i = 0; i < n; i++) {
         const origX = parseFloat(boundary[i].x);
         const origY = parseFloat(boundary[i].y);
@@ -829,10 +833,10 @@ class Planet {
         const vz = origZ * extrusionScale;
         vertices.push(vx, vy, vz);
 
-        // Noise UVs: tangent-plane projection (square pixels per tile)
+        // Noise UVs: tangent-plane projection with per-tile offset
         noiseUvs.push(
-          (origX * tanU.x + origY * tanU.y + origZ * tanU.z) * ns,
-          (origX * tanV.x + origY * tanV.y + origZ * tanV.z) * ns,
+          (origX * tanU.x + origY * tanU.y + origZ * tanU.z) * ns + noiseOffU,
+          (origX * tanV.x + origY * tanV.y + origZ * tanV.z) * ns + noiseOffV,
         );
 
         if (isElevated) {
