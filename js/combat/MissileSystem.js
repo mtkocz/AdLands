@@ -60,6 +60,10 @@ class MissileSystem {
     // Lock-on reticle (DOM)
     this._createLockOnReticle();
 
+    // Incoming missile warning (DOM)
+    this._incomingMissileCount = 0;
+    this._createIncomingWarning();
+
     // Afterburner particle system
     this._createAfterburnerSystem();
 
@@ -218,6 +222,28 @@ class MissileSystem {
     }
 
     document.body.appendChild(this.lockOnReticle);
+  }
+
+  _createIncomingWarning() {
+    this._incomingWarning = document.createElement("div");
+    this._incomingWarning.id = "missile-incoming-warning";
+    this._incomingWarning.textContent = "MISSILE INCOMING";
+    this._incomingWarning.style.display = "none";
+    document.body.appendChild(this._incomingWarning);
+  }
+
+  showIncomingWarning() {
+    this._incomingMissileCount++;
+    if (this._incomingWarning) {
+      this._incomingWarning.style.display = "";
+    }
+  }
+
+  hideIncomingWarning() {
+    this._incomingMissileCount = Math.max(0, this._incomingMissileCount - 1);
+    if (this._incomingMissileCount === 0 && this._incomingWarning) {
+      this._incomingWarning.style.display = "none";
+    }
   }
 
   _updateLockOnReticle(camera) {
@@ -695,23 +721,9 @@ class MissileSystem {
       if (m.age > this.config.launchDuration || altitude > m.cruiseAltitude) {
         m.phase = 1;
         m.cruiseAltitude = altitude;
-        // Initialize travel direction toward the target (projected onto tangent plane)
-        // so the forward-hemisphere filter doesn't reject all surface targets
-        const ownerFaction = m.faction || m.ownerFaction;
-        const initTarget = this._findClosestEnemyFromPos(m.position, ownerFaction, null);
-        if (initTarget) {
-          const toTarget = initTarget.worldPos.clone().sub(m.position);
-          // Remove surface-normal component to get horizontal direction
-          const normalComp = toTarget.dot(m.surfaceNormal);
-          toTarget.addScaledVector(m.surfaceNormal, -normalComp);
-          if (toTarget.lengthSq() > 0.001) {
-            m.direction = toTarget.normalize();
-          } else {
-            m.direction = m.surfaceNormal.clone();
-          }
-        } else {
-          m.direction = m.surfaceNormal.clone();
-        }
+        m.phase1Age = 0;
+        // Start with surface normal direction — steering will smoothly curve toward target
+        m.direction = m.surfaceNormal.clone();
       }
 
       // Orient mesh: nose (+Y) points along surface normal (upward)
@@ -720,11 +732,16 @@ class MissileSystem {
       m.poolItem.group.quaternion.copy(upQuat);
     } else if (m.phase === 1) {
       // CRUISE / HOMING: Steer toward target at altitude
+      m.phase1Age = (m.phase1Age || 0) + dt;
       const ownerFaction = m.faction || m.ownerFaction;
-      const target = this._findClosestEnemyFromPos(m.position, ownerFaction, m.direction);
+      // Skip forward-hemisphere filter during first 1s (missile is still curving from vertical)
+      const useHemisphere = m.phase1Age > 1.0;
+      const target = this._findClosestEnemyFromPos(
+        m.position, ownerFaction, useHemisphere ? m.direction : null
+      );
 
       if (!target) {
-        // No targets in forward hemisphere — fly straight, will timeout
+        // No targets found — fly straight, will timeout
         const moveSpeed = this.config.missileSpeed * dt60;
         m.position.addScaledVector(m.direction, moveSpeed);
         m.poolItem.group.position.copy(m.position);
@@ -904,7 +921,7 @@ class MissileSystem {
           float fadeOut = 1.0 - smoothstep(0.4, 1.0, lifeRatio);
           float distToCamera = distance(position, uCameraPos);
           float distanceFade = 1.0 - smoothstep(100.0, 260.0, distToCamera);
-          vAlpha = fadeIn * fadeOut * distanceFade * 0.3;
+          vAlpha = fadeIn * fadeOut * distanceFade * 0.7;
           vec4 mvPosition = modelViewMatrix * vec4(position, 1.0);
           gl_PointSize = aSize * (1.0 + lifeRatio * 0.3) * (150.0 / -mvPosition.z);
           gl_Position = projectionMatrix * mvPosition;

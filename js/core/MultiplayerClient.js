@@ -800,6 +800,11 @@
     };
 
     net.onPlayerFired = (data) => {
+      // Incoming missile warning — check before self-skip
+      if (data.type === "missile" && data.targetId === net.playerId && window.missileSystem) {
+        window.missileSystem.showIncomingWarning();
+      }
+
       if (data.id === net.playerId) return; // We already played our own effects
 
       const remoteTank = remoteTanks.get(data.id);
@@ -891,6 +896,11 @@
           }
         }
         return;
+      }
+
+      // Dismiss missile incoming warning when missile hits us (or anyone — missile is consumed)
+      if (data.isMissile && data.targetId === net.playerId && window.missileSystem) {
+        window.missileSystem.hideIncomingWarning();
       }
 
       if (data.targetId === net.playerId) {

@@ -75,7 +75,7 @@ const PresenceTracker = {
 
     for (const [sponsorId, sponsorCluster] of sponsorClusters) {
       const presence = clusterPresence.get(sponsorCluster.clusterId) ||
-                        { rust: false, cobalt: false, viridian: false };
+                        { rust: 0, cobalt: 0, viridian: 0 };
       this._accumulateTime(sponsorId, presence, shouldRecord);
     }
 
@@ -97,9 +97,9 @@ const PresenceTracker = {
       const clusterId = this._playerTank.getCurrentClusterId(this._planet);
       if (clusterId !== undefined) {
         if (!map.has(clusterId)) {
-          map.set(clusterId, { rust: false, cobalt: false, viridian: false });
+          map.set(clusterId, { rust: 0, cobalt: 0, viridian: 0 });
         }
-        map.get(clusterId)[this._playerFaction] = true;
+        map.get(clusterId)[this._playerFaction] += 1;
       }
     }
 
@@ -108,11 +108,11 @@ const PresenceTracker = {
       for (const bot of this._botTanks.bots) {
         if (bot.isDead || bot.isDeploying || bot.clusterId === undefined) continue;
         if (!map.has(bot.clusterId)) {
-          map.set(bot.clusterId, { rust: false, cobalt: false, viridian: false });
+          map.set(bot.clusterId, { rust: 0, cobalt: 0, viridian: 0 });
         }
         const p = map.get(bot.clusterId);
         if (p[bot.faction] !== undefined) {
-          p[bot.faction] = true;
+          p[bot.faction] += 1;
         }
       }
     }
@@ -123,7 +123,7 @@ const PresenceTracker = {
   /**
    * Accumulate time for factions present on sponsor tiles
    * @param {string} sponsorId - Sponsor ID
-   * @param {{ rust: boolean, cobalt: boolean, viridian: boolean }} presence - Which factions are present
+   * @param {{ rust: number, cobalt: number, viridian: number }} presence - Tank count per faction
    * @param {boolean} shouldRecord - Whether to record a data point for the chart
    */
   _accumulateTime(sponsorId, presence, shouldRecord) {
@@ -141,10 +141,10 @@ const PresenceTracker = {
 
     const sponsorData = data.sponsors[sponsorId];
 
-    // Add 1 second for each faction that has presence
-    if (presence.rust) sponsorData.totals.rust += 1;
-    if (presence.cobalt) sponsorData.totals.cobalt += 1;
-    if (presence.viridian) sponsorData.totals.viridian += 1;
+    // Add tank count for each faction (tank-seconds of presence)
+    sponsorData.totals.rust += presence.rust;
+    sponsorData.totals.cobalt += presence.cobalt;
+    sponsorData.totals.viridian += presence.viridian;
 
     // Record a data point for the chart and save to localStorage
     // Only save when shouldRecord is true (every 30 seconds) to avoid frame drops

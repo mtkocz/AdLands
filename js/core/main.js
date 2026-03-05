@@ -3178,12 +3178,12 @@
     const chartWidth = w - padding.left - padding.right;
     const chartHeight = h - padding.top - padding.bottom;
 
-    // Find max value for scaling (per-interval seconds, max possible is 30)
+    // Find max value for scaling (tank-seconds per interval — counts how many tanks were present)
     let maxValue = 0;
     data.forEach((d) => {
       maxValue = Math.max(maxValue, d.rust, d.cobalt, d.viridian);
     });
-    maxValue = Math.max(maxValue, 5); // Minimum scale of 5s to avoid erratic visuals
+    maxValue = Math.max(maxValue, 10); // Minimum scale to avoid erratic visuals
 
     // Draw subtle grid lines
     ctx.strokeStyle = "#333333";
@@ -3196,7 +3196,7 @@
       ctx.stroke();
     }
 
-    // Draw Y-axis labels (rate in seconds per interval)
+    // Draw Y-axis labels (troop density per interval)
     ctx.fillStyle = "#666666";
     ctx.font = '12px "Ark Pixel 12px"';
     ctx.textAlign = "right";
@@ -3204,7 +3204,7 @@
     for (let i = 0; i <= 4; i++) {
       const value = Math.round((maxValue * (4 - i)) / 4);
       const y = padding.top + (chartHeight / 4) * i;
-      ctx.fillText(value + "s", padding.left - 4, y);
+      ctx.fillText(String(value), padding.left - 4, y);
     }
 
     // Draw lines for each faction
