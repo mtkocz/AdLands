@@ -580,6 +580,7 @@
 
   // Flare System (missile countermeasure)
   const flareSystem = new FlareSystem(scene, CONFIG.sphereRadius);
+  flareSystem.dustShockwave = dustShockwave;
   window.flareSystem = flareSystem;
 
   // Connect tread tracks to cannon system for oil puddle detection

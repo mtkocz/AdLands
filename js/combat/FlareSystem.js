@@ -240,6 +240,11 @@ class FlareSystem {
     const flare = this._createFlareVisual(surfacePos, normal, faction, true);
     this.flares.push(flare);
 
+    // Small dust wave at launch point
+    if (this.dustShockwave) {
+      this.dustShockwave.emit(surfacePos.clone(), 0.3);
+    }
+
     if (window._mp && window._mp.socket) {
       window._mp.socket.emit("fire", { type: "flare" });
     }
