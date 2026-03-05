@@ -242,7 +242,7 @@ class FlareSystem {
 
     // Small dust wave at launch point
     if (this.dustShockwave) {
-      this.dustShockwave.emit(surfacePos.clone(), 0.15);
+      this.dustShockwave.emit(surfacePos.clone(), 0.05);
     }
 
     if (window._mp && window._mp.socket) {
