@@ -1398,11 +1398,12 @@ class Planet {
         `{
           vec3 wn = abs(normalize(cross(dFdx(vTriObjPos), dFdy(vTriObjPos))));
           wn = wn / (wn.x + wn.y + wn.z);
-          gl_FragColor.rgb *= (
+          vec3 wallNoise = (
             texture2D(triNoiseDiffuseMap, vTriObjPos.yz * triNoiseScale).rgb * wn.x +
             texture2D(triNoiseDiffuseMap, vTriObjPos.xz * triNoiseScale).rgb * wn.y +
             texture2D(triNoiseDiffuseMap, vTriObjPos.xy * triNoiseScale).rgb * wn.z
           ) * 2.0;
+          gl_FragColor.rgb *= mix(vec3(1.0), wallNoise, 3.0);
         }
         #include <tonemapping_fragment>`,
       );
