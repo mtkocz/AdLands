@@ -1461,9 +1461,14 @@ class Tank {
         this.state.keys.shift = true;
         return;
       }
-      // Spacebar → shield
+      // Spacebar → defense (shield hold OR flare tap)
       if (e.key === " ") {
-        this.state.keys.q = true;
+        const activeDefense = window.weaponSlotSystem?.getActiveDefenseWeapon();
+        if (activeDefense === "flares") {
+          if (window.flareSystem) window.flareSystem.fire(this, this.faction);
+        } else {
+          this.state.keys.q = true;
+        }
         e.preventDefault();
         return;
       }
@@ -1482,9 +1487,12 @@ class Tank {
         this.state.keys.shift = false;
         return;
       }
-      // Spacebar → shield
+      // Spacebar → shield release (only if not in flare mode)
       if (e.key === " ") {
-        this.state.keys.q = false;
+        const activeDefense = window.weaponSlotSystem?.getActiveDefenseWeapon();
+        if (activeDefense !== "flares") {
+          this.state.keys.q = false;
+        }
         return;
       }
       const key = e.key.toLowerCase();

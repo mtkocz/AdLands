@@ -341,6 +341,8 @@ io.on("connection", (socket) => {
   socket.on("fire", (data) => {
     if (data?.type === "missile") {
       mainRoom.handleMissileFire(socket.id, data?.turretAngle, data?.searchRadius || 0);
+    } else if (data?.type === "flare") {
+      mainRoom.handleFlareFire(socket.id);
     } else {
       mainRoom.handleFire(socket.id, data?.power || 0, data?.turretAngle);
     }

@@ -208,6 +208,15 @@ class WeaponSlotSystem {
   }
 
   /**
+   * Get the currently active defense weapon type.
+   * @returns {string} e.g. "shield", "flares", "barricades"
+   */
+  getActiveDefenseWeapon() {
+    const slotId = this.activeSlots.defense;
+    return this.equipped[slotId] || "shield";
+  }
+
+  /**
    * Compute combat modifiers from active slots + tank upgrades.
    * Only one slot per category is "live" — the active slot.
    * Called by CannonSystem before damage/fire-rate calculations.

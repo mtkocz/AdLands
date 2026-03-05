@@ -578,6 +578,10 @@
   missileSystem.cryptoSystem = cryptoSystem;
   window.missileSystem = missileSystem;
 
+  // Flare System (missile countermeasure)
+  const flareSystem = new FlareSystem(scene, CONFIG.sphereRadius);
+  window.flareSystem = flareSystem;
+
   // Connect tread tracks to cannon system for oil puddle detection
   treadTracks.setCannonSystem(cannonSystem);
 
@@ -4036,6 +4040,7 @@
     cannonSystem.isOrbitalView = isOrbitalView; // Set for LOD explosion decisions
     cannonSystem.update(deltaTime, sharedFrustum);
     missileSystem.update(deltaTime, sharedFrustum, camera);
+    flareSystem.update(deltaTime, camera);
 
     // Update visual effects
     treadTracks.update(tank, deltaTime, camera, isOrbitalView, sharedFrustum);

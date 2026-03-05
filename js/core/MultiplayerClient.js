@@ -849,6 +849,36 @@
       }
     };
 
+    // ---- Flare events ----
+
+    net.onFlareFired = (data) => {
+      // Skip our own flare (we already spawned the visual locally)
+      if (data.ownerId === net.playerId) return;
+      if (window.flareSystem) {
+        window.flareSystem.spawnRemoteFlare(data);
+      }
+    };
+
+    net.onFlareHit = (data) => {
+      if (window.flareSystem) {
+        window.flareSystem.removeFlareById(data.flareId);
+        // Also remove local flare if it was ours
+        window.flareSystem.removeLocalFlare();
+      }
+      // Remove the missile visual + dismiss incoming warning (missile consumed by flare)
+      if (window.missileSystem) {
+        window.missileSystem.removeByServerId(data.missileId);
+        window.missileSystem.hideIncomingWarning();
+      }
+      // Spawn explosion at flare position (harmless, visual only)
+      if (data.theta !== undefined && cannonSystem) {
+        const R = 480 + 8; // Cruise altitude
+        const sp = Math.sin(data.phi), cp = Math.cos(data.phi);
+        const st = Math.sin(data.theta), ct = Math.cos(data.theta);
+        cannonSystem._spawnExplosion(R * sp * st, R * cp, R * sp * ct, 0);
+      }
+    };
+
     // Preallocated vectors for hit effects and ping positions
     const _hitWorldPos = new THREE.Vector3();
     const _pingWorldPos = new THREE.Vector3();

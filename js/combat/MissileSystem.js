@@ -397,6 +397,20 @@ class MissileSystem {
       }
     }
 
+    // Flares as decoy targets (attract missiles from any faction)
+    if (window.flareSystem) {
+      const flares = window.flareSystem.getActiveFlares();
+      for (let i = 0; i < flares.length; i++) {
+        const flare = flares[i];
+        const pos = flare.position;
+        const dist = pos.distanceTo(missilePos);
+        if (dist < closestDist) {
+          closest = { tank: null, worldPos: pos.clone(), distance: dist, isFlare: true };
+          closestDist = dist;
+        }
+      }
+    }
+
     return closest;
   }
 

@@ -74,6 +74,10 @@ class GameRoom {
     this.projectiles = [];
     this.nextProjectileId = 1;
 
+    // Flares (missile countermeasures)
+    this.flares = [];
+    this.nextFlareId = 1;
+
     // Server time tracking
     this.planetRotation = 0;
 
@@ -2048,6 +2052,17 @@ class GameRoom {
       }
     }
 
+    // Flares as decoy targets — attract ALL missiles (skip own-owner flares)
+    for (let fi = 0; fi < this.flares.length; fi++) {
+      const fl = this.flares[fi];
+      if (fl.ownerId === p.ownerId) continue; // Don't eat your own missile
+      const dist = sphericalDistance(p.theta, p.phi, fl.theta, fl.phi);
+      if (dist < targetDist) {
+        target = { id: fl.id, theta: fl.theta, phi: fl.phi, isFlare: true, flareIndex: fi };
+        targetDist = dist;
+      }
+    }
+
     if (!target) {
       // No targets left, expire missile
       projs[i] = projs[projs.length - 1]; projs.pop();
@@ -2075,6 +2090,25 @@ class GameRoom {
     const ARRIVAL_THRESHOLD = 0.005; // ~2.4 world units on R=480
 
     if (arrivalDist < ARRIVAL_THRESHOLD) {
+      if (target.isFlare) {
+        // Missile hit flare — explode harmlessly, destroy both
+        const fl = this.flares[target.flareIndex];
+        if (fl) {
+          this.io.to(this.roomId).emit("flare-hit", {
+            flareId: fl.id,
+            missileId: p.id,
+            theta: fl.theta,
+            phi: fl.phi,
+          });
+          // Remove flare (swap-remove)
+          this.flares[target.flareIndex] = this.flares[this.flares.length - 1];
+          this.flares.pop();
+        }
+        // Remove missile
+        projs[i] = projs[projs.length - 1]; projs.pop();
+        return;
+      }
+
       // Impact! Apply damage — bypass shields entirely
       const damage = p.damage || 38;
 
@@ -2212,6 +2246,68 @@ class GameRoom {
 
       // Remove missile after impact
       projs[i] = projs[projs.length - 1]; projs.pop();
+    }
+  }
+
+  // ---- Flare countermeasure system ----
+
+  handleFlareFire(socketId) {
+    const player = this.players.get(socketId);
+    if (!player || this._isUndeployed(player) || player.isDead) return;
+
+    // Cannot fire while shield is active
+    if (player.shieldActive) return;
+
+    // Enforce cooldown: 5 seconds
+    const now = Date.now();
+    if (now - (player.lastFlareTime || 0) < 5000) return;
+
+    // Only 1 active flare per player
+    if (this.flares.some(f => f.ownerId === socketId)) return;
+
+    player.lastFlareTime = now;
+
+    const R = 480;
+    const fSp = Math.sin(player.phi), fCp = Math.cos(player.phi);
+    const fSt = Math.sin(player.theta), fCt = Math.cos(player.theta);
+    const fLift = R + 2;
+
+    const flare = {
+      id: this.nextFlareId++,
+      ownerId: socketId,
+      ownerFaction: player.faction,
+      theta: player.theta,
+      phi: player.phi,
+      age: 0,
+      maxAge: 3,
+      wx: fLift * fSp * fSt,
+      wy: fLift * fCp,
+      wz: fLift * fSp * fCt,
+    };
+
+    this.flares.push(flare);
+
+    this.io.to(this.roomId).emit("flare-fired", {
+      id: flare.id,
+      ownerId: socketId,
+      ownerFaction: player.faction,
+      theta: player.theta,
+      phi: player.phi,
+      wx: flare.wx,
+      wy: flare.wy,
+      wz: flare.wz,
+    });
+  }
+
+  _updateFlares(dt) {
+    for (let i = this.flares.length - 1; i >= 0; i--) {
+      const f = this.flares[i];
+      f.age += dt;
+      if (f.age >= f.maxAge) {
+        // Expired — remove
+        this.flares[i] = this.flares[this.flares.length - 1];
+        this.flares.pop();
+      }
     }
   }
 
@@ -2522,6 +2618,9 @@ class GameRoom {
 
     // 2. Update projectiles (includes shield collision + reflection)
     this._updateProjectiles(dt);
+
+    // 2.5. Update flares (age + expiry)
+    this._updateFlares(dt);
 
     // 3. Update territory capture (every other tick — 10Hz is imperceptible for
     //    seconds-long captures, halves getNearestTile calls from capture logic)
