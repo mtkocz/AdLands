@@ -158,13 +158,12 @@ class FlareSystem {
 
   fire(tank, faction) {
     const now = performance.now() / 1000;
-    if (now - this.lastFireTime < this.cooldown) { console.log("FLARE: cooldown"); return false; }
+    if (now - this.lastFireTime < this.cooldown) return false;
 
     // Only 1 active local flare
-    if (this.flares.some(f => f.isLocal)) { console.log("FLARE: already active"); return false; }
+    if (this.flares.some(f => f.isLocal)) return false;
 
     this.lastFireTime = now;
-    console.log("FLARE: firing!", tank.group.position, faction);
 
     // Get tank surface position + normal
     const surfacePos = this._tempVec.copy(tank.group.position);
@@ -220,11 +219,8 @@ class FlareSystem {
   // ---- Update all flares ----
 
   update(dt, camera) {
-    const camDist = camera ? camera.position.length() : 0;
-    const farAway = camDist > 260;
-
-    // Hide entire system in orbital view
-    this._points.visible = !farAway;
+    const camPos = camera ? camera.position : null;
+    let anyVisible = false;
 
     for (let i = this.flares.length - 1; i >= 0; i--) {
       const f = this.flares[i];
@@ -249,6 +245,9 @@ class FlareSystem {
       // Position = surfacePos + normal * altitude
       const pos = this._tempVec.copy(f.normal).multiplyScalar(f.altitude).add(f.surfacePos);
       f.meshItem.group.position.copy(pos);
+
+      // Hide in orbital view (camera > 260 units from flare)
+      const farAway = camPos ? camPos.distanceTo(pos) > 260 : false;
       f.meshItem.group.visible = !farAway;
 
       // Flicker the light intensity
@@ -258,15 +257,17 @@ class FlareSystem {
 
       // Emit particles (skip in orbital view)
       if (!farAway) {
+        anyVisible = true;
         this._emitParticles(f, dt);
       }
     }
 
     // Update existing particles
-    if (!farAway) {
+    if (anyVisible || this._ps.activeCount > 0) {
+      this._points.visible = true;
       this._updateParticles(dt, camera);
     } else {
-      // Zero out draw range when hidden
+      this._points.visible = false;
       this._points.geometry.setDrawRange(0, 0);
     }
   }
