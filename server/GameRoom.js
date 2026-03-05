@@ -1946,7 +1946,7 @@ class GameRoom {
       heading: 0,
       speed: 0.00032, // 80% of tank top speed (0.0004 * 0.8)
       age: 0,
-      maxAge: 15,
+      maxAge: 60,
       phase: 0, // 0=launch, 1=cruise
       launchDuration: 0.5,
       damage: Math.round(25 * 1.5), // 38 damage (missile multiplier)

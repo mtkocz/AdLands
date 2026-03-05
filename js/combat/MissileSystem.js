@@ -119,14 +119,12 @@ class MissileSystem {
     this._noseGeo = noseGeo;
     this._finGeo = finGeo;
 
-    // Create faction materials (HDR for bloom, matching cannon pattern)
+    // Create faction materials — dark faction color for missile body
     for (const faction of ["rust", "cobalt", "viridian"]) {
       const color = FACTION_COLORS[faction].three.clone();
-      color.multiplyScalar(5); // HDR boost for vivid bloom
+      color.multiplyScalar(0.4); // Darker variant
       this._materials[faction] = new THREE.MeshBasicMaterial({
         color: color,
-        transparent: true,
-        opacity: 1,
       });
     }
 
@@ -249,7 +247,7 @@ class MissileSystem {
   _updateLockOnReticle(camera) {
     if (!this.lockOnReticle) return;
 
-    if (!this._locking || !this._lockedTarget) {
+    if (!this._lockedTarget) {
       this.lockOnReticle.style.display = "none";
       return;
     }
@@ -574,8 +572,6 @@ class MissileSystem {
     // Update lock-on search while holding fire (expands radius + camera pullback)
     if (this._locking) {
       this._updateLockOnSearch(deltaTime, camera);
-    } else if (this.lockOnReticle) {
-      this.lockOnReticle.style.display = "none";
     }
 
     // Update active missiles
@@ -590,8 +586,8 @@ class MissileSystem {
         continue;
       }
 
-      // Safety timeout
-      if (m.age > 15) {
+      // Safety timeout — very long, missile keeps searching
+      if (m.age > 60) {
         this._destroyMissile(i, m.position);
         continue;
       }
@@ -600,6 +596,18 @@ class MissileSystem {
       m._camDist = camPos ? camPos.distanceTo(m.position) : 0;
 
       this._updateMissile(m, deltaTime);
+    }
+
+    // Track reticle on in-flight local missile's target (when not actively locking)
+    if (!this._locking && camera) {
+      const localMissile = this.missiles.find(m => !m.isRemote && m.targetTank);
+      if (localMissile) {
+        this._lockedTarget = { tank: localMissile.targetTank };
+        this._updateLockOnReticle(camera);
+      } else {
+        this._lockedTarget = null;
+        if (this.lockOnReticle) this.lockOnReticle.style.display = "none";
+      }
     }
 
     // Update particle systems
@@ -736,32 +744,34 @@ class MissileSystem {
         m.position, ownerFaction, useHemisphere ? m.direction : null
       );
 
-      if (!target) {
-        // No targets found — fly straight, will timeout
-        const moveSpeed = this.config.missileSpeed * dt60;
-        m.position.addScaledVector(m.direction, moveSpeed);
-        m.poolItem.group.position.copy(m.position);
-        return;
+      if (target) {
+        m.targetTank = target.tank;
+
+        // Compute elevated target position (same altitude as missile)
+        const targetSurface = target.worldPos;
+        const targetNormal = this._tempVec.copy(targetSurface).normalize();
+        const targetElevated = this._tempVec2
+          .copy(targetNormal)
+          .multiplyScalar(this.sphereRadius + m.cruiseAltitude);
+
+        // Desired direction to target
+        const desired = this._tempVec3
+          .copy(targetElevated)
+          .sub(m.position)
+          .normalize();
+
+        // Smoothly steer toward target (limited turn rate)
+        const maxSteer = this.config.turnRate * dt;
+        m.direction.lerp(desired, Math.min(maxSteer, 1.0)).normalize();
+
+        // Check if close enough to dive (distance to SURFACE target)
+        const groundDist = m.position.distanceTo(targetSurface);
+        if (groundDist < this.config.diveDistance) {
+          m.phase = 2;
+          m.diveTarget = targetSurface.clone();
+        }
       }
-
-      m.targetTank = target.tank;
-
-      // Compute elevated target position (same altitude as missile)
-      const targetSurface = target.worldPos;
-      const targetNormal = this._tempVec.copy(targetSurface).normalize();
-      const targetElevated = this._tempVec2
-        .copy(targetNormal)
-        .multiplyScalar(this.sphereRadius + m.cruiseAltitude);
-
-      // Desired direction to target
-      const desired = this._tempVec3
-        .copy(targetElevated)
-        .sub(m.position)
-        .normalize();
-
-      // Smoothly steer toward target (limited turn rate)
-      const maxSteer = this.config.turnRate * dt;
-      m.direction.lerp(desired, Math.min(maxSteer, 1.0)).normalize();
+      // No target: keep cruising in current direction, keep searching next frame
 
       // Move along current direction
       const moveSpeed = this.config.missileSpeed * dt60;
@@ -779,13 +789,6 @@ class MissileSystem {
       m.poolItem.group.position.copy(m.position);
       m.poolItem.group.lookAt(lookTarget);
       m.poolItem.group.quaternion.multiply(this._meshOrientQuat);
-
-      // Check if close enough to dive (distance to SURFACE target)
-      const groundDist = m.position.distanceTo(targetSurface);
-      if (groundDist < this.config.diveDistance) {
-        m.phase = 2;
-        m.diveTarget = targetSurface.clone();
-      }
     } else if (m.phase === 2) {
       // TERMINAL DIVE: Steer downward toward ground target (no forward filter — committed to dive)
       const ownerFaction = m.faction || m.ownerFaction;
@@ -987,7 +990,7 @@ class MissileSystem {
       ab.velocities[i * 3 + 2] = (Math.random() - 0.5) * 2;
 
       ab.ages[i] = 0;
-      ab.lifetimes[i] = 0.1 + Math.random() * 0.15; // 0.1-0.25s
+      ab.lifetimes[i] = 0.25 + Math.random() * 0.35; // 0.25-0.6s
       ab.sizes[i] = 0.4 + Math.random() * 0.4;
       ab.rotations[i] = Math.random() * Math.PI * 2;
       ab.rotationSpeeds[i] = (Math.random() - 0.5) * 3;
