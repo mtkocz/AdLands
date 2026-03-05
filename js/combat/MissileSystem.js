@@ -249,7 +249,7 @@ class MissileSystem {
   _updateLockOnReticle(camera) {
     if (!this.lockOnReticle) return;
 
-    if (!this._locking || !this._lockedTarget) {
+    if (!this._lockedTarget) {
       this.lockOnReticle.style.display = "none";
       return;
     }
@@ -577,7 +577,12 @@ class MissileSystem {
   // ========================
 
   update(deltaTime, frustum, camera) {
-    // Update lock-on search while holding
+    // Always track closest enemy when missile is active weapon (passive reticle)
+    if (this.playerTank?.missileMode && !this._locking) {
+      this._updatePassiveTracking(camera);
+    }
+
+    // Update lock-on search while holding (expands radius + camera pullback)
     if (this._locking) {
       this._updateLockOnSearch(deltaTime, camera);
     }
@@ -609,6 +614,22 @@ class MissileSystem {
     // Update particle systems
     this._updateAfterburner(deltaTime, camera);
     this._updateSmokeTrail(deltaTime, camera);
+  }
+
+  _updatePassiveTracking(camera) {
+    // Find closest enemy at max search radius (passive — no camera pullback)
+    const target = this._findClosestEnemyTank(this.config.searchRadiusMax);
+    this._lockedTarget = target;
+
+    // Detect target switch — trigger flash
+    const currentTank = target?.tank || null;
+    if (currentTank !== this._lastLockedTank) {
+      this._lastLockedTank = currentTank;
+      this._lockFlashTime = performance.now();
+    }
+
+    // Update reticle display
+    this._updateLockOnReticle(camera);
   }
 
   _updateLockOnSearch(deltaTime, camera) {
@@ -921,9 +942,9 @@ class MissileSystem {
           float fadeOut = 1.0 - smoothstep(0.4, 1.0, lifeRatio);
           float distToCamera = distance(position, uCameraPos);
           float distanceFade = 1.0 - smoothstep(100.0, 260.0, distToCamera);
-          vAlpha = fadeIn * fadeOut * distanceFade * 0.7;
+          vAlpha = fadeIn * fadeOut * distanceFade;
           vec4 mvPosition = modelViewMatrix * vec4(position, 1.0);
-          gl_PointSize = aSize * (1.0 + lifeRatio * 0.3) * (150.0 / -mvPosition.z);
+          gl_PointSize = aSize * (1.0 + lifeRatio * 0.3) * (250.0 / -mvPosition.z);
           gl_Position = projectionMatrix * mvPosition;
         }
       `,
@@ -944,7 +965,7 @@ class MissileSystem {
           // Warm color gradient: yellow core -> orange -> red
           vec3 coreColor = vec3(1.0, 0.9, 0.3);
           vec3 outerColor = vec3(1.0, 0.3, 0.05);
-          vec3 color = mix(coreColor, outerColor, vLifeRatio) * 0.4;
+          vec3 color = mix(coreColor, outerColor, vLifeRatio) * 0.6;
           float dist = max(abs(rotatedCoord.x), abs(rotatedCoord.y));
           float alpha = vAlpha * (1.0 - dist * 1.5);
           gl_FragColor = vec4(color, alpha);
@@ -992,7 +1013,7 @@ class MissileSystem {
 
       ab.ages[i] = 0;
       ab.lifetimes[i] = 0.1 + Math.random() * 0.15; // 0.1-0.25s
-      ab.sizes[i] = 0.15 + Math.random() * 0.2;
+      ab.sizes[i] = 0.3 + Math.random() * 0.3;
       ab.rotations[i] = Math.random() * Math.PI * 2;
       ab.rotationSpeeds[i] = (Math.random() - 0.5) * 3;
 
