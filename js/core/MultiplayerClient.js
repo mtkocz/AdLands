@@ -1014,8 +1014,8 @@
         if (data.projectileId != null) {
           if (data.isMissile && window.missileSystem) {
             if (data.attackerId === net.playerId) {
-              // Local player's missile — has no serverId, destroy by local flag
-              window.missileSystem.removeLocalMissile();
+              // Local missile — let it finish its visual dive naturally;
+              // client-side phase 2 impact check will destroy it
             } else {
               window.missileSystem.removeByServerId(data.projectileId);
             }
