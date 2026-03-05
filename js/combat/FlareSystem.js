@@ -159,7 +159,7 @@ class FlareSystem {
           float fadeOut = 1.0 - smoothstep(0.5, 1.0, lifeRatio);
           float distToCamera = distance(position, uCameraPos);
           float distanceFade = 1.0 - smoothstep(100.0, 260.0, distToCamera);
-          vAlpha = fadeIn * fadeOut * 0.25 * distanceFade;
+          vAlpha = fadeIn * fadeOut * 0.45 * distanceFade;
           vec4 mvPosition = modelViewMatrix * vec4(position, 1.0);
           gl_PointSize = aSize * sizeFactor * (300.0 / -mvPosition.z);
           gl_Position = projectionMatrix * mvPosition;
@@ -242,7 +242,7 @@ class FlareSystem {
 
     // Small dust wave at launch point
     if (this.dustShockwave) {
-      this.dustShockwave.emit(surfacePos.clone(), 0.3);
+      this.dustShockwave.emit(surfacePos.clone(), 0.15);
     }
 
     if (window._mp && window._mp.socket) {
@@ -419,7 +419,7 @@ class FlareSystem {
 
       smoke.ages[i] = 0;
       smoke.lifetimes[i] = 2.0 + Math.random() * 2.0;
-      smoke.sizes[i] = 0.6 + Math.random() * 0.6;
+      smoke.sizes[i] = 1.0 + Math.random() * 1.0;
       smoke.rotations[i] = Math.random() * Math.PI * 2;
       smoke.rotationSpeeds[i] = (Math.random() - 0.5) * 1.5;
 
