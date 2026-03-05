@@ -213,7 +213,7 @@ class WeaponSlotSystem {
    */
   getActiveDefenseWeapon() {
     const slotId = this.activeSlots.defense;
-    return this.equipped[slotId] || "shield";
+    return this.equipped[slotId] || "flares";
   }
 
   /**
