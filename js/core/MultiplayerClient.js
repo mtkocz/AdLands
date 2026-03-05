@@ -1760,12 +1760,17 @@
         planet._applySponsorTexture(sponsor, data.tileIndices);
       }
 
-      // Update sponsor info (name, tagline, URL)
+      // Update sponsor info (name, tagline, URL, image)
       const entry = planet.sponsorClusters.get(data.territoryId);
       if (entry?.sponsor) {
         if (data.title) entry.sponsor.name = data.title;
         entry.sponsor.tagline = data.tagline || "";
         entry.sponsor.websiteUrl = data.websiteUrl || "";
+        if (data.patternImage) {
+          entry.sponsor.patternImage = data.patternImage;
+          entry.sponsor.patternUrl = data.patternImage;
+          entry.sponsor.logoImage = data.patternImage;
+        }
       }
     };
 
@@ -1778,6 +1783,13 @@
         patternAdjustment: data.patternAdjustment || {},
       };
       planet._applySponsorTexture(sponsor, data.tileIndices);
+      // Also update the stored sponsor object so the card shows the approved image
+      const entry = planet.sponsorClusters.get(data.territoryId);
+      if (entry?.sponsor && data.patternImage) {
+        entry.sponsor.patternImage = data.patternImage;
+        entry.sponsor.patternUrl = data.patternImage;
+        entry.sponsor.logoImage = data.patternImage;
+      }
     };
 
     // Admin deleted the player's territory
