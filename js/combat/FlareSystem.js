@@ -350,69 +350,74 @@ class FlareSystem {
     }
   }
 
-  // ---- Fire emission (same as missile afterburner) ----
+  // ---- Fire emission (identical to MissileSystem._emitAfterburner) ----
 
   _emitFire(flare) {
-    const ps = this._fire;
-    const flarePos = flare.meshItem.group.position;
-    const n = flare.normal;
-
-    // 2-3 fire particles per frame from flare core, drifting downward
+    const ab = this._fire;
     const count = 2 + Math.floor(Math.random() * 2);
-    for (let k = 0; k < count; k++) {
-      if (ps.activeCount >= ps.maxParticles) break;
-      const idx = ps.activeCount;
+    for (let n = 0; n < count; n++) {
+      if (ab.activeCount >= ab.maxParticles) break;
+      const i = ab.activeCount;
 
-      // Emit from flare position with slight spread
-      ps.positions[idx * 3] = flarePos.x + (Math.random() - 0.5) * 0.3;
-      ps.positions[idx * 3 + 1] = flarePos.y + (Math.random() - 0.5) * 0.3;
-      ps.positions[idx * 3 + 2] = flarePos.z + (Math.random() - 0.5) * 0.3;
+      // Flare "travels" along normal (upward), so tail is behind = -normal
+      const travelDir = flare.normal;
+      const tailOffset = this._tempVec.copy(travelDir).multiplyScalar(-0.8);
+      const pos = this._tempVec2.copy(flare.meshItem.group.position).add(tailOffset);
 
-      // Drift downward (-normal) + random spread
-      ps.velocities[idx * 3] = -n.x * 2 + (Math.random() - 0.5) * 2;
-      ps.velocities[idx * 3 + 1] = -n.y * 2 + (Math.random() - 0.5) * 2;
-      ps.velocities[idx * 3 + 2] = -n.z * 2 + (Math.random() - 0.5) * 2;
+      pos.x += (Math.random() - 0.5) * 0.3;
+      pos.y += (Math.random() - 0.5) * 0.3;
+      pos.z += (Math.random() - 0.5) * 0.3;
 
-      ps.ages[idx] = 0;
-      ps.lifetimes[idx] = 0.25 + Math.random() * 0.35;
-      ps.sizes[idx] = 0.4 + Math.random() * 0.4;
-      ps.rotations[idx] = Math.random() * Math.PI * 2;
-      ps.rotationSpeeds[idx] = (Math.random() - 0.5) * 3;
+      ab.positions[i * 3] = pos.x;
+      ab.positions[i * 3 + 1] = pos.y;
+      ab.positions[i * 3 + 2] = pos.z;
 
-      ps.activeCount++;
+      ab.velocities[i * 3] = (Math.random() - 0.5) * 2;
+      ab.velocities[i * 3 + 1] = (Math.random() - 0.5) * 2;
+      ab.velocities[i * 3 + 2] = (Math.random() - 0.5) * 2;
+
+      ab.ages[i] = 0;
+      ab.lifetimes[i] = 0.25 + Math.random() * 0.35;
+      ab.sizes[i] = 0.4 + Math.random() * 0.4;
+      ab.rotations[i] = Math.random() * Math.PI * 2;
+      ab.rotationSpeeds[i] = (Math.random() - 0.5) * 3;
+
+      ab.activeCount++;
     }
   }
 
-  // ---- Smoke emission (same as missile smoke) ----
+  // ---- Smoke emission (identical to MissileSystem._emitSmoke) ----
 
   _emitSmoke(flare) {
-    const ps = this._smoke;
-    const flarePos = flare.meshItem.group.position;
-    const n = flare.normal;
-
-    // 1-2 smoke puffs per frame
+    const smoke = this._smoke;
     const count = 1 + Math.floor(Math.random() * 2);
-    for (let k = 0; k < count; k++) {
-      if (ps.activeCount >= ps.maxParticles) break;
-      const idx = ps.activeCount;
+    for (let n = 0; n < count; n++) {
+      if (smoke.activeCount >= smoke.maxParticles) break;
+      const i = smoke.activeCount;
 
-      // Emit slightly below flare (behind the fire)
-      ps.positions[idx * 3] = flarePos.x - n.x * 0.5 + (Math.random() - 0.5) * 0.5;
-      ps.positions[idx * 3 + 1] = flarePos.y - n.y * 0.5 + (Math.random() - 0.5) * 0.5;
-      ps.positions[idx * 3 + 2] = flarePos.z - n.z * 0.5 + (Math.random() - 0.5) * 0.5;
+      const travelDir = flare.normal;
+      const tailOffset = this._tempVec.copy(travelDir).multiplyScalar(-1.0);
+      const pos = this._tempVec2.copy(flare.meshItem.group.position).add(tailOffset);
 
-      // Slow random drift
-      ps.velocities[idx * 3] = (Math.random() - 0.5) * 0.5;
-      ps.velocities[idx * 3 + 1] = (Math.random() - 0.5) * 0.5;
-      ps.velocities[idx * 3 + 2] = (Math.random() - 0.5) * 0.5;
+      pos.x += (Math.random() - 0.5) * 0.5;
+      pos.y += (Math.random() - 0.5) * 0.5;
+      pos.z += (Math.random() - 0.5) * 0.5;
 
-      ps.ages[idx] = 0;
-      ps.lifetimes[idx] = 1.0 + Math.random() * 1.5;
-      ps.sizes[idx] = 1.5 + Math.random() * 1.5;
-      ps.rotations[idx] = Math.random() * Math.PI * 2;
-      ps.rotationSpeeds[idx] = (Math.random() - 0.5) * 1;
+      smoke.positions[i * 3] = pos.x;
+      smoke.positions[i * 3 + 1] = pos.y;
+      smoke.positions[i * 3 + 2] = pos.z;
 
-      ps.activeCount++;
+      smoke.velocities[i * 3] = (Math.random() - 0.5) * 0.5;
+      smoke.velocities[i * 3 + 1] = (Math.random() - 0.5) * 0.5;
+      smoke.velocities[i * 3 + 2] = (Math.random() - 0.5) * 0.5;
+
+      smoke.ages[i] = 0;
+      smoke.lifetimes[i] = 1.0 + Math.random() * 1.5;
+      smoke.sizes[i] = 1.5 + Math.random() * 1.5;
+      smoke.rotations[i] = Math.random() * Math.PI * 2;
+      smoke.rotationSpeeds[i] = (Math.random() - 0.5) * 1.5;
+
+      smoke.activeCount++;
     }
   }
 
