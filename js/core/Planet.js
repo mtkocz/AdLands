@@ -1348,9 +1348,9 @@ class Planet {
   }
 
   /**
-   * Patch a MeshStandardMaterial with cylindrical roughness noise sampling.
-   * Used for cliff walls and polar walls where spherical mapping distorts.
-   * Horizontal: azimuthal arc length, Vertical: radial distance.
+   * Patch a MeshStandardMaterial with triplanar noise sampling.
+   * Used for cliff walls and polar walls. Triplanar projection avoids
+   * distortion by blending 3 axis-aligned planes weighted by the face normal.
    * @param {THREE.MeshStandardMaterial} material
    */
   _patchWallNoise(material) {
@@ -1383,22 +1383,26 @@ class Planet {
         "#include <roughnessmap_fragment>",
         `float roughnessFactor = roughness;
         {
-          float horizR = length(vTriObjPos.xz);
-          float theta = atan(vTriObjPos.z, vTriObjPos.x);
-          float r = length(vTriObjPos);
-          vec2 uv = vec2(theta * horizR, r) * triNoiseScale;
-          roughnessFactor *= texture2D(triNoiseRoughMap, uv).g;
+          vec3 wn = abs(normalize(cross(dFdx(vTriObjPos), dFdy(vTriObjPos))));
+          wn = wn / (wn.x + wn.y + wn.z);
+          roughnessFactor *= (
+            texture2D(triNoiseRoughMap, vTriObjPos.yz * triNoiseScale).g * wn.x +
+            texture2D(triNoiseRoughMap, vTriObjPos.xz * triNoiseScale).g * wn.y +
+            texture2D(triNoiseRoughMap, vTriObjPos.xy * triNoiseScale).g * wn.z
+          );
         }`,
       );
       // Multiply diffuse noise into final output color (before tonemapping)
       shader.fragmentShader = shader.fragmentShader.replace(
         "#include <tonemapping_fragment>",
         `{
-          float horizR = length(vTriObjPos.xz);
-          float theta = atan(vTriObjPos.z, vTriObjPos.x);
-          float r = length(vTriObjPos);
-          vec2 uv = vec2(theta * horizR, r) * triNoiseScale;
-          gl_FragColor.rgb *= texture2D(triNoiseDiffuseMap, uv).rgb * 2.0;
+          vec3 wn = abs(normalize(cross(dFdx(vTriObjPos), dFdy(vTriObjPos))));
+          wn = wn / (wn.x + wn.y + wn.z);
+          gl_FragColor.rgb *= (
+            texture2D(triNoiseDiffuseMap, vTriObjPos.yz * triNoiseScale).rgb * wn.x +
+            texture2D(triNoiseDiffuseMap, vTriObjPos.xz * triNoiseScale).rgb * wn.y +
+            texture2D(triNoiseDiffuseMap, vTriObjPos.xy * triNoiseScale).rgb * wn.z
+          ) * 2.0;
         }
         #include <tonemapping_fragment>`,
       );
