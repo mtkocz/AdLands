@@ -166,7 +166,7 @@ class FlareSystem {
     this.lastFireTime = now;
 
     // Get tank surface position + normal
-    const surfacePos = this._tempVec.copy(tank.mesh.position);
+    const surfacePos = this._tempVec.copy(tank.group.position);
     const normal = this._tempVec2.copy(surfacePos).normalize();
 
     const flare = this._createFlareVisual(surfacePos, normal, faction, true);
