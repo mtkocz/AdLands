@@ -129,6 +129,7 @@ class FlareSystem {
       rotations: new Float32Array(max),
       rotationSpeeds: new Float32Array(max),
       velocities: new Float32Array(max * 3),
+      colors: new Float32Array(max * 3),
     };
 
     const geo = new THREE.BufferGeometry();
@@ -137,11 +138,11 @@ class FlareSystem {
     geo.setAttribute("aLifetime", new THREE.BufferAttribute(this._smoke.lifetimes, 1));
     geo.setAttribute("aSize", new THREE.BufferAttribute(this._smoke.sizes, 1));
     geo.setAttribute("aRotation", new THREE.BufferAttribute(this._smoke.rotations, 1));
+    geo.setAttribute("aColor", new THREE.BufferAttribute(this._smoke.colors, 3));
 
     const mat = new THREE.ShaderMaterial({
       uniforms: {
         uCameraPos: { value: new THREE.Vector3() },
-        uColor: { value: new THREE.Vector3(0.7, 0.7, 0.7) },
       },
       vertexShader: `
         uniform vec3 uCameraPos;
@@ -149,11 +150,14 @@ class FlareSystem {
         attribute float aLifetime;
         attribute float aSize;
         attribute float aRotation;
+        attribute vec3 aColor;
         varying float vAlpha;
         varying float vRotation;
+        varying vec3 vColor;
         void main() {
           float lifeRatio = clamp(aAge / max(aLifetime, 0.01), 0.0, 1.0);
           vRotation = aRotation;
+          vColor = aColor;
           float sizeFactor = 1.0 + lifeRatio * 2.0;
           float fadeIn = smoothstep(0.0, 0.05, lifeRatio);
           float fadeOut = 1.0 - smoothstep(0.5, 1.0, lifeRatio);
@@ -166,9 +170,9 @@ class FlareSystem {
         }
       `,
       fragmentShader: `
-        uniform vec3 uColor;
         varying float vAlpha;
         varying float vRotation;
+        varying vec3 vColor;
         void main() {
           if (vAlpha < 0.001) discard;
           vec2 coord = gl_PointCoord - vec2(0.5);
@@ -181,7 +185,7 @@ class FlareSystem {
           if (abs(rotatedCoord.x) > 0.4 || abs(rotatedCoord.y) > 0.4) discard;
           float dist = max(abs(rotatedCoord.x), abs(rotatedCoord.y));
           float alpha = vAlpha * (1.0 - dist * 1.5);
-          gl_FragColor = vec4(uColor, alpha);
+          gl_FragColor = vec4(vColor, alpha);
         }
       `,
       transparent: true,
@@ -242,7 +246,7 @@ class FlareSystem {
 
     // Small dust wave at launch point
     if (this.dustShockwave) {
-      this.dustShockwave.emit(surfacePos.clone(), 0.05);
+      this.dustShockwave.emit(surfacePos.clone(), 0.025);
     }
 
     if (window._mp && window._mp.socket) {
@@ -422,6 +426,12 @@ class FlareSystem {
       smoke.sizes[i] = 1.0 + Math.random() * 1.0;
       smoke.rotations[i] = Math.random() * Math.PI * 2;
       smoke.rotationSpeeds[i] = (Math.random() - 0.5) * 1.5;
+
+      // Faction-tinted smoke: mix faction color with grey (30% faction, 70% grey)
+      const fc = FACTION_COLORS[flare.faction]?.threeLight || FACTION_COLORS.rust.threeLight;
+      smoke.colors[i * 3] = 0.7 * 0.7 + fc.r * 0.3;
+      smoke.colors[i * 3 + 1] = 0.7 * 0.7 + fc.g * 0.3;
+      smoke.colors[i * 3 + 2] = 0.7 * 0.7 + fc.b * 0.3;
 
       smoke.activeCount++;
     }
