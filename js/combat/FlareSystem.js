@@ -116,7 +116,7 @@ class FlareSystem {
 
   _createFlareMeshPool() {
     this._meshPool = [];
-    this._flareGeo = new THREE.SphereGeometry(0.3, 4, 4);
+    this._flareGeo = new THREE.SphereGeometry(1.5, 6, 6);
     this._flareMats = {};
     for (const faction of ["rust", "cobalt", "viridian"]) {
       const col = FACTION_COLORS[faction].threeLight;
@@ -131,7 +131,7 @@ class FlareSystem {
     let item = this._meshPool.find(m => !m.inUse);
     if (!item) {
       const mesh = new THREE.Mesh(this._flareGeo, this._flareMats.rust);
-      const light = new THREE.PointLight(0xffffff, 0.8, 12);
+      const light = new THREE.PointLight(0xffffff, 2, 20);
       const group = new THREE.Group();
       group.add(mesh);
       group.add(light);
