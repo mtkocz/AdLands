@@ -34,7 +34,7 @@ class TerrainElevation {
       TERTIARY_MAX_SIZE: 6,
       TERTIARY_MIN_PARENT: 8,
       MIN_SEED_SPACING: 0.12,        // Radians between primary seeds
-      CLIFF_BASE_COLOR: { r: 112 / 255, g: 112 / 255, b: 112 / 255 },
+      CLIFF_BASE_COLOR: { r: 80 / 255, g: 80 / 255, b: 80 / 255 },
       CLIFF_COLOR_VARIATION: 0.08,
     };
 
