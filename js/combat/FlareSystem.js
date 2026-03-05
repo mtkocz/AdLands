@@ -158,12 +158,13 @@ class FlareSystem {
 
   fire(tank, faction) {
     const now = performance.now() / 1000;
-    if (now - this.lastFireTime < this.cooldown) return false;
+    if (now - this.lastFireTime < this.cooldown) { console.log("FLARE: cooldown"); return false; }
 
     // Only 1 active local flare
-    if (this.flares.some(f => f.isLocal)) return false;
+    if (this.flares.some(f => f.isLocal)) { console.log("FLARE: already active"); return false; }
 
     this.lastFireTime = now;
+    console.log("FLARE: firing!", tank.group.position, faction);
 
     // Get tank surface position + normal
     const surfacePos = this._tempVec.copy(tank.group.position);
