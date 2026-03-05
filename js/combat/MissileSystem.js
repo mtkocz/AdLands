@@ -119,12 +119,10 @@ class MissileSystem {
     this._noseGeo = noseGeo;
     this._finGeo = finGeo;
 
-    // Create faction materials — dark faction color for missile body
+    // Create faction materials — same color as tank hull
     for (const faction of ["rust", "cobalt", "viridian"]) {
-      const color = FACTION_COLORS[faction].three.clone();
-      color.multiplyScalar(0.4); // Darker variant
       this._materials[faction] = new THREE.MeshBasicMaterial({
-        color: color,
+        color: FACTION_COLORS[faction].vehicle.primary,
       });
     }
 
