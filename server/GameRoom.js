@@ -1944,7 +1944,7 @@ class GameRoom {
       startTheta: player.theta,
       startPhi: player.phi,
       heading: 0,
-      speed: 0.002, // Tank sprint speed (maxSpeed * sprintMultiplier)
+      speed: 0.0016, // 80% of tank sprint speed (0.002 * 0.8)
       age: 0,
       maxAge: 15,
       phase: 0, // 0=launch, 1=cruise

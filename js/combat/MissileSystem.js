@@ -26,7 +26,7 @@ class MissileSystem {
       cooldown: 2,             // Seconds between shots
       cost: 15,                // Crypto cost per missile
       damage: 38,              // 25 * 1.5 missile multiplier
-      missileSpeed: 0.96,      // World units per frame (matches tank sprint: 0.002 * 480)
+      missileSpeed: 0.768,     // World units per frame (80% of tank sprint: 0.002 * 480 * 0.8)
       launchDuration: 0.5,     // Seconds in vertical launch phase
       cruiseAltitude: 8,       // World units above surface
       diveDistance: 10,         // Start dive when within this distance
