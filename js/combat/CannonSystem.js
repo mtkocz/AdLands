@@ -1459,7 +1459,7 @@ void main() {
       mesh.scale.set(12 * sizeScale, 12 * sizeScale, 1);
       mesh.position.copy(position);
       const surfaceNormal = position.clone().normalize();
-      mesh.position.addScaledVector(surfaceNormal, 2.0);
+      mesh.position.addScaledVector(surfaceNormal, 0.3);
       mesh.quaternion.setFromUnitVectors(_cannonZUp, surfaceNormal);
       this.scene.add(mesh);
 
@@ -1542,7 +1542,7 @@ void main() {
     // Position + orient flat on surface (same as dust wave)
     mesh.position.copy(position);
     const surfaceNormal = position.clone().normalize();
-    mesh.position.addScaledVector(surfaceNormal, 2.0);
+    mesh.position.addScaledVector(surfaceNormal, 0.3);
     mesh.quaternion.setFromUnitVectors(_cannonZUp, surfaceNormal);
     mesh.rotateZ(Math.random() * Math.PI * 2);
     this.scene.add(mesh);
@@ -1575,7 +1575,7 @@ void main() {
 
     // Offset slightly above surface
     const surfaceNormal = localPosition.clone().normalize();
-    sprite.position.addScaledVector(surfaceNormal, 2.0);
+    sprite.position.addScaledVector(surfaceNormal, 0.3);
 
     sprite.scale.setScalar(cfg.baseSize * sizeScale * 1.5); // Start big — punch
     sprite.layers.set(1); // BLOOM_LAYER only
