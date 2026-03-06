@@ -444,6 +444,23 @@ class PlayerTags {
   }
 
   /**
+   * Toggle cyan heal flicker on a tag's HP bar.
+   * @param {string} tankId
+   * @param {boolean} healing - Whether tank is actively being healed
+   */
+  setHealing(tankId, healing) {
+    const tag = this.tags.get(tankId);
+    if (!tag) return;
+    const healthFill = tag.element.querySelector(".tag-healthbar-fill");
+    if (!healthFill) return;
+    if (healing) {
+      healthFill.classList.add("hp-healing");
+    } else {
+      healthFill.classList.remove("hp-healing");
+    }
+  }
+
+  /**
    * Update a tag's faction (e.g., when player switches faction)
    * @param {string} tankId
    * @param {string} newFaction

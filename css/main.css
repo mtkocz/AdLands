@@ -1750,6 +1750,17 @@ body.tip-dragging .chat-mention.tip-highlight {
     background: #ef4444; /* Red - <25% HP */
 }
 
+/* Cyan flicker when being healed by welding gun */
+@keyframes weld-heal-flicker {
+    0% { background: #00ffcc; }
+    30% { background: #00ffff; }
+    60% { background: #22ffcc; }
+    100% { background: #00ffcc; }
+}
+.tag-healthbar-fill.hp-healing {
+    animation: weld-heal-flicker 0.25s ease-in-out infinite;
+}
+
 /* ========================
    PROXIMITY CHAT
    ======================== */

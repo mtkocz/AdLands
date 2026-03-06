@@ -26,19 +26,27 @@ class WeldingGunSystem {
       depthWrite: false,
     });
 
+    // 3 lines per beam (center + 2 offset) for visual thickness
+    const LINES_PER_BEAM = 3;
+    this._linesPerBeam = LINES_PER_BEAM;
+
     for (let i = 0; i < POOL_SIZE; i++) {
-      const positions = new Float32Array((SEGMENTS + 1) * 3);
-      const geo = new THREE.BufferGeometry();
-      geo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
-
-      const line = new THREE.Line(geo, coreMat);
-      line.visible = false;
-      line.renderOrder = 50;
-      line.layers.enable(1); // BLOOM_LAYER
-      line.frustumCulled = false;
-      scene.add(line);
-
-      this.beams.push({ line, geo, segments: SEGMENTS });
+      const lines = [];
+      const geos = [];
+      for (let l = 0; l < LINES_PER_BEAM; l++) {
+        const positions = new Float32Array((SEGMENTS + 1) * 3);
+        const geo = new THREE.BufferGeometry();
+        geo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+        const line = new THREE.Line(geo, coreMat);
+        line.visible = false;
+        line.renderOrder = 50;
+        line.layers.enable(1); // BLOOM_LAYER
+        line.frustumCulled = false;
+        scene.add(line);
+        lines.push(line);
+        geos.push(geo);
+      }
+      this.beams.push({ lines, geos, segments: SEGMENTS });
     }
 
     // Point light pool
@@ -158,9 +166,17 @@ class WeldingGunSystem {
     scene.add(this._smokePoints);
     this._smokeGeo = smokeGeo;
 
+    // Tank silhouette edge offset (beam terminates at tank edge, not center)
+    this._EDGE_OFFSET = 2.5;
+
+    // Track which tanks are being healed this frame (for HP bar cyan flicker)
+    this._healedTankIds = new Set();
+    this._prevHealedTankIds = new Set();
+
     // Temp vectors
     this._tmpFrom = new THREE.Vector3();
     this._tmpTo = new THREE.Vector3();
+    this._tmpToEdge = new THREE.Vector3();
     this._tmpDir = new THREE.Vector3();
     this._tmpPerp = new THREE.Vector3();
     this._tmpNormal = new THREE.Vector3();
@@ -188,9 +204,17 @@ class WeldingGunSystem {
 
     // Hide all beams and lights
     for (let i = 0; i < this.beams.length; i++) {
-      this.beams[i].line.visible = false;
+      for (let l = 0; l < this._linesPerBeam; l++) {
+        this.beams[i].lines[l].visible = false;
+      }
       this._lights[i].visible = false;
     }
+
+    // Swap healed sets for diffing
+    const tmp = this._prevHealedTankIds;
+    this._prevHealedTankIds = this._healedTankIds;
+    this._healedTankIds = tmp;
+    this._healedTankIds.clear();
 
     let beamIdx = 0;
     const targetPositions = []; // Collect target positions for spark emission
@@ -212,8 +236,13 @@ class WeldingGunSystem {
         const dist = this._tmpFrom.distanceTo(this._tmpTo);
         if (dist > 20 || dist < 0.1) continue;
 
-        this._activateBeam(beamIdx, this._tmpFrom, this._tmpTo, shouldJitter);
-        targetPositions.push(this._tmpTo.clone());
+        // Offset endpoint to tank silhouette edge
+        this._tmpToEdge.copy(this._tmpTo).sub(this._tmpFrom).normalize()
+          .multiplyScalar(-this._EDGE_OFFSET).add(this._tmpTo);
+
+        this._activateBeam(beamIdx, this._tmpFrom, this._tmpToEdge, shouldJitter);
+        targetPositions.push(this._tmpToEdge.clone());
+        this._healedTankIds.add(id);
         beamIdx++;
       }
     }
@@ -235,8 +264,12 @@ class WeldingGunSystem {
         const dist = this._tmpFrom.distanceTo(this._tmpTo);
         if (dist > 20 || dist < 0.1) continue;
 
-        this._activateBeam(beamIdx, this._tmpFrom, this._tmpTo, shouldJitter);
-        targetPositions.push(this._tmpTo.clone());
+        this._tmpToEdge.copy(this._tmpTo).sub(this._tmpFrom).normalize()
+          .multiplyScalar(-this._EDGE_OFFSET).add(this._tmpTo);
+
+        this._activateBeam(beamIdx, this._tmpFrom, this._tmpToEdge, shouldJitter);
+        targetPositions.push(this._tmpToEdge.clone());
+        this._healedTankIds.add(targetId);
         beamIdx++;
       }
 
@@ -244,8 +277,11 @@ class WeldingGunSystem {
         localTank.group.getWorldPosition(this._tmpTo);
         const dist = this._tmpFrom.distanceTo(this._tmpTo);
         if (dist <= 20 && dist > 0.1 && beamIdx < this.beams.length) {
-          this._activateBeam(beamIdx, this._tmpFrom, this._tmpTo, shouldJitter);
-          targetPositions.push(this._tmpTo.clone());
+          this._tmpToEdge.copy(this._tmpTo).sub(this._tmpFrom).normalize()
+            .multiplyScalar(-this._EDGE_OFFSET).add(this._tmpTo);
+          this._activateBeam(beamIdx, this._tmpFrom, this._tmpToEdge, shouldJitter);
+          targetPositions.push(this._tmpToEdge.clone());
+          this._healedTankIds.add("player");
           beamIdx++;
         }
       }
@@ -274,11 +310,29 @@ class WeldingGunSystem {
     // Update spark particles
     this._updateSparks(dt);
     this._updateSmoke(dt);
+
+    // Update HP bar cyan flicker via PlayerTags
+    if (typeof playerTags !== 'undefined' && playerTags.setHealing) {
+      // Enable flicker for newly healed tanks
+      for (const id of this._healedTankIds) {
+        if (!this._prevHealedTankIds.has(id)) {
+          playerTags.setHealing(id, true);
+        }
+      }
+      // Disable flicker for tanks no longer healed
+      for (const id of this._prevHealedTankIds) {
+        if (!this._healedTankIds.has(id)) {
+          playerTags.setHealing(id, false);
+        }
+      }
+    }
   }
 
   _activateBeam(idx, from, to, jitter) {
     this._updateBeamGeometry(idx, from, to, jitter);
-    this.beams[idx].line.visible = true;
+    for (let l = 0; l < this._linesPerBeam; l++) {
+      this.beams[idx].lines[l].visible = true;
+    }
 
     const light = this._lights[idx];
     this._tmpMid.lerpVectors(from, to, 0.5);
@@ -288,7 +342,6 @@ class WeldingGunSystem {
 
   _updateBeamGeometry(idx, from, to, jitter) {
     const beam = this.beams[idx];
-    const positions = beam.geo.attributes.position.array;
     const segs = beam.segments;
 
     this._tmpDir.subVectors(to, from).normalize();
@@ -315,21 +368,33 @@ class WeldingGunSystem {
       }
     }
 
+    // Center line (line 0) — uses jitter offsets directly
+    const pos0 = beam.geos[0].attributes.position.array;
     for (let s = 0; s <= segs; s++) {
       const t = s / segs;
       this._tmpPoint.lerpVectors(from, to, t);
-
       if (s > 0 && s < segs) {
         this._tmpPoint.addScaledVector(this._tmpPerp, offsetsA[s]);
         this._tmpPoint.addScaledVector(this._tmpNormal, offsetsB[s]);
       }
-
-      positions[s * 3]     = this._tmpPoint.x;
-      positions[s * 3 + 1] = this._tmpPoint.y;
-      positions[s * 3 + 2] = this._tmpPoint.z;
+      pos0[s * 3]     = this._tmpPoint.x;
+      pos0[s * 3 + 1] = this._tmpPoint.y;
+      pos0[s * 3 + 2] = this._tmpPoint.z;
     }
+    beam.geos[0].attributes.position.needsUpdate = true;
 
-    beam.geo.attributes.position.needsUpdate = true;
+    // Side lines (lines 1,2) — offset perpendicular by ±0.4 units for thickness
+    const sideOffsets = [-0.4, 0.4];
+    for (let l = 1; l < this._linesPerBeam; l++) {
+      const posL = beam.geos[l].attributes.position.array;
+      const sideOff = sideOffsets[l - 1];
+      for (let s = 0; s <= segs; s++) {
+        posL[s * 3]     = pos0[s * 3]     + this._tmpPerp.x * sideOff;
+        posL[s * 3 + 1] = pos0[s * 3 + 1] + this._tmpPerp.y * sideOff;
+        posL[s * 3 + 2] = pos0[s * 3 + 2] + this._tmpPerp.z * sideOff;
+      }
+      beam.geos[l].attributes.position.needsUpdate = true;
+    }
   }
 
   // ---- Spark particles ----
@@ -414,10 +479,12 @@ class WeldingGunSystem {
 
   dispose() {
     for (const b of this.beams) {
-      this.scene.remove(b.line);
-      b.geo.dispose();
+      for (let l = 0; l < this._linesPerBeam; l++) {
+        this.scene.remove(b.lines[l]);
+        b.geos[l].dispose();
+      }
     }
-    if (this.beams.length > 0) this.beams[0].line.material.dispose();
+    if (this.beams.length > 0) this.beams[0].lines[0].material.dispose();
     for (const l of this._lights) {
       this.scene.remove(l);
       l.dispose();
