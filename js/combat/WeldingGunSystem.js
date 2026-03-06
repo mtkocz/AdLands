@@ -19,7 +19,7 @@ class WeldingGunSystem {
     const SEGMENTS = 12;
 
     // Bolt half-width in world units
-    this._boltHalfWidth = 0.35;
+    this._boltHalfWidth = 0.175;
 
     // Billboard quad-strip material — gives actual width unlike THREE.Line
     const boltMat = new THREE.ShaderMaterial({
