@@ -11,65 +11,35 @@ class WeldingGunSystem {
     this._jitterTimer = 0;
     this._jitterInterval = 0.08; // Re-jitter every 80ms
 
-    /** @type {Array<{mesh: THREE.Mesh, geo: THREE.BufferGeometry, mat: THREE.ShaderMaterial}>} */
+    /** @type {Array<{line: THREE.Line, geo: THREE.BufferGeometry}>} */
     this.beams = [];
     this._activeCount = 0;
 
-    // Pre-allocate beam pool
+    // Pre-allocate beam pool using THREE.Line (guaranteed continuous, no gaps)
     const POOL_SIZE = 10;
-    const SEGMENTS = 10;
+    const SEGMENTS = 12;
+
+    const mat = new THREE.LineBasicMaterial({
+      color: 0x00ffff,
+      transparent: true,
+      opacity: 0.9,
+      blending: THREE.AdditiveBlending,
+      depthWrite: false,
+    });
 
     for (let i = 0; i < POOL_SIZE; i++) {
-      const vertCount = (SEGMENTS + 1) * 2;
-      const positions = new Float32Array(vertCount * 3);
-      const uvs = new Float32Array(vertCount * 2);
-      const indices = [];
-
-      for (let s = 0; s < SEGMENTS; s++) {
-        const a = s * 2, b = a + 1, c = a + 2, d = a + 3;
-        indices.push(a, b, c, b, d, c);
-      }
-
+      const positions = new Float32Array((SEGMENTS + 1) * 3);
       const geo = new THREE.BufferGeometry();
       geo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
-      geo.setAttribute('uv', new THREE.BufferAttribute(uvs, 2));
-      geo.setIndex(indices);
 
-      const mat = new THREE.ShaderMaterial({
-        uniforms: {
-          uColor: { value: new THREE.Color(0x00ffff) },
-        },
-        vertexShader: [
-          'varying vec2 vUv;',
-          'void main() {',
-          '  vUv = uv;',
-          '  gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);',
-          '}',
-        ].join('\n'),
-        fragmentShader: [
-          'uniform vec3 uColor;',
-          'varying vec2 vUv;',
-          'void main() {',
-          '  float center = 1.0 - abs(vUv.y - 0.5) * 2.0;',
-          '  float alpha = smoothstep(0.0, 0.4, center);',
-          '  vec3 col = mix(uColor, vec3(1.0), center * center);',
-          '  gl_FragColor = vec4(col, alpha * 0.9);',
-          '}',
-        ].join('\n'),
-        transparent: true,
-        blending: THREE.AdditiveBlending,
-        depthWrite: false,
-        side: THREE.DoubleSide,
-      });
+      const line = new THREE.Line(geo, mat);
+      line.visible = false;
+      line.renderOrder = 50;
+      line.layers.enable(1); // BLOOM_LAYER
+      line.frustumCulled = false;
+      scene.add(line);
 
-      const mesh = new THREE.Mesh(geo, mat);
-      mesh.visible = false;
-      mesh.renderOrder = 50;
-      mesh.layers.enable(1); // BLOOM_LAYER
-      mesh.frustumCulled = false;
-      scene.add(mesh);
-
-      this.beams.push({ mesh, geo, mat, segments: SEGMENTS });
+      this.beams.push({ line, geo, segments: SEGMENTS });
     }
 
     // Point light pool (one per beam, positioned at beam midpoint)
@@ -86,12 +56,11 @@ class WeldingGunSystem {
     this._tmpTo = new THREE.Vector3();
     this._tmpDir = new THREE.Vector3();
     this._tmpPerp = new THREE.Vector3();
-    this._tmpCamDir = new THREE.Vector3();
-    this._tmpPoint = new THREE.Vector3();
     this._tmpNormal = new THREE.Vector3();
+    this._tmpPoint = new THREE.Vector3();
     this._tmpMid = new THREE.Vector3();
 
-    // Store jitter offsets per beam — two axes for more organic lightning
+    // Store jitter offsets per beam — two axes for organic lightning
     this._jitterOffsetsA = [];
     this._jitterOffsetsB = [];
     for (let i = 0; i < POOL_SIZE; i++) {
@@ -113,7 +82,7 @@ class WeldingGunSystem {
 
     // Hide all beams and lights
     for (let i = 0; i < this.beams.length; i++) {
-      this.beams[i].mesh.visible = false;
+      this.beams[i].line.visible = false;
       this._lights[i].visible = false;
     }
 
@@ -148,7 +117,6 @@ class WeldingGunSystem {
 
       welder.group.getWorldPosition(this._tmpFrom);
 
-      // Draw beams to nearby friendlies (other remote tanks + local tank)
       for (const [targetId, target] of remoteTanks) {
         if (beamIdx >= this.beams.length) break;
         if (targetId === welderId) continue;
@@ -179,7 +147,7 @@ class WeldingGunSystem {
 
   _activateBeam(idx, from, to, jitter) {
     this._updateBeamGeometry(idx, from, to, jitter);
-    this.beams[idx].mesh.visible = true;
+    this.beams[idx].line.visible = true;
 
     // Position point light at beam midpoint
     const light = this._lights[idx];
@@ -191,35 +159,23 @@ class WeldingGunSystem {
   _updateBeamGeometry(idx, from, to, jitter) {
     const beam = this.beams[idx];
     const positions = beam.geo.attributes.position.array;
-    const uvs = beam.geo.attributes.uv.array;
     const segs = beam.segments;
 
-    // Overall beam direction (used for consistent perpendicular)
+    // Beam direction
     this._tmpDir.subVectors(to, from).normalize();
 
-    // Camera-facing perpendicular for billboard quad strip
-    const cam = window.gameCamera?.camera;
-    if (cam) {
-      this._tmpCamDir.subVectors(cam.position, from).normalize();
-    } else {
-      this._tmpCamDir.set(0, 1, 0);
-    }
-    this._tmpPerp.crossVectors(this._tmpDir, this._tmpCamDir);
-
-    // Fallback if beam is nearly parallel to camera direction
+    // Two perpendicular axes for jitter
+    // Use surface normal at midpoint as one reference
+    this._tmpMid.lerpVectors(from, to, 0.5).normalize();
+    this._tmpPerp.crossVectors(this._tmpDir, this._tmpMid);
     if (this._tmpPerp.lengthSq() < 0.001) {
-      // Use surface normal as fallback
-      this._tmpNormal.copy(from).normalize();
-      this._tmpPerp.crossVectors(this._tmpDir, this._tmpNormal);
+      this._tmpPerp.set(0, 1, 0);
+      this._tmpPerp.crossVectors(this._tmpDir, this._tmpPerp);
     }
     this._tmpPerp.normalize();
-
-    // Second perpendicular axis (for 3D jitter, perpendicular to both beam and perp)
     this._tmpNormal.crossVectors(this._tmpDir, this._tmpPerp).normalize();
 
-    const WIDTH = 0.4;
-
-    // Regenerate jitter offsets on both axes
+    // Regenerate jitter offsets
     const offsetsA = this._jitterOffsetsA[idx];
     const offsetsB = this._jitterOffsetsB[idx];
     if (jitter) {
@@ -227,49 +183,37 @@ class WeldingGunSystem {
       offsetsB[0] = 0; offsetsB[segs] = 0;
       for (let s = 1; s < segs; s++) {
         const t = s / segs;
-        const jitterScale = Math.sin(t * Math.PI) * 1.5;
+        const jitterScale = Math.sin(t * Math.PI) * 1.2;
         offsetsA[s] = (Math.random() - 0.5) * 2 * jitterScale;
-        offsetsB[s] = (Math.random() - 0.5) * 2 * jitterScale * 0.5;
+        offsetsB[s] = (Math.random() - 0.5) * 2 * jitterScale;
       }
     }
 
-    // Store jittered center points first, then build quads from them
-    // This ensures consistent perpendicular across all segments
+    // Build line vertices — simple polyline, no gaps possible
     for (let s = 0; s <= segs; s++) {
       const t = s / segs;
       this._tmpPoint.lerpVectors(from, to, t);
 
-      // Apply jitter along both perpendicular axes
       if (s > 0 && s < segs) {
         this._tmpPoint.addScaledVector(this._tmpPerp, offsetsA[s]);
         this._tmpPoint.addScaledVector(this._tmpNormal, offsetsB[s]);
       }
 
-      // Build quad strip vertices using the SAME perpendicular for all segments
-      // This prevents holes between segments caused by varying perpendicular directions
-      const base = s * 2;
-      positions[base * 3]     = this._tmpPoint.x + this._tmpPerp.x * WIDTH;
-      positions[base * 3 + 1] = this._tmpPoint.y + this._tmpPerp.y * WIDTH;
-      positions[base * 3 + 2] = this._tmpPoint.z + this._tmpPerp.z * WIDTH;
-      uvs[base * 2] = t;
-      uvs[base * 2 + 1] = 1;
-
-      positions[(base + 1) * 3]     = this._tmpPoint.x - this._tmpPerp.x * WIDTH;
-      positions[(base + 1) * 3 + 1] = this._tmpPoint.y - this._tmpPerp.y * WIDTH;
-      positions[(base + 1) * 3 + 2] = this._tmpPoint.z - this._tmpPerp.z * WIDTH;
-      uvs[(base + 1) * 2] = t;
-      uvs[(base + 1) * 2 + 1] = 0;
+      positions[s * 3]     = this._tmpPoint.x;
+      positions[s * 3 + 1] = this._tmpPoint.y;
+      positions[s * 3 + 2] = this._tmpPoint.z;
     }
 
     beam.geo.attributes.position.needsUpdate = true;
-    beam.geo.attributes.uv.needsUpdate = true;
   }
 
   dispose() {
     for (const b of this.beams) {
-      this.scene.remove(b.mesh);
+      this.scene.remove(b.line);
       b.geo.dispose();
-      b.mat.dispose();
+    }
+    if (this.beams.length > 0) {
+      this.beams[0].line.material.dispose();
     }
     for (const l of this._lights) {
       this.scene.remove(l);
