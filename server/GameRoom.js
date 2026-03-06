@@ -796,6 +796,7 @@ class GameRoom {
       profilePicture: profileData?.profilePicture || null,
       avatarColor: profileData?.profilePicture || null,
       loadout: profileData?.loadout || {},
+      activeSlots: profileData?.activeSlots || { offense: 'offense-1', defense: 'defense-1', tactical: 'tactical-1' },
       unlockedSlots: profileData?.unlockedSlots || ['offense-1'],
       tankUpgrades: profileData?.tankUpgrades || { armor: 0, speed: 0, fireRate: 0, damage: 0 },
 
