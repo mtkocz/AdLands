@@ -563,6 +563,11 @@
             // Use a default arc for remote tanks (server doesn't send arc width)
             shieldEffect.updateShield(id, shActive, shActive ? 2.094 : 0, shActive ? 1.0 : 0, 0.1);
           }
+
+          // Update remote tank welding state
+          if (state.weld !== undefined) {
+            remoteTank.weldingActive = state.weld === 1;
+          }
         }
       }
 

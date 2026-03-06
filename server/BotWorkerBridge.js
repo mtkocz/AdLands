@@ -300,6 +300,16 @@ class BotWorkerBridge {
     this._worker.postMessage({ type: "apply-damage", botId, damage, killerId, killerName });
   }
 
+  /**
+   * Heal a bot (called when welding gun targets a bot).
+   * @param {string} botId
+   * @param {number} amount
+   */
+  applyHealing(botId, amount) {
+    if (!this._workerReady) return;
+    this._worker.postMessage({ type: "apply-healing", botId, amount });
+  }
+
   // ========================
   // CAPTURE STATE
   // ========================

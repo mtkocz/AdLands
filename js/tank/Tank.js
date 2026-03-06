@@ -51,7 +51,7 @@ class Tank {
       turretAngularVelocity: 0,
 
       // Input
-      keys: { w: false, a: false, s: false, d: false, shift: false, q: false },
+      keys: { w: false, a: false, s: false, d: false, shift: false, q: false, tac: false },
 
       // Death state (for tread dust/tracks to check)
       isDead: false,
@@ -77,6 +77,8 @@ class Tank {
 
     // Shield state (client-side prediction, synced from server)
     this.shieldActive = false;
+    // Welding gun state (for remote tanks to display beams)
+    this.weldingActive = false;
     this.shieldEnergy = 1.0;
     this.shieldArcAngle = 2.094; // 120 degrees
     this.shieldRechargeTimer = 0;
@@ -1472,8 +1474,14 @@ class Tank {
         e.preventDefault();
         return;
       }
+      // Q → tactical item activation
       const key = e.key.toLowerCase();
-      if (key in this.state.keys && key !== 'q') {
+      if (key === 'q') {
+        this.state.keys.tac = true;
+        e.preventDefault();
+        return;
+      }
+      if (key in this.state.keys && key !== 'q' && key !== 'tac') {
         this.state.keys[key] = true;
         e.preventDefault();
       }
@@ -1496,7 +1504,11 @@ class Tank {
         return;
       }
       const key = e.key.toLowerCase();
-      if (key in this.state.keys && key !== 'q') {
+      if (key === 'q') {
+        this.state.keys.tac = false;
+        return;
+      }
+      if (key in this.state.keys && key !== 'q' && key !== 'tac') {
         this.state.keys[key] = false;
       }
     });

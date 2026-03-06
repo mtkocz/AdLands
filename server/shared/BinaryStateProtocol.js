@@ -10,7 +10,7 @@
  *   offset 12: Float32  speed        (movement speed)
  *   offset 16: Uint16   turretAngle  (quantized [0, 2pi] → [0, 65535])
  *   offset 18: Uint8    hp           (health points, 0-255)
- *   offset 19: Uint8    flags        (packed: faction[2], shield[1], deploy[2], unused[3])
+ *   offset 19: Uint8    flags        (packed: faction[2], shield[1], deploy[2], welding[1], unused[2])
  */
 
 (function (exports) {
@@ -63,11 +63,12 @@
       dv.setUint16(off + 16, (e.ta * ANGLE_SCALE) & 0xFFFF, true);
       dv.setUint8(off + 18, e.hp & 0xFF);
 
-      // Pack flags: faction (2 bits) | shield (1 bit) | deploy (2 bits)
+      // Pack flags: faction (2 bits) | shield (1 bit) | deploy (2 bits) | welding (1 bit)
       const factionIdx = FACTION_TO_IDX[e.f] || 0;
       const shield = e.sh ? 1 : 0;
       const deploy = (e.d || 0) & 3;
-      dv.setUint8(off + 19, (factionIdx & 3) | (shield << 2) | (deploy << 3));
+      const welding = e.weld ? 1 : 0;
+      dv.setUint8(off + 19, (factionIdx & 3) | (shield << 2) | (deploy << 3) | (welding << 5));
     }
   }
 
@@ -80,7 +81,7 @@
     if (_entryPoolIdx < _entryPool.length) {
       return _entryPool[_entryPoolIdx++];
     }
-    var e = { t: 0, p: 0, h: 0, s: 0, ta: 0, hp: 0, f: '', sh: 0, d: 0 };
+    var e = { t: 0, p: 0, h: 0, s: 0, ta: 0, hp: 0, f: '', sh: 0, d: 0, weld: 0 };
     _entryPool.push(e);
     _entryPoolIdx++;
     return e;
@@ -115,6 +116,7 @@
       entry.f = IDX_TO_FACTION[flags & 3];
       entry.sh = (flags >> 2) & 1;
       entry.d = (flags >> 3) & 3;
+      entry.weld = (flags >> 5) & 1;
       result[ids[i]] = entry;
     }
 

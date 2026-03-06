@@ -46,7 +46,7 @@ class WeaponSlotSystem {
       proximity_mine: { mineCooldown: 15, mineDamage: 40, category: "tactical" },
       foot_soldiers: { soldierCount: 3, category: "tactical" },
       turrets: { turretDamage: 10, turretRange: 15, category: "tactical" },
-      welding_gun: { repairRate: 5, category: "tactical" },
+      welding_gun: { repairRate: 10, category: "tactical" },
     };
 
     /**
@@ -214,6 +214,15 @@ class WeaponSlotSystem {
   getActiveDefenseWeapon() {
     const slotId = this.activeSlots.defense;
     return this.equipped[slotId] || "flares";
+  }
+
+  /**
+   * Get the currently active tactical weapon type.
+   * @returns {string|null} e.g. "welding_gun", "proximity_mine", or null if none equipped
+   */
+  getActiveTacticalWeapon() {
+    const slotId = this.activeSlots.tactical;
+    return this.equipped[slotId] || null;
   }
 
   /**

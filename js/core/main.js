@@ -592,6 +592,10 @@
   // Shield effect system (3D arc visuals)
   const shieldEffect = new ShieldEffect(scene, CONFIG.sphereRadius);
 
+  // Welding gun system (tactical healing beams)
+  const weldingGunSystem = new WeldingGunSystem(scene, CONFIG.sphereRadius);
+  window.weldingGunSystem = weldingGunSystem;
+
   // Tank damage effects (smoke/fire)
   const tankDamageEffects = new TankDamageEffects(scene, CONFIG.sphereRadius);
 
@@ -1203,6 +1207,11 @@
     { passive: false },
   );
 
+  /** Check if welding gun is currently active (blocks firing) */
+  function isWeldingActive() {
+    return tank.state.keys.tac && weaponSlotSystem?.getActiveTacticalWeapon() === 'welding_gun';
+  }
+
   window.addEventListener("mousedown", (e) => {
     if (window._modalOpen) return;
     if (
@@ -1210,6 +1219,7 @@
       tank.controlsEnabled &&
       !tank.isDead &&
       !tank.shieldActive &&
+      !isWeldingActive() &&
       gameCamera.mode === "surface"
     ) {
       if (!isUIClick(e)) {
@@ -1231,6 +1241,7 @@
           tank.controlsEnabled &&
           !tank.isDead &&
           !tank.shieldActive &&
+          !isWeldingActive() &&
           gameCamera.mode === "surface"
         ) {
           window.missileSystem.releaseLockOn(tank, playerFaction);
@@ -1241,11 +1252,12 @@
       }
       // Cannon release
       if (cannonSystem.isCharging()) {
-        // Only fire if still in surface mode with controls enabled, alive, and not shielding
+        // Only fire if still in surface mode with controls enabled, alive, and not shielding/welding
         if (
           tank.controlsEnabled &&
           !tank.isDead &&
           !tank.shieldActive &&
+          !isWeldingActive() &&
           gameCamera.mode === "surface"
         ) {
           cannonSystem.releaseCharge(tank, playerFaction);
@@ -3968,6 +3980,13 @@
       shieldEffect.getOrCreateShield('local', tank.turretGroup, playerFaction);
     }
     shieldEffect.updateShield('local', tank.shieldActive, tank.shieldArcAngle, tank.shieldEnergy, deltaTime);
+
+    // Update welding gun beams
+    const remoteTanks = window._mpState?.remoteTanks;
+    if (remoteTanks) {
+      weldingGunSystem.update(tank, remoteTanks, playerFaction, deltaTime);
+    }
+
     environment.update(camera, deltaTime);
     environment.updateAtmosphere(gameCamera.getEffectiveDistance());
     const shadowTarget = gameCamera.mode === "surface" && !gameCamera.transitioning
@@ -4044,6 +4063,7 @@
       missileSystem.cancelLockOn();
     }
     tank.missileMode = isMissileActive;
+    missileSystem.setMissileEquipped(isMissileActive);
 
     // Update cannon charging and projectiles
     cannonSystem.updateCharge(deltaTime, tank, playerFaction);

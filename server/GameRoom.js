@@ -762,7 +762,7 @@ class GameRoom {
       _portalReason: 'deploy', // 'deploy' | 'fastTravel' | 'respawn'
 
       // Latest input from client (updated every time we receive input)
-      keys: { w: false, a: false, s: false, d: false, shift: false, q: false },
+      keys: { w: false, a: false, s: false, d: false, shift: false, q: false, tac: false },
 
       // Input sequence number (for client-side prediction reconciliation)
       lastInputSeq: 0,
@@ -782,6 +782,9 @@ class GameRoom {
 
       // Shield state (server-authoritative)
       shieldActive: false,
+      // Welding gun state (server-authoritative)
+      weldingActive: false,
+      _weldHpAccumulators: {},
       shieldEnergy: SHIELD.MAX_ENERGY,
       shieldArcAngle: SHIELD.ARC_START,
       shieldRechargeTimer: 0,
@@ -1858,6 +1861,7 @@ class GameRoom {
       player.keys.d = !!input.keys.d;
       player.keys.shift = !!input.keys.shift;
       player.keys.q = !!input.keys.q;
+      player.keys.tac = !!input.keys.tac;
 
       // Any key pressed counts as meaningful activity
       if (input.keys.w || input.keys.a || input.keys.s || input.keys.d) {
@@ -1880,8 +1884,9 @@ class GameRoom {
     const player = this.players.get(socketId);
     if (!player || this._isUndeployed(player)) return;
 
-    // Cannot fire while shield is active
+    // Cannot fire while shield or welding gun is active
     if (player.shieldActive) return;
+    if (player.weldingActive) return;
 
     // Enforce server-side cooldown (2 seconds between shots)
     const now = Date.now();
@@ -1971,8 +1976,9 @@ class GameRoom {
     const player = this.players.get(socketId);
     if (!player || this._isUndeployed(player)) return;
 
-    // Cannot fire while shield is active
+    // Cannot fire while shield or welding gun is active
     if (player.shieldActive) return;
+    if (player.weldingActive) return;
 
     // Enforce server-side cooldown (2 seconds for missiles)
     const now = Date.now();
@@ -2310,8 +2316,9 @@ class GameRoom {
     const player = this.players.get(socketId);
     if (!player || this._isUndeployed(player) || player.isDead) return;
 
-    // Cannot fire while shield is active
+    // Cannot fire while shield or welding gun is active
     if (player.shieldActive) return;
+    if (player.weldingActive) return;
 
     // Enforce cooldown: 5 seconds
     const now = Date.now();
@@ -2676,6 +2683,9 @@ class GameRoom {
     // 1.8. Update shield energy (drain/recharge)
     this._updateShields(dt);
 
+    // 1.9. Update welding guns (tactical healing)
+    this._updateWeldingGuns(dt);
+
     // 2. Update projectiles (includes shield collision + reflection)
     this._updateProjectiles(dt);
 
@@ -3004,6 +3014,86 @@ class GameRoom {
         player.shieldActive = true;
       } else {
         player.shieldActive = false;
+      }
+    }
+  }
+
+  _updateWeldingGuns(dt) {
+    const WELD_RANGE_RAD = 20 / 480; // 20 world units on R=480 sphere
+    const HEAL_PER_SEC = 10;
+    const MAX_HP = 100;
+
+    for (const [id, player] of this.players) {
+      // Reset welding state each tick
+      player.weldingActive = false;
+
+      if (this._isUndeployed(player) || player.isDead) continue;
+      if (!player.keys.tac) continue;
+
+      // Check if player has welding_gun as active tactical
+      const tacticalSlot = player.activeSlots?.tactical || 'tactical-1';
+      const activeTactical = player.loadout?.[tacticalSlot];
+      if (activeTactical !== 'welding_gun') continue;
+
+      player.weldingActive = true;
+
+      // Find all friendly targets in range with hp < MAX_HP
+      const targets = [];
+
+      // Check human players
+      for (const [tid, target] of this.players) {
+        if (tid === id) continue;
+        if (this._isUndeployed(target) || target.isDead) continue;
+        if (target.faction !== player.faction) continue;
+        if (target.hp >= MAX_HP) continue;
+        const dist = sphericalDistance(player.theta, player.phi, target.theta, target.phi);
+        if (dist <= WELD_RANGE_RAD) {
+          targets.push({ id: tid, isBot: false });
+        }
+      }
+
+      // Check bots
+      const botStates = this.botBridge.getStatesForBroadcast();
+      for (const botId in botStates) {
+        const bs = botStates[botId];
+        if (bs.d) continue;
+        if (bs.f !== player.faction) continue;
+        if ((bs.hp || 100) >= MAX_HP) continue;
+        const dist = sphericalDistance(player.theta, player.phi, bs.t, bs.p);
+        if (dist <= WELD_RANGE_RAD) {
+          targets.push({ id: botId, isBot: true });
+        }
+      }
+
+      if (targets.length === 0) continue;
+
+      // Distribute healing across all targets
+      const healPerTarget = (HEAL_PER_SEC * dt) / targets.length;
+      if (!player._weldHpAccumulators) player._weldHpAccumulators = {};
+
+      const activeTargetIds = new Set();
+      for (const t of targets) {
+        activeTargetIds.add(t.id);
+        if (!player._weldHpAccumulators[t.id]) player._weldHpAccumulators[t.id] = 0;
+        player._weldHpAccumulators[t.id] += healPerTarget;
+
+        const wholeHp = Math.floor(player._weldHpAccumulators[t.id]);
+        if (wholeHp > 0) {
+          player._weldHpAccumulators[t.id] -= wholeHp;
+          if (t.isBot) {
+            this.botBridge.applyHealing(t.id, wholeHp);
+          } else {
+            const target = this.players.get(t.id);
+            if (target) target.hp = Math.min(MAX_HP, target.hp + wholeHp);
+          }
+        }
+      }
+
+      // Clean up stale accumulators
+      for (const accId in player._weldHpAccumulators) {
+        if (!activeTargetIds.has(accId)) {
+          delete player._weldHpAccumulators[accId];
+        }
       }
     }
   }
@@ -4121,6 +4211,7 @@ class GameRoom {
       state.r = p.rank || 0;
       state.rt = this.factionMemberCounts[p.faction] || 0;
       state.sh = p.shieldActive ? 1 : 0;
+      state.weld = p.weldingActive ? 1 : 0;
     }
 
     // -- Celestial data (shared by all clients — computed once) --

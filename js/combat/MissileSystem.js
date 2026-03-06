@@ -37,6 +37,7 @@ class MissileSystem {
     };
 
     // Lock-on state
+    this._missileEquipped = false;
     this._locking = false;
     this._lockStartTime = 0;
     this._currentSearchRadius = 0;
@@ -433,6 +434,14 @@ class MissileSystem {
     return this._locking;
   }
 
+  setMissileEquipped(active) {
+    this._missileEquipped = active;
+    if (!active) {
+      this._lockedTarget = null;
+      if (this.lockOnReticle) this.lockOnReticle.style.display = "none";
+    }
+  }
+
   cancelLockOn() {
     this._locking = false;
     this._lockedTarget = null;
@@ -610,11 +619,17 @@ class MissileSystem {
       this._updateMissile(m, deltaTime);
     }
 
-    // Track reticle on in-flight local missile's target (when not actively locking)
+    // Track reticle when not actively locking
     if (!this._locking && camera) {
       const localMissile = this.missiles.find(m => !m.isRemote && m.targetTank);
       if (localMissile) {
+        // In-flight missile — track its target
         this._lockedTarget = { tank: localMissile.targetTank };
+        this._updateLockOnReticle(camera);
+      } else if (this._missileEquipped) {
+        // Passive tracking — always show reticle on nearest enemy
+        const target = this._findClosestEnemyTank(this.config.searchRadiusMin);
+        this._lockedTarget = target;
         this._updateLockOnReticle(camera);
       } else {
         this._lockedTarget = null;

@@ -1615,6 +1615,17 @@ class ServerBotManager {
     return false;
   }
 
+  /**
+   * Heal a bot by a given amount (clamped to maxHp).
+   * @param {string} botId
+   * @param {number} amount
+   */
+  applyHealing(botId, amount) {
+    const bot = this.bots.get(botId);
+    if (!bot || bot.isDead) return;
+    bot.hp = Math.min(bot.maxHp, bot.hp + amount);
+  }
+
   // ========================
   // RESPAWN
   // ========================

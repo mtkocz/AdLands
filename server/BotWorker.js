@@ -104,6 +104,11 @@ parentPort.on("message", (msg) => {
       break;
     }
 
+    case "apply-healing": {
+      botManager.applyHealing(msg.botId, msg.amount);
+      break;
+    }
+
     case "human-join": {
       // Despawn a bot to maintain population balance
       botManager.onHumanJoin(msg.player);

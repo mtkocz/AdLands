@@ -463,6 +463,7 @@ class NetworkManager {
         d: !!keys.d,
         shift: !!keys.shift,
         q: !!keys.q,
+        tac: !!keys.tac,
       },
       turretAngle: turretAngle,
       seq: this.inputSeq,
