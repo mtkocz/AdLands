@@ -3711,7 +3711,7 @@ class Planet {
       // Only re-apply client-side filter for large (unprocessed) images to avoid
       // double-dithering artifacts (Bayer-on-Bayer moire).
       const shortSide = Math.min(finalTexture.image.width, finalTexture.image.height);
-      if (shortSide > 256) {
+      if (shortSide > 320) {
         finalTexture = this._applyPixelArtFilter(finalTexture.image, tileCount);
       }
       finalTexture.wrapS = texture.wrapS;
@@ -3842,11 +3842,11 @@ class Planet {
    */
   _applyPixelArtFilter(image, tileCount = 20) {
     // Scale resolution with territory size so pixel blocks appear the same physical size
-    // Reference: 20 tiles = 128px. Sqrt because pixel dimension scales with sqrt(area)
-    const baseShortSide = 128;
+    // Reference: 20 tiles = 160px. Sqrt because pixel dimension scales with sqrt(area)
+    const baseShortSide = 160;
     const referenceTileCount = 20;
     const targetShortSide = Math.round(
-      Math.max(64, Math.min(256, baseShortSide * Math.sqrt(tileCount / referenceTileCount)))
+      Math.max(128, Math.min(320, baseShortSide * Math.sqrt(tileCount / referenceTileCount)))
     );
     const maxColors = 8; // Limit to 8-color palette for retro look
     const ditherIntensity = 32;

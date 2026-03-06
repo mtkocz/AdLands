@@ -835,19 +835,25 @@
     const remotes = mp?.remoteTanks;
     const remoteCount = remotes ? remotes.size : 0;
 
-    // Only count active bots (not deploying, not dead+fading)
-    const activeBots = allBots.filter((b) => !b.isDeploying && (!b.isDead || !b.isFading));
-    const totalCount = 1 + activeBots.length + remoteCount;
+    // Single-pass active bot + faction counting (avoids intermediate arrays)
+    let activeBotCount = 0;
+    let activeBotFactionCount = 0;
+    for (let i = 0; i < allBots.length; i++) {
+      const b = allBots[i];
+      if (b.isDeploying || (b.isDead && b.isFading)) continue;
+      activeBotCount++;
+      if (b.faction === playerFaction) activeBotFactionCount++;
+    }
+    const totalCount = 1 + activeBotCount + remoteCount;
 
-    // Count faction members (player faction) - only active bots
+    // Count faction members (player faction) from remote players
     let remoteFactionCount = 0;
     if (remotes) {
       remotes.forEach((rt) => {
         if (rt.faction === playerFaction) remoteFactionCount++;
       });
     }
-    const factionCount =
-      1 + activeBots.filter((b) => b.faction === playerFaction).length + remoteFactionCount;
+    const factionCount = 1 + activeBotFactionCount + remoteFactionCount;
 
     // Count squad members (player squad) - currently just the player since bots don't have squads
     const squadCount = 1;
@@ -3885,6 +3891,7 @@
   const moonOriginalMats = new Array(3); // Preallocated for bloom pass moon swap
   const bbChildMats = []; // Preallocated for bloom pass billboard material swap
   const ssChildMats = []; // Preallocated for bloom pass space station material swap
+  let bloomMeshCache = null; // Cached mesh references for bloom pass (avoids traverse per frame)
   const _shadowTargetTemp = new THREE.Vector3(); // Reused for orbital shadow target
 
   function animate() {
@@ -4156,30 +4163,41 @@
       environment.moons[i].layers.enable(BLOOM_LAYER);
     }
 
-    // Billboards: swap child mesh materials + enable bloom layer
-    let bbMatIdx = 0;
-    for (let i = 0; i < environment.billboards.length; i++) {
-      const bb = environment.billboards[i];
-      if (!bb.visible) continue;
-      bb.traverse((child) => {
-        if (!child.isMesh) return;
-        bbChildMats[bbMatIdx++] = { mesh: child, mat: child.material, layer: child.layers.mask };
-        child.material = bloomOcclusionMaterial;
-        child.layers.enable(BLOOM_LAYER);
-      });
+    // Billboards + space stations: use cached mesh references to avoid traverse() per frame.
+    // Cache is rebuilt when billboard/station count changes (e.g. after async model load).
+    if (!bloomMeshCache || bloomMeshCache._bbCount !== environment.billboards.length ||
+        bloomMeshCache._ssCount !== environment.spaceStations.length) {
+      bloomMeshCache = { bb: [], ss: [], _bbCount: environment.billboards.length, _ssCount: environment.spaceStations.length };
+      for (let i = 0; i < environment.billboards.length; i++) {
+        environment.billboards[i].traverse((child) => {
+          if (child.isMesh) bloomMeshCache.bb.push({ mesh: child, parent: environment.billboards[i] });
+        });
+      }
+      for (let i = 0; i < environment.spaceStations.length; i++) {
+        environment.spaceStations[i].traverse((child) => {
+          if (child.isMesh) bloomMeshCache.ss.push({ mesh: child, parent: environment.spaceStations[i] });
+        });
+      }
     }
 
-    // Space stations: swap child mesh materials + enable bloom layer
+    // Swap billboard mesh materials (flat array, no traverse)
+    let bbMatIdx = 0;
+    for (let i = 0; i < bloomMeshCache.bb.length; i++) {
+      const entry = bloomMeshCache.bb[i];
+      if (!entry.parent.visible) continue;
+      bbChildMats[bbMatIdx++] = { mesh: entry.mesh, mat: entry.mesh.material, layer: entry.mesh.layers.mask };
+      entry.mesh.material = bloomOcclusionMaterial;
+      entry.mesh.layers.enable(BLOOM_LAYER);
+    }
+
+    // Swap station mesh materials (flat array, no traverse)
     let ssMatIdx = 0;
-    for (let i = 0; i < environment.spaceStations.length; i++) {
-      const ss = environment.spaceStations[i];
-      if (!ss.visible) continue;
-      ss.traverse((child) => {
-        if (!child.isMesh) return;
-        ssChildMats[ssMatIdx++] = { mesh: child, mat: child.material, layer: child.layers.mask };
-        child.material = bloomOcclusionMaterial;
-        child.layers.enable(BLOOM_LAYER);
-      });
+    for (let i = 0; i < bloomMeshCache.ss.length; i++) {
+      const entry = bloomMeshCache.ss[i];
+      if (!entry.parent.visible) continue;
+      ssChildMats[ssMatIdx++] = { mesh: entry.mesh, mat: entry.mesh.material, layer: entry.mesh.layers.mask };
+      entry.mesh.material = bloomOcclusionMaterial;
+      entry.mesh.layers.enable(BLOOM_LAYER);
     }
 
     // Pass 1: Render bloom objects with occlusion

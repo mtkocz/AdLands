@@ -2530,6 +2530,11 @@ class GameRoom {
     player.heading = Math.random() * Math.PI * 2;
     player.waitingForPortal = false;
     player._previewPortalTile = null;
+    // Leave cluster room before clearing cluster ID
+    if (player.currentClusterId != null) {
+      const sock = this.io.sockets.sockets.get(socketId);
+      if (sock) sock.leave(`cluster:${player.currentClusterId}`);
+    }
     player.currentClusterId = null;
     player._lastTicCluster = undefined;
     player._lastTicCryptoTics = undefined;
@@ -2694,7 +2699,10 @@ class GameRoom {
       this.rankRecomputeCounter = 0;
       this._ranksDirty = false;
       this._recomputeRanks();
-      // Broadcast roster in real-time alongside every rank recompute
+    }
+    // Broadcast roster on a fixed 2-second cadence (decoupled from rank recomputes
+    // to avoid per-tick roster storms during combat bursts)
+    if (this.tick % (this.tickRate * 2) === 0) {
       this._broadcastFactionRosters();
     }
 
@@ -2817,14 +2825,25 @@ class GameRoom {
     const PUSH_BUFFER = 1.5 / 480;
     const SPEED_DAMPEN = 0.3;             // Retain 30% speed on collision
 
-    // --- Player-Player collisions (brute force, max ~1225 pairs) ---
+    // --- Player-Player collisions (brute force with fast angular rejection) ---
     const playerArray = [];
     for (const [id, p] of this.players) {
       if (!this._isUndeployed(p)) playerArray.push(p);
     }
+    // Fast rejection threshold: any pair further than MIN_DIST on either axis
+    // can be skipped with 4 comparisons instead of sqrt. Rejects ~99% of pairs.
+    const REJECT = MIN_DIST + 0.005; // small margin over MIN_DIST (~0.0125)
     for (let i = 0; i < playerArray.length; i++) {
+      const a = playerArray[i];
       for (let j = i + 1; j < playerArray.length; j++) {
-        this._resolvePairCollision(playerArray[i], playerArray[j], MIN_DIST, PUSH_BUFFER, SPEED_DAMPEN);
+        const b = playerArray[j];
+        const dPhi = b.phi - a.phi;
+        if (dPhi > REJECT || dPhi < -REJECT) continue;
+        let dTheta = b.theta - a.theta;
+        if (dTheta > Math.PI) dTheta -= Math.PI * 2;
+        else if (dTheta < -Math.PI) dTheta += Math.PI * 2;
+        if (dTheta > REJECT || dTheta < -REJECT) continue;
+        this._resolvePairCollision(a, b, MIN_DIST, PUSH_BUFFER, SPEED_DAMPEN);
       }
     }
 
@@ -3636,6 +3655,7 @@ class GameRoom {
 
       // O(1) cluster ID lookup from precomputed grid
       const rawClusterId = this.worldGen.getClusterIdAt(player.theta, player.phi);
+      const prevClusterId = player.currentClusterId;
 
       // Neutral carve-out: if player is on neutral territory (portal/pole),
       // immediately stop contributing to any capture — no hysteresis delay.
@@ -3666,6 +3686,15 @@ class GameRoom {
         }
       } else {
         player._clusterChangeTicks = 0;
+      }
+
+      // Maintain Socket.IO cluster rooms for efficient capture-progress broadcasts
+      if (player.currentClusterId !== prevClusterId) {
+        const socket = this.io.sockets.sockets.get(id);
+        if (socket) {
+          if (prevClusterId != null) socket.leave(`cluster:${prevClusterId}`);
+          if (player.currentClusterId != null) socket.join(`cluster:${player.currentClusterId}`);
+        }
       }
 
       if (player.currentClusterId == null) continue;
@@ -3905,33 +3934,22 @@ class GameRoom {
       }
     }
 
-    // 4. Broadcast capture progress to players in active clusters (1/sec, synced with tic advancement)
-    const clusterPlayers = new Map();
-    for (const [id, player] of this.players) {
-      if (this._isUndeployed(player)) continue;
-      if (player.currentClusterId == null) continue;
-      if (!clusterPlayers.has(player.currentClusterId)) {
-        clusterPlayers.set(player.currentClusterId, []);
-      }
-      clusterPlayers.get(player.currentClusterId).push(id);
-    }
-
-    for (const [clusterId, playerIds] of clusterPlayers) {
+    // 4. Broadcast capture progress to cluster rooms (1/sec, synced with tic advancement)
+    // Players join/leave cluster rooms via Socket.IO rooms (managed above in cluster assignment).
+    // Collect which clusters have players by checking clusterTankCounts (already built above).
+    for (const [clusterId, counts] of clusterTankCounts) {
       const state = this.clusterCaptureState.get(clusterId);
       if (!state) continue;
 
-      const counts = clusterTankCounts.get(clusterId);
       const progressData = {
         clusterId,
         tics: { ...state.tics },
         capacity: state.capacity,
         owner: state.owner,
-        counts: counts ? { ...counts } : { rust: 0, cobalt: 0, viridian: 0 },
+        counts: { ...counts },
       };
 
-      for (const pid of playerIds) {
-        this.io.to(pid).emit("capture-progress", progressData);
-      }
+      this.io.to(`cluster:${clusterId}`).emit("capture-progress", progressData);
     }
   }
 
@@ -4222,8 +4240,84 @@ class GameRoom {
     if (!this._filteredPayloads) this._filteredPayloads = new Map();
     const filteredPayloads = this._filteredPayloads;
 
+    // --- Pre-encode shared orbital buffer (humans only, no bots) ---
+    // All orbital players see the same entity set, so encode once and reuse.
+    if (!this._orbitalEntities) this._orbitalEntities = [];
+    const orbitalEntities = this._orbitalEntities;
+    orbitalEntities.length = humanIds.length;
+    for (let i = 0; i < humanIds.length; i++) {
+      orbitalEntities[i] = playerStates[humanIds[i]];
+    }
+    const orbitalBinaryBuf = BinaryStateProtocol.encode(orbitalEntities);
+    const orbitalNames = {};
+    // No bot names needed for orbital (humans don't have .n)
+
+    // Orbital payload metadata (shared across all orbital players except self-fields)
+    statePayload.ids = humanIds;
+    statePayload.names = orbitalNames;
+    statePayload.op = savedOp;
+    statePayload.opn = savedOpn;
+
+    // --- Emit to orbital players first (fast path, no filtering) ---
+    const ENTITY_STRIDE = 20; // must match BinaryStateProtocol
+    const TWO_PI = Math.PI * 2;
+    const ANGLE_SCALE = 65535 / TWO_PI;
+    const FACTION_TO_IDX = { rust: 0, cobalt: 1, viridian: 2 };
+    const orbitalDv = new DataView(orbitalBinaryBuf);
+
     for (const [socketId, player] of this.players) {
-      const isOrbital = player._viewMode === "orbital";
+      if (player._viewMode !== "orbital") continue;
+
+      const selfState = playerStates[socketId];
+      statePayload.seq = selfState ? selfState.seq : 0;
+      statePayload.r = selfState ? (selfState.r || 0) : 0;
+      statePayload.rt = selfState ? (selfState.rt || 0) : 0;
+
+      // Patch self-state in orbital buffer with full precision (20 bytes at known offset)
+      const selfIdx = humanIds.indexOf(socketId);
+      if (selfIdx >= 0) {
+        const off = selfIdx * ENTITY_STRIDE;
+        orbitalDv.setFloat32(off, player.theta, true);
+        orbitalDv.setFloat32(off + 4, player.phi, true);
+        orbitalDv.setFloat32(off + 8, player.heading, true);
+        orbitalDv.setFloat32(off + 12, player.speed, true);
+        orbitalDv.setUint16(off + 16, (player.turretAngle * ANGLE_SCALE) & 0xFFFF, true);
+        orbitalDv.setUint8(off + 18, (selfState ? selfState.hp : 0) & 0xFF);
+        const fIdx = FACTION_TO_IDX[player.faction] || 0;
+        const shield = player.shieldActive ? 1 : 0;
+        const deploy = player.waitingForPortal ? 2 : (player.isDead ? 1 : 0);
+        orbitalDv.setUint8(off + 19, (fIdx & 3) | (shield << 2) | (deploy << 3));
+      }
+
+      // Track payload size
+      if (!this._payloadEmitCount) { this._payloadByteSum = 0; this._payloadEntitySum = 0; this._payloadCount = 0; this._payloadEmitCount = 0; }
+      this._payloadEmitCount++;
+      if (this._payloadEmitCount % 50 === 0) {
+        this._payloadByteSum += JSON.stringify(statePayload).length + orbitalBinaryBuf.byteLength;
+        this._payloadEntitySum += humanIds.length;
+        this._payloadCount++;
+      }
+
+      const socket = this.io.sockets.sockets.get(socketId);
+      if (socket) socket.volatile.emit("state", statePayload, orbitalBinaryBuf);
+
+      // Restore rounded values in shared buffer for next orbital player
+      if (selfIdx >= 0 && selfState) {
+        const off = selfIdx * ENTITY_STRIDE;
+        orbitalDv.setFloat32(off, selfState.t, true);
+        orbitalDv.setFloat32(off + 4, selfState.p, true);
+        orbitalDv.setFloat32(off + 8, selfState.h, true);
+        orbitalDv.setFloat32(off + 12, selfState.s, true);
+      }
+    }
+
+    // --- Ground-view players (distance-filtered bots, individual encoding) ---
+    statePayload.op = undefined;
+    statePayload.opn = undefined;
+
+    for (const [socketId, player] of this.players) {
+      if (player._viewMode === "orbital") continue;
+
       const isCommander = this.commanders[player.faction]?.id === socketId;
 
       // Build filtered players object: all humans + filtered bots
@@ -4231,65 +4325,52 @@ class GameRoom {
       if (!filtered) {
         filtered = {};
         filteredPayloads.set(socketId, filtered);
+      } else {
+        // Reassign to avoid V8 hidden class deopt from delete operator
+        filtered = {};
+        filteredPayloads.set(socketId, filtered);
       }
-
-      // Clear previous tick's entries
-      for (const id in filtered) delete filtered[id];
 
       // Always include all human players
       for (const hid of humanIds) {
         filtered[hid] = playerStates[hid];
       }
 
-      if (isOrbital) {
-        // Orbital players see bots via phantom dots (statePayload.op), not individual states.
-        // Skip the entire bot distance-filter loop — no bots in filtered payload.
-      } else {
-        // Distance-filtered bots with hysteresis.
-        // Commanders get a wider radius (~81° vs ~49°) for tactical awareness.
-        const enterThresh = isCommander ? CMDR_ENTER_THRESHOLD : NEARBY_ENTER_THRESHOLD;
-        const leaveThresh = isCommander ? CMDR_LEAVE_THRESHOLD : NEARBY_LEAVE_THRESHOLD;
+      // Distance-filtered bots with hysteresis.
+      // Commanders get a wider radius (~81° vs ~49°) for tactical awareness.
+      const enterThresh = isCommander ? CMDR_ENTER_THRESHOLD : NEARBY_ENTER_THRESHOLD;
+      const leaveThresh = isCommander ? CMDR_LEAVE_THRESHOLD : NEARBY_LEAVE_THRESHOLD;
 
-        let filterTheta = player.theta;
-        let filterPhi = player.phi;
-        if (player._previewPortalTile != null) {
-          const portalPos = this.portalPositionsByTile.get(player._previewPortalTile);
-          if (portalPos) {
-            filterTheta = portalPos.theta;
-            filterPhi = portalPos.phi;
-          }
-        }
-
-        const pSinP = Math.sin(filterPhi);
-        const px = pSinP * Math.cos(filterTheta);
-        const py = Math.cos(filterPhi);
-        const pz = pSinP * Math.sin(filterTheta);
-
-        let includedBots = this._playerBotSets.get(socketId);
-        if (!includedBots) {
-          includedBots = new Set();
-          this._playerBotSets.set(socketId, includedBots);
-        }
-        for (const botId in botStates) {
-          const bv = botUnitVecs[botId];
-          const dot = px * bv.x + py * bv.y + pz * bv.z;
-          const threshold = includedBots.has(botId) ? leaveThresh : enterThresh;
-          if (dot > threshold) {
-            filtered[botId] = playerStates[botId];
-            includedBots.add(botId);
-          } else {
-            includedBots.delete(botId);
-          }
+      let filterTheta = player.theta;
+      let filterPhi = player.phi;
+      if (player._previewPortalTile != null) {
+        const portalPos = this.portalPositionsByTile.get(player._previewPortalTile);
+        if (portalPos) {
+          filterTheta = portalPos.theta;
+          filterPhi = portalPos.phi;
         }
       }
 
-      // Only send orbital position data to players in orbital view
-      if (isOrbital) {
-        statePayload.op = savedOp;
-        statePayload.opn = savedOpn;
-      } else {
-        statePayload.op = undefined;
-        statePayload.opn = undefined;
+      const pSinP = Math.sin(filterPhi);
+      const px = pSinP * Math.cos(filterTheta);
+      const py = Math.cos(filterPhi);
+      const pz = pSinP * Math.sin(filterTheta);
+
+      let includedBots = this._playerBotSets.get(socketId);
+      if (!includedBots) {
+        includedBots = new Set();
+        this._playerBotSets.set(socketId, includedBots);
+      }
+      for (const botId in botStates) {
+        const bv = botUnitVecs[botId];
+        const dot = px * bv.x + py * bv.y + pz * bv.z;
+        const threshold = includedBots.has(botId) ? leaveThresh : enterThresh;
+        if (dot > threshold) {
+          filtered[botId] = playerStates[botId];
+          includedBots.add(botId);
+        } else {
+          includedBots.delete(botId);
+        }
       }
 
       // Build ordered arrays for binary encoding
@@ -4297,9 +4378,7 @@ class GameRoom {
       const entityCount = ids.length;
 
       // Collect entity state array for binary encoding.
-      // For the local player's own entity, use full-precision values
-      // (float32 already provides ~7 significant digits, better than the
-      // 4-decimal rounding used for remote entities in playerStates).
+      // For the local player's own entity, use full-precision values.
       if (!this._binaryEntities) this._binaryEntities = [];
       const binaryEntities = this._binaryEntities;
       binaryEntities.length = entityCount;

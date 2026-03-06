@@ -33,7 +33,26 @@
     const count = entities.length;
     const buf = new ArrayBuffer(count * ENTITY_STRIDE);
     const dv = new DataView(buf);
+    _encodeInto(entities, dv, count);
+    return buf;
+  }
 
+  /**
+   * Encode into a pre-allocated ArrayBuffer, returning a Uint8Array view.
+   * Avoids per-call ArrayBuffer allocation for hot paths.
+   * @param {Array<Object>} entities
+   * @param {ArrayBuffer} buf - must be >= entities.length * ENTITY_STRIDE bytes
+   * @returns {Uint8Array} slice view of buf (no copy)
+   */
+  function encodeInto(entities, buf) {
+    const count = entities.length;
+    const dv = new DataView(buf, 0, count * ENTITY_STRIDE);
+    _encodeInto(entities, dv, count);
+    return new Uint8Array(buf, 0, count * ENTITY_STRIDE);
+  }
+
+  /** @private Shared encoding logic */
+  function _encodeInto(entities, dv, count) {
     for (let i = 0; i < count; i++) {
       const e = entities[i];
       const off = i * ENTITY_STRIDE;
@@ -50,8 +69,6 @@
       const deploy = (e.d || 0) & 3;
       dv.setUint8(off + 19, (factionIdx & 3) | (shield << 2) | (deploy << 3));
     }
-
-    return buf;
   }
 
   /**
@@ -86,6 +103,7 @@
 
   exports.ENTITY_STRIDE = ENTITY_STRIDE;
   exports.encode = encode;
+  exports.encodeInto = encodeInto;
   exports.decode = decode;
 
 })(typeof module !== "undefined" ? module.exports : (window.BinaryStateProtocol = {}));

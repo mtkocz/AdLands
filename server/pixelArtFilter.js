@@ -1,13 +1,13 @@
 /**
  * Server-side pixel art filter — mirrors the client-side _applyPixelArtFilter().
- * Downscales to 128px short side, extracts 8-color palette, applies Bayer dithering.
+ * Downscales to 160px short side, extracts 8-color palette, applies Bayer dithering.
  * Returns a sharp-compatible buffer at the reduced resolution.
  *
  * Requires: sharp
  */
 const sharp = require("sharp");
 
-const BASE_SHORT_SIDE = 128;
+const BASE_SHORT_SIDE = 160;
 const REFERENCE_TILE_COUNT = 20;
 const MAX_COLORS = 8;
 const DITHER_INTENSITY = 32;
@@ -21,7 +21,7 @@ const BAYER_4X4 = [
 
 /**
  * Apply pixel art filter to an image buffer.
- * Resolution scales with territory size: 5 tiles → 64px, 20 tiles → 128px, 80 tiles → 256px.
+ * Resolution scales with territory size: 5 tiles → 128px, 20 tiles → 160px, 80 tiles → 320px.
  * Mirrors client-side _applyPixelArtFilter() in Planet.js.
  * @param {Buffer} inputBuffer - PNG/JPEG image buffer
  * @param {number} [tileCount=20] - Number of hex tiles in the sponsor's territory
@@ -35,7 +35,7 @@ async function applyPixelArtFilter(inputBuffer, tileCount = REFERENCE_TILE_COUNT
 
   // Scale resolution with territory size so pixel blocks appear the same physical size
   const targetShortSide = Math.round(
-    Math.max(64, Math.min(256, BASE_SHORT_SIDE * Math.sqrt(tileCount / REFERENCE_TILE_COUNT)))
+    Math.max(128, Math.min(320, BASE_SHORT_SIDE * Math.sqrt(tileCount / REFERENCE_TILE_COUNT)))
   );
 
   // Calculate target dimensions
