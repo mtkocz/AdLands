@@ -108,6 +108,7 @@ All font tokens are defined in `css/shared-tokens.css`. Anti-aliasing is disable
 - **CORS:** Open (`*`) for development
 - **Dropbox:** The project lives in a Dropbox-synced folder. Never use tmp-file + rename (atomic write) patterns — Dropbox deletes the `.tmp` file before the rename completes, crashing the server. Write directly to the target file instead.
 - **Static assets:** Express serves with `compression` (gzip) middleware and `maxAge: '1d'` cache headers. All `<script>` tags in `index.html` use `defer`.
+- **UI aesthetic:** Pixel art style. Corner radii use the Bresenham line algorithm for pixel-perfect rounded corners.
 
 ## Key Files
 
