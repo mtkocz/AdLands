@@ -26,33 +26,25 @@ class WeldingGunSystem {
       depthWrite: false,
     });
 
-    // 3 lines per beam (center + 2 offset) for visual thickness
-    const LINES_PER_BEAM = 3;
-    this._linesPerBeam = LINES_PER_BEAM;
-
     for (let i = 0; i < POOL_SIZE; i++) {
-      const lines = [];
-      const geos = [];
-      for (let l = 0; l < LINES_PER_BEAM; l++) {
-        const positions = new Float32Array((SEGMENTS + 1) * 3);
-        const geo = new THREE.BufferGeometry();
-        geo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
-        const line = new THREE.Line(geo, coreMat);
-        line.visible = false;
-        line.renderOrder = 50;
-        line.layers.enable(1); // BLOOM_LAYER
-        line.frustumCulled = false;
-        scene.add(line);
-        lines.push(line);
-        geos.push(geo);
-      }
-      this.beams.push({ lines, geos, segments: SEGMENTS });
+      const positions = new Float32Array((SEGMENTS + 1) * 3);
+      const geo = new THREE.BufferGeometry();
+      geo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+
+      const line = new THREE.Line(geo, coreMat);
+      line.visible = false;
+      line.renderOrder = 50;
+      line.layers.enable(1); // BLOOM_LAYER
+      line.frustumCulled = false;
+      scene.add(line);
+
+      this.beams.push({ line, geo, segments: SEGMENTS });
     }
 
-    // Point light pool
+    // Point light pool — 2 lights per beam (origin + destination) with strobe
     this._lights = [];
-    for (let i = 0; i < POOL_SIZE; i++) {
-      const light = new THREE.PointLight(0x00ffff, 3, 20);
+    for (let i = 0; i < POOL_SIZE * 2; i++) {
+      const light = new THREE.PointLight(0x00ffff, 3, 15);
       light.visible = false;
       scene.add(light);
       this._lights.push(light);
@@ -204,10 +196,9 @@ class WeldingGunSystem {
 
     // Hide all beams and lights
     for (let i = 0; i < this.beams.length; i++) {
-      for (let l = 0; l < this._linesPerBeam; l++) {
-        this.beams[i].lines[l].visible = false;
-      }
-      this._lights[i].visible = false;
+      this.beams[i].line.visible = false;
+      this._lights[i * 2].visible = false;
+      this._lights[i * 2 + 1].visible = false;
     }
 
     // Swap healed sets for diffing
@@ -313,11 +304,9 @@ class WeldingGunSystem {
 
     // Update HP bar cyan flicker via PlayerTags
     if (typeof playerTags !== 'undefined' && playerTags.setHealing) {
-      // Enable flicker for newly healed tanks
+      // Enable/update flicker for all healed tanks (cyan brightness tracks HP)
       for (const id of this._healedTankIds) {
-        if (!this._prevHealedTankIds.has(id)) {
-          playerTags.setHealing(id, true);
-        }
+        playerTags.setHealing(id, true);
       }
       // Disable flicker for tanks no longer healed
       for (const id of this._prevHealedTankIds) {
@@ -330,18 +319,22 @@ class WeldingGunSystem {
 
   _activateBeam(idx, from, to, jitter) {
     this._updateBeamGeometry(idx, from, to, jitter);
-    for (let l = 0; l < this._linesPerBeam; l++) {
-      this.beams[idx].lines[l].visible = true;
-    }
+    this.beams[idx].line.visible = true;
 
-    const light = this._lights[idx];
-    this._tmpMid.lerpVectors(from, to, 0.5);
-    light.position.copy(this._tmpMid);
-    light.visible = true;
+    // Two point lights per beam: origin and destination, with random strobe
+    const lightA = this._lights[idx * 2];
+    const lightB = this._lights[idx * 2 + 1];
+    lightA.position.copy(from);
+    lightB.position.copy(to);
+    lightA.intensity = 1.5 + Math.random() * 4;
+    lightB.intensity = 1.5 + Math.random() * 4;
+    lightA.visible = true;
+    lightB.visible = true;
   }
 
   _updateBeamGeometry(idx, from, to, jitter) {
     const beam = this.beams[idx];
+    const positions = beam.geo.attributes.position.array;
     const segs = beam.segments;
 
     this._tmpDir.subVectors(to, from).normalize();
@@ -368,8 +361,6 @@ class WeldingGunSystem {
       }
     }
 
-    // Center line (line 0) — uses jitter offsets directly
-    const pos0 = beam.geos[0].attributes.position.array;
     for (let s = 0; s <= segs; s++) {
       const t = s / segs;
       this._tmpPoint.lerpVectors(from, to, t);
@@ -377,24 +368,12 @@ class WeldingGunSystem {
         this._tmpPoint.addScaledVector(this._tmpPerp, offsetsA[s]);
         this._tmpPoint.addScaledVector(this._tmpNormal, offsetsB[s]);
       }
-      pos0[s * 3]     = this._tmpPoint.x;
-      pos0[s * 3 + 1] = this._tmpPoint.y;
-      pos0[s * 3 + 2] = this._tmpPoint.z;
+      positions[s * 3]     = this._tmpPoint.x;
+      positions[s * 3 + 1] = this._tmpPoint.y;
+      positions[s * 3 + 2] = this._tmpPoint.z;
     }
-    beam.geos[0].attributes.position.needsUpdate = true;
 
-    // Side lines (lines 1,2) — offset perpendicular by ±0.4 units for thickness
-    const sideOffsets = [-0.4, 0.4];
-    for (let l = 1; l < this._linesPerBeam; l++) {
-      const posL = beam.geos[l].attributes.position.array;
-      const sideOff = sideOffsets[l - 1];
-      for (let s = 0; s <= segs; s++) {
-        posL[s * 3]     = pos0[s * 3]     + this._tmpPerp.x * sideOff;
-        posL[s * 3 + 1] = pos0[s * 3 + 1] + this._tmpPerp.y * sideOff;
-        posL[s * 3 + 2] = pos0[s * 3 + 2] + this._tmpPerp.z * sideOff;
-      }
-      beam.geos[l].attributes.position.needsUpdate = true;
-    }
+    beam.geo.attributes.position.needsUpdate = true;
   }
 
   // ---- Spark particles ----
@@ -479,12 +458,10 @@ class WeldingGunSystem {
 
   dispose() {
     for (const b of this.beams) {
-      for (let l = 0; l < this._linesPerBeam; l++) {
-        this.scene.remove(b.lines[l]);
-        b.geos[l].dispose();
-      }
+      this.scene.remove(b.line);
+      b.geo.dispose();
     }
-    if (this.beams.length > 0) this.beams[0].lines[0].material.dispose();
+    if (this.beams.length > 0) this.beams[0].line.material.dispose();
     for (const l of this._lights) {
       this.scene.remove(l);
       l.dispose();
