@@ -1750,13 +1750,12 @@ body.tip-dragging .chat-mention.tip-highlight {
     background: #ef4444; /* Red - <25% HP */
 }
 
-/* Cyan/black flicker when being healed by welding gun.
-   --weld-cyan is set by JS based on tank HP (brighter = more HP). */
+/* Bright cyan / black flicker when being healed by welding gun */
 @keyframes weld-heal-flicker {
-    0% { background: var(--weld-cyan, #00ffff); }
+    0% { background: #00ffff; }
     45% { background: #000000; }
     55% { background: #000000; }
-    100% { background: var(--weld-cyan, #00ffff); }
+    100% { background: #00ffff; }
 }
 .tag-healthbar-fill.hp-healing {
     animation: weld-heal-flicker 0.18s ease-in-out infinite;

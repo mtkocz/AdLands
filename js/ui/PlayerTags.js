@@ -445,7 +445,6 @@ class PlayerTags {
 
   /**
    * Toggle cyan heal flicker on a tag's HP bar.
-   * Cyan brightness scales with HP (low HP = dim cyan, high HP = bright cyan).
    * @param {string} tankId
    * @param {boolean} healing - Whether tank is actively being healed
    */
@@ -455,16 +454,9 @@ class PlayerTags {
     const healthFill = tag.element.querySelector(".tag-healthbar-fill");
     if (!healthFill) return;
     if (healing) {
-      const hp = tag.config.hp || 0;
-      const maxHp = tag.config.maxHp || 100;
-      const ratio = Math.max(0.2, hp / maxHp); // floor at 0.2 so it's never invisible
-      const g = Math.round(255 * ratio);
-      const b = Math.round(255 * ratio);
-      healthFill.style.setProperty('--weld-cyan', `rgb(0, ${g}, ${b})`);
       healthFill.classList.add("hp-healing");
     } else {
       healthFill.classList.remove("hp-healing");
-      healthFill.style.removeProperty('--weld-cyan');
     }
   }
 

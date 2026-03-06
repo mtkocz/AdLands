@@ -18,27 +18,73 @@ class WeldingGunSystem {
     const POOL_SIZE = 10;
     const SEGMENTS = 12;
 
-    // Core bolt material — bright white, bloom makes it glow cyan
-    const coreMat = new THREE.LineBasicMaterial({
-      color: 0xccffff,
+    // Bolt half-width in world units
+    this._boltHalfWidth = 0.35;
+
+    // Billboard quad-strip material — gives actual width unlike THREE.Line
+    const boltMat = new THREE.ShaderMaterial({
+      uniforms: {},
+      vertexShader: [
+        'attribute float aSide;',
+        'varying float vSide;',
+        'void main() {',
+        '  vSide = aSide;',
+        '  gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);',
+        '}',
+      ].join('\n'),
+      fragmentShader: [
+        'varying float vSide;',
+        'void main() {',
+        '  float edge = 1.0 - abs(vSide);',
+        '  float alpha = smoothstep(0.0, 0.4, edge);',
+        '  vec3 col = mix(vec3(0.0, 0.8, 1.0), vec3(0.85, 1.0, 1.0), edge * edge);',
+        '  gl_FragColor = vec4(col, alpha);',
+        '}',
+      ].join('\n'),
+      transparent: true,
       blending: THREE.AdditiveBlending,
       depthTest: false,
       depthWrite: false,
+      side: THREE.DoubleSide,
     });
 
     for (let i = 0; i < POOL_SIZE; i++) {
-      const positions = new Float32Array((SEGMENTS + 1) * 3);
+      // Quad strip: 2 verts per segment = (SEGMENTS+1)*2 verts, SEGMENTS*2 triangles
+      const vertCount = (SEGMENTS + 1) * 2;
+      const positions = new Float32Array(vertCount * 3);
+      const sides = new Float32Array(vertCount); // -1 or +1 for edge fade
+      for (let s = 0; s <= SEGMENTS; s++) {
+        sides[s * 2] = -1;
+        sides[s * 2 + 1] = 1;
+      }
+
+      // Index buffer for triangle strip as indexed triangles
+      const indexCount = SEGMENTS * 6;
+      const indices = new Uint16Array(indexCount);
+      for (let s = 0; s < SEGMENTS; s++) {
+        const base = s * 2;
+        const ii = s * 6;
+        indices[ii]     = base;
+        indices[ii + 1] = base + 1;
+        indices[ii + 2] = base + 2;
+        indices[ii + 3] = base + 1;
+        indices[ii + 4] = base + 3;
+        indices[ii + 5] = base + 2;
+      }
+
       const geo = new THREE.BufferGeometry();
       geo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+      geo.setAttribute('aSide', new THREE.BufferAttribute(sides, 1));
+      geo.setIndex(new THREE.BufferAttribute(indices, 1));
 
-      const line = new THREE.Line(geo, coreMat);
-      line.visible = false;
-      line.renderOrder = 50;
-      line.layers.enable(1); // BLOOM_LAYER
-      line.frustumCulled = false;
-      scene.add(line);
+      const mesh = new THREE.Mesh(geo, boltMat);
+      mesh.visible = false;
+      mesh.renderOrder = 50;
+      mesh.layers.enable(1); // BLOOM_LAYER
+      mesh.frustumCulled = false;
+      scene.add(mesh);
 
-      this.beams.push({ line, geo, segments: SEGMENTS });
+      this.beams.push({ mesh, geo, segments: SEGMENTS });
     }
 
     // Point light pool — 2 lights per beam (origin + destination) with strobe
@@ -196,7 +242,7 @@ class WeldingGunSystem {
 
     // Hide all beams and lights
     for (let i = 0; i < this.beams.length; i++) {
-      this.beams[i].line.visible = false;
+      this.beams[i].mesh.visible = false;
       this._lights[i * 2].visible = false;
       this._lights[i * 2 + 1].visible = false;
     }
@@ -319,7 +365,7 @@ class WeldingGunSystem {
 
   _activateBeam(idx, from, to, jitter) {
     this._updateBeamGeometry(idx, from, to, jitter);
-    this.beams[idx].line.visible = true;
+    this.beams[idx].mesh.visible = true;
 
     // Two point lights per beam: origin and destination, with random strobe
     const lightA = this._lights[idx * 2];
@@ -336,10 +382,18 @@ class WeldingGunSystem {
     const beam = this.beams[idx];
     const positions = beam.geo.attributes.position.array;
     const segs = beam.segments;
+    const hw = this._boltHalfWidth;
 
     this._tmpDir.subVectors(to, from).normalize();
 
-    this._tmpMid.lerpVectors(from, to, 0.5).normalize();
+    // Camera-facing perpendicular for billboard effect
+    const cam = this.scene.getObjectByProperty('isCamera', true)
+      || (window.camera && window.camera);
+    if (cam) {
+      this._tmpMid.copy(cam.position).sub(from).normalize();
+    } else {
+      this._tmpMid.lerpVectors(from, to, 0.5).normalize();
+    }
     this._tmpPerp.crossVectors(this._tmpDir, this._tmpMid);
     if (this._tmpPerp.lengthSq() < 0.001) {
       this._tmpPerp.set(0, 1, 0);
@@ -361,16 +415,25 @@ class WeldingGunSystem {
       }
     }
 
+    // Build quad-strip: 2 vertices per segment (left/right of center line)
     for (let s = 0; s <= segs; s++) {
       const t = s / segs;
       this._tmpPoint.lerpVectors(from, to, t);
       if (s > 0 && s < segs) {
-        this._tmpPoint.addScaledVector(this._tmpPerp, offsetsA[s]);
-        this._tmpPoint.addScaledVector(this._tmpNormal, offsetsB[s]);
+        this._tmpPoint.addScaledVector(this._tmpNormal, offsetsA[s]);
+        // Use a second perpendicular axis for more organic jitter
+        this._tmpPoint.addScaledVector(this._tmpPerp, offsetsB[s] * 0.3);
       }
-      positions[s * 3]     = this._tmpPoint.x;
-      positions[s * 3 + 1] = this._tmpPoint.y;
-      positions[s * 3 + 2] = this._tmpPoint.z;
+
+      const vi = s * 2;
+      // Left vertex
+      positions[vi * 3]     = this._tmpPoint.x - this._tmpPerp.x * hw;
+      positions[vi * 3 + 1] = this._tmpPoint.y - this._tmpPerp.y * hw;
+      positions[vi * 3 + 2] = this._tmpPoint.z - this._tmpPerp.z * hw;
+      // Right vertex
+      positions[(vi + 1) * 3]     = this._tmpPoint.x + this._tmpPerp.x * hw;
+      positions[(vi + 1) * 3 + 1] = this._tmpPoint.y + this._tmpPerp.y * hw;
+      positions[(vi + 1) * 3 + 2] = this._tmpPoint.z + this._tmpPerp.z * hw;
     }
 
     beam.geo.attributes.position.needsUpdate = true;
@@ -458,10 +521,10 @@ class WeldingGunSystem {
 
   dispose() {
     for (const b of this.beams) {
-      this.scene.remove(b.line);
+      this.scene.remove(b.mesh);
       b.geo.dispose();
     }
-    if (this.beams.length > 0) this.beams[0].line.material.dispose();
+    if (this.beams.length > 0) this.beams[0].mesh.material.dispose();
     for (const l of this._lights) {
       this.scene.remove(l);
       l.dispose();
