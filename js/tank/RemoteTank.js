@@ -52,6 +52,10 @@ class RemoteTank {
     // Fixed-size ring buffer avoids Array.shift() reindexing (600 calls/sec with 60 tanks at 10Hz).
     this._snapCap = 8;
     this._snapBuf = new Array(this._snapCap);
+    // Pre-allocate snapshot objects to avoid per-tick GC pressure
+    for (let i = 0; i < this._snapCap; i++) {
+      this._snapBuf[i] = { t: 0, theta: 0, phi: 0, heading: 0, speed: 0, turretAngle: 0 };
+    }
     this._snapHead = 0;  // next write position
     this._snapCount = 0; // valid entries (0 to _snapCap)
     this.interpolationDelay = 100; // ms — render 100ms behind real-time (1 server tick at 10Hz)
@@ -218,15 +222,14 @@ class RemoteTank {
       }
     }
 
-    // Push timestamped snapshot into ring buffer
-    this._snapBuf[this._snapHead] = {
-      t: performance.now(),
-      theta: serverState.t,
-      phi: serverState.p,
-      heading: serverState.h,
-      speed: serverState.s,
-      turretAngle: serverState.ta,
-    };
+    // Write into pre-allocated snapshot object (avoids per-tick allocation)
+    const snap = this._snapBuf[this._snapHead];
+    snap.t = performance.now();
+    snap.theta = serverState.t;
+    snap.phi = serverState.p;
+    snap.heading = serverState.h;
+    snap.speed = serverState.s;
+    snap.turretAngle = serverState.ta;
     this._snapHead = (this._snapHead + 1) % this._snapCap;
     if (this._snapCount < this._snapCap) this._snapCount++;
   }

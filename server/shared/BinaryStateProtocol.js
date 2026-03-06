@@ -71,8 +71,25 @@
     }
   }
 
+  // Object pool for decode entries — avoids per-tick allocation of ~200 objects.
+  // Pool grows as needed; objects are recycled between decode calls.
+  var _entryPool = [];
+  var _entryPoolIdx = 0;
+
+  function _acquireEntry() {
+    if (_entryPoolIdx < _entryPool.length) {
+      return _entryPool[_entryPoolIdx++];
+    }
+    var e = { t: 0, p: 0, h: 0, s: 0, ta: 0, hp: 0, f: '', sh: 0, d: 0 };
+    _entryPool.push(e);
+    _entryPoolIdx++;
+    return e;
+  }
+
   /**
    * Decode a binary ArrayBuffer into entity state objects.
+   * Uses an internal object pool to reuse entry objects across calls,
+   * reducing GC pressure from ~2000 object allocations/sec to near zero.
    * @param {ArrayBuffer} buf
    * @param {Array<string>} ids - entity IDs in the same order as encoded
    * @returns {Object} - { id: {t, p, h, s, ta, hp, f, sh, d}, ... }
@@ -82,20 +99,23 @@
     const count = ids.length;
     const result = {};
 
+    // Reset pool index — reuse objects from previous decode call
+    _entryPoolIdx = 0;
+
     for (let i = 0; i < count; i++) {
       const off = i * ENTITY_STRIDE;
       const flags = dv.getUint8(off + 19);
-      result[ids[i]] = {
-        t: dv.getFloat32(off, true),
-        p: dv.getFloat32(off + 4, true),
-        h: dv.getFloat32(off + 8, true),
-        s: dv.getFloat32(off + 12, true),
-        ta: dv.getUint16(off + 16, true) * ANGLE_INV_SCALE,
-        hp: dv.getUint8(off + 18),
-        f: IDX_TO_FACTION[flags & 3],
-        sh: (flags >> 2) & 1,
-        d: (flags >> 3) & 3,
-      };
+      var entry = _acquireEntry();
+      entry.t = dv.getFloat32(off, true);
+      entry.p = dv.getFloat32(off + 4, true);
+      entry.h = dv.getFloat32(off + 8, true);
+      entry.s = dv.getFloat32(off + 12, true);
+      entry.ta = dv.getUint16(off + 16, true) * ANGLE_INV_SCALE;
+      entry.hp = dv.getUint8(off + 18);
+      entry.f = IDX_TO_FACTION[flags & 3];
+      entry.sh = (flags >> 2) & 1;
+      entry.d = (flags >> 3) & 3;
+      result[ids[i]] = entry;
     }
 
     return result;

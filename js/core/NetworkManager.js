@@ -193,6 +193,8 @@ class NetworkManager {
 
     // World state update (10 times/sec from server).
     // Payload: JSON metadata + binary ArrayBuffer for entity positions.
+    // BinaryStateProtocol.decode uses an internal object pool to reuse entry objects,
+    // reducing ~2000 object allocations/sec to near zero (cuts GC pauses).
     this.socket.on("state", (meta, binaryBuf) => {
       // Decode binary entity data into the players object
       if (binaryBuf && meta.ids) {
@@ -694,8 +696,14 @@ class NetworkManager {
 
     const serverSeq = serverPlayerState.seq;
 
-    // Remove all inputs the server has already processed
-    this.pendingInputs = this.pendingInputs.filter((i) => i.seq > serverSeq);
+    // Remove all inputs the server has already processed (in-place to avoid GC)
+    let writeIdx = 0;
+    for (let i = 0; i < this.pendingInputs.length; i++) {
+      if (this.pendingInputs[i].seq > serverSeq) {
+        this.pendingInputs[writeIdx++] = this.pendingInputs[i];
+      }
+    }
+    this.pendingInputs.length = writeIdx;
 
     // Detect true server-side teleport (portal, respawn, etc.) by checking
     // how far the SERVER position moved since last state update.

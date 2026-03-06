@@ -427,7 +427,9 @@
       mp._seenBotIds.clear();
 
       // Update all remote tanks with their new target states
-      for (const [id, state] of Object.entries(data.players)) {
+      // Use for...in instead of Object.entries() to avoid allocating a new array per tick
+      for (const id in data.players) {
+        const state = data.players[id];
         if (id === net.playerId) {
           // Skip reconciliation while in fast travel (we haven't deployed yet)
           if (mp.fastTravel && mp.fastTravel.active) continue;
