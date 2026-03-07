@@ -1578,7 +1578,7 @@ void main() {
     sprite.position.addScaledVector(surfaceNormal, 0.3);
 
     sprite.scale.setScalar(cfg.baseSize * sizeScale * 1.5); // Start big — punch
-    sprite.layers.set(1); // BLOOM_LAYER only
+    sprite.layers.enable(1); // Bloom glow + visible in main pass
 
     // Parent to planet's hexGroup so it rotates with planet
     this.planet.hexGroup.add(sprite);
