@@ -17,8 +17,11 @@ class FlareSystem {
 
     this._tempVec = new THREE.Vector3();
     this._tempVec2 = new THREE.Vector3();
+    this._tempVec3 = new THREE.Vector3();
     this._upVec = new THREE.Vector3(0, 1, 0);
+    this._sunDir = new THREE.Vector3(1, 0, 0);
     this._tempQuat = new THREE.Quaternion();
+    this._tempMat = new THREE.Matrix4();
 
     this._createFireSystem();
     this._createSmokeSystem();
@@ -210,8 +213,7 @@ class FlareSystem {
   }
 
   // ========================
-  // SHADOW BILLBOARD (crossed planes, invisible to camera, casts shadow)
-  // Uses MeshStandardMaterial so Three.js auto-generates the shadow depth material.
+  // SHADOW BILLBOARD (single plane facing sun, invisible to camera, casts shadow)
   // ========================
 
   _createShadowBillboardPool() {
@@ -239,12 +241,19 @@ class FlareSystem {
     }
 
     item.inUse = true;
-    item.plane1.scale.set(4, targetAltitude, 1);
-    item.plane2.scale.set(4, targetAltitude, 1);
+    item.plane.scale.set(4, targetAltitude, 1);
 
+    // Orient billboard: Y axis along surface normal, face toward sun
+    // 1. Compute sun direction projected onto the tangent plane
+    const sunProj = this._tempVec3.copy(this._sunDir)
+      .addScaledVector(normal, -normal.dot(this._sunDir))
+      .normalize();
+
+    // 2. Build orientation: Y=normal (up), Z=sunProj (face toward sun), X=cross
+    const tangentX = this._tempVec2.crossVectors(normal, sunProj).normalize();
+    this._tempMat.makeBasis(tangentX, normal, sunProj);
+    item.group.quaternion.setFromRotationMatrix(this._tempMat);
     item.group.position.copy(surfacePos);
-    this._tempQuat.setFromUnitVectors(this._upVec, normal);
-    item.group.quaternion.copy(this._tempQuat);
     item.group.visible = true;
 
     this._setShadowBillboardFrame(item, 0);
@@ -273,25 +282,17 @@ class FlareSystem {
       side: THREE.DoubleSide,
     });
 
-    const plane1 = new THREE.Mesh(geo, invisMat);
-    plane1.castShadow = true;
-    plane1.receiveShadow = false;
-    plane1.customDepthMaterial = depthMat;
-
-    const geo2 = geo.clone();
-    const plane2 = new THREE.Mesh(geo2, invisMat);
-    plane2.castShadow = true;
-    plane2.receiveShadow = false;
-    plane2.customDepthMaterial = depthMat;
-    plane2.rotation.y = Math.PI / 2;
+    const plane = new THREE.Mesh(geo, invisMat);
+    plane.castShadow = true;
+    plane.receiveShadow = false;
+    plane.customDepthMaterial = depthMat;
 
     const group = new THREE.Group();
-    group.add(plane1);
-    group.add(plane2);
+    group.add(plane);
     group.visible = false;
     this.scene.add(group);
 
-    return { group, plane1, plane2, depthMat, depthTex, inUse: false };
+    return { group, plane, depthMat, depthTex, inUse: false };
   }
 
   _setShadowBillboardFrame(item, frame) {
@@ -675,8 +676,7 @@ class FlareSystem {
     this._meshPool.length = 0;
     for (const item of this._shadowPool) {
       this.scene.remove(item.group);
-      item.plane1.geometry.dispose();
-      item.plane2.geometry.dispose();
+      item.plane.geometry.dispose();
       item.depthMat.dispose();
       item.depthTex.dispose();
     }
