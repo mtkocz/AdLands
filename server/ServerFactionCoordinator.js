@@ -16,7 +16,7 @@ const BOT_STATES = {
 };
 
 class ServerFactionCoordinator {
-  static BOT_POLE_SOFT_LIMIT = 0.5;
+  static BOT_POLE_SOFT_LIMIT = 0.6;
 
   /**
    * @param {Object} worldGen - WorldGenerator instance

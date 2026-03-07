@@ -119,10 +119,10 @@ const BOT_MIN_TURN_RATE = 0.008;
 const BOT_TURN_SPEED_FACTOR = 0.7;
 const BOT_PIVOT_OFFSET = 0.6;
 
-// Pole avoidance (improved values)
-const BOT_POLE_SOFT_LIMIT = 0.5;
-const BOT_POLE_HARD_LIMIT = 0.20;
-const BOT_POLE_REPULSION_STRENGTH = 0.005;
+// Pole avoidance — hard limit must be outside polar hole boundary (~0.253 rad)
+const BOT_POLE_SOFT_LIMIT = 0.6;
+const BOT_POLE_HARD_LIMIT = 0.35;
+const BOT_POLE_REPULSION_STRENGTH = 0.008;
 
 // Collision avoidance
 const BOT_AVOID_DISTANCE = 0.04;
@@ -1123,8 +1123,8 @@ class ServerBotManager {
 
   _detectTerrainThreat(bot) {
     const probeAngles = [-1.2, -0.7, -0.35, 0, 0.35, 0.7, 1.2];
-    const probeDistances = [0.02, 0.04, 0.07];
-    const maxProbeDist = 0.07;
+    const probeDistances = [0.02, 0.04, 0.07, 0.10];
+    const maxProbeDist = 0.10;
     let maxThreat = 0;
     let leftThreat = 0;
     let rightThreat = 0;
@@ -1703,8 +1703,14 @@ class ServerBotManager {
           const len = Math.sqrt(dTheta * dTheta + dPhi * dPhi);
           if (len > 0.001) {
             // Perpendicular: rotate 90 degrees
-            wp.theta += (-dPhi / len) * jitterAmount;
-            wp.phi += (dTheta / len) * jitterAmount;
+            const newTheta = wp.theta + (-dPhi / len) * jitterAmount;
+            const newPhi = wp.phi + (dTheta / len) * jitterAmount;
+            // Only apply jitter if it doesn't land in terrain or polar hole
+            if (!this.worldGen.isTerrainBlocked(newTheta, newPhi) &&
+                newPhi > BOT_POLE_SOFT_LIMIT && newPhi < Math.PI - BOT_POLE_SOFT_LIMIT) {
+              wp.theta = newTheta;
+              wp.phi = newPhi;
+            }
           }
         }
       }

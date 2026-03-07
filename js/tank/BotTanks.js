@@ -22,7 +22,7 @@ const _botRollQuat = new THREE.Quaternion();
 // Faction Coordinator - handles strategic target assignment per faction
 class FactionCoordinator {
   // Pole limits for target filtering (must match BotTanks limits)
-  static BOT_POLE_SOFT_LIMIT = 0.5;
+  static BOT_POLE_SOFT_LIMIT = 0.6;
 
   constructor(planet, faction) {
     this.planet = planet;
@@ -272,9 +272,9 @@ class BotTanks {
     this.BOT_PIVOT_OFFSET = 0.6; // Rear-pivot feel (0=center, 1=full rear)
 
     // Pole avoidance parameters
-    this.BOT_POLE_SOFT_LIMIT = 0.5; // Phi where soft repulsion begins (radians from pole)
-    this.BOT_POLE_HARD_LIMIT = 0.20; // Absolute minimum phi (hard clamp as safety net)
-    this.BOT_POLE_REPULSION_STRENGTH = 0.005; // How strongly bots are pushed away from poles
+    this.BOT_POLE_SOFT_LIMIT = 0.6; // Phi where soft repulsion begins (radians from pole)
+    this.BOT_POLE_HARD_LIMIT = 0.35; // Absolute minimum phi (must be outside polar hole ~0.253 rad)
+    this.BOT_POLE_REPULSION_STRENGTH = 0.008; // How strongly bots are pushed away from poles
 
     // Collision avoidance parameters
     this.BOT_AVOID_DISTANCE = 0.04; // Angular distance to start avoiding (radians)
