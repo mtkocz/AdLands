@@ -2626,6 +2626,10 @@ class GameRoom {
         continue;
       }
 
+      // Orbital players can't move or fire — skip physics entirely.
+      // Their tank is stationary; no input, collision, or terrain checks needed.
+      if (player._viewMode === "orbital") continue;
+
       // Save pre-move position for terrain collision revert
       const prevTheta = player.theta;
       const prevPhi = player.phi;
@@ -2837,9 +2841,10 @@ class GameRoom {
     const SPEED_DAMPEN = 0.3;             // Retain 30% speed on collision
 
     // --- Player-Player collisions (brute force with fast angular rejection) ---
+    // Skip orbital players — they're stationary and can't collide.
     const playerArray = [];
     for (const [id, p] of this.players) {
-      if (!this._isUndeployed(p)) playerArray.push(p);
+      if (!this._isUndeployed(p) && p._viewMode !== "orbital") playerArray.push(p);
     }
     // Fast rejection threshold: any pair further than MIN_DIST on either axis
     // can be skipped with 4 comparisons instead of sqrt. Rejects ~99% of pairs.
