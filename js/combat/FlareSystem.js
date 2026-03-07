@@ -222,10 +222,26 @@ class FlareSystem {
     this._smokeBBFrames = 48;
     this._smokeBBFps = 12;
 
-    new THREE.TextureLoader().load("assets/sprites/muzzlesmoke.png", (tex) => {
+    // Load smoke spritesheet and bake RGB brightness into alpha channel
+    // so that MeshStandardMaterial map + alphaTest works in shadow pass
+    const img = new Image();
+    img.onload = () => {
+      const canvas = document.createElement("canvas");
+      canvas.width = img.width;
+      canvas.height = img.height;
+      const ctx = canvas.getContext("2d");
+      ctx.drawImage(img, 0, 0);
+      const data = ctx.getImageData(0, 0, canvas.width, canvas.height);
+      const px = data.data;
+      for (let i = 0; i < px.length; i += 4) {
+        px[i + 3] = px[i]; // alpha = red channel brightness
+      }
+      ctx.putImageData(data, 0, 0);
+      const tex = new THREE.CanvasTexture(canvas);
       tex.wrapS = tex.wrapT = THREE.ClampToEdgeWrapping;
       this._smokeBBTex = tex;
-    });
+    };
+    img.src = "assets/sprites/muzzlesmoke.png";
   }
 
   _acquireShadowBillboard(surfacePos, normal, targetAltitude) {
@@ -261,10 +277,11 @@ class FlareSystem {
     const tex = this._smokeBBTex;
     tex.repeat.set(1 / this._smokeBBCols, 1 / this._smokeBBRows);
 
-    // alphaMap reads green channel as alpha (white smoke=1, black bg=0)
-    // colorWrite:false hides from camera without affecting shadow depth pass
+    // Texture has RGB brightness baked into alpha channel
+    // map + alphaTest is copied by Three.js auto-generated shadow depth material
+    // colorWrite:false hides from camera without affecting shadow pass
     const mat = new THREE.MeshStandardMaterial({
-      alphaMap: tex,
+      map: tex,
       alphaTest: 0.15,
       side: THREE.DoubleSide,
       colorWrite: false,
