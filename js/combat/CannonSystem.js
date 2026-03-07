@@ -212,6 +212,7 @@ class CannonSystem {
         opacity: 1,
         blending: THREE.AdditiveBlending,
         depthWrite: false,
+        depthTest: false, // Always render on top — avoids z-fighting at orbital distance
       });
     }
   }
@@ -1573,9 +1574,9 @@ void main() {
     // Position in local space
     sprite.position.copy(localPosition);
 
-    // Offset slightly above surface
+    // Offset above surface (enough to clear terrain + avoid z-fighting at orbital distance)
     const surfaceNormal = localPosition.clone().normalize();
-    sprite.position.addScaledVector(surfaceNormal, 0.3);
+    sprite.position.addScaledVector(surfaceNormal, 2);
 
     sprite.scale.setScalar(cfg.baseSize * sizeScale * 1.5); // Start big — punch
     sprite.layers.enable(1); // Bloom glow + visible in main pass
@@ -1812,6 +1813,8 @@ void main() {
         _cannonCullSphere.set(_spriteWorldPos, cfg.baseSize * (exp.sizeScale || 1));
         exp.sprite.visible = frustum.intersectsSphere(_cannonCullSphere);
         if (!exp.sprite.visible) continue;
+      } else {
+        exp.sprite.visible = true;
       }
 
       const t = 1 - exp.age / exp.duration; // 1 → 0

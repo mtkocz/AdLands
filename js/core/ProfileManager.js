@@ -81,22 +81,41 @@ class ProfileManager {
       }
     }
 
-    // Load loadout into Dashboard and re-render if already initialized
-    // Only overwrite if Firestore has non-empty loadout (preserve localStorage-restored values)
-    if (this.dashboard && profileData?.loadout && Object.keys(profileData.loadout).length > 0) {
-      this.dashboard.equippedUpgrades = { ...profileData.loadout };
-      this.dashboard._saveState(); // Keep localStorage in sync with Firestore
+    // Load loadout into Dashboard and WeaponSlotSystem.
+    // localStorage is written synchronously on every change, so it's always fresh.
+    // Firestore writes are async and may not complete before a page refresh.
+    // Prefer localStorage data when available; fall back to Firestore for new devices.
+    const localLoadout = this.dashboard?.equippedUpgrades;
+    const localHasData = localLoadout && Object.keys(localLoadout).length > 0;
+    const firestoreLoadout = profileData?.loadout;
+    const firestoreHasData = firestoreLoadout && Object.keys(firestoreLoadout).length > 0;
+
+    // Resolve which loadout source to use
+    const resolvedLoadout = localHasData ? localLoadout : (firestoreHasData ? firestoreLoadout : {});
+
+    // Resolve activeSlots: prefer localStorage, fall back to Firestore
+    const localActiveSlots = this.dashboard?._localActiveSlots;
+    const resolvedActiveSlots = localActiveSlots && Object.keys(localActiveSlots).length > 0
+      ? localActiveSlots
+      : profileData?.activeSlots;
+
+    if (this.dashboard && firestoreHasData && !localHasData) {
+      this.dashboard.equippedUpgrades = { ...firestoreLoadout };
+      if (profileData?.activeSlots) {
+        this.dashboard._localActiveSlots = { ...profileData.activeSlots };
+      }
+      this.dashboard._saveState();
       if (this.dashboard.loadoutInitialized) {
         this.dashboard.updateLoadout(this.dashboard.playerLevel || 1);
       }
     }
 
-    // Load loadout + tank upgrades + active slots into WeaponSlotSystem
+    // Load into WeaponSlotSystem using the resolved sources
     if (this.weaponSlotSystem) {
       this.weaponSlotSystem.loadFromProfile(
-        profileData?.loadout,
+        resolvedLoadout,
         profileData?.tankUpgrades,
-        profileData?.activeSlots
+        resolvedActiveSlots
       );
     }
 

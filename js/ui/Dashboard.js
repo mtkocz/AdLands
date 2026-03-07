@@ -1398,6 +1398,10 @@ class Dashboard {
         if (data.loadout) {
           this.equippedUpgrades = data.loadout;
         }
+        // Load active slots
+        if (data.activeSlots) {
+          this._localActiveSlots = data.activeSlots;
+        }
       }
     } catch (e) {
       console.warn("[Dashboard] Failed to load state:", e);
@@ -1439,6 +1443,7 @@ class Dashboard {
         panels: panels,
         settingsSections: this.settingsSectionStates || {},
         loadout: this.equippedUpgrades || {},
+        activeSlots: this._localActiveSlots || {},
       };
       localStorage.setItem("adlands_dashboard_state", JSON.stringify(data));
     } catch (e) {
