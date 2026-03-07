@@ -279,7 +279,7 @@ class WeldingGunSystem {
         rt.group.getWorldPosition(this._tmpTo);
         const dist = this._tmpFrom.distanceTo(this._tmpTo);
         if (dist < _nearestD) _nearestD = dist;
-        if (dist > 50 || dist < 0.1) continue;
+        if (dist > 20 || dist < 0.1) continue;
 
         // Offset endpoint to tank silhouette edge
         this._tmpToEdge.copy(this._tmpTo).sub(this._tmpFrom).normalize()
@@ -314,7 +314,7 @@ class WeldingGunSystem {
 
         target.group.getWorldPosition(this._tmpTo);
         const dist = this._tmpFrom.distanceTo(this._tmpTo);
-        if (dist > 50 || dist < 0.1) continue;
+        if (dist > 20 || dist < 0.1) continue;
 
         this._tmpToEdge.copy(this._tmpTo).sub(this._tmpFrom).normalize()
           .multiplyScalar(-this._EDGE_OFFSET).add(this._tmpTo);
@@ -328,7 +328,7 @@ class WeldingGunSystem {
       if (welder.faction === playerFaction && !localTank.isDead && localTank.hp < 100) {
         localTank.group.getWorldPosition(this._tmpTo);
         const dist = this._tmpFrom.distanceTo(this._tmpTo);
-        if (dist <= 50 && dist > 0.1 && beamIdx < this.beams.length) {
+        if (dist <= 20 && dist > 0.1 && beamIdx < this.beams.length) {
           this._tmpToEdge.copy(this._tmpTo).sub(this._tmpFrom).normalize()
             .multiplyScalar(-this._EDGE_OFFSET).add(this._tmpTo);
           this._activateBeam(beamIdx, this._tmpFrom, this._tmpToEdge, shouldJitter);

@@ -3027,7 +3027,7 @@ class GameRoom {
   }
 
   _updateWeldingGuns(dt) {
-    const WELD_RANGE_RAD = 50 / 480; // 50 world units on R=480 sphere
+    const WELD_RANGE_RAD = 20 / 480; // 20 world units on R=480 sphere
     const HEAL_PER_SEC = 10;
     const MAX_HP = 100;
 
@@ -3038,23 +3038,26 @@ class GameRoom {
       if (this._isUndeployed(player) || player.isDead) continue;
       if (!player.keys.tac) continue;
 
-      // DEBUG: log welding pipeline state
-      if (!player._weldDebugTimer) player._weldDebugTimer = 0;
-      player._weldDebugTimer += dt;
-      if (player._weldDebugTimer >= 2) {
-        player._weldDebugTimer = 0;
-        console.log(`[WELD DEBUG] player=${player.name} keys.tac=${player.keys.tac} activeSlots=${JSON.stringify(player.activeSlots)} loadout=${JSON.stringify(player.loadout)}`);
-      }
-
       // Check if player has welding_gun as active tactical
       const tacticalSlot = player.activeSlots?.tactical || 'tactical-1';
       const activeTactical = player.loadout?.[tacticalSlot];
+
+      // DEBUG: log welding pipeline state (throttled to 1/sec)
+      if (!player._weldDebugTimer) player._weldDebugTimer = 0;
+      player._weldDebugTimer += dt;
+      if (player._weldDebugTimer >= 1) {
+        player._weldDebugTimer = 0;
+        console.log(`[WELD DEBUG] player=${player.name} keys.tac=${player.keys.tac} slot=${tacticalSlot} active=${activeTactical} loadout=${JSON.stringify(player.loadout)} activeSlots=${JSON.stringify(player.activeSlots)}`);
+      }
+
       if (activeTactical !== 'welding_gun') continue;
 
       player.weldingActive = true;
 
       // Find all friendly targets in range with hp < MAX_HP
       const targets = [];
+      let nearestBotDist = Infinity;
+      let nearestPlayerDist = Infinity;
 
       // Check human players
       for (const [tid, target] of this.players) {
@@ -3063,6 +3066,7 @@ class GameRoom {
         if (target.faction !== player.faction) continue;
         if (target.hp >= MAX_HP) continue;
         const dist = sphericalDistance(player.theta, player.phi, target.theta, target.phi);
+        if (dist < nearestPlayerDist) nearestPlayerDist = dist;
         if (dist <= WELD_RANGE_RAD) {
           targets.push({ id: tid, isBot: false });
         }
@@ -3076,13 +3080,14 @@ class GameRoom {
         if (bs.f !== player.faction) continue;
         if ((bs.hp || 100) >= MAX_HP) continue;
         const dist = sphericalDistance(player.theta, player.phi, bs.t, bs.p);
+        if (dist < nearestBotDist) nearestBotDist = dist;
         if (dist <= WELD_RANGE_RAD) {
           targets.push({ id: botId, isBot: true });
         }
       }
 
       if (targets.length === 0) {
-        if (player._weldDebugTimer === 0) console.log(`[WELD DEBUG] ${player.name} welding active but 0 targets in range`);
+        if (player._weldDebugTimer === 0) console.log(`[WELD DEBUG] ${player.name} welding active, 0 targets. nearestBot=${(nearestBotDist*480).toFixed(1)} nearestPlayer=${(nearestPlayerDist*480).toFixed(1)} range=${(WELD_RANGE_RAD*480).toFixed(1)}`);
         continue;
       }
 
