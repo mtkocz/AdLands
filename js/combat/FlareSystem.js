@@ -387,17 +387,21 @@ class FlareSystem {
   }
 
   _createFlareVisual(surfacePos, normal, faction, isLocal) {
+    // Clone before _acquireShadowBillboard which reuses temp vectors
+    const clonedPos = surfacePos.clone();
+    const clonedNormal = normal.clone();
+
     const meshItem = this._acquireMesh(faction);
-    meshItem.group.position.copy(surfacePos);
+    meshItem.group.position.copy(clonedPos);
 
     const targetAltitude = 8;
-    const shadowBB = this._acquireShadowBillboard(surfacePos, normal, targetAltitude);
+    const shadowBB = this._acquireShadowBillboard(clonedPos, clonedNormal, targetAltitude);
 
     return {
       isLocal,
       faction,
-      surfacePos: surfacePos.clone(),
-      normal: normal.clone(),
+      surfacePos: clonedPos,
+      normal: clonedNormal,
       altitude: 0,
       targetAltitude,
       launchDuration: 0.4,
