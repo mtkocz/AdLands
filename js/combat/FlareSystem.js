@@ -216,36 +216,21 @@ class FlareSystem {
 
   _createShadowBillboardPool() {
     this._shadowPool = [];
-    this._smokeBBTex = null;
+    this._smokeBBTexture = null;
     this._smokeBBCols = 8;
     this._smokeBBRows = 6;
     this._smokeBBFrames = 48;
     this._smokeBBFps = 12;
 
-    // Load smoke spritesheet and bake RGB brightness into alpha channel
-    // so that MeshStandardMaterial map + alphaTest works in shadow pass
-    const img = new Image();
-    img.onload = () => {
-      const canvas = document.createElement("canvas");
-      canvas.width = img.width;
-      canvas.height = img.height;
-      const ctx = canvas.getContext("2d");
-      ctx.drawImage(img, 0, 0);
-      const data = ctx.getImageData(0, 0, canvas.width, canvas.height);
-      const px = data.data;
-      for (let i = 0; i < px.length; i += 4) {
-        px[i + 3] = px[i]; // alpha = red channel brightness
-      }
-      ctx.putImageData(data, 0, 0);
-      const tex = new THREE.CanvasTexture(canvas);
-      tex.wrapS = tex.wrapT = THREE.ClampToEdgeWrapping;
-      this._smokeBBTex = tex;
-    };
-    img.src = "assets/sprites/muzzlesmoke.png";
+    new THREE.TextureLoader().load("assets/sprites/muzzlesmoke.png", (tex) => {
+      tex.wrapS = THREE.ClampToEdgeWrapping;
+      tex.wrapT = THREE.ClampToEdgeWrapping;
+      this._smokeBBTexture = tex;
+    });
   }
 
   _acquireShadowBillboard(surfacePos, normal, targetAltitude) {
-    if (!this._smokeBBTex) return null;
+    if (!this._smokeBBTexture) return null;
 
     let item = this._shadowPool.find((s) => !s.inUse);
     if (!item) {
@@ -262,42 +247,42 @@ class FlareSystem {
     item.group.quaternion.copy(this._tempQuat);
     item.group.visible = true;
 
-    // Reset to frame 0
     this._setShadowBillboardFrame(item, 0);
-    item.mat.alphaTest = 0.15;
+    item.depthMat.alphaTest = 0.3;
 
     return item;
   }
 
   _buildShadowBillboard() {
     const geo = new THREE.PlaneGeometry(1, 1);
-    geo.translate(0, 0.5, 0); // bottom edge at y=0
+    geo.translate(0, 0.5, 0);
 
-    // Use original texture directly (clone doesn't share image data in v0.128)
-    const tex = this._smokeBBTex;
-    tex.repeat.set(1 / this._smokeBBCols, 1 / this._smokeBBRows);
-
-    // Texture has RGB brightness baked into alpha channel
-    // map + alphaTest is copied by Three.js auto-generated shadow depth material
-    // colorWrite:false hides from camera without affecting shadow pass
-    const mat = new THREE.MeshStandardMaterial({
-      map: tex,
-      alphaTest: 0.15,
-      side: THREE.DoubleSide,
+    const invisMat = new THREE.MeshBasicMaterial({
       colorWrite: false,
       depthWrite: false,
     });
 
-    const depthMat = null; // let Three.js auto-generate from MeshStandardMaterial
+    const depthTex = this._smokeBBTexture.clone();
+    depthTex.needsUpdate = true;
+    depthTex.repeat.set(1 / this._smokeBBCols, 1 / this._smokeBBRows);
 
-    const plane1 = new THREE.Mesh(geo, mat);
+    const depthMat = new THREE.MeshDepthMaterial({
+      depthPacking: THREE.RGBADepthPacking,
+      alphaMap: depthTex,
+      alphaTest: 0.3,
+      side: THREE.DoubleSide,
+    });
+
+    const plane1 = new THREE.Mesh(geo, invisMat);
     plane1.castShadow = true;
     plane1.receiveShadow = false;
+    plane1.customDepthMaterial = depthMat;
 
     const geo2 = geo.clone();
-    const plane2 = new THREE.Mesh(geo2, mat);
+    const plane2 = new THREE.Mesh(geo2, invisMat);
     plane2.castShadow = true;
     plane2.receiveShadow = false;
+    plane2.customDepthMaterial = depthMat;
     plane2.rotation.y = Math.PI / 2;
 
     const group = new THREE.Group();
@@ -306,14 +291,14 @@ class FlareSystem {
     group.visible = false;
     this.scene.add(group);
 
-    return { group, plane1, plane2, mat, depthMat, tex, inUse: false };
+    return { group, plane1, plane2, depthMat, depthTex, inUse: false };
   }
 
   _setShadowBillboardFrame(item, frame) {
     frame = Math.min(frame, this._smokeBBFrames - 1);
     const col = frame % this._smokeBBCols;
     const row = Math.floor(frame / this._smokeBBCols);
-    item.tex.offset.set(col / this._smokeBBCols, 1 - (row + 1) / this._smokeBBRows);
+    item.depthTex.offset.set(col / this._smokeBBCols, 1 - (row + 1) / this._smokeBBRows);
   }
 
   _releaseShadowBillboard(item) {
@@ -458,12 +443,12 @@ class FlareSystem {
         const frame = Math.floor(f.age * this._smokeBBFps) % this._smokeBBFrames;
         this._setShadowBillboardFrame(f.shadowBB, frame);
 
-        // Fade out shadow in last 30% by raising alphaTest
         const lifeRatio = f.age / f.maxAge;
         if (lifeRatio > 0.7) {
-          f.shadowBB.mat.alphaTest = 0.15 + ((lifeRatio - 0.7) / 0.3) * 0.8;
+          const fadeProgress = (lifeRatio - 0.7) / 0.3;
+          f.shadowBB.depthMat.alphaTest = 0.3 + fadeProgress * 0.65;
         } else {
-          f.shadowBB.mat.alphaTest = 0.15;
+          f.shadowBB.depthMat.alphaTest = 0.3;
         }
       }
 
@@ -692,11 +677,10 @@ class FlareSystem {
       this.scene.remove(item.group);
       item.plane1.geometry.dispose();
       item.plane2.geometry.dispose();
-      item.mat.dispose();
-      if (item.depthMat) item.depthMat.dispose();
-      item.tex.dispose();
+      item.depthMat.dispose();
+      item.depthTex.dispose();
     }
     this._shadowPool.length = 0;
-    if (this._smokeBBTex) this._smokeBBTex.dispose();
+    if (this._smokeBBTexture) this._smokeBBTexture.dispose();
   }
 }
