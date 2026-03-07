@@ -269,7 +269,6 @@ class WeldingGunSystem {
 
     if (isWelding) {
       localTank.group.getWorldPosition(this._tmpFrom);
-      let _nearestD = Infinity;
 
       for (const [id, rt] of remoteTanks) {
         if (beamIdx >= this.beams.length) break;
@@ -278,7 +277,6 @@ class WeldingGunSystem {
 
         rt.group.getWorldPosition(this._tmpTo);
         const dist = this._tmpFrom.distanceTo(this._tmpTo);
-        if (dist < _nearestD) _nearestD = dist;
         if (dist > 20 || dist < 0.1) continue;
 
         // Offset endpoint to tank silhouette edge
@@ -289,13 +287,6 @@ class WeldingGunSystem {
         targetPositions.push(this._tmpToEdge.clone());
         this._healedTankIds.add(id);
         beamIdx++;
-      }
-      // DEBUG: log beam activation result
-      if (!this._beamLogTimer) this._beamLogTimer = 0;
-      this._beamLogTimer += dt;
-      if (this._beamLogTimer >= 1) {
-        this._beamLogTimer = 0;
-        console.log(`[WELD BEAM] beams=${beamIdx} nearestDist=${_nearestD.toFixed(1)} from=${this._tmpFrom.x.toFixed(0)},${this._tmpFrom.y.toFixed(0)},${this._tmpFrom.z.toFixed(0)}`);
       }
     }
 
@@ -490,6 +481,8 @@ class WeldingGunSystem {
 
     this._sparkGeo.attributes.position.needsUpdate = true;
     this._sparkGeo.attributes.aAge.needsUpdate = true;
+    this._sparkGeo.attributes.aLifetime.needsUpdate = true;
+    this._sparkGeo.attributes.aSize.needsUpdate = true;
   }
 
   // ---- Smoke particles ----
@@ -528,6 +521,8 @@ class WeldingGunSystem {
 
     this._smokeGeo.attributes.position.needsUpdate = true;
     this._smokeGeo.attributes.aAge.needsUpdate = true;
+    this._smokeGeo.attributes.aLifetime.needsUpdate = true;
+    this._smokeGeo.attributes.aSize.needsUpdate = true;
   }
 
   dispose() {
