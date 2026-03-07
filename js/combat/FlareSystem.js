@@ -267,18 +267,21 @@ class FlareSystem {
       map: tex,
       alphaTest: 0.15,
       side: THREE.DoubleSide,
-      colorWrite: false,
-      depthWrite: false,
     });
+
+    // Layer 4 = shadow-only (camera doesn't have layer 4, shadow cameras do)
+    const SHADOW_ONLY_LAYER = 4;
 
     const plane1 = new THREE.Mesh(geo, mat);
     plane1.castShadow = true;
     plane1.receiveShadow = false;
+    plane1.layers.set(SHADOW_ONLY_LAYER);
 
     const geo2 = geo.clone();
     const plane2 = new THREE.Mesh(geo2, mat);
     plane2.castShadow = true;
     plane2.receiveShadow = false;
+    plane2.layers.set(SHADOW_ONLY_LAYER);
     plane2.rotation.y = Math.PI / 2;
 
     const group = new THREE.Group();

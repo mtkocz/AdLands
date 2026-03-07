@@ -176,6 +176,7 @@ class Environment {
     sunLight.shadow.camera.bottom = -200;
     sunLight.shadow.bias = -0.0001;
     sunLight.shadow.normalBias = 0.03; // Low value for good shadow contact
+    sunLight.shadow.camera.layers.enable(4); // Layer 4: shadow-only objects
     this.sunLight = sunLight;
     this.scene.add(sunLight);
     this.scene.add(sunLight.target);
@@ -215,6 +216,7 @@ class Environment {
     fillLight.shadow.camera.bottom = -200;
     fillLight.shadow.bias = -0.0002;
     fillLight.shadow.normalBias = 0.05;
+    fillLight.shadow.camera.layers.enable(4); // Layer 4: shadow-only objects
     this.fillLight = fillLight;
     this.scene.add(fillLight);
     this.scene.add(fillLight.target);
