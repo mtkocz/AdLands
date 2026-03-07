@@ -211,26 +211,25 @@ class FlareSystem {
 
   // ========================
   // SHADOW BILLBOARD (crossed planes, invisible to camera, casts shadow)
+  // Uses MeshStandardMaterial so Three.js auto-generates the shadow depth material.
   // ========================
 
   _createShadowBillboardPool() {
     this._shadowPool = [];
-    this._smokeBBTexture = null;
-
-    // Spritesheet config: 8 columns x 6 rows = 48 frames
+    this._smokeBBTex = null;
     this._smokeBBCols = 8;
     this._smokeBBRows = 6;
     this._smokeBBFrames = 48;
+    this._smokeBBFps = 12;
 
     new THREE.TextureLoader().load("assets/sprites/muzzlesmoke.png", (tex) => {
-      tex.wrapS = THREE.ClampToEdgeWrapping;
-      tex.wrapT = THREE.ClampToEdgeWrapping;
-      this._smokeBBTexture = tex;
+      tex.wrapS = tex.wrapT = THREE.ClampToEdgeWrapping;
+      this._smokeBBTex = tex;
     });
   }
 
   _acquireShadowBillboard(surfacePos, normal, targetAltitude) {
-    if (!this._smokeBBTexture) return null;
+    if (!this._smokeBBTex) return null;
 
     let item = this._shadowPool.find((s) => !s.inUse);
     if (!item) {
@@ -239,87 +238,47 @@ class FlareSystem {
     }
 
     item.inUse = true;
+    item.plane1.scale.set(4, targetAltitude, 1);
+    item.plane2.scale.set(4, targetAltitude, 1);
 
-    // Size: width ~4, height = targetAltitude (ground to flare tip)
-    const width = 4;
-    const height = targetAltitude;
-
-    // Plane1: width x height, centered so bottom edge is at y=0
-    // PlaneGeometry is centered at origin, so shift UVs or offset the geometry
-    // We'll use a group and offset the planes upward by height/2
-    item.plane1.scale.set(width, height, 1);
-    item.plane2.scale.set(width, height, 1);
-
-    // Position at surface, orient upward along normal
     item.group.position.copy(surfacePos);
     this._tempQuat.setFromUnitVectors(this._upVec, normal);
     item.group.quaternion.copy(this._tempQuat);
     item.group.visible = true;
 
-    // Set initial UV frame
+    // Reset to frame 0
     this._setShadowBillboardFrame(item, 0);
+    item.mat.alphaTest = 0.15;
 
     return item;
   }
 
   _buildShadowBillboard() {
-    // Two perpendicular planes forming an X cross
-    // Geometry centered at (0, 0.5, 0) so bottom sits at y=0 in local space
     const geo = new THREE.PlaneGeometry(1, 1);
-    // Shift verts up so bottom edge is at y=0
-    geo.translate(0, 0.5, 0);
+    geo.translate(0, 0.5, 0); // bottom edge at y=0
 
-    // Invisible material (no color output, no depth write to main pass)
-    const invisMat = new THREE.MeshBasicMaterial({
+    // Clone texture for independent UV offsets per billboard
+    const tex = this._smokeBBTex.clone();
+    tex.needsUpdate = true;
+    tex.repeat.set(1 / this._smokeBBCols, 1 / this._smokeBBRows);
+
+    // MeshStandardMaterial — Three.js auto-generates correct shadow depth material
+    const mat = new THREE.MeshStandardMaterial({
+      map: tex,
+      alphaTest: 0.15,
+      side: THREE.DoubleSide,
       colorWrite: false,
       depthWrite: false,
     });
 
-    // Clone texture for independent UV offsets per billboard
-    const depthTex = this._smokeBBTexture.clone();
-    depthTex.needsUpdate = true;
-    depthTex.repeat.set(1 / this._smokeBBCols, 1 / this._smokeBBRows);
-
-    // Custom depth shader for shadow map — explicitly samples alpha map
-    const depthMat = new THREE.ShaderMaterial({
-      uniforms: {
-        uAlphaMap: { value: depthTex },
-        uAlphaTest: { value: 0.15 },
-      },
-      vertexShader: `
-        varying vec2 vUv;
-        void main() {
-          vUv = uv;
-          vec4 mvPosition = modelViewMatrix * vec4(position, 1.0);
-          gl_Position = projectionMatrix * mvPosition;
-        }
-      `,
-      fragmentShader: `
-        #include <common>
-        #include <packing>
-        uniform sampler2D uAlphaMap;
-        uniform float uAlphaTest;
-        varying vec2 vUv;
-        void main() {
-          float alpha = texture2D(uAlphaMap, vUv).r;
-          if (alpha < uAlphaTest) discard;
-          gl_FragColor = packDepthToRGBA(gl_FragCoord.z);
-        }
-      `,
-      side: THREE.DoubleSide,
-    });
-
-    const plane1 = new THREE.Mesh(geo, invisMat);
+    const plane1 = new THREE.Mesh(geo, mat);
     plane1.castShadow = true;
     plane1.receiveShadow = false;
-    plane1.customDepthMaterial = depthMat;
 
-    // Second plane rotated 90deg around local Y
     const geo2 = geo.clone();
-    const plane2 = new THREE.Mesh(geo2, invisMat);
+    const plane2 = new THREE.Mesh(geo2, mat);
     plane2.castShadow = true;
     plane2.receiveShadow = false;
-    plane2.customDepthMaterial = depthMat;
     plane2.rotation.y = Math.PI / 2;
 
     const group = new THREE.Group();
@@ -328,16 +287,14 @@ class FlareSystem {
     group.visible = false;
     this.scene.add(group);
 
-    return { group, plane1, plane2, depthMat, depthTex, inUse: false };
+    return { group, plane1, plane2, mat, tex, inUse: false };
   }
 
   _setShadowBillboardFrame(item, frame) {
     frame = Math.min(frame, this._smokeBBFrames - 1);
     const col = frame % this._smokeBBCols;
     const row = Math.floor(frame / this._smokeBBCols);
-    const offX = col / this._smokeBBCols;
-    const offY = 1 - (row + 1) / this._smokeBBRows;
-    item.depthTex.offset.set(offX, offY);
+    item.tex.offset.set(col / this._smokeBBCols, 1 - (row + 1) / this._smokeBBRows);
   }
 
   _releaseShadowBillboard(item) {
@@ -477,18 +434,17 @@ class FlareSystem {
       const pos = this._tempVec.copy(f.normal).multiplyScalar(f.altitude).add(f.surfacePos);
       f.meshItem.group.position.copy(pos);
 
-      // Update shadow billboard spritesheet frame + fade-out
+      // Update shadow billboard spritesheet frame (12fps) + fade-out
       if (f.shadowBB) {
-        const lifeRatio = f.age / f.maxAge;
-        const frame = Math.floor(lifeRatio * this._smokeBBFrames);
+        const frame = Math.floor(f.age * this._smokeBBFps) % this._smokeBBFrames;
         this._setShadowBillboardFrame(f.shadowBB, frame);
 
-        // Fade out shadow in last 30% by raising alphaTest (less shadow)
+        // Fade out shadow in last 30% by raising alphaTest
+        const lifeRatio = f.age / f.maxAge;
         if (lifeRatio > 0.7) {
-          const fadeProgress = (lifeRatio - 0.7) / 0.3;
-          f.shadowBB.depthMat.uniforms.uAlphaTest.value = 0.15 + fadeProgress * 0.8;
+          f.shadowBB.mat.alphaTest = 0.15 + ((lifeRatio - 0.7) / 0.3) * 0.8;
         } else {
-          f.shadowBB.depthMat.uniforms.uAlphaTest.value = 0.15;
+          f.shadowBB.mat.alphaTest = 0.15;
         }
       }
 
@@ -717,10 +673,10 @@ class FlareSystem {
       this.scene.remove(item.group);
       item.plane1.geometry.dispose();
       item.plane2.geometry.dispose();
-      item.depthMat.dispose();
-      item.depthTex.dispose();
+      item.mat.dispose();
+      item.tex.dispose();
     }
     this._shadowPool.length = 0;
-    if (this._smokeBBTexture) this._smokeBBTexture.dispose();
+    if (this._smokeBBTex) this._smokeBBTex.dispose();
   }
 }
