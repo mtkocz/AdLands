@@ -226,7 +226,6 @@ class FlareSystem {
       tex.wrapS = THREE.ClampToEdgeWrapping;
       tex.wrapT = THREE.ClampToEdgeWrapping;
       this._smokeBBTexture = tex;
-      console.log("[FlareSystem] Smoke BB texture loaded", tex.image.width, "x", tex.image.height);
     });
   }
 
@@ -249,15 +248,7 @@ class FlareSystem {
     item.group.visible = true;
 
     this._setShadowBillboardFrame(item, 0);
-    item.depthMat.alphaTest = 0.3;
-
-    const img = item.depthTex.image;
-    console.log("[FlareSystem] Shadow BB: texImage=" + (img ? img.width + "x" + img.height : "NULL") +
-      " sameRef=" + (img === this._smokeBBTexture.image) +
-      " repeat=" + item.depthTex.repeat.x.toFixed(3) + "," + item.depthTex.repeat.y.toFixed(3) +
-      " depthPacking=" + item.depthMat.depthPacking +
-      " alphaTest=" + item.depthMat.alphaTest +
-      " customDepth=" + !!item.plane1.customDepthMaterial);
+    item.depthMat.alphaTest = 0.05;
 
     return item;
   }
@@ -278,7 +269,7 @@ class FlareSystem {
     const depthMat = new THREE.MeshDepthMaterial({
       depthPacking: THREE.RGBADepthPacking,
       alphaMap: depthTex,
-      alphaTest: 0.3,
+      alphaTest: 0.05,
       side: THREE.DoubleSide,
     });
 
@@ -455,9 +446,9 @@ class FlareSystem {
         const lifeRatio = f.age / f.maxAge;
         if (lifeRatio > 0.7) {
           const fadeProgress = (lifeRatio - 0.7) / 0.3;
-          f.shadowBB.depthMat.alphaTest = 0.3 + fadeProgress * 0.65;
+          f.shadowBB.depthMat.alphaTest = 0.05 + fadeProgress * 0.9;
         } else {
-          f.shadowBB.depthMat.alphaTest = 0.3;
+          f.shadowBB.depthMat.alphaTest = 0.05;
         }
       }
 
