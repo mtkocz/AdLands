@@ -3039,13 +3039,8 @@ class GameRoom {
       // Check if player has welding_gun as active tactical
       const tacticalSlot = player.activeSlots?.tactical || 'tactical-1';
       const activeTactical = player.loadout?.[tacticalSlot];
-      if (activeTactical !== 'welding_gun') {
-        if (!player._weldDebugOnce) {
-          console.log(`[WELD] ${id} tac pressed but activeTactical=${activeTactical}, slot=${tacticalSlot}, loadout=`, JSON.stringify(player.loadout), 'activeSlots=', JSON.stringify(player.activeSlots));
-          player._weldDebugOnce = true;
-        }
-        continue;
-      }
+      console.log(`[WELD] ${id.slice(-6)} tac=true, slot=${tacticalSlot}, tactical=${activeTactical}, loadout=${JSON.stringify(player.loadout)}, activeSlots=${JSON.stringify(player.activeSlots)}`);
+      if (activeTactical !== 'welding_gun') continue;
 
       player.weldingActive = true;
 
@@ -3077,14 +3072,9 @@ class GameRoom {
         }
       }
 
-      if (targets.length === 0) {
-        if (!player._weldNoTargetDebug) {
-          console.log(`[WELD] ${id} welding active but 0 targets found. faction=${player.faction}, pos=(${player.theta.toFixed(3)}, ${player.phi.toFixed(3)})`);
-          player._weldNoTargetDebug = true;
-        }
-        continue;
-      }
-      player._weldNoTargetDebug = false;
+      if (targets.length === 0) continue;
+
+      console.log(`[WELD] HEALING ${targets.length} targets, healPerTick=${(HEAL_PER_SEC * dt / targets.length).toFixed(2)}`);
 
       // Distribute healing across all targets
       const healPerTarget = (HEAL_PER_SEC * dt) / targets.length;
