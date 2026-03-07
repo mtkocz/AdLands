@@ -261,11 +261,14 @@ class FlareSystem {
     const tex = this._smokeBBTex;
     tex.repeat.set(1 / this._smokeBBCols, 1 / this._smokeBBRows);
 
-    // DEBUG: fully visible + opaque to test if shadow pipeline works at all
+    // alphaMap reads green channel as alpha (white smoke=1, black bg=0)
+    // colorWrite:false hides from camera without affecting shadow depth pass
     const mat = new THREE.MeshStandardMaterial({
-      map: tex,
+      alphaMap: tex,
       alphaTest: 0.15,
       side: THREE.DoubleSide,
+      colorWrite: false,
+      depthWrite: false,
     });
 
     const depthMat = null; // let Three.js auto-generate from MeshStandardMaterial
