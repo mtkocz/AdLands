@@ -90,7 +90,7 @@ class WeldingGunSystem {
     // Point light pool — 1 light per beam at destination with strobe
     this._lights = [];
     for (let i = 0; i < POOL_SIZE; i++) {
-      const light = new THREE.PointLight(0x00ffff, 3, 15);
+      const light = new THREE.PointLight(0x99ccdd, 3, 15);
       light.visible = false;
       scene.add(light);
       this._lights.push(light);

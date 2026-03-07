@@ -284,7 +284,7 @@ class FlareSystem {
     const depthMat = new THREE.MeshDepthMaterial({
       depthPacking: THREE.RGBADepthPacking,
       alphaMap: depthTex,
-      alphaTest: 0.3,
+      alphaTest: 0.05,
       side: THREE.DoubleSide,
     });
 
