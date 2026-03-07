@@ -251,24 +251,13 @@ class FlareSystem {
     this._setShadowBillboardFrame(item, 0);
     item.depthMat.alphaTest = 0.3;
 
-    console.log("[FlareSystem] Shadow BB acquired", {
-      pos: item.group.position.toArray(),
-      visible: item.group.visible,
-      castShadow1: item.plane1.castShadow,
-      castShadow2: item.plane2.castShadow,
-      hasCustomDepth1: !!item.plane1.customDepthMaterial,
-      hasCustomDepth2: !!item.plane2.customDepthMaterial,
-      depthPacking: item.depthMat.depthPacking,
-      hasAlphaMap: !!item.depthMat.alphaMap,
-      alphaTest: item.depthMat.alphaTest,
-      texImage: item.depthTex.image,
-      texImageSrc: item.depthTex.image?.src,
-      origImage: this._smokeBBTexture.image,
-      sameImage: item.depthTex.image === this._smokeBBTexture.image,
-      texRepeat: item.depthTex.repeat.toArray(),
-      texOffset: item.depthTex.offset.toArray(),
-      texNeedsUpdate: item.depthTex.needsUpdate,
-    });
+    const img = item.depthTex.image;
+    console.log("[FlareSystem] Shadow BB: texImage=" + (img ? img.width + "x" + img.height : "NULL") +
+      " sameRef=" + (img === this._smokeBBTexture.image) +
+      " repeat=" + item.depthTex.repeat.x.toFixed(3) + "," + item.depthTex.repeat.y.toFixed(3) +
+      " depthPacking=" + item.depthMat.depthPacking +
+      " alphaTest=" + item.depthMat.alphaTest +
+      " customDepth=" + !!item.plane1.customDepthMaterial);
 
     return item;
   }
