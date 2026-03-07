@@ -3953,6 +3953,9 @@
     // Disable tank controls in orbital view (unless fast travel is active)
     const isOrbitalView =
       gameCamera.mode === "orbital" || gameCamera.mode === "fastTravel";
+    // Distance-based cutoff for visual effects (260 units from surface)
+    const cameraSurfaceDist = camera.position.length() - CONFIG.sphereRadius;
+    const isFarView = cameraSurfaceDist > 260;
     if (!fastTravel.active) {
       tank.setControlsEnabled(!isOrbitalView);
     }
@@ -3981,10 +3984,10 @@
     }
     shieldEffect.updateShield('local', tank.shieldActive, tank.shieldArcAngle, tank.shieldEnergy, deltaTime);
 
-    // Update welding gun beams (skip in orbital — cyan point lights are expensive)
+    // Update welding gun beams (skip when far — cyan point lights are expensive)
     const remoteTanks = window._mpState?.remoteTanks;
     if (remoteTanks) {
-      if (!isOrbitalView) {
+      if (!isFarView) {
         weldingGunSystem.update(tank, remoteTanks, playerFaction, deltaTime);
       } else {
         weldingGunSystem.hideAll();
@@ -4070,21 +4073,22 @@
     missileSystem.setMissileEquipped(isMissileActive);
 
     // Update cannon charging, projectiles, and combat effects
-    cannonSystem.isOrbitalView = isOrbitalView; // Set for LOD explosion decisions
-    if (!isOrbitalView) {
+    // All surface effects use 260-unit distance cutoff (isFarView)
+    cannonSystem.isOrbitalView = isFarView; // LOD explosion decisions
+    if (!isFarView) {
       cannonSystem.updateCharge(deltaTime, tank, playerFaction);
     }
-    cannonSystem.update(deltaTime, sharedFrustum, isOrbitalView);
+    cannonSystem.update(deltaTime, sharedFrustum, isFarView);
     missileSystem.update(deltaTime, sharedFrustum, camera);  // has own 260-unit distance cull
     flareSystem.update(deltaTime, camera);                    // has own 260-unit distance cull
 
     // Update visual effects
-    capturePulse.update(deltaTime, sharedFrustum, camera);
+    capturePulse.update(deltaTime, sharedFrustum, camera);   // has own 260-unit distance cull
     cryptoVisuals.update(deltaTime);
     tankHeadlights.update(deltaTime, camera); // has own 260-unit distance fade
-    if (!isOrbitalView) {
-      treadTracks.update(tank, deltaTime, camera, isOrbitalView, sharedFrustum);
-      treadDust.update(deltaTime, camera, isOrbitalView, sharedFrustum);
+    if (!isFarView) {
+      treadTracks.update(tank, deltaTime, camera, isFarView, sharedFrustum);
+      treadDust.update(deltaTime, camera, isFarView, sharedFrustum);
       dustShockwave.update(deltaTime, sharedFrustum);
       tankDamageEffects.update(deltaTime, sharedFrustum, camera);
       shieldHolosphere.update(deltaTime);
