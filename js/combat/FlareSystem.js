@@ -266,12 +266,9 @@ class FlareSystem {
     const geo = new THREE.PlaneGeometry(1, 1);
     geo.translate(0, 0.5, 0);
 
-    // DEBUG: visible red to confirm billboard placement
     const invisMat = new THREE.MeshBasicMaterial({
-      color: 0xff0000,
-      side: THREE.DoubleSide,
-      transparent: true,
-      opacity: 0.5,
+      colorWrite: false,
+      depthWrite: false,
     });
 
     const depthTex = this._smokeBBTexture.clone();
