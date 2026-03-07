@@ -446,6 +446,17 @@
           if (state.f && state.f !== tank.faction) {
             mp.setPlayerFaction(state.f);
           }
+          // Sync server-authoritative HP (catches healing & other non-damage HP changes)
+          if (state.hp !== undefined && state.hp !== tank.hp) {
+            tank.hp = state.hp;
+            playerTags.updateHP?.("player", state.hp, tank.maxHp);
+            // Sync damage state (smoke/fire)
+            const newDmgState = computeDamageState(state.hp, tank.maxHp);
+            if (newDmgState !== tank.damageState) {
+              tank.damageState = newDmgState;
+              if (tank.onDamageStateChange) tank.onDamageStateChange(newDmgState);
+            }
+          }
           // Sync server-authoritative rank
           if (state.r !== undefined && state.r !== window.playerRank) {
             window.playerRank = state.r;
