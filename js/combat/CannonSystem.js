@@ -1822,7 +1822,20 @@ void main() {
       this.gameCamera.camera.getWorldPosition(_cameraWorldPos);
     }
 
-    // In orbital view, skip projectile simulation — only update explosions below
+    // In orbital view, expire all projectiles quickly (hide + age out)
+    if (skipProjectiles) {
+      for (let i = this.projectiles.length - 1; i >= 0; i--) {
+        const p = this.projectiles[i];
+        p.mesh.visible = false;
+        if (p.light) p.light.visible = false;
+        p.age += deltaTime;
+        if (p.age > this.config.maxLifetime) {
+          if (p.light) { p.mesh.remove(p.light); p.light.dispose(); }
+          this.objectPools.releaseProjectile(p.poolItem);
+          this.projectiles.splice(i, 1);
+        }
+      }
+    }
     if (!skipProjectiles)
     for (let i = this.projectiles.length - 1; i >= 0; i--) {
       const p = this.projectiles[i];
@@ -2086,22 +2099,16 @@ void main() {
       }
     }
 
-    // Update explosions — only LOD circles in orbital view
-    if (!skipProjectiles) {
-      this._updateExplosions(deltaTime, frustum);
-    }
+    // Update explosions — both types always run so they clean up naturally.
+    // In orbital, new explosions spawn as LOD circles via isOrbitalView flag.
+    // Any full-size explosions in-flight will finish their short lifecycle and be removed.
+    this._updateExplosions(deltaTime, frustum);
     this._updateLODExplosions(deltaTime, frustum);
 
-    if (!skipProjectiles) {
-      // Update muzzle effects (flare + smoke)
-      this._updateMuzzleEffects(deltaTime, frustum);
-
-      // Update impact decals
-      this._updateImpactDecals(deltaTime, frustum);
-
-      // Update oil puddles
-      this._updateOilPuddles(deltaTime, frustum);
-    }
+    // Always update so in-flight effects clean up (no new ones spawn in orbital)
+    this._updateMuzzleEffects(deltaTime, frustum);
+    this._updateImpactDecals(deltaTime, frustum);
+    this._updateOilPuddles(deltaTime, frustum);
   }
 
   // ========================

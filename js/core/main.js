@@ -3981,10 +3981,14 @@
     }
     shieldEffect.updateShield('local', tank.shieldActive, tank.shieldArcAngle, tank.shieldEnergy, deltaTime);
 
-    // Update welding gun beams
+    // Update welding gun beams (skip in orbital — cyan point lights are expensive)
     const remoteTanks = window._mpState?.remoteTanks;
     if (remoteTanks) {
-      weldingGunSystem.update(tank, remoteTanks, playerFaction, deltaTime);
+      if (!isOrbitalView) {
+        weldingGunSystem.update(tank, remoteTanks, playerFaction, deltaTime);
+      } else {
+        weldingGunSystem.hideAll();
+      }
     }
 
     environment.update(camera, deltaTime);
@@ -4069,23 +4073,22 @@
     cannonSystem.isOrbitalView = isOrbitalView; // Set for LOD explosion decisions
     if (!isOrbitalView) {
       cannonSystem.updateCharge(deltaTime, tank, playerFaction);
-      missileSystem.update(deltaTime, sharedFrustum, camera);
-      flareSystem.update(deltaTime, camera);
     }
-    // Always update cannonSystem (explosions need to animate in orbital view)
     cannonSystem.update(deltaTime, sharedFrustum, isOrbitalView);
+    missileSystem.update(deltaTime, sharedFrustum, camera);  // has own 260-unit distance cull
+    flareSystem.update(deltaTime, camera);                    // has own 260-unit distance cull
 
     // Update visual effects
     capturePulse.update(deltaTime, sharedFrustum, camera);
+    cryptoVisuals.update(deltaTime);
+    tankHeadlights.update(deltaTime, camera); // has own 260-unit distance fade
     if (!isOrbitalView) {
       treadTracks.update(tank, deltaTime, camera, isOrbitalView, sharedFrustum);
       treadDust.update(deltaTime, camera, isOrbitalView, sharedFrustum);
-      cryptoVisuals.update(deltaTime);
       dustShockwave.update(deltaTime, sharedFrustum);
       tankDamageEffects.update(deltaTime, sharedFrustum, camera);
       shieldHolosphere.update(deltaTime);
       tankCollision.update(deltaTime, sharedFrustum, camera);
-      tankHeadlights.update(deltaTime, camera);
     }
 
     // Update visual effects (post-processing state)

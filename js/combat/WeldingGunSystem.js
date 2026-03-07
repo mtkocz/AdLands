@@ -235,6 +235,13 @@ class WeldingGunSystem {
     this._smokeAccum = 0;
   }
 
+  hideAll() {
+    for (let i = 0; i < this.beams.length; i++) {
+      this.beams[i].mesh.visible = false;
+      this._lights[i].visible = false;
+    }
+  }
+
   update(localTank, remoteTanks, playerFaction, dt) {
     this._jitterTimer += dt;
     const shouldJitter = this._jitterTimer >= this._jitterInterval;
