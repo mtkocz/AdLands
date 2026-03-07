@@ -1773,6 +1773,7 @@ class GameRoom {
     }
 
     player.loadout[slotId] = upgradeId;
+    console.log(`[EQUIP DEBUG] player=${player.name} slot=${slotId} upgrade=${upgradeId} loadout=${JSON.stringify(player.loadout)}`);
 
     // Persist immediately so loadout survives disconnect/crash
     if (player.uid) this.savePlayerProfile(socketId).catch(() => {});
@@ -1804,6 +1805,7 @@ class GameRoom {
       player.activeSlots = { offense: 'offense-1', defense: 'defense-1', tactical: 'tactical-1' };
     }
     player.activeSlots[category] = slotId;
+    console.log(`[SLOT DEBUG] player=${player.name} category=${category} slotId=${slotId} activeSlots=${JSON.stringify(player.activeSlots)}`);
     if (player.uid) this.savePlayerProfile(socketId).catch(() => {});
   }
 
@@ -3035,6 +3037,14 @@ class GameRoom {
       if (this._isUndeployed(player) || player.isDead) continue;
       if (!player.keys.tac) continue;
 
+      // DEBUG: log welding pipeline state
+      if (!player._weldDebugTimer) player._weldDebugTimer = 0;
+      player._weldDebugTimer += dt;
+      if (player._weldDebugTimer >= 2) {
+        player._weldDebugTimer = 0;
+        console.log(`[WELD DEBUG] player=${player.name} keys.tac=${player.keys.tac} activeSlots=${JSON.stringify(player.activeSlots)} loadout=${JSON.stringify(player.loadout)}`);
+      }
+
       // Check if player has welding_gun as active tactical
       const tacticalSlot = player.activeSlots?.tactical || 'tactical-1';
       const activeTactical = player.loadout?.[tacticalSlot];
@@ -3070,7 +3080,12 @@ class GameRoom {
         }
       }
 
-      if (targets.length === 0) continue;
+      if (targets.length === 0) {
+        if (player._weldDebugTimer === 0) console.log(`[WELD DEBUG] ${player.name} welding active but 0 targets in range`);
+        continue;
+      }
+
+      if (player._weldDebugTimer === 0) console.log(`[WELD DEBUG] ${player.name} healing ${targets.length} targets`);
 
       // Distribute healing across all targets
       const healPerTarget = (HEAL_PER_SEC * dt) / targets.length;

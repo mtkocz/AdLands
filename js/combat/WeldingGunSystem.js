@@ -267,6 +267,22 @@ class WeldingGunSystem {
       window.weaponSlotSystem?.getActiveTacticalWeapon() === 'welding_gun' &&
       !localTank.isDead;
 
+    // DEBUG: log welding state every 2 seconds
+    if (!this._debugTimer) this._debugTimer = 0;
+    this._debugTimer += dt;
+    if (this._debugTimer >= 2) {
+      this._debugTimer = 0;
+      const activeTac = window.weaponSlotSystem?.getActiveTacticalWeapon();
+      const keyTac = localTank.state.keys.tac;
+      let candidates = 0;
+      if (remoteTanks) {
+        for (const [id, rt] of remoteTanks) {
+          if (!rt.isDead && rt.faction === playerFaction && rt.hp < 100) candidates++;
+        }
+      }
+      console.log(`[WELD CLIENT] isWelding=${isWelding} keyTac=${keyTac} activeTac=${activeTac} faction=${playerFaction} candidates=${candidates} isDead=${localTank.isDead}`);
+    }
+
     if (isWelding) {
       localTank.group.getWorldPosition(this._tmpFrom);
 
