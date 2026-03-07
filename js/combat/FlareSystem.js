@@ -222,7 +222,7 @@ class FlareSystem {
     this._smokeBBRows = 6;
     this._smokeBBFrames = 48;
 
-    new THREE.TextureLoader().load("assets/sprites/muzzlesmoke_shadow.png", (tex) => {
+    new THREE.TextureLoader().load("assets/sprites/muzzlesmoke.png", (tex) => {
       tex.wrapS = THREE.ClampToEdgeWrapping;
       tex.wrapT = THREE.ClampToEdgeWrapping;
       this._smokeBBTexture = tex;
