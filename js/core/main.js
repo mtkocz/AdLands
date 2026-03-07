@@ -4076,12 +4076,12 @@
     cannonSystem.update(deltaTime, sharedFrustum, isOrbitalView);
 
     // Update visual effects
-    treadTracks.update(tank, deltaTime, camera, isOrbitalView, sharedFrustum);
-    treadDust.update(deltaTime, camera, isOrbitalView, sharedFrustum);
-    dustShockwave.update(deltaTime, sharedFrustum);
     capturePulse.update(deltaTime, sharedFrustum, camera);
-    cryptoVisuals.update(deltaTime);
     if (!isOrbitalView) {
+      treadTracks.update(tank, deltaTime, camera, isOrbitalView, sharedFrustum);
+      treadDust.update(deltaTime, camera, isOrbitalView, sharedFrustum);
+      cryptoVisuals.update(deltaTime);
+      dustShockwave.update(deltaTime, sharedFrustum);
       tankDamageEffects.update(deltaTime, sharedFrustum, camera);
       shieldHolosphere.update(deltaTime);
       tankCollision.update(deltaTime, sharedFrustum, camera);

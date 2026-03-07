@@ -2086,8 +2086,10 @@ void main() {
       }
     }
 
-    // Update explosions (always — visible in orbital view as LOD circles)
-    this._updateExplosions(deltaTime, frustum);
+    // Update explosions — only LOD circles in orbital view
+    if (!skipProjectiles) {
+      this._updateExplosions(deltaTime, frustum);
+    }
     this._updateLODExplosions(deltaTime, frustum);
 
     if (!skipProjectiles) {

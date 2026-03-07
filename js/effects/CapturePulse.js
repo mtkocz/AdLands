@@ -282,6 +282,12 @@ class CapturePulse {
     // Cache camera world position for backface culling
     if (camera) camera.getWorldPosition(_cpCameraPos);
 
+    // Hide all waves when camera is too far (e.g. orbital view)
+    if (camera && _cpCameraPos.length() - this.sphereRadius > 260) {
+      for (let i = 0; i < this.waves.length; i++) this.waves[i].mesh.visible = false;
+      return;
+    }
+
     // Get tank position in hexGroup local space once for all waves
     if (this.tank && this.planet) {
       this.tank.group.getWorldPosition(_cpTankWorldPos);
