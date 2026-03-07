@@ -280,7 +280,22 @@ class WeldingGunSystem {
           if (!rt.isDead && rt.faction === playerFaction && rt.hp < 100) candidates++;
         }
       }
-      console.log(`[WELD CLIENT] isWelding=${isWelding} keyTac=${keyTac} activeTac=${activeTac} faction=${playerFaction} candidates=${candidates} isDead=${localTank.isDead}`);
+      // Also log distances to nearest candidates
+      let nearestDist = Infinity;
+      let nearestHp = -1;
+      const fromPos = new THREE.Vector3();
+      const toPos = new THREE.Vector3();
+      localTank.group.getWorldPosition(fromPos);
+      if (remoteTanks) {
+        for (const [id, rt] of remoteTanks) {
+          if (!rt.isDead && rt.faction === playerFaction && rt.hp < 100) {
+            rt.group.getWorldPosition(toPos);
+            const d = fromPos.distanceTo(toPos);
+            if (d < nearestDist) { nearestDist = d; nearestHp = rt.hp; }
+          }
+        }
+      }
+      console.log(`[WELD CLIENT] isWelding=${isWelding} keyTac=${keyTac} activeTac=${activeTac} faction=${playerFaction} candidates=${candidates} isDead=${localTank.isDead} nearestDist=${nearestDist.toFixed(1)} nearestHp=${nearestHp} beamsActive=${this._activeCount} sparksAlive=${this._sparkHead}`);
     }
 
     if (isWelding) {
