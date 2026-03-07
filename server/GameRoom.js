@@ -2162,6 +2162,7 @@ class GameRoom {
             missileId: p.id,
             theta: fl.theta,
             phi: fl.phi,
+            faction: p.faction,
           });
           // Remove flare (swap-remove)
           this.flares[target.flareIndex] = this.flares[this.flares.length - 1];
@@ -3026,7 +3027,7 @@ class GameRoom {
   }
 
   _updateWeldingGuns(dt) {
-    const WELD_RANGE_RAD = 20 / 480; // 20 world units on R=480 sphere
+    const WELD_RANGE_RAD = 50 / 480; // 50 world units on R=480 sphere
     const HEAL_PER_SEC = 10;
     const MAX_HP = 100;
 

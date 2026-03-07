@@ -267,39 +267,9 @@ class WeldingGunSystem {
       window.weaponSlotSystem?.getActiveTacticalWeapon() === 'welding_gun' &&
       !localTank.isDead;
 
-    // DEBUG: log welding state every 2 seconds
-    if (!this._debugTimer) this._debugTimer = 0;
-    this._debugTimer += dt;
-    if (this._debugTimer >= 2) {
-      this._debugTimer = 0;
-      const activeTac = window.weaponSlotSystem?.getActiveTacticalWeapon();
-      const keyTac = localTank.state.keys.tac;
-      let candidates = 0;
-      if (remoteTanks) {
-        for (const [id, rt] of remoteTanks) {
-          if (!rt.isDead && rt.faction === playerFaction && rt.hp < 100) candidates++;
-        }
-      }
-      // Also log distances to nearest candidates
-      let nearestDist = Infinity;
-      let nearestHp = -1;
-      const fromPos = new THREE.Vector3();
-      const toPos = new THREE.Vector3();
-      localTank.group.getWorldPosition(fromPos);
-      if (remoteTanks) {
-        for (const [id, rt] of remoteTanks) {
-          if (!rt.isDead && rt.faction === playerFaction && rt.hp < 100) {
-            rt.group.getWorldPosition(toPos);
-            const d = fromPos.distanceTo(toPos);
-            if (d < nearestDist) { nearestDist = d; nearestHp = rt.hp; }
-          }
-        }
-      }
-      console.log(`[WELD CLIENT] isWelding=${isWelding} keyTac=${keyTac} activeTac=${activeTac} faction=${playerFaction} candidates=${candidates} isDead=${localTank.isDead} nearestDist=${nearestDist.toFixed(1)} nearestHp=${nearestHp} beamsActive=${this._activeCount} sparksAlive=${this._sparkHead}`);
-    }
-
     if (isWelding) {
       localTank.group.getWorldPosition(this._tmpFrom);
+      let _nearestD = Infinity;
 
       for (const [id, rt] of remoteTanks) {
         if (beamIdx >= this.beams.length) break;
@@ -308,7 +278,8 @@ class WeldingGunSystem {
 
         rt.group.getWorldPosition(this._tmpTo);
         const dist = this._tmpFrom.distanceTo(this._tmpTo);
-        if (dist > 20 || dist < 0.1) continue;
+        if (dist < _nearestD) _nearestD = dist;
+        if (dist > 50 || dist < 0.1) continue;
 
         // Offset endpoint to tank silhouette edge
         this._tmpToEdge.copy(this._tmpTo).sub(this._tmpFrom).normalize()
@@ -318,6 +289,13 @@ class WeldingGunSystem {
         targetPositions.push(this._tmpToEdge.clone());
         this._healedTankIds.add(id);
         beamIdx++;
+      }
+      // DEBUG: log beam activation result
+      if (!this._beamLogTimer) this._beamLogTimer = 0;
+      this._beamLogTimer += dt;
+      if (this._beamLogTimer >= 1) {
+        this._beamLogTimer = 0;
+        console.log(`[WELD BEAM] beams=${beamIdx} nearestDist=${_nearestD.toFixed(1)} from=${this._tmpFrom.x.toFixed(0)},${this._tmpFrom.y.toFixed(0)},${this._tmpFrom.z.toFixed(0)}`);
       }
     }
 
@@ -336,7 +314,7 @@ class WeldingGunSystem {
 
         target.group.getWorldPosition(this._tmpTo);
         const dist = this._tmpFrom.distanceTo(this._tmpTo);
-        if (dist > 20 || dist < 0.1) continue;
+        if (dist > 50 || dist < 0.1) continue;
 
         this._tmpToEdge.copy(this._tmpTo).sub(this._tmpFrom).normalize()
           .multiplyScalar(-this._EDGE_OFFSET).add(this._tmpTo);
@@ -350,7 +328,7 @@ class WeldingGunSystem {
       if (welder.faction === playerFaction && !localTank.isDead && localTank.hp < 100) {
         localTank.group.getWorldPosition(this._tmpTo);
         const dist = this._tmpFrom.distanceTo(this._tmpTo);
-        if (dist <= 20 && dist > 0.1 && beamIdx < this.beams.length) {
+        if (dist <= 50 && dist > 0.1 && beamIdx < this.beams.length) {
           this._tmpToEdge.copy(this._tmpTo).sub(this._tmpFrom).normalize()
             .multiplyScalar(-this._EDGE_OFFSET).add(this._tmpTo);
           this._activateBeam(beamIdx, this._tmpFrom, this._tmpToEdge, shouldJitter);
