@@ -246,6 +246,12 @@ class MissileSystem {
   _updateLockOnReticle(camera) {
     if (!this.lockOnReticle) return;
 
+    // Hide reticle when not in surface combat view
+    if (this.hideReticle) {
+      this.lockOnReticle.style.display = "none";
+      return;
+    }
+
     if (!this._lockedTarget) {
       this.lockOnReticle.style.display = "none";
       return;

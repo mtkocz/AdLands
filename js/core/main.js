@@ -4079,17 +4079,18 @@
       cannonSystem.updateCharge(deltaTime, tank, playerFaction);
     }
     cannonSystem.update(deltaTime, sharedFrustum, isFarView);
+    missileSystem.hideReticle = isFarView || !hasSpawnedIn;
     missileSystem.update(deltaTime, sharedFrustum, camera);  // has own 260-unit distance cull
     flareSystem.update(deltaTime, camera);                    // has own 260-unit distance cull
 
-    // Update visual effects
+    // Update visual effects — systems with own distance fade run always for cleanup
     capturePulse.update(deltaTime, sharedFrustum, camera);   // has own 260-unit distance cull
     cryptoVisuals.update(deltaTime);
-    tankHeadlights.update(deltaTime, camera); // has own 260-unit distance fade
+    tankHeadlights.update(deltaTime, camera);  // has own 260-unit distance fade
+    dustShockwave.update(deltaTime, sharedFrustum); // fades at 200 units, needs update for cleanup
     if (!isFarView) {
       treadTracks.update(tank, deltaTime, camera, isFarView, sharedFrustum);
       treadDust.update(deltaTime, camera, isFarView, sharedFrustum);
-      dustShockwave.update(deltaTime, sharedFrustum);
       tankDamageEffects.update(deltaTime, sharedFrustum, camera);
       shieldHolosphere.update(deltaTime);
       tankCollision.update(deltaTime, sharedFrustum, camera);

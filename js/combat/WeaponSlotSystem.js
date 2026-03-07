@@ -279,11 +279,14 @@ class WeaponSlotSystem {
    */
   _saveToProfile() {
     if (window.firestoreSync && window.firestoreSync.isActive) {
-      window.firestoreSync.writeProfile({
+      // Write immediately — loadout changes are infrequent user actions,
+      // no need to debounce. Ensures data hits IndexedDB (offline persistence)
+      // before the page can be closed.
+      window.firestoreSync.writeProfileNow({
         loadout: this.equipped,
         tankUpgrades: this.tankUpgrades,
         activeSlots: this.activeSlots,
-      }, 5000); // 5s debounce
+      });
     }
     // Also update Dashboard's equippedUpgrades for UI sync + localStorage persistence
     if (window.dashboard) {
