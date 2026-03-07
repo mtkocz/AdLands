@@ -269,9 +269,16 @@ class FlareSystem {
     // Shift verts up so bottom edge is at y=0
     geo.translate(0, 0.5, 0);
 
-    // Invisible material (no color output, no depth write to main pass)
+    // DEBUG: visible red tinted material to see the billboards
+    const debugTex = this._smokeBBTexture.clone();
+    debugTex.needsUpdate = true;
+    debugTex.repeat.set(1 / this._smokeBBCols, 1 / this._smokeBBRows);
     const invisMat = new THREE.MeshBasicMaterial({
-      colorWrite: false,
+      color: 0xff0000,
+      map: debugTex,
+      transparent: true,
+      opacity: 0.7,
+      side: THREE.DoubleSide,
       depthWrite: false,
     });
 
@@ -307,17 +314,17 @@ class FlareSystem {
     group.visible = false;
     this.scene.add(group);
 
-    return { group, plane1, plane2, depthMat, depthTex, inUse: false };
+    return { group, plane1, plane2, depthMat, depthTex, debugTex, inUse: false };
   }
 
   _setShadowBillboardFrame(item, frame) {
     frame = Math.min(frame, this._smokeBBFrames - 1);
     const col = frame % this._smokeBBCols;
     const row = Math.floor(frame / this._smokeBBCols);
-    item.depthTex.offset.set(
-      col / this._smokeBBCols,
-      1 - (row + 1) / this._smokeBBRows
-    );
+    const offX = col / this._smokeBBCols;
+    const offY = 1 - (row + 1) / this._smokeBBRows;
+    item.depthTex.offset.set(offX, offY);
+    if (item.debugTex) item.debugTex.offset.set(offX, offY);
   }
 
   _releaseShadowBillboard(item) {
@@ -438,11 +445,9 @@ class FlareSystem {
       const f = this.flares[i];
       f.age += dt;
 
+      // DEBUG: don't despawn flares so we can inspect shadow billboards
       if (f.age >= f.maxAge) {
-        this._releaseMesh(f.meshItem);
-        this._releaseShadowBillboard(f.shadowBB);
-        this.flares.splice(i, 1);
-        continue;
+        f.age = f.maxAge - 0.001; // clamp at end of life
       }
 
       // Rise: fast launch then hover
