@@ -177,7 +177,7 @@ class WeldingGunSystem {
         'varying float vAlpha;',
         'void main() {',
         '  float life = aAge / aLifetime;',
-        '  vAlpha = life < 1.0 ? (1.0 - life * life) * 0.3 : 0.0;',
+        '  vAlpha = life < 1.0 ? (1.0 - life * life) * 0.6 : 0.0;',
         '  float grow = 1.0 + life * 2.0;',
         '  vec4 mvPos = modelViewMatrix * vec4(position, 1.0);',
         '  gl_PointSize = aSize * grow * (200.0 / -mvPos.z);',
@@ -191,12 +191,13 @@ class WeldingGunSystem {
         '  float d = length(gl_PointCoord - 0.5) * 2.0;',
         '  if (d > 1.0) discard;',
         '  float soft = 1.0 - d * d;',
-        '  gl_FragColor = vec4(0.5, 0.5, 0.5, vAlpha * soft);',
+        '  gl_FragColor = vec4(0.7, 0.75, 0.8, vAlpha * soft);',
         '}',
       ].join('\n'),
       transparent: true,
       blending: THREE.NormalBlending,
       depthWrite: false,
+      depthTest: false,
     });
 
     this._smokePoints = new THREE.Points(smokeGeo, smokeMat);
