@@ -87,9 +87,9 @@ class WeldingGunSystem {
       this.beams.push({ mesh, geo, segments: SEGMENTS });
     }
 
-    // Point light pool — 2 lights per beam (origin + destination) with strobe
+    // Point light pool — 1 light per beam at destination with strobe
     this._lights = [];
-    for (let i = 0; i < POOL_SIZE * 2; i++) {
+    for (let i = 0; i < POOL_SIZE; i++) {
       const light = new THREE.PointLight(0x00ffff, 3, 15);
       light.visible = false;
       scene.add(light);
@@ -243,8 +243,7 @@ class WeldingGunSystem {
     // Hide all beams and lights
     for (let i = 0; i < this.beams.length; i++) {
       this.beams[i].mesh.visible = false;
-      this._lights[i * 2].visible = false;
-      this._lights[i * 2 + 1].visible = false;
+      this._lights[i].visible = false;
     }
 
     // Swap healed sets for diffing
@@ -367,15 +366,11 @@ class WeldingGunSystem {
     this._updateBeamGeometry(idx, from, to, jitter);
     this.beams[idx].mesh.visible = true;
 
-    // Two point lights per beam: origin and destination, with random strobe
-    const lightA = this._lights[idx * 2];
-    const lightB = this._lights[idx * 2 + 1];
-    lightA.position.copy(from);
-    lightB.position.copy(to);
-    lightA.intensity = 1.5 + Math.random() * 4;
-    lightB.intensity = 1.5 + Math.random() * 4;
-    lightA.visible = true;
-    lightB.visible = true;
+    // Point light at destination with random strobe
+    const light = this._lights[idx];
+    light.position.copy(to);
+    light.intensity = 1.5 + Math.random() * 4;
+    light.visible = true;
   }
 
   _updateBeamGeometry(idx, from, to, jitter) {
