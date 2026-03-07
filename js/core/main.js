@@ -4094,6 +4094,10 @@
       tankDamageEffects.update(deltaTime, sharedFrustum, camera);
       shieldHolosphere.update(deltaTime);
       tankCollision.update(deltaTime, sharedFrustum, camera);
+    } else {
+      // Hide particle Points meshes to avoid zero-opacity draw calls
+      tankDamageEffects.setVisible(false);
+      tankCollision.setVisible(false);
     }
 
     // Update visual effects (post-processing state)

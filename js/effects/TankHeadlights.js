@@ -278,6 +278,19 @@ class TankHeadlights {
     }
     // Smooth lerp toward target (avoid pop)
     this._currentOpacity += (targetOpacity - this._currentOpacity) * Math.min(deltaTime * 6, 1);
+    // Snap to zero when close enough to avoid asymptotic crawl
+    if (this._currentOpacity < 0.001) this._currentOpacity = 0;
+
+    // When fully faded, hide all meshes/lights and skip per-tank loop
+    if (this._currentOpacity <= 0) {
+      this._tanks.forEach((data) => {
+        data.meshL.visible = false;
+        data.meshR.visible = false;
+        this._syncSpots(data, false);
+      });
+      return;
+    }
+
     // Apply to shared materials (per-tank clones synced in loop below)
     for (const key in this._materials) {
       this._materials[key].opacity = this._currentOpacity;

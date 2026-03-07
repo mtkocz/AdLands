@@ -886,7 +886,8 @@
         const R = 480 + 8; // Cruise altitude
         const sp = Math.sin(data.phi), cp = Math.cos(data.phi);
         const st = Math.sin(data.theta), ct = Math.cos(data.theta);
-        cannonSystem._spawnExplosion(R * sp * st, R * cp, R * sp * ct, 0);
+        _hitWorldPos.set(R * sp * st, R * cp, R * sp * ct);
+        cannonSystem._spawnExplosion?.(_hitWorldPos, data.faction || "rust", 1.2);
       }
     };
 

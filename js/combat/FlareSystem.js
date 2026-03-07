@@ -346,9 +346,11 @@ class FlareSystem {
       }
     }
 
-    // Update both particle systems
-    const hasFireParticles = anyVisible || this._fire.activeCount > 0;
-    const hasSmokeParticles = anyVisible || this._smoke.activeCount > 0;
+    // Update both particle systems — skip entirely when camera beyond 260 from surface
+    const camSurfDist = camPos ? camPos.length() - this.R : 0;
+    const farCamera = camSurfDist > 260;
+    const hasFireParticles = !farCamera && (anyVisible || this._fire.activeCount > 0);
+    const hasSmokeParticles = !farCamera && (anyVisible || this._smoke.activeCount > 0);
 
     if (hasFireParticles) {
       this._firePoints.visible = true;

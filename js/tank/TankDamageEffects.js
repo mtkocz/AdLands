@@ -126,6 +126,11 @@ class TankDamageEffects {
         }
     }
 
+    setVisible(v) {
+        if (this.smokeSystem) this.smokeSystem.visible = v;
+        if (this.fireSystem) this.fireSystem.visible = v;
+    }
+
     /**
      * Update all active effects (call each frame)
      */

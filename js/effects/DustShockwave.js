@@ -901,6 +901,7 @@ class DustShockwave {
 
       // Distance fade
       const distanceFade = this._getDistanceFade(sw.mesh);
+      if (distanceFade <= 0) { sw.mesh.visible = false; continue; }
       sw.material.uniforms.uOpacity.value =
         opacity * cfg.opacity * distanceFade;
     }
@@ -964,6 +965,7 @@ class DustShockwave {
       // Sprite sheet first frames have low alpha (dust forming) — boost opacity
       // so the effect appears instantly at full density instead of fading in
       const distanceFade = this._getDistanceFade(sprite.sprite);
+      if (distanceFade <= 0) { sprite.sprite.visible = false; continue; }
       const boostEnd = 0.5; // seconds
       const earlyBoost = sprite.age < boostEnd
         ? 2.0 - (sprite.age / boostEnd) // 2.0 → 1.0
@@ -1101,6 +1103,7 @@ class DustShockwave {
 
       // Distance fade
       const distanceFade = this._getDistanceFade(sprite.sprite);
+      if (distanceFade <= 0) { sprite.sprite.visible = false; if (sprite.shadowSprite) sprite.shadowSprite.visible = false; continue; }
       if (sprite.material.uniforms) {
         sprite.material.uniforms.uOpacity.value = distanceFade;
       }

@@ -140,6 +140,11 @@ class TankCollision {
         uniforms.uAmbientIntensity.value = lightConfig.ambient.intensity;
     }
 
+    setVisible(v) {
+        if (this.dustSystem) this.dustSystem.visible = v;
+        if (this.sparkSystem) this.sparkSystem.visible = v;
+    }
+
     update(deltaTime, frustum = null, camera = null) {
         this._frameCount++;
 

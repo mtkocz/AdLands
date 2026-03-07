@@ -643,9 +643,17 @@ class MissileSystem {
       }
     }
 
-    // Update particle systems
-    this._updateAfterburner(deltaTime, camera);
-    this._updateSmokeTrail(deltaTime, camera);
+    // Update particle systems — hide Points meshes when camera beyond 260 from surface
+    const camSurfDist = camera ? camera.position.length() - this.sphereRadius : 0;
+    if (camSurfDist > 260) {
+      if (this._abPoints) this._abPoints.visible = false;
+      if (this._smokePoints) this._smokePoints.visible = false;
+    } else {
+      if (this._abPoints) this._abPoints.visible = true;
+      if (this._smokePoints) this._smokePoints.visible = true;
+      this._updateAfterburner(deltaTime, camera);
+      this._updateSmokeTrail(deltaTime, camera);
+    }
   }
 
   _updateLockOnSearch(deltaTime, camera) {

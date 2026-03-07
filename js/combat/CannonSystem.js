@@ -1736,6 +1736,11 @@ void main() {
                 (PROJECTILE_CULL_DISTANCE - SPRITE_FADE_START),
             ),
           );
+        if (distanceFade <= 0) {
+          exp.sprite.visible = false;
+          if (exp.light) exp.light.visible = false;
+          continue;
+        }
       }
 
       // Animate sprite sheet via UV offset uniform
