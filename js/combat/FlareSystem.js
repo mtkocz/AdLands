@@ -248,7 +248,7 @@ class FlareSystem {
 
     // Reset to frame 0
     this._setShadowBillboardFrame(item, 0);
-    item.mat.alphaTest = 0.15;
+    item.depthMat.alphaTest = 0.15;
 
     return item;
   }
@@ -262,26 +262,32 @@ class FlareSystem {
     tex.needsUpdate = true;
     tex.repeat.set(1 / this._smokeBBCols, 1 / this._smokeBBRows);
 
-    // MeshStandardMaterial — Three.js auto-generates correct shadow depth material
+    // Invisible to camera (opacity 0) but triggers shadow pass on layer 0
     const mat = new THREE.MeshStandardMaterial({
-      map: tex,
+      transparent: true,
+      opacity: 0,
+      side: THREE.DoubleSide,
+      depthWrite: false,
+    });
+
+    // Explicit depth material with alphaMap for alpha-tested shadows
+    const depthMat = new THREE.MeshDepthMaterial({
+      depthPacking: THREE.RGBADepthPacking,
+      alphaMap: tex,
       alphaTest: 0.15,
       side: THREE.DoubleSide,
     });
 
-    // Layer 4 = shadow-only (camera doesn't have layer 4, shadow cameras do)
-    const SHADOW_ONLY_LAYER = 4;
-
     const plane1 = new THREE.Mesh(geo, mat);
     plane1.castShadow = true;
     plane1.receiveShadow = false;
-    plane1.layers.set(SHADOW_ONLY_LAYER);
+    plane1.customDepthMaterial = depthMat;
 
     const geo2 = geo.clone();
     const plane2 = new THREE.Mesh(geo2, mat);
     plane2.castShadow = true;
     plane2.receiveShadow = false;
-    plane2.layers.set(SHADOW_ONLY_LAYER);
+    plane2.customDepthMaterial = depthMat;
     plane2.rotation.y = Math.PI / 2;
 
     const group = new THREE.Group();
@@ -290,7 +296,7 @@ class FlareSystem {
     group.visible = false;
     this.scene.add(group);
 
-    return { group, plane1, plane2, mat, tex, inUse: false };
+    return { group, plane1, plane2, mat, depthMat, tex, inUse: false };
   }
 
   _setShadowBillboardFrame(item, frame) {
@@ -442,12 +448,12 @@ class FlareSystem {
         const frame = Math.floor(f.age * this._smokeBBFps) % this._smokeBBFrames;
         this._setShadowBillboardFrame(f.shadowBB, frame);
 
-        // Fade out shadow in last 30% by raising alphaTest
+        // Fade out shadow in last 30% by raising alphaTest on the depth material
         const lifeRatio = f.age / f.maxAge;
         if (lifeRatio > 0.7) {
-          f.shadowBB.mat.alphaTest = 0.15 + ((lifeRatio - 0.7) / 0.3) * 0.8;
+          f.shadowBB.depthMat.alphaTest = 0.15 + ((lifeRatio - 0.7) / 0.3) * 0.8;
         } else {
-          f.shadowBB.mat.alphaTest = 0.15;
+          f.shadowBB.depthMat.alphaTest = 0.15;
         }
       }
 
@@ -677,6 +683,7 @@ class FlareSystem {
       item.plane1.geometry.dispose();
       item.plane2.geometry.dispose();
       item.mat.dispose();
+      item.depthMat.dispose();
       item.tex.dispose();
     }
     this._shadowPool.length = 0;
