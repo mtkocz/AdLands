@@ -1165,6 +1165,8 @@
         clearTimeout(mp.fastTravel._portalTimeout);
         mp.fastTravel._portalTimeout = null;
       }
+      // Sync client loadout to server (client localStorage may differ from Firestore)
+      if (window.weaponSlotSystem) window.weaponSlotSystem.syncLoadoutToServer();
       // _exitFastTravel clears _awaitingConfirmation
       // Clear stale prediction inputs accumulated during fast travel
       net.pendingInputs = [];

@@ -275,6 +275,21 @@ class WeaponSlotSystem {
   }
 
   /**
+   * Sync full loadout + active slots to the server.
+   * Called after connecting to ensure server state matches client state.
+   */
+  syncLoadoutToServer() {
+    if (!window.networkManager?.connected) return;
+    const socket = window.networkManager.socket;
+    for (const [slotId, upgradeId] of Object.entries(this.equipped)) {
+      socket.emit("equip-upgrade", { slotId, upgradeId });
+    }
+    for (const [category, slotId] of Object.entries(this.activeSlots)) {
+      socket.emit("active-slot-change", { category, slotId });
+    }
+  }
+
+  /**
    * Save current loadout + tank upgrades to Firestore via ProfileManager.
    */
   _saveToProfile() {
@@ -288,9 +303,10 @@ class WeaponSlotSystem {
         activeSlots: this.activeSlots,
       });
     }
-    // Also update Dashboard's equippedUpgrades for UI sync + localStorage persistence
+    // Also update Dashboard for UI sync + localStorage persistence
     if (window.dashboard) {
       window.dashboard.equippedUpgrades = { ...this.equipped };
+      window.dashboard._localActiveSlots = { ...this.activeSlots };
       window.dashboard._saveState();
     }
   }
