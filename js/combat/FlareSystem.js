@@ -257,9 +257,8 @@ class FlareSystem {
     const geo = new THREE.PlaneGeometry(1, 1);
     geo.translate(0, 0.5, 0); // bottom edge at y=0
 
-    // Clone texture for independent UV offsets per billboard
-    const tex = this._smokeBBTex.clone();
-    tex.needsUpdate = true;
+    // Use original texture directly (clone doesn't share image data in v0.128)
+    const tex = this._smokeBBTex;
     tex.repeat.set(1 / this._smokeBBCols, 1 / this._smokeBBRows);
 
     // DEBUG: fully visible + opaque to test if shadow pipeline works at all
