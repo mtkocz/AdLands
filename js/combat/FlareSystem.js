@@ -248,7 +248,7 @@ class FlareSystem {
 
     // Reset to frame 0
     this._setShadowBillboardFrame(item, 0);
-    item.depthMat.alphaTest = 0.15;
+    item.mat.alphaTest = 0.15;
 
     return item;
   }
@@ -262,32 +262,23 @@ class FlareSystem {
     tex.needsUpdate = true;
     tex.repeat.set(1 / this._smokeBBCols, 1 / this._smokeBBRows);
 
-    // Invisible to camera (opacity 0) but triggers shadow pass on layer 0
+    // DEBUG: fully visible + opaque to test if shadow pipeline works at all
     const mat = new THREE.MeshStandardMaterial({
-      transparent: true,
-      opacity: 0,
-      side: THREE.DoubleSide,
-      depthWrite: false,
-    });
-
-    // Explicit depth material with alphaMap for alpha-tested shadows
-    const depthMat = new THREE.MeshDepthMaterial({
-      depthPacking: THREE.RGBADepthPacking,
-      alphaMap: tex,
+      map: tex,
       alphaTest: 0.15,
       side: THREE.DoubleSide,
     });
 
+    const depthMat = null; // let Three.js auto-generate from MeshStandardMaterial
+
     const plane1 = new THREE.Mesh(geo, mat);
     plane1.castShadow = true;
     plane1.receiveShadow = false;
-    plane1.customDepthMaterial = depthMat;
 
     const geo2 = geo.clone();
     const plane2 = new THREE.Mesh(geo2, mat);
     plane2.castShadow = true;
     plane2.receiveShadow = false;
-    plane2.customDepthMaterial = depthMat;
     plane2.rotation.y = Math.PI / 2;
 
     const group = new THREE.Group();
@@ -448,12 +439,12 @@ class FlareSystem {
         const frame = Math.floor(f.age * this._smokeBBFps) % this._smokeBBFrames;
         this._setShadowBillboardFrame(f.shadowBB, frame);
 
-        // Fade out shadow in last 30% by raising alphaTest on the depth material
+        // Fade out shadow in last 30% by raising alphaTest
         const lifeRatio = f.age / f.maxAge;
         if (lifeRatio > 0.7) {
-          f.shadowBB.depthMat.alphaTest = 0.15 + ((lifeRatio - 0.7) / 0.3) * 0.8;
+          f.shadowBB.mat.alphaTest = 0.15 + ((lifeRatio - 0.7) / 0.3) * 0.8;
         } else {
-          f.shadowBB.depthMat.alphaTest = 0.15;
+          f.shadowBB.mat.alphaTest = 0.15;
         }
       }
 
@@ -683,7 +674,7 @@ class FlareSystem {
       item.plane1.geometry.dispose();
       item.plane2.geometry.dispose();
       item.mat.dispose();
-      item.depthMat.dispose();
+      if (item.depthMat) item.depthMat.dispose();
       item.tex.dispose();
     }
     this._shadowPool.length = 0;
