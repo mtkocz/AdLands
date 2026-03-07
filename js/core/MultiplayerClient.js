@@ -493,9 +493,11 @@
             remoteTank.die();
             tankDamageEffects.setDamageState(id, remoteTank.group, "dead");
             playerTags.fadeOutTag?.(id);
-            // Explosion + shockwave
+            // Explosion + shockwave (push outward to tank center height)
             const worldPos = new THREE.Vector3();
             remoteTank.group.getWorldPosition(worldPos);
+            const len = worldPos.length();
+            if (len > 0) worldPos.multiplyScalar((len + 1.0) / len);
             cannonSystem._spawnExplosion?.(worldPos, remoteTank.faction, 1.5);
             dustShockwave?.emit(worldPos, 1.5);
             cannonSystem.spawnOilPuddle?.(worldPos);
@@ -676,9 +678,11 @@
             bg.die();
             tankDamageEffects.setDamageState(bgId, bg.group, "dead");
             playerTags.fadeOutTag?.(bgId);
-            // Explosion + shockwave
+            // Explosion + shockwave (push outward to tank center height)
             const worldPos = new THREE.Vector3();
             bg.group.getWorldPosition(worldPos);
+            const bgLen = worldPos.length();
+            if (bgLen > 0) worldPos.multiplyScalar((bgLen + 1.0) / bgLen);
             cannonSystem._spawnExplosion?.(worldPos, bg.faction, 1.5);
             dustShockwave?.emit(worldPos, 1.5);
             cannonSystem.spawnOilPuddle?.(worldPos);
@@ -1027,6 +1031,9 @@
           // Visual hit confirmation: explosion + flash at target position
           if (remoteTank.group) {
             remoteTank.group.getWorldPosition(_hitWorldPos);
+            // Push outward to tank center height so explosion doesn't appear under the tank
+            const hitLen = _hitWorldPos.length();
+            if (hitLen > 0) _hitWorldPos.multiplyScalar((hitLen + 1.0) / hitLen);
             // Skip explosion for self-damage (no projectile was fired)
             const isSelfDamage = data.attackerId === data.targetId;
             if (!isSelfDamage) {
@@ -1112,6 +1119,9 @@
 
           // Spawn explosion + shockwave at death position (reuses preallocated _hitWorldPos)
           remoteTank.group.getWorldPosition(_hitWorldPos);
+          // Push outward to tank center height
+          const deathLen = _hitWorldPos.length();
+          if (deathLen > 0) _hitWorldPos.multiplyScalar((deathLen + 1.0) / deathLen);
           cannonSystem._spawnExplosion?.(_hitWorldPos, remoteTank.faction, 1.5);
           dustShockwave?.emit(_hitWorldPos, 1.5);
           cannonSystem.spawnOilPuddle?.(_hitWorldPos);

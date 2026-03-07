@@ -280,11 +280,32 @@ class FlareSystem {
     depthTex.needsUpdate = true;
     depthTex.repeat.set(1 / this._smokeBBCols, 1 / this._smokeBBRows);
 
-    // Custom depth material for shadow map rendering
-    const depthMat = new THREE.MeshDepthMaterial({
-      depthPacking: THREE.RGBADepthPacking,
-      alphaMap: depthTex,
-      alphaTest: 0.05,
+    // Custom depth shader for shadow map — explicitly samples alpha map
+    const depthMat = new THREE.ShaderMaterial({
+      uniforms: {
+        uAlphaMap: { value: depthTex },
+        uAlphaTest: { value: 0.15 },
+      },
+      vertexShader: `
+        varying vec2 vUv;
+        void main() {
+          vUv = uv;
+          vec4 mvPosition = modelViewMatrix * vec4(position, 1.0);
+          gl_Position = projectionMatrix * mvPosition;
+        }
+      `,
+      fragmentShader: `
+        #include <common>
+        #include <packing>
+        uniform sampler2D uAlphaMap;
+        uniform float uAlphaTest;
+        varying vec2 vUv;
+        void main() {
+          float alpha = texture2D(uAlphaMap, vUv).r;
+          if (alpha < uAlphaTest) discard;
+          gl_FragColor = packDepthToRGBA(gl_FragCoord.z);
+        }
+      `,
       side: THREE.DoubleSide,
     });
 
@@ -462,12 +483,12 @@ class FlareSystem {
         const frame = Math.floor(lifeRatio * this._smokeBBFrames);
         this._setShadowBillboardFrame(f.shadowBB, frame);
 
-        // Fade out shadow in last 30% by shrinking alphaTest (less shadow)
+        // Fade out shadow in last 30% by raising alphaTest (less shadow)
         if (lifeRatio > 0.7) {
           const fadeProgress = (lifeRatio - 0.7) / 0.3;
-          f.shadowBB.depthMat.alphaTest = 0.3 + fadeProgress * 0.65;
+          f.shadowBB.depthMat.uniforms.uAlphaTest.value = 0.15 + fadeProgress * 0.8;
         } else {
-          f.shadowBB.depthMat.alphaTest = 0.3;
+          f.shadowBB.depthMat.uniforms.uAlphaTest.value = 0.15;
         }
       }
 

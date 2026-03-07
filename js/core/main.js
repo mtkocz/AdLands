@@ -911,6 +911,9 @@
     deadTank._idleKill = false;
 
     const pos = deadTank.getWorldPosition().clone();
+    // Push outward to tank center height so explosion doesn't appear under the tank
+    const posLen = pos.length();
+    if (posLen > 0) pos.multiplyScalar((posLen + 1.0) / posLen);
 
     if (!isIdleKill) {
       // Vignette death overlay + terminal sequence
@@ -1056,6 +1059,9 @@
     // Spawn death explosion + shockwave/dustwave (convert to world position since bot is parented to hexGroup)
     const worldPos = new THREE.Vector3();
     bot.group.getWorldPosition(worldPos);
+    // Push outward to tank center height so explosion doesn't appear under the tank
+    const botLen = worldPos.length();
+    if (botLen > 0) worldPos.multiplyScalar((botLen + 1.0) / botLen);
     cannonSystem._spawnExplosion(worldPos, bot.faction, 1.5);
     dustShockwave.emit(worldPos, 1.5);
 

@@ -1329,6 +1329,9 @@ class CommanderBodyguards {
     _getGuardWorldPosition(guard) {
         const worldPos = new THREE.Vector3();
         guard.group.getWorldPosition(worldPos);
+        // Push outward to tank center height so effects don't appear under the tank
+        const len = worldPos.length();
+        if (len > 0) worldPos.multiplyScalar((len + 1.0) / len);
         return worldPos;
     }
 
