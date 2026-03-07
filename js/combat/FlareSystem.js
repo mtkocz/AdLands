@@ -218,6 +218,7 @@ class FlareSystem {
 
   _createShadowBillboardPool() {
     this._shadowPool = [];
+    this._orphanedShadows = [];
     this._smokeBBTexture = null;
     this._smokeBBCols = 8;
     this._smokeBBRows = 6;
@@ -427,7 +428,11 @@ class FlareSystem {
 
       if (f.age >= f.maxAge) {
         this._releaseMesh(f.meshItem);
-        this._releaseShadowBillboard(f.shadowBB);
+        // Orphan billboard to finish its animation
+        if (f.shadowBB) {
+          f.shadowBB.age = f.age;
+          this._orphanedShadows.push(f.shadowBB);
+        }
         this.flares.splice(i, 1);
         continue;
       }
@@ -444,18 +449,10 @@ class FlareSystem {
       const pos = this._tempVec.copy(f.normal).multiplyScalar(f.altitude).add(f.surfacePos);
       f.meshItem.group.position.copy(pos);
 
-      // Update shadow billboard spritesheet frame (12fps) + fade-out
+      // Update shadow billboard spritesheet frame (12fps)
       if (f.shadowBB) {
         const frame = Math.floor(f.age * this._smokeBBFps) % this._smokeBBFrames;
         this._setShadowBillboardFrame(f.shadowBB, frame);
-
-        const lifeRatio = f.age / f.maxAge;
-        if (lifeRatio > 0.7) {
-          const fadeProgress = (lifeRatio - 0.7) / 0.3;
-          f.shadowBB.depthMat.alphaTest = 0.05 + fadeProgress * 0.9;
-        } else {
-          f.shadowBB.depthMat.alphaTest = 0.05;
-        }
       }
 
       const farAway = camPos ? camPos.distanceTo(pos) > 260 : false;
@@ -469,6 +466,28 @@ class FlareSystem {
         anyVisible = true;
         this._emitFire(f);
         this._emitSmoke(f);
+      }
+    }
+
+    // Update orphaned shadow billboards (finish animation after flare expires)
+    const bbDuration = this._smokeBBFrames / this._smokeBBFps; // 48/12 = 4s
+    for (let i = this._orphanedShadows.length - 1; i >= 0; i--) {
+      const bb = this._orphanedShadows[i];
+      bb.age += dt;
+      if (bb.age >= bbDuration) {
+        this._releaseShadowBillboard(bb);
+        this._orphanedShadows.splice(i, 1);
+        continue;
+      }
+      const frame = Math.floor(bb.age * this._smokeBBFps);
+      this._setShadowBillboardFrame(bb, frame);
+      // Fade out in last 25% of animation
+      const progress = bb.age / bbDuration;
+      if (progress > 0.75) {
+        const fadeProgress = (progress - 0.75) / 0.25;
+        bb.depthMat.alphaTest = 0.05 + fadeProgress * 0.9;
+      } else {
+        bb.depthMat.alphaTest = 0.05;
       }
     }
 
@@ -645,8 +664,12 @@ class FlareSystem {
   removeFlareById(flareId) {
     const idx = this.flares.findIndex(f => f.serverId === flareId);
     if (idx !== -1) {
-      this._releaseMesh(this.flares[idx].meshItem);
-      this._releaseShadowBillboard(this.flares[idx].shadowBB);
+      const f = this.flares[idx];
+      this._releaseMesh(f.meshItem);
+      if (f.shadowBB) {
+        f.shadowBB.age = f.age;
+        this._orphanedShadows.push(f.shadowBB);
+      }
       this.flares.splice(idx, 1);
     }
   }
@@ -654,8 +677,12 @@ class FlareSystem {
   removeLocalFlare() {
     const idx = this.flares.findIndex(f => f.isLocal);
     if (idx !== -1) {
-      this._releaseMesh(this.flares[idx].meshItem);
-      this._releaseShadowBillboard(this.flares[idx].shadowBB);
+      const f = this.flares[idx];
+      this._releaseMesh(f.meshItem);
+      if (f.shadowBB) {
+        f.shadowBB.age = f.age;
+        this._orphanedShadows.push(f.shadowBB);
+      }
       this.flares.splice(idx, 1);
     }
   }
@@ -666,6 +693,8 @@ class FlareSystem {
       this._releaseShadowBillboard(f.shadowBB);
     }
     this.flares.length = 0;
+    for (const bb of this._orphanedShadows) this._releaseShadowBillboard(bb);
+    this._orphanedShadows.length = 0;
 
     if (this._firePoints) {
       this.scene.remove(this._firePoints);
