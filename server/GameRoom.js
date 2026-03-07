@@ -1809,6 +1809,42 @@ class GameRoom {
     if (player.uid) this.savePlayerProfile(socketId).catch(() => {});
   }
 
+  /**
+   * Handle full loadout sync from client (bypasses slot unlock validation).
+   * Used on deploy to fix localStorage/Firestore desync.
+   */
+  handleSyncLoadout(socketId, loadout, activeSlots) {
+    const player = this.players.get(socketId);
+    if (!player) return;
+
+    // Validate upgrade IDs
+    const validUpgrades = {
+      offense: ['cannon', 'gunner', '50cal', 'missile', 'flamethrower'],
+      defense: ['shield', 'flares', 'barricades'],
+      tactical: ['proximity_mine', 'foot_soldiers', 'turrets', 'welding_gun'],
+    };
+    const validSlots = ['offense-1', 'offense-2', 'defense-1', 'defense-2', 'tactical-1', 'tactical-2'];
+
+    for (const [slotId, upgradeId] of Object.entries(loadout)) {
+      if (!validSlots.includes(slotId)) continue;
+      const cat = slotId.split('-')[0];
+      if (!validUpgrades[cat]?.includes(upgradeId)) continue;
+      player.loadout[slotId] = upgradeId;
+    }
+
+    const validCategories = ['offense', 'defense', 'tactical'];
+    for (const [cat, slotId] of Object.entries(activeSlots)) {
+      if (!validCategories.includes(cat)) continue;
+      if (!player.activeSlots) {
+        player.activeSlots = { offense: 'offense-1', defense: 'defense-1', tactical: 'tactical-1' };
+      }
+      player.activeSlots[cat] = slotId;
+    }
+
+    console.log(`[SYNC LOADOUT] player=${player.name} loadout=${JSON.stringify(player.loadout)} activeSlots=${JSON.stringify(player.activeSlots)}`);
+    if (player.uid) this.savePlayerProfile(socketId).catch(() => {});
+  }
+
   /** Handle tank upgrade purchase (armor, speed, fireRate, damage) */
   handleTankUpgrade(socketId, type) {
     const player = this.players.get(socketId);

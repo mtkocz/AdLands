@@ -403,6 +403,13 @@ io.on("connection", (socket) => {
     }
   });
 
+  // ---- Loadout Sync (client sends full loadout on deploy to fix desync) ----
+  socket.on("sync-loadout", (data) => {
+    if (data?.loadout && data?.activeSlots) {
+      mainRoom.handleSyncLoadout(socket.id, data.loadout, data.activeSlots);
+    }
+  });
+
   // ---- Tank Upgrade Purchase ----
   socket.on("tank-upgrade", (data) => {
     if (data?.type) mainRoom.handleTankUpgrade(socket.id, data.type);

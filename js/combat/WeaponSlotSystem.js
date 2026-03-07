@@ -280,13 +280,10 @@ class WeaponSlotSystem {
    */
   syncLoadoutToServer() {
     if (!window.networkManager?.connected) return;
-    const socket = window.networkManager.socket;
-    for (const [slotId, upgradeId] of Object.entries(this.equipped)) {
-      socket.emit("equip-upgrade", { slotId, upgradeId });
-    }
-    for (const [category, slotId] of Object.entries(this.activeSlots)) {
-      socket.emit("active-slot-change", { category, slotId });
-    }
+    window.networkManager.socket.emit("sync-loadout", {
+      loadout: this.equipped,
+      activeSlots: this.activeSlots,
+    });
   }
 
   /**
