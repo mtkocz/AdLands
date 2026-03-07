@@ -226,6 +226,7 @@ class FlareSystem {
       tex.wrapS = THREE.ClampToEdgeWrapping;
       tex.wrapT = THREE.ClampToEdgeWrapping;
       this._smokeBBTexture = tex;
+      console.log("[FlareSystem] Smoke BB texture loaded", tex.image.width, "x", tex.image.height);
     });
   }
 
@@ -249,6 +250,19 @@ class FlareSystem {
 
     this._setShadowBillboardFrame(item, 0);
     item.depthMat.alphaTest = 0.3;
+
+    console.log("[FlareSystem] Shadow BB acquired", {
+      pos: item.group.position.toArray(),
+      visible: item.group.visible,
+      castShadow1: item.plane1.castShadow,
+      castShadow2: item.plane2.castShadow,
+      hasCustomDepth1: !!item.plane1.customDepthMaterial,
+      hasCustomDepth2: !!item.plane2.customDepthMaterial,
+      depthPacking: item.depthMat.depthPacking,
+      hasAlphaMap: !!item.depthMat.alphaMap,
+      alphaTest: item.depthMat.alphaTest,
+      texCloneOk: item.depthTex.image !== null && item.depthTex.image !== undefined,
+    });
 
     return item;
   }

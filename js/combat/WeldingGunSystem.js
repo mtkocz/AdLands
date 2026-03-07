@@ -84,7 +84,7 @@ class WeldingGunSystem {
       mesh.frustumCulled = false;
       scene.add(mesh);
 
-      this.beams.push({ mesh, geo, segments: SEGMENTS });
+      this.beams.push({ mesh, geo, segments: SEGMENTS, introT: 1, targetId: null });
     }
 
     // Point light pool — 1 light per beam at destination with strobe
@@ -234,6 +234,10 @@ class WeldingGunSystem {
     // Accumulator for spark emission rate
     this._sparkAccum = 0;
     this._smokeAccum = 0;
+
+    // Crypto award: track HP healed per target, emit floating numbers once/sec
+    this._healCryptoAccum = {}; // targetId → { hp: accumulated, timer: seconds }
+    this._CRYPTO_INTERVAL = 1.0; // seconds between floating number emissions
   }
 
   hideAll() {
@@ -244,6 +248,7 @@ class WeldingGunSystem {
   }
 
   update(localTank, remoteTanks, playerFaction, dt) {
+    this._dt = dt;
     this._jitterTimer += dt;
     const shouldJitter = this._jitterTimer >= this._jitterInterval;
     if (shouldJitter) this._jitterTimer = 0;
@@ -268,6 +273,9 @@ class WeldingGunSystem {
       window.weaponSlotSystem?.getActiveTacticalWeapon() === 'welding_gun' &&
       !localTank.isDead;
 
+    let localHealTargetCount = 0;
+    const localHealTargetPositions = []; // { id, worldPos } for crypto floating numbers
+
     if (isWelding) {
       localTank.group.getWorldPosition(this._tmpFrom);
 
@@ -284,9 +292,11 @@ class WeldingGunSystem {
         this._tmpToEdge.copy(this._tmpTo).sub(this._tmpFrom).normalize()
           .multiplyScalar(-this._EDGE_OFFSET).add(this._tmpTo);
 
-        this._activateBeam(beamIdx, this._tmpFrom, this._tmpToEdge, shouldJitter);
+        this._activateBeam(beamIdx, this._tmpFrom, this._tmpToEdge, shouldJitter, id);
         sparkTargets.push({ pos: this._tmpToEdge.clone(), origin: this._tmpFrom.clone() });
         this._healedTankIds.add(id);
+        localHealTargetPositions.push({ id, worldPos: this._tmpTo.clone() });
+        localHealTargetCount++;
         beamIdx++;
       }
     }
@@ -311,7 +321,7 @@ class WeldingGunSystem {
         this._tmpToEdge.copy(this._tmpTo).sub(this._tmpFrom).normalize()
           .multiplyScalar(-this._EDGE_OFFSET).add(this._tmpTo);
 
-        this._activateBeam(beamIdx, this._tmpFrom, this._tmpToEdge, shouldJitter);
+        this._activateBeam(beamIdx, this._tmpFrom, this._tmpToEdge, shouldJitter, targetId);
         sparkTargets.push({ pos: this._tmpToEdge.clone(), origin: this._tmpFrom.clone() });
         this._healedTankIds.add(targetId);
         beamIdx++;
@@ -323,7 +333,7 @@ class WeldingGunSystem {
         if (dist <= 20 && dist > 0.1 && beamIdx < this.beams.length) {
           this._tmpToEdge.copy(this._tmpTo).sub(this._tmpFrom).normalize()
             .multiplyScalar(-this._EDGE_OFFSET).add(this._tmpTo);
-          this._activateBeam(beamIdx, this._tmpFrom, this._tmpToEdge, shouldJitter);
+          this._activateBeam(beamIdx, this._tmpFrom, this._tmpToEdge, shouldJitter, "player");
           sparkTargets.push({ pos: this._tmpToEdge.clone(), origin: this._tmpFrom.clone() });
           this._healedTankIds.add("player");
           beamIdx++;
@@ -332,6 +342,11 @@ class WeldingGunSystem {
     }
 
     this._activeCount = beamIdx;
+
+    // Reset targetId on unused beams so they re-animate next activation
+    for (let i = beamIdx; i < this.beams.length; i++) {
+      this.beams[i].targetId = null;
+    }
 
     // Emit sparks and smoke at each target position
     this._sparkAccum += dt * 150 * sparkTargets.length; // ~150 sparks/sec per target
@@ -355,6 +370,9 @@ class WeldingGunSystem {
     this._updateSparks(dt);
     this._updateSmoke(dt);
 
+    // Award crypto for healing (1 crypto per HP healed, floating number once/sec per target)
+    this._updateHealCrypto(dt, localHealTargetCount, localHealTargetPositions);
+
     // Update HP bar cyan flicker via PlayerTags
     if (typeof playerTags !== 'undefined' && playerTags.setHealing) {
       // Enable/update flicker for all healed tanks (cyan brightness tracks HP)
@@ -370,18 +388,34 @@ class WeldingGunSystem {
     }
   }
 
-  _activateBeam(idx, from, to, jitter) {
-    this._updateBeamGeometry(idx, from, to, jitter);
-    this.beams[idx].mesh.visible = true;
+  _activateBeam(idx, from, to, jitter, targetId) {
+    const beam = this.beams[idx];
 
-    // Point light at destination with random strobe
+    // New target → reset intro animation
+    if (beam.targetId !== targetId) {
+      beam.introT = 0;
+      beam.targetId = targetId;
+    }
+    // Advance intro (0→1 over ~100ms)
+    if (beam.introT < 1) {
+      beam.introT = Math.min(1, beam.introT + this._dt / 0.1);
+    }
+
+    this._updateBeamGeometry(idx, from, to, jitter, beam.introT);
+    beam.mesh.visible = true;
+
+    // Point light tracks bolt tip during intro, then stays at target
     const light = this._lights[idx];
-    light.position.copy(to);
+    if (beam.introT < 1) {
+      light.position.lerpVectors(from, to, beam.introT);
+    } else {
+      light.position.copy(to);
+    }
     light.intensity = 1.5 + Math.random() * 4;
     light.visible = true;
   }
 
-  _updateBeamGeometry(idx, from, to, jitter) {
+  _updateBeamGeometry(idx, from, to, jitter, introT = 1) {
     const beam = this.beams[idx];
     const positions = beam.geo.attributes.position.array;
     const segs = beam.segments;
@@ -421,11 +455,15 @@ class WeldingGunSystem {
     // Build quad-strip: 2 vertices per segment (left/right of center line)
     for (let s = 0; s <= segs; s++) {
       const t = s / segs;
-      this._tmpPoint.lerpVectors(from, to, t);
-      if (s > 0 && s < segs) {
-        this._tmpPoint.addScaledVector(this._tmpNormal, offsetsA[s]);
-        // Use a second perpendicular axis for more organic jitter
-        this._tmpPoint.addScaledVector(this._tmpPerp, offsetsB[s] * 0.3);
+      if (t <= introT) {
+        this._tmpPoint.lerpVectors(from, to, t);
+        if (s > 0 && s < segs) {
+          this._tmpPoint.addScaledVector(this._tmpNormal, offsetsA[s]);
+          this._tmpPoint.addScaledVector(this._tmpPerp, offsetsB[s] * 0.3);
+        }
+      } else {
+        // Collapse segments beyond intro progress to the current tip
+        this._tmpPoint.lerpVectors(from, to, introT);
       }
 
       const vi = s * 2;
@@ -526,6 +564,43 @@ class WeldingGunSystem {
     this._smokeGeo.attributes.aAge.needsUpdate = true;
     this._smokeGeo.attributes.aLifetime.needsUpdate = true;
     this._smokeGeo.attributes.aSize.needsUpdate = true;
+  }
+
+  _updateHealCrypto(dt, targetCount, targetPositions) {
+    const crypto = window.cryptoSystem;
+    if (!crypto || targetCount === 0) {
+      // Not healing — clear accumulators
+      this._healCryptoAccum = {};
+      return;
+    }
+
+    // 10 HP/sec total, split across targets → HP per target per second
+    const hpPerTargetPerSec = 10 / targetCount;
+    const activeIds = new Set();
+
+    for (const { id, worldPos } of targetPositions) {
+      activeIds.add(id);
+      if (!this._healCryptoAccum[id]) {
+        this._healCryptoAccum[id] = { hp: 0, timer: 0 };
+      }
+      const acc = this._healCryptoAccum[id];
+      acc.hp += hpPerTargetPerSec * dt;
+      acc.timer += dt;
+
+      if (acc.timer >= this._CRYPTO_INTERVAL) {
+        const amount = Math.floor(acc.hp);
+        if (amount > 0) {
+          crypto.awardCrypto(amount, 'healing', worldPos);
+        }
+        acc.hp -= amount;
+        acc.timer = 0;
+      }
+    }
+
+    // Clean up stale targets
+    for (const id in this._healCryptoAccum) {
+      if (!activeIds.has(id)) delete this._healCryptoAccum[id];
+    }
   }
 
   dispose() {

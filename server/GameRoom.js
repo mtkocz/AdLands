@@ -3121,11 +3121,21 @@ class GameRoom {
         const wholeHp = Math.floor(player._weldHpAccumulators[t.id]);
         if (wholeHp > 0) {
           player._weldHpAccumulators[t.id] -= wholeHp;
+          let actualHealed = 0;
           if (t.isBot) {
             this.botBridge.applyHealing(t.id, wholeHp);
+            actualHealed = wholeHp; // Approximate — bot may already be at max
           } else {
             const target = this.players.get(t.id);
-            if (target) target.hp = Math.min(MAX_HP, target.hp + wholeHp);
+            if (target) {
+              const before = target.hp;
+              target.hp = Math.min(MAX_HP, target.hp + wholeHp);
+              actualHealed = target.hp - before;
+            }
+          }
+          // Award 1 crypto per HP healed
+          if (actualHealed > 0) {
+            player.crypto += actualHealed;
           }
         }
       }
