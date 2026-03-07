@@ -97,7 +97,7 @@ class WeldingGunSystem {
     }
 
     // ---- Welding spark particles ----
-    const MAX_SPARKS = 200;
+    const MAX_SPARKS = 400;
     this._sparkPositions = new Float32Array(MAX_SPARKS * 3);
     this._sparkVelocities = new Float32Array(MAX_SPARKS * 3);
     this._sparkAges = new Float32Array(MAX_SPARKS);
@@ -135,9 +135,9 @@ class WeldingGunSystem {
         '  float d = length(gl_PointCoord - 0.5) * 2.0;',
         '  if (d > 1.0) discard;',
         '  float bright = 1.0 - d * d;',
-        // Orange-yellow core fading to red
-        '  vec3 col = mix(vec3(1.0, 0.3, 0.05), vec3(1.0, 0.9, 0.5), bright);',
-        '  gl_FragColor = vec4(col, vAlpha * bright);',
+        // Hot white-yellow core fading to orange
+        '  vec3 col = mix(vec3(1.0, 0.4, 0.05), vec3(1.0, 1.0, 0.8), bright);',
+        '  gl_FragColor = vec4(col, vAlpha);',
         '}',
       ].join('\n'),
       transparent: true,
@@ -326,8 +326,8 @@ class WeldingGunSystem {
     this._activeCount = beamIdx;
 
     // Emit sparks and smoke at each target position
-    this._sparkAccum += dt * 80 * targetPositions.length; // ~80 sparks/sec per target
-    this._smokeAccum += dt * 6 * targetPositions.length;  // ~6 smoke/sec per target
+    this._sparkAccum += dt * 150 * targetPositions.length; // ~150 sparks/sec per target
+    this._smokeAccum += dt * 10 * targetPositions.length;  // ~10 smoke/sec per target
     while (this._sparkAccum >= 1 && targetPositions.length > 0) {
       const pos = targetPositions[Math.floor(Math.random() * targetPositions.length)];
       this._emitSpark(pos);
@@ -440,21 +440,21 @@ class WeldingGunSystem {
     const i = this._sparkHead;
     this._sparkHead = (this._sparkHead + 1) % this._maxSparks;
 
-    // Position at target with slight random offset
+    // Position at target with tight random offset
     const surfNormal = this._tmpVel.copy(targetPos).normalize();
-    this._sparkPositions[i * 3]     = targetPos.x + (Math.random() - 0.5) * 1.5;
-    this._sparkPositions[i * 3 + 1] = targetPos.y + (Math.random() - 0.5) * 1.5;
-    this._sparkPositions[i * 3 + 2] = targetPos.z + (Math.random() - 0.5) * 1.5;
+    this._sparkPositions[i * 3]     = targetPos.x + (Math.random() - 0.5) * 0.8;
+    this._sparkPositions[i * 3 + 1] = targetPos.y + (Math.random() - 0.5) * 0.8;
+    this._sparkPositions[i * 3 + 2] = targetPos.z + (Math.random() - 0.5) * 0.8;
 
-    // Velocity: outward from surface + random spread
-    const speed = 3 + Math.random() * 8;
-    this._sparkVelocities[i * 3]     = surfNormal.x * speed + (Math.random() - 0.5) * 6;
-    this._sparkVelocities[i * 3 + 1] = surfNormal.y * speed + (Math.random() - 0.5) * 6;
-    this._sparkVelocities[i * 3 + 2] = surfNormal.z * speed + (Math.random() - 0.5) * 6;
+    // Velocity: outward from surface with wide spread (welding shower pattern)
+    const speed = 5 + Math.random() * 12;
+    this._sparkVelocities[i * 3]     = surfNormal.x * speed + (Math.random() - 0.5) * 10;
+    this._sparkVelocities[i * 3 + 1] = surfNormal.y * speed + (Math.random() - 0.5) * 10;
+    this._sparkVelocities[i * 3 + 2] = surfNormal.z * speed + (Math.random() - 0.5) * 10;
 
     this._sparkAges[i] = 0;
-    this._sparkLifetimes[i] = 0.2 + Math.random() * 0.4;
-    this._sparkSizes[i] = 0.3 + Math.random() * 0.5;
+    this._sparkLifetimes[i] = 0.3 + Math.random() * 0.5;
+    this._sparkSizes[i] = 0.5 + Math.random() * 0.8;
   }
 
   _updateSparks(dt) {
