@@ -568,8 +568,17 @@ class WeldingGunSystem {
 
   _updateHealCrypto(dt, targetCount, targetPositions) {
     const crypto = window.cryptoSystem;
-    if (!crypto || targetCount === 0) {
-      // Not healing — clear accumulators
+    if (!crypto) return;
+
+    if (targetCount === 0) {
+      // Healing ended — flush any remaining accumulated crypto
+      for (const id in this._healCryptoAccum) {
+        const acc = this._healCryptoAccum[id];
+        const amount = Math.floor(acc.hp);
+        if (amount > 0 && acc.lastWorldPos) {
+          crypto.awardCrypto(amount, 'healing', acc.lastWorldPos);
+        }
+      }
       this._healCryptoAccum = {};
       return;
     }
@@ -581,11 +590,12 @@ class WeldingGunSystem {
     for (const { id, worldPos } of targetPositions) {
       activeIds.add(id);
       if (!this._healCryptoAccum[id]) {
-        this._healCryptoAccum[id] = { hp: 0, timer: 0 };
+        this._healCryptoAccum[id] = { hp: 0, timer: 0, lastWorldPos: null };
       }
       const acc = this._healCryptoAccum[id];
       acc.hp += hpPerTargetPerSec * dt;
       acc.timer += dt;
+      acc.lastWorldPos = worldPos;
 
       if (acc.timer >= this._CRYPTO_INTERVAL) {
         const amount = Math.floor(acc.hp);
@@ -597,9 +607,16 @@ class WeldingGunSystem {
       }
     }
 
-    // Clean up stale targets
+    // Flush and clean up targets that left range
     for (const id in this._healCryptoAccum) {
-      if (!activeIds.has(id)) delete this._healCryptoAccum[id];
+      if (!activeIds.has(id)) {
+        const acc = this._healCryptoAccum[id];
+        const amount = Math.floor(acc.hp);
+        if (amount > 0 && acc.lastWorldPos) {
+          crypto.awardCrypto(amount, 'healing', acc.lastWorldPos);
+        }
+        delete this._healCryptoAccum[id];
+      }
     }
   }
 
