@@ -269,6 +269,7 @@ class FlareSystem {
     const invisMat = new THREE.MeshBasicMaterial({
       colorWrite: false,
       depthWrite: false,
+      side: THREE.DoubleSide,
     });
 
     const depthTex = this._smokeBBTexture.clone();
