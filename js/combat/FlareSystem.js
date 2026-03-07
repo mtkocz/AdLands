@@ -261,7 +261,13 @@ class FlareSystem {
       depthPacking: item.depthMat.depthPacking,
       hasAlphaMap: !!item.depthMat.alphaMap,
       alphaTest: item.depthMat.alphaTest,
-      texCloneOk: item.depthTex.image !== null && item.depthTex.image !== undefined,
+      texImage: item.depthTex.image,
+      texImageSrc: item.depthTex.image?.src,
+      origImage: this._smokeBBTexture.image,
+      sameImage: item.depthTex.image === this._smokeBBTexture.image,
+      texRepeat: item.depthTex.repeat.toArray(),
+      texOffset: item.depthTex.offset.toArray(),
+      texNeedsUpdate: item.depthTex.needsUpdate,
     });
 
     return item;
