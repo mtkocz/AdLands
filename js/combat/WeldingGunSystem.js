@@ -260,7 +260,7 @@ class WeldingGunSystem {
     this._healedTankIds.clear();
 
     let beamIdx = 0;
-    const targetPositions = []; // Collect target positions for spark emission
+    const sparkTargets = []; // { pos, origin } pairs for spark emission
 
     // Local player welding beams
     const isWelding = localTank.state.keys.tac &&
@@ -284,7 +284,7 @@ class WeldingGunSystem {
           .multiplyScalar(-this._EDGE_OFFSET).add(this._tmpTo);
 
         this._activateBeam(beamIdx, this._tmpFrom, this._tmpToEdge, shouldJitter);
-        targetPositions.push(this._tmpToEdge.clone());
+        sparkTargets.push({ pos: this._tmpToEdge.clone(), origin: this._tmpFrom.clone() });
         this._healedTankIds.add(id);
         beamIdx++;
       }
@@ -311,7 +311,7 @@ class WeldingGunSystem {
           .multiplyScalar(-this._EDGE_OFFSET).add(this._tmpTo);
 
         this._activateBeam(beamIdx, this._tmpFrom, this._tmpToEdge, shouldJitter);
-        targetPositions.push(this._tmpToEdge.clone());
+        sparkTargets.push({ pos: this._tmpToEdge.clone(), origin: this._tmpFrom.clone() });
         this._healedTankIds.add(targetId);
         beamIdx++;
       }
@@ -323,7 +323,7 @@ class WeldingGunSystem {
           this._tmpToEdge.copy(this._tmpTo).sub(this._tmpFrom).normalize()
             .multiplyScalar(-this._EDGE_OFFSET).add(this._tmpTo);
           this._activateBeam(beamIdx, this._tmpFrom, this._tmpToEdge, shouldJitter);
-          targetPositions.push(this._tmpToEdge.clone());
+          sparkTargets.push({ pos: this._tmpToEdge.clone(), origin: this._tmpFrom.clone() });
           this._healedTankIds.add("player");
           beamIdx++;
         }
@@ -333,19 +333,19 @@ class WeldingGunSystem {
     this._activeCount = beamIdx;
 
     // Emit sparks and smoke at each target position
-    this._sparkAccum += dt * 150 * targetPositions.length; // ~150 sparks/sec per target
-    this._smokeAccum += dt * 10 * targetPositions.length;  // ~10 smoke/sec per target
-    while (this._sparkAccum >= 1 && targetPositions.length > 0) {
-      const pos = targetPositions[Math.floor(Math.random() * targetPositions.length)];
-      this._emitSpark(pos);
+    this._sparkAccum += dt * 150 * sparkTargets.length; // ~150 sparks/sec per target
+    this._smokeAccum += dt * 10 * sparkTargets.length;  // ~10 smoke/sec per target
+    while (this._sparkAccum >= 1 && sparkTargets.length > 0) {
+      const t = sparkTargets[Math.floor(Math.random() * sparkTargets.length)];
+      this._emitSpark(t.pos, t.origin);
       this._sparkAccum--;
     }
-    while (this._smokeAccum >= 1 && targetPositions.length > 0) {
-      const pos = targetPositions[Math.floor(Math.random() * targetPositions.length)];
-      this._emitSmoke(pos);
+    while (this._smokeAccum >= 1 && sparkTargets.length > 0) {
+      const t = sparkTargets[Math.floor(Math.random() * sparkTargets.length)];
+      this._emitSmoke(t.pos);
       this._smokeAccum--;
     }
-    if (targetPositions.length === 0) {
+    if (sparkTargets.length === 0) {
       this._sparkAccum = 0;
       this._smokeAccum = 0;
     }
@@ -443,25 +443,27 @@ class WeldingGunSystem {
 
   // ---- Spark particles ----
 
-  _emitSpark(targetPos) {
+  _emitSpark(targetPos, originPos) {
     const i = this._sparkHead;
     this._sparkHead = (this._sparkHead + 1) % this._maxSparks;
 
     // Position at target with tight random offset
-    const surfNormal = this._tmpVel.copy(targetPos).normalize();
     this._sparkPositions[i * 3]     = targetPos.x + (Math.random() - 0.5) * 0.8;
     this._sparkPositions[i * 3 + 1] = targetPos.y + (Math.random() - 0.5) * 0.8;
     this._sparkPositions[i * 3 + 2] = targetPos.z + (Math.random() - 0.5) * 0.8;
 
-    // Velocity: outward from surface with wide spread (welding shower pattern)
+    // Direction towards beam origin (welder), plus surface-outward and random spread
+    const toOrigin = this._tmpVel.copy(originPos).sub(targetPos).normalize();
+    const surfNormal = this._tmpNormal.copy(targetPos).normalize();
     const speed = 5 + Math.random() * 12;
-    this._sparkVelocities[i * 3]     = surfNormal.x * speed + (Math.random() - 0.5) * 10;
-    this._sparkVelocities[i * 3 + 1] = surfNormal.y * speed + (Math.random() - 0.5) * 10;
-    this._sparkVelocities[i * 3 + 2] = surfNormal.z * speed + (Math.random() - 0.5) * 10;
+    // Bias 60% towards origin, 20% outward from surface, 20% random
+    this._sparkVelocities[i * 3]     = (toOrigin.x * 0.6 + surfNormal.x * 0.2) * speed + (Math.random() - 0.5) * 6;
+    this._sparkVelocities[i * 3 + 1] = (toOrigin.y * 0.6 + surfNormal.y * 0.2) * speed + (Math.random() - 0.5) * 6;
+    this._sparkVelocities[i * 3 + 2] = (toOrigin.z * 0.6 + surfNormal.z * 0.2) * speed + (Math.random() - 0.5) * 6;
 
     this._sparkAges[i] = 0;
     this._sparkLifetimes[i] = 0.3 + Math.random() * 0.5;
-    this._sparkSizes[i] = 0.5 + Math.random() * 0.8;
+    this._sparkSizes[i] = 0.3 + Math.random() * 0.5;
   }
 
   _updateSparks(dt) {
