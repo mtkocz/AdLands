@@ -3107,10 +3107,14 @@ class GameRoom {
         if (wholeHp > 0) {
           player._weldHpAccumulators[t.id] -= wholeHp;
           if (t.isBot) {
+            console.log(`[WELD HEAL] ${player.name} healed bot ${t.id} by ${wholeHp}hp`);
             this.botBridge.applyHealing(t.id, wholeHp);
           } else {
             const target = this.players.get(t.id);
-            if (target) target.hp = Math.min(MAX_HP, target.hp + wholeHp);
+            if (target) {
+              console.log(`[WELD HEAL] ${player.name} healed player ${target.name} by ${wholeHp}hp (${target.hp} -> ${Math.min(MAX_HP, target.hp + wholeHp)})`);
+              target.hp = Math.min(MAX_HP, target.hp + wholeHp);
+            }
           }
         }
       }
