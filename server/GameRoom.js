@@ -1752,7 +1752,7 @@ class GameRoom {
   /** Handle equipping an upgrade into a loadout slot */
   handleEquipUpgrade(socketId, slotId, upgradeId) {
     const player = this.players.get(socketId);
-    if (!player || !player.uid) return; // Guests can't equip upgrades
+    if (!player) return;
 
     // Validate slot ID
     const validSlots = ['offense-1', 'offense-2', 'defense-1', 'defense-2', 'tactical-1', 'tactical-2'];
@@ -1775,25 +1775,24 @@ class GameRoom {
     player.loadout[slotId] = upgradeId;
 
     // Persist immediately so loadout survives disconnect/crash
-    this.savePlayerProfile(socketId).catch(() => {});
+    if (player.uid) this.savePlayerProfile(socketId).catch(() => {});
   }
 
   /** Handle unequipping an upgrade from a loadout slot */
   handleUnequipUpgrade(socketId, slotId) {
     const player = this.players.get(socketId);
-    if (!player || !player.uid) return;
+    if (!player) return;
 
     if (player.loadout && player.loadout[slotId]) {
       delete player.loadout[slotId];
-      // Persist immediately so loadout survives disconnect/crash
-      this.savePlayerProfile(socketId).catch(() => {});
+      if (player.uid) this.savePlayerProfile(socketId).catch(() => {});
     }
   }
 
   /** Handle active slot change (which slot's modifiers apply per category) */
   handleActiveSlotChange(socketId, category, slotId) {
     const player = this.players.get(socketId);
-    if (!player || !player.uid) return;
+    if (!player) return;
 
     const validCategories = ['offense', 'defense', 'tactical'];
     if (!validCategories.includes(category)) return;
@@ -1805,7 +1804,7 @@ class GameRoom {
       player.activeSlots = { offense: 'offense-1', defense: 'defense-1', tactical: 'tactical-1' };
     }
     player.activeSlots[category] = slotId;
-    this.savePlayerProfile(socketId).catch(() => {});
+    if (player.uid) this.savePlayerProfile(socketId).catch(() => {});
   }
 
   /** Handle tank upgrade purchase (armor, speed, fireRate, damage) */
@@ -3039,7 +3038,6 @@ class GameRoom {
       // Check if player has welding_gun as active tactical
       const tacticalSlot = player.activeSlots?.tactical || 'tactical-1';
       const activeTactical = player.loadout?.[tacticalSlot];
-      console.log(`[WELD] ${id.slice(-6)} tac=true, slot=${tacticalSlot}, tactical=${activeTactical}, loadout=${JSON.stringify(player.loadout)}, activeSlots=${JSON.stringify(player.activeSlots)}`);
       if (activeTactical !== 'welding_gun') continue;
 
       player.weldingActive = true;
@@ -3073,8 +3071,6 @@ class GameRoom {
       }
 
       if (targets.length === 0) continue;
-
-      console.log(`[WELD] HEALING ${targets.length} targets, healPerTick=${(HEAL_PER_SEC * dt / targets.length).toFixed(2)}`);
 
       // Distribute healing across all targets
       const healPerTarget = (HEAL_PER_SEC * dt) / targets.length;

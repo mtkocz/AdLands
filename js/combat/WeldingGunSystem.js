@@ -260,27 +260,17 @@ class WeldingGunSystem {
       window.weaponSlotSystem?.getActiveTacticalWeapon() === 'welding_gun' &&
       !localTank.isDead;
 
-    if (localTank.state.keys.tac && !this._debugLogged) {
-      console.log('[WELD CLIENT] tac=true, tactical=' + window.weaponSlotSystem?.getActiveTacticalWeapon() + ', equipped=' + JSON.stringify(window.weaponSlotSystem?.equipped) + ', activeSlots=' + JSON.stringify(window.weaponSlotSystem?.activeSlots) + ', isDead=' + localTank.isDead);
-      this._debugLogged = true;
-      setTimeout(() => { this._debugLogged = false; }, 2000);
-    }
-
     if (isWelding) {
       localTank.group.getWorldPosition(this._tmpFrom);
-      let friendlyCount = 0, damagedCount = 0, inRangeCount = 0;
 
       for (const [id, rt] of remoteTanks) {
         if (beamIdx >= this.beams.length) break;
-        if (rt.isDead || rt.faction !== playerFaction) { continue; }
-        friendlyCount++;
+        if (rt.isDead || rt.faction !== playerFaction) continue;
         if (rt.hp >= 100) continue;
-        damagedCount++;
 
         rt.group.getWorldPosition(this._tmpTo);
         const dist = this._tmpFrom.distanceTo(this._tmpTo);
         if (dist > 20 || dist < 0.1) continue;
-        inRangeCount++;
 
         // Offset endpoint to tank silhouette edge
         this._tmpToEdge.copy(this._tmpTo).sub(this._tmpFrom).normalize()
@@ -290,12 +280,6 @@ class WeldingGunSystem {
         targetPositions.push(this._tmpToEdge.clone());
         this._healedTankIds.add(id);
         beamIdx++;
-      }
-
-      if (!this._debugLogged2) {
-        console.log(`[WELD CLIENT] remoteTanks=${remoteTanks.size}, friendly=${friendlyCount}, damaged=${damagedCount}, inRange=${inRangeCount}, beams=${beamIdx}`);
-        this._debugLogged2 = true;
-        setTimeout(() => { this._debugLogged2 = false; }, 2000);
       }
     }
 
