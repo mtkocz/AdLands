@@ -143,10 +143,11 @@ class ProfileManager {
       fields.loadout = this.dashboard.equippedUpgrades || {};
     }
 
-    // Save weapon slot system (loadout + tank upgrades)
+    // Save weapon slot system (loadout + tank upgrades + active slots)
     if (this.weaponSlotSystem) {
       fields.loadout = this.weaponSlotSystem.equipped || fields.loadout;
       fields.tankUpgrades = { ...this.weaponSlotSystem.tankUpgrades };
+      fields.activeSlots = { ...this.weaponSlotSystem.activeSlots };
     }
 
     this.sync.writeProfile(fields, 30000); // 30s debounce
@@ -177,10 +178,11 @@ class ProfileManager {
       fields.loadout = this.dashboard.equippedUpgrades || {};
     }
 
-    // Save weapon slot system (loadout + tank upgrades)
+    // Save weapon slot system (loadout + tank upgrades + active slots)
     if (this.weaponSlotSystem) {
       fields.loadout = this.weaponSlotSystem.equipped || fields.loadout;
       fields.tankUpgrades = { ...this.weaponSlotSystem.tankUpgrades };
+      fields.activeSlots = { ...this.weaponSlotSystem.activeSlots };
     }
 
     // Write immediately

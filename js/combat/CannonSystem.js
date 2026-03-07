@@ -1816,13 +1816,14 @@ void main() {
     }
   }
 
-  update(deltaTime, frustum = null) {
+  update(deltaTime, frustum = null, skipProjectiles = false) {
     // Cache camera world position for distance fade (used by explosions, decals, etc.)
     if (this.gameCamera?.camera) {
       this.gameCamera.camera.getWorldPosition(_cameraWorldPos);
     }
 
-    // Update projectiles
+    // In orbital view, skip projectile simulation — only update explosions below
+    if (!skipProjectiles)
     for (let i = this.projectiles.length - 1; i >= 0; i--) {
       const p = this.projectiles[i];
 
@@ -2085,18 +2086,20 @@ void main() {
       }
     }
 
-    // Update explosions
+    // Update explosions (always — visible in orbital view as LOD circles)
     this._updateExplosions(deltaTime, frustum);
     this._updateLODExplosions(deltaTime, frustum);
 
-    // Update muzzle effects (flare + smoke)
-    this._updateMuzzleEffects(deltaTime, frustum);
+    if (!skipProjectiles) {
+      // Update muzzle effects (flare + smoke)
+      this._updateMuzzleEffects(deltaTime, frustum);
 
-    // Update impact decals
-    this._updateImpactDecals(deltaTime, frustum);
+      // Update impact decals
+      this._updateImpactDecals(deltaTime, frustum);
 
-    // Update oil puddles
-    this._updateOilPuddles(deltaTime, frustum);
+      // Update oil puddles
+      this._updateOilPuddles(deltaTime, frustum);
+    }
   }
 
   // ========================

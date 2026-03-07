@@ -4065,23 +4065,28 @@
     tank.missileMode = isMissileActive;
     missileSystem.setMissileEquipped(isMissileActive);
 
-    // Update cannon charging and projectiles
-    cannonSystem.updateCharge(deltaTime, tank, playerFaction);
+    // Update cannon charging, projectiles, and combat effects
     cannonSystem.isOrbitalView = isOrbitalView; // Set for LOD explosion decisions
-    cannonSystem.update(deltaTime, sharedFrustum);
-    missileSystem.update(deltaTime, sharedFrustum, camera);
-    flareSystem.update(deltaTime, camera);
+    if (!isOrbitalView) {
+      cannonSystem.updateCharge(deltaTime, tank, playerFaction);
+      missileSystem.update(deltaTime, sharedFrustum, camera);
+      flareSystem.update(deltaTime, camera);
+    }
+    // Always update cannonSystem (explosions need to animate in orbital view)
+    cannonSystem.update(deltaTime, sharedFrustum, isOrbitalView);
 
     // Update visual effects
     treadTracks.update(tank, deltaTime, camera, isOrbitalView, sharedFrustum);
-    tankDamageEffects.update(deltaTime, sharedFrustum, camera);
     treadDust.update(deltaTime, camera, isOrbitalView, sharedFrustum);
     dustShockwave.update(deltaTime, sharedFrustum);
-    shieldHolosphere.update(deltaTime);
     capturePulse.update(deltaTime, sharedFrustum, camera);
-    tankCollision.update(deltaTime, sharedFrustum, camera);
-    tankHeadlights.update(deltaTime, camera);
     cryptoVisuals.update(deltaTime);
+    if (!isOrbitalView) {
+      tankDamageEffects.update(deltaTime, sharedFrustum, camera);
+      shieldHolosphere.update(deltaTime);
+      tankCollision.update(deltaTime, sharedFrustum, camera);
+      tankHeadlights.update(deltaTime, camera);
+    }
 
     // Update visual effects (post-processing state)
     visualEffects.update(deltaTime);
