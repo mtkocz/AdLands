@@ -258,7 +258,7 @@ class FlareSystem {
     item.group.visible = true;
 
     this._setShadowBillboardFrame(item, 0);
-    item.depthMat.alphaTest = 0.05;
+    item.depthMat.alphaTest = 0.3;
 
     return item;
   }
@@ -280,7 +280,7 @@ class FlareSystem {
     const depthMat = new THREE.MeshDepthMaterial({
       depthPacking: THREE.RGBADepthPacking,
       alphaMap: depthTex,
-      alphaTest: 0.05,
+      alphaTest: 0.3,
       side: THREE.DoubleSide,
     });
 
@@ -485,9 +485,9 @@ class FlareSystem {
       const progress = bb.age / bbDuration;
       if (progress > 0.75) {
         const fadeProgress = (progress - 0.75) / 0.25;
-        bb.depthMat.alphaTest = 0.05 + fadeProgress * 0.9;
+        bb.depthMat.alphaTest = 0.3 + fadeProgress * 0.65;
       } else {
-        bb.depthMat.alphaTest = 0.05;
+        bb.depthMat.alphaTest = 0.3;
       }
     }
 
