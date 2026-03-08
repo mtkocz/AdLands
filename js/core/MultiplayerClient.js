@@ -1973,12 +1973,6 @@
       const label = actionLabels[data.action] || data.action;
       const msg = `Not enough crypto for ${label} (need ¢${data.cost.toLocaleString()})`;
 
-      // Show floating message near tank
-      if (window.cryptoVisuals && tank.group) {
-        tank.group.getWorldPosition(_tipScreenPos);
-        window.cryptoVisuals._spawnFloatingNumber(-data.cost, _tipScreenPos);
-      }
-
       // Show toast notification
       if (window.dashboard) {
         window.dashboard.showToast?.(msg);
@@ -2020,6 +2014,11 @@
     };
 
     net.onSlotUnlocked = (data) => {
+      // Show red spend floater for slot unlock cost
+      if (data.cost > 0 && window.cryptoVisuals && tank.group) {
+        tank.group.getWorldPosition(_tipScreenPos);
+        window.cryptoVisuals._spawnFloatingNumber(-data.cost, _tipScreenPos);
+      }
       // Update dashboard loadout UI
       if (window.dashboard) {
         window.dashboard.onSlotUnlocked?.(data.slotId);

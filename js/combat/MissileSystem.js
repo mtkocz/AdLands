@@ -546,6 +546,12 @@ class MissileSystem {
         this._currentSearchRadius
       );
     }
+
+    // Show red spend floater for missile fire cost
+    if (window.cryptoVisuals && tank.group) {
+      tank.group.getWorldPosition(this._tempVec);
+      window.cryptoVisuals._spawnFloatingNumber(-this.config.cost, this._tempVec);
+    }
   }
 
   // Spawn visual-only missile from remote player
@@ -945,8 +951,8 @@ class MissileSystem {
       m.lostAge = (m.lostAge || 0) + dt;
       const ownerFaction = m.faction || m.ownerFaction;
 
-      // Still scan for targets — re-lock if one enters range
-      const target = this._findClosestEnemyFromPos(m.position, ownerFaction, null);
+      // Scan for nearby targets to re-lock (short range only — prevents infinite re-lock cycles)
+      const target = this._findClosestEnemyFromPos(m.position, ownerFaction, null, 30);
       if (target) {
         // Target re-acquired — back to cruise
         m.phase = 1;
@@ -964,8 +970,8 @@ class MissileSystem {
       const wobbleIntensity = Math.min(m.lostAge / 5, 1.0); // 0→1 over 5s
       const wobbleFreq = 3 + wobbleIntensity * 5; // Speed up wobble over time
       const wobbleAmp = 0.3 + wobbleIntensity * 1.2; // Wider arcs over time
-      const wobbleX = Math.sin(m.lostAge * wobbleFreq) * wobbleAmp * dt;
-      const wobbleY = Math.cos(m.lostAge * wobbleFreq * 1.3) * wobbleAmp * 0.7 * dt;
+      const wobbleX = Math.sin(m.lostAge * wobbleFreq) * wobbleAmp;
+      const wobbleY = Math.cos(m.lostAge * wobbleFreq * 1.3) * wobbleAmp * 0.7;
 
       // Build perpendicular axes to current direction for wobble offset
       const up = this._tempVec.copy(m.position).normalize();
