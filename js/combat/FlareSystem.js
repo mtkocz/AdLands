@@ -449,14 +449,17 @@ class FlareSystem {
       const pos = this._tempVec.copy(f.normal).multiplyScalar(f.altitude).add(f.surfacePos);
       f.meshItem.group.position.copy(pos);
 
-      // Update shadow billboard spritesheet frame (12fps)
-      if (f.shadowBB) {
-        const frame = Math.floor(f.age * this._smokeBBFps) % this._smokeBBFrames;
-        this._setShadowBillboardFrame(f.shadowBB, frame);
-      }
-
       const farAway = camPos ? camPos.distanceTo(pos) > 260 : false;
       f.meshItem.group.visible = !farAway;
+
+      // Update shadow billboard spritesheet frame (12fps)
+      if (f.shadowBB) {
+        f.shadowBB.group.visible = !farAway;
+        if (!farAway) {
+          const frame = Math.floor(f.age * this._smokeBBFps) % this._smokeBBFrames;
+          this._setShadowBillboardFrame(f.shadowBB, frame);
+        }
+      }
 
       if (f.meshItem.light) {
         f.meshItem.light.intensity = 1.2 + Math.random() * 0.6;
@@ -479,6 +482,9 @@ class FlareSystem {
         this._orphanedShadows.splice(i, 1);
         continue;
       }
+      const bbFar = camPos ? camPos.distanceTo(bb.group.position) > 260 : false;
+      bb.group.visible = !bbFar;
+      if (bbFar) continue;
       const frame = Math.floor(bb.age * this._smokeBBFps);
       this._setShadowBillboardFrame(bb, frame);
       // Fade out in last 25% of animation

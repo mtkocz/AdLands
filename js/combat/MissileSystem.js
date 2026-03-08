@@ -20,6 +20,7 @@ class MissileSystem {
     this.planet = null;
     this.weaponSlotSystem = null;
     this.cryptoSystem = null;
+    this.flareSystem = null;
 
     // Config
     this.config = {
@@ -495,6 +496,14 @@ class MissileSystem {
     const poolItem = this._acquirePoolItem(faction);
     if (!poolItem) return;
 
+    // Shadow billboard at launch point
+    let shadowBB = null;
+    if (this.flareSystem) {
+      shadowBB = this.flareSystem._acquireShadowBillboard(
+        tankPos.clone(), surfaceNormal.clone(), this.config.cruiseAltitude
+      );
+    }
+
     const missile = {
       poolItem,
       position: startPos.clone(),
@@ -509,6 +518,7 @@ class MissileSystem {
       direction: null,  // Initialized when entering phase 1
       isRemote: false,
       serverId: null,
+      shadowBB,
     };
 
     this.missiles.push(missile);
@@ -544,11 +554,21 @@ class MissileSystem {
 
     // Compute start position from server data
     const startPos = new THREE.Vector3(data.wx, data.wy, data.wz);
+    const surfaceNormal = startPos.clone().normalize();
+    const surfacePos = surfaceNormal.clone().multiplyScalar(this.sphereRadius);
+
+    // Shadow billboard at launch point
+    let shadowBB = null;
+    if (this.flareSystem) {
+      shadowBB = this.flareSystem._acquireShadowBillboard(
+        surfacePos, surfaceNormal, this.config.cruiseAltitude
+      );
+    }
 
     const missile = {
       poolItem,
       position: startPos.clone(),
-      surfaceNormal: startPos.clone().normalize(),
+      surfaceNormal,
       faction,
       phase: 0,
       age: 0,
@@ -560,6 +580,7 @@ class MissileSystem {
       isRemote: true,
       ownerFaction: faction,
       serverId: data.projectileId,
+      shadowBB,
     };
 
     this.missiles.push(missile);
@@ -609,6 +630,10 @@ class MissileSystem {
 
       // Remove orphaned missiles (pool item recycled)
       if (!m.poolItem) {
+        if (m.shadowBB && this.flareSystem) {
+          m.shadowBB.age = m.age;
+          this.flareSystem._orphanedShadows.push(m.shadowBB);
+        }
         this.missiles.splice(i, 1);
         continue;
       }
@@ -621,6 +646,17 @@ class MissileSystem {
 
       // Cache camera distance for visibility checks
       m._camDist = camPos ? camPos.distanceTo(m.position) : 0;
+
+      // Update shadow billboard spritesheet
+      if (m.shadowBB && this.flareSystem) {
+        const bbFar = m._camDist > 260;
+        m.shadowBB.group.visible = !bbFar;
+        if (!bbFar) {
+          const fs = this.flareSystem;
+          const frame = Math.floor(m.age * fs._smokeBBFps) % fs._smokeBBFrames;
+          fs._setShadowBillboardFrame(m.shadowBB, frame);
+        }
+      }
 
       this._updateMissile(m, deltaTime);
     }
@@ -909,6 +945,12 @@ class MissileSystem {
           this.cannonSystem.onNearbyExplosion(intensity);
         }
       }
+    }
+
+    // Orphan shadow billboard to finish its animation
+    if (m.shadowBB && this.flareSystem) {
+      m.shadowBB.age = m.age;
+      this.flareSystem._orphanedShadows.push(m.shadowBB);
     }
 
     if (m.poolItem) this._releasePoolItem(m.poolItem);
