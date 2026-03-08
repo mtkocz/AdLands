@@ -301,7 +301,7 @@ class MissileSystem {
       el.style.display = "";
 
       const pulse = Math.sin(performance.now() * 0.008) * 0.12 + 1.0;
-      el.style.transform = `translate(-50%,-50%) scale(${pulse})`;
+      el.style.transform = `translate(-50%,-50%) rotate(45deg) scale(${pulse})`;
     }
   }
 
@@ -771,14 +771,21 @@ class MissileSystem {
       // Cache camera distance for visibility checks
       m._camDist = camPos ? camPos.distanceTo(m.position) : 0;
 
-      // Update shadow billboard spritesheet
+      // Update shadow billboard spritesheet — play once then orphan (no loop)
       if (m.shadowBB && this.flareSystem) {
-        const bbFar = m._camDist > 260;
-        m.shadowBB.group.visible = !bbFar;
-        if (!bbFar) {
-          const fs = this.flareSystem;
-          const frame = Math.floor(m.age * fs._smokeBBFps) % fs._smokeBBFrames;
-          fs._setShadowBillboardFrame(m.shadowBB, frame);
+        const fs = this.flareSystem;
+        const rawFrame = Math.floor(m.age * fs._smokeBBFps);
+        if (rawFrame >= fs._smokeBBFrames) {
+          // Animation finished — orphan so it fades out
+          m.shadowBB.age = m.age;
+          fs._orphanedShadows.push(m.shadowBB);
+          m.shadowBB = null;
+        } else {
+          const bbFar = m._camDist > 260;
+          m.shadowBB.group.visible = !bbFar;
+          if (!bbFar) {
+            fs._setShadowBillboardFrame(m.shadowBB, rawFrame);
+          }
         }
       }
 

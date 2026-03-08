@@ -100,7 +100,7 @@ canvas:not(#tank-preview-canvas) {
     position: absolute;
     width: 8px;
     height: 8px;
-    border-color: var(--accent-gold);
+    border-color: var(--accent-cyan);
     border-style: solid;
     border-width: 0;
     opacity: 0.85;
