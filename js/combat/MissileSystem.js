@@ -917,6 +917,12 @@ class MissileSystem {
     const dt60 = dt * 60;
     const farAway = m._camDist > 260;
 
+    // Skip if missile was forced to a post-launch phase before direction was initialized
+    if (m.phase > 0 && !m.direction) {
+      m.direction = m.surfaceNormal ? m.surfaceNormal.clone() : null;
+      if (!m.direction) return;
+    }
+
     // Hide mesh when camera is far (orbital view) — simulation still runs
     m.poolItem.group.visible = !farAway;
 
@@ -1005,13 +1011,13 @@ class MissileSystem {
       const ownerFaction = m.faction || m.ownerFaction;
       const target = this._findClosestEnemyFromPos(m.position, ownerFaction, null);
       const diveTarget = target ? target.worldPos : m.diveTarget;
+      if (!diveTarget) { m.phase = 3; m.isLost = true; m.lostAge = 0; return; }
 
       const desired = this._tempVec3
         .copy(diveTarget)
         .sub(m.position)
         .normalize();
 
-      // Tighter steering during dive (2x turn rate)
       const maxSteer = this.config.turnRate * 2 * dt;
       m.direction.lerp(desired, Math.min(maxSteer, 1.0)).normalize();
 
@@ -1019,13 +1025,11 @@ class MissileSystem {
       const moveSpeed = this.config.missileSpeed * 1.2 * dt60;
       m.position.addScaledVector(m.direction, Math.min(moveSpeed, dist));
 
-      // Orient mesh to face travel direction
       const lookTarget = this._tempVec2.copy(m.position).add(m.direction);
       m.poolItem.group.position.copy(m.position);
       m.poolItem.group.lookAt(lookTarget);
       m.poolItem.group.quaternion.multiply(this._meshOrientQuat);
 
-      // Check impact (close to surface)
       const altitude = m.position.length() - this.sphereRadius;
       if (altitude < 1.5 || dist < 1.5) {
         const idx = this.missiles.indexOf(m);
@@ -1094,6 +1098,11 @@ class MissileSystem {
     } else if (m.phase === 4) {
       // CRASH DIVE: Wobble expired — dive to ground, no damage
       const diveTarget = m.diveTarget;
+      if (!diveTarget) {
+        const idx = this.missiles.indexOf(m);
+        if (idx >= 0) this._destroyMissile(idx, m.position);
+        return;
+      }
 
       const desired = this._tempVec3
         .copy(diveTarget)
