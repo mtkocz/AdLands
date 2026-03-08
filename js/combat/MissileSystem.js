@@ -359,7 +359,9 @@ class MissileSystem {
 
   // Find closest enemy from a missile's world position (for in-flight retargeting)
   // missileDir: current travel direction (if provided, only targets in forward hemisphere)
-  _findClosestEnemyFromPos(missilePos, ownerFaction, missileDir) {
+  // maxRange: maximum distance in world units (default: searchRadiusMax = 120)
+  _findClosestEnemyFromPos(missilePos, ownerFaction, missileDir, maxRange) {
+    const range = maxRange || this.config.searchRadiusMax;
     let closest = null;
     let closestDist = Infinity;
 
@@ -376,7 +378,7 @@ class MissileSystem {
           if (toTarget.dot(missileDir) < 0) continue;
         }
         const dist = pos.distanceTo(missilePos);
-        if (dist < closestDist) {
+        if (dist < closestDist && dist <= range) {
           closest = { tank: bot, worldPos: pos.clone(), distance: dist };
           closestDist = dist;
         }
@@ -394,7 +396,7 @@ class MissileSystem {
           if (toTarget.dot(missileDir) < 0) continue;
         }
         const dist = pos.distanceTo(missilePos);
-        if (dist < closestDist) {
+        if (dist < closestDist && dist <= range) {
           closest = {
             tank: remoteTank,
             worldPos: pos.clone(),
@@ -412,7 +414,7 @@ class MissileSystem {
         const flare = flares[i];
         const pos = flare.position;
         const dist = pos.distanceTo(missilePos);
-        if (dist < closestDist) {
+        if (dist < closestDist && dist <= range) {
           closest = { tank: null, worldPos: pos.clone(), distance: dist, isFlare: true };
           closestDist = dist;
         }
@@ -597,6 +599,23 @@ class MissileSystem {
     for (let i = this.missiles.length - 1; i >= 0; i--) {
       if (this.missiles[i].serverId === projectileId) {
         this._destroyMissile(i, this.missiles[i].position);
+        return;
+      }
+    }
+  }
+
+  // Force a missile into crash-dive (phase 3) by server projectile ID
+  crashByServerId(projectileId, theta, phi) {
+    for (let i = this.missiles.length - 1; i >= 0; i--) {
+      const m = this.missiles[i];
+      if (m.serverId === projectileId) {
+        m.phase = 3;
+        m.targetTank = null;
+        // Compute crash point on planet surface from server coords
+        const sp = Math.sin(phi), cp = Math.cos(phi);
+        const st = Math.sin(theta), ct = Math.cos(theta);
+        const R = this.sphereRadius;
+        m.diveTarget = new THREE.Vector3(R * sp * st, R * cp, R * sp * ct);
         return;
       }
     }
@@ -847,8 +866,14 @@ class MissileSystem {
           m.phase = 2;
           m.diveTarget = targetSurface.clone();
         }
+      } else {
+        // No target in range — crash dive to ground
+        m.phase = 3;
+        m.targetTank = null;
+        // Crash point: directly below missile on planet surface
+        const crashNormal = this._tempVec.copy(m.position).normalize();
+        m.diveTarget = crashNormal.multiplyScalar(this.sphereRadius).clone();
       }
-      // No target: keep cruising in current direction, keep searching next frame
 
       // Move along current direction
       const moveSpeed = this.config.missileSpeed * dt60;
@@ -900,6 +925,37 @@ class MissileSystem {
         }
         return;
       }
+    } else if (m.phase === 3) {
+      // CRASH DIVE: No target in range — dive straight to ground, no damage
+      const diveTarget = m.diveTarget;
+
+      const desired = this._tempVec3
+        .copy(diveTarget)
+        .sub(m.position)
+        .normalize();
+
+      const maxSteer = this.config.turnRate * 2 * dt;
+      m.direction.lerp(desired, Math.min(maxSteer, 1.0)).normalize();
+
+      const dist = this._tempVec.copy(diveTarget).sub(m.position).length();
+      const moveSpeed = this.config.missileSpeed * 1.2 * dt60;
+      m.position.addScaledVector(m.direction, Math.min(moveSpeed, dist));
+
+      // Orient mesh to face travel direction
+      const lookTarget = this._tempVec2.copy(m.position).add(m.direction);
+      m.poolItem.group.position.copy(m.position);
+      m.poolItem.group.lookAt(lookTarget);
+      m.poolItem.group.quaternion.multiply(this._meshOrientQuat);
+
+      // Check impact (close to surface)
+      const altitude = m.position.length() - this.sphereRadius;
+      if (altitude < 1.5 || dist < 1.5) {
+        const idx = this.missiles.indexOf(m);
+        if (idx >= 0) {
+          this._destroyMissile(idx, m.position);
+        }
+        return;
+      }
     }
 
     // Update mesh position
@@ -908,7 +964,7 @@ class MissileSystem {
     // Skip particle emission when camera is far (orbital view)
     if (farAway) return;
 
-    // Emit particles (phases 0-2, but most visible during 1 and 2)
+    // Emit particles (phases 0-3, but most visible during 1+)
     if (m.phase >= 0) {
       this._emitAfterburner(m);
       if (m.phase >= 1) {

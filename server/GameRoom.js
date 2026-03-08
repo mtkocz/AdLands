@@ -2124,6 +2124,8 @@ class GameRoom {
     }
 
     // Find nearest enemy from MISSILE position (not owner position)
+    // Range-limited: only targets within maxRetargetRad (~120 world units on R=480)
+    const maxRetargetRad = 0.25; // Same as initial lock-on range cap
     let target = null;
     let targetDist = Infinity;
 
@@ -2131,7 +2133,7 @@ class GameRoom {
       if (id === p.ownerId || this._isUndeployed(pl) || pl.isDead) continue;
       if (pl.faction === p.ownerFaction) continue;
       const dist = sphericalDistance(p.theta, p.phi, pl.theta, pl.phi);
-      if (dist < targetDist) {
+      if (dist < targetDist && dist <= maxRetargetRad) {
         target = { id, theta: pl.theta, phi: pl.phi, isBot: false };
         targetDist = dist;
       }
@@ -2142,7 +2144,7 @@ class GameRoom {
       const bs = botStates[botId];
       if (bs.f === p.ownerFaction || bs.d === 1) continue;
       const dist = sphericalDistance(p.theta, p.phi, bs.t, bs.p);
-      if (dist < targetDist) {
+      if (dist < targetDist && dist <= maxRetargetRad) {
         target = { id: botId, theta: bs.t, phi: bs.p, isBot: true };
         targetDist = dist;
       }
@@ -2153,14 +2155,19 @@ class GameRoom {
       const fl = this.flares[fi];
       if (fl.ownerId === p.ownerId) continue; // Don't eat your own missile
       const dist = sphericalDistance(p.theta, p.phi, fl.theta, fl.phi);
-      if (dist < targetDist) {
+      if (dist < targetDist && dist <= maxRetargetRad) {
         target = { id: fl.id, theta: fl.theta, phi: fl.phi, isFlare: true, flareIndex: fi };
         targetDist = dist;
       }
     }
 
     if (!target) {
-      // No targets left, expire missile
+      // No targets in range — missile crashes to ground (no damage)
+      this.io.to(this.roomId).emit("missile-crash", {
+        missileId: p.id,
+        theta: p.theta,
+        phi: p.phi,
+      });
       projs[i] = projs[projs.length - 1]; projs.pop();
       return;
     }

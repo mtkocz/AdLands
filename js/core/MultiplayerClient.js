@@ -906,6 +906,13 @@
       }
     };
 
+    net.onMissileCrash = (data) => {
+      if (window.missileSystem) {
+        window.missileSystem.crashByServerId(data.missileId, data.theta, data.phi);
+        window.missileSystem.hideIncomingWarning();
+      }
+    };
+
     // Preallocated vectors for hit effects and ping positions
     const _hitWorldPos = new THREE.Vector3();
     const _pingWorldPos = new THREE.Vector3();
