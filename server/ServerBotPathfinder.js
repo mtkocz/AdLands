@@ -80,7 +80,7 @@ class ServerBotPathfinder {
         if (!this._traversable.has(neighborIdx)) continue;
         let cost = 1.0;
         if (cliffAdjacentSet.has(neighborIdx)) cost = 1.5;
-        if (poleAdjacentSet.has(neighborIdx)) cost = Math.max(cost, 2.0);
+        if (poleAdjacentSet.has(neighborIdx)) cost = Math.max(cost, 4.0);
         edges.push({ tile: neighborIdx, cost });
       }
 

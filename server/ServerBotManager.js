@@ -122,7 +122,7 @@ const BOT_PIVOT_OFFSET = 0.6;
 // Pole avoidance — hard limit must be outside polar hole boundary (~0.253 rad)
 const BOT_POLE_SOFT_LIMIT = 0.6;
 const BOT_POLE_HARD_LIMIT = 0.35;
-const BOT_POLE_REPULSION_STRENGTH = 0.008;
+const BOT_POLE_REPULSION_STRENGTH = 0.015;
 
 // Collision avoidance
 const BOT_AVOID_DISTANCE = 0.04;
@@ -413,10 +413,12 @@ class ServerBotManager {
 
       // Combat
       lastFireTime: 0,
+      lastMissileTime: 0,
       combatTarget: null,
       combatScanTimer: 0,
       combatLockTime: 0,
       _fireAccuracy: 0.125 + personality * 0.25, // 0.125-0.375 radians inaccuracy (25% less accurate)
+      weldingActive: false,
 
       // Respawn
       respawnTimer: 0,
@@ -594,6 +596,7 @@ class ServerBotManager {
 
       bot.currentClusterId = this.worldGen.getClusterIdAt(bot.theta, bot.phi);
       if (isStagger) {
+        this._updateWelding(bot, players);
         nextProjectileId = this._updateCombat(bot, dt, players, projectiles, nextProjectileId, now);
       }
     }
@@ -810,6 +813,22 @@ class ServerBotManager {
       const threat = this._detectCollisionThreat(bot);
       bot._cachedThreat = threat.threat;
       bot._cachedSteer = threat.steerDirection;
+    }
+
+    // Pole wander redirect: if bot is near a pole and wandering toward it, flip away
+    const distFromNorthPole = bot.phi;
+    const distFromSouthPole = Math.PI - bot.phi;
+    const distFromNearestPole = Math.min(distFromNorthPole, distFromSouthPole);
+    if (distFromNearestPole < BOT_POLE_SOFT_LIMIT) {
+      // Heading 0 = north (toward north pole), PI = south (toward south pole)
+      const polewardHeading = distFromNorthPole < distFromSouthPole ? 0 : Math.PI;
+      let delta = polewardHeading - bot.wanderDirection;
+      while (delta > Math.PI) delta -= Math.PI * 2;
+      while (delta < -Math.PI) delta += Math.PI * 2;
+      if (Math.abs(delta) < Math.PI / 2) {
+        // Wandering toward pole — redirect away
+        bot.wanderDirection += (delta > 0 ? -1 : 1) * 0.5;
+      }
     }
 
     // Target-directed steering (suppressed during terrain avoidance)
@@ -1380,6 +1399,41 @@ class ServerBotManager {
   // still works via GameRoom._resolveTankCollisions() using _spatialHash.
 
   // ========================
+  // WELDING (overlay — heals nearby damaged friendlies)
+  // ========================
+
+  _updateWelding(bot, players) {
+    bot.weldingActive = false;
+    if (bot.isDead || bot.isDeploying) return;
+
+    const WELD_RANGE_RAD = 20 / 480; // 20 world units on R=480 sphere
+
+    // Check friendly bots in range with hp < 100
+    for (const otherBot of this._botArray) {
+      if (otherBot === bot || otherBot.isDead || otherBot.isDeploying) continue;
+      if (otherBot.faction !== bot.faction) continue;
+      if (otherBot.hp >= 100) continue;
+      const dist = this._angularDistance(bot.theta, bot.phi, otherBot.theta, otherBot.phi);
+      if (dist <= WELD_RANGE_RAD) {
+        bot.weldingActive = true;
+        return;
+      }
+    }
+
+    // Check friendly human players in range with hp < 100
+    for (const [, player] of players) {
+      if (player.isDead || player.waitingForPortal) continue;
+      if (player.faction !== bot.faction) continue;
+      if (player.hp >= 100) continue;
+      const dist = this._angularDistance(bot.theta, bot.phi, player.theta, player.phi);
+      if (dist <= WELD_RANGE_RAD) {
+        bot.weldingActive = true;
+        return;
+      }
+    }
+  }
+
+  // ========================
   // COMBAT
   // ========================
 
@@ -1408,12 +1462,20 @@ class ServerBotManager {
       const desiredTurretAngle = this._computeTurretAngle(bot, target);
       bot.turretAngle = desiredTurretAngle;
 
-      // Fire if cooldown expired and within range
-      const cooldown = BOT_FIRE_COOLDOWN_MIN + bot.personality * (BOT_FIRE_COOLDOWN_MAX - BOT_FIRE_COOLDOWN_MIN);
-      if (now - bot.lastFireTime >= cooldown) {
-        const dist = this._angularDistance(bot.theta, bot.phi, target.theta, target.phi);
-        const maxRange = 0.08; // ~38 world units — within projectile range
-        if (dist < maxRange) {
+      // Fire if cooldown expired and within range (skip if welding)
+      if (bot.weldingActive) return nextProjectileId;
+
+      const dist = this._angularDistance(bot.theta, bot.phi, target.theta, target.phi);
+
+      // Missile range: 0.06-0.15 rad (beyond cannon range), 4s cooldown, costs 5 crypto
+      if (dist >= 0.06 && dist < 0.15 && bot.crypto >= 5 && now - bot.lastMissileTime >= 4000) {
+        bot.lastMissileTime = now;
+        nextProjectileId = this._fireBotMissile(bot, projectiles, nextProjectileId);
+      }
+      // Cannon range: < 0.08 rad, personality-based cooldown
+      else if (dist < 0.08) {
+        const cooldown = BOT_FIRE_COOLDOWN_MIN + bot.personality * (BOT_FIRE_COOLDOWN_MAX - BOT_FIRE_COOLDOWN_MIN);
+        if (now - bot.lastFireTime >= cooldown) {
           bot.lastFireTime = now;
           nextProjectileId = this._fireBotProjectile(bot, projectiles, nextProjectileId);
         }
@@ -1431,6 +1493,8 @@ class ServerBotManager {
     for (const [id, player] of players) {
       if (player.isDead || player.waitingForPortal) continue;
       if (player.faction === bot.faction) continue;
+      // Skip targets in pole danger zone
+      if (player.phi < BOT_POLE_HARD_LIMIT || player.phi > Math.PI - BOT_POLE_HARD_LIMIT) continue;
       const dist = this._angularDistance(bot.theta, bot.phi, player.theta, player.phi);
       if (dist < closestDist) {
         closestDist = dist;
@@ -1442,6 +1506,8 @@ class ServerBotManager {
     for (const otherBot of this._botArray) {
       if (otherBot === bot || otherBot.isDead || otherBot.isDeploying) continue;
       if (otherBot.faction === bot.faction) continue;
+      // Skip targets in pole danger zone
+      if (otherBot.phi < BOT_POLE_HARD_LIMIT || otherBot.phi > Math.PI - BOT_POLE_HARD_LIMIT) continue;
       const dist = this._angularDistance(bot.theta, bot.phi, otherBot.theta, otherBot.phi);
       if (dist < closestDist) {
         closestDist = dist;
@@ -1539,6 +1605,58 @@ class ServerBotManager {
       dvx: bSinH * bCt + bCosH * bCp * bSt,
       dvy: -bCosH * bSp,
       dvz: -bSinH * bSt + bCosH * bCp * bCt,
+    });
+
+    return nextProjectileId;
+  }
+
+  _fireBotMissile(bot, projectiles, nextProjectileId) {
+    if (bot.isDead || !bot.combatTarget) return nextProjectileId;
+
+    bot.crypto -= 5;
+
+    const missile = {
+      id: nextProjectileId++,
+      type: "missile",
+      ownerId: bot.id,
+      ownerFaction: bot.faction,
+      theta: bot.theta,
+      phi: bot.phi,
+      startTheta: bot.theta,
+      startPhi: bot.phi,
+      heading: 0,
+      speed: 0.00032, // 80% of tank top speed
+      age: 0,
+      maxAge: 60,
+      phase: 0, // 0=launch, 1=cruise
+      launchDuration: 0.5,
+      damage: 38, // 25 * 1.5 missile multiplier
+      targetId: bot.combatTarget,
+    };
+
+    if (this._workerMode) {
+      this._pendingProjectiles.push(missile);
+    } else {
+      projectiles.push(missile);
+    }
+
+    // Compute world-space launch position for client visual
+    const R = 480;
+    const bSp = Math.sin(bot.phi), bCp = Math.cos(bot.phi);
+    const bSt = Math.sin(bot.theta), bCt = Math.cos(bot.theta);
+    const bLift = R + 2;
+
+    this._emit("player-fired", {
+      id: bot.id,
+      type: "missile",
+      turretAngle: bot.turretAngle,
+      theta: bot.theta,
+      phi: bot.phi,
+      projectileId: missile.id,
+      targetId: bot.combatTarget,
+      wx: bLift * bSp * bSt,
+      wy: bLift * bCp,
+      wz: bLift * bSp * bCt,
     });
 
     return nextProjectileId;
@@ -1801,6 +1919,7 @@ class ServerBotManager {
       state.d = bot.isDead ? 1 : 0;
       state.f = bot.faction;
       state.n = bot.name; // For lazy client-side spawning
+      state.weld = bot.weldingActive ? 1 : 0;
     }
 
     return this._stateCache;

@@ -175,6 +175,7 @@ class BotWorkerBridge {
         isDead: p.isDead,
         waitingForPortal: p.waitingForPortal,
         name: p.name,
+        hp: p.hp,
       });
     }
 
@@ -328,6 +329,11 @@ class BotWorkerBridge {
 
   getBotName(botId) {
     return this._botNames[botId] || null;
+  }
+
+  /** Check if a bot exists (for missile owner validation) */
+  getBot(botId) {
+    return this._botStates[botId] || null;
   }
 
   // ========================
