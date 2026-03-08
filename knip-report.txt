@@ -1,0 +1,24 @@
+Knip Report — AdLands Server
+Run from: server/
+Date: 2026-03-08
+
+Unused files (8)
+BotWorker.js
+cleanupTerritories.js
+optimizeSponsorImages.js
+rebakeSponsorTextures.js
+ServerBotManager.js
+ServerBotPathfinder.js
+ServerFactionCoordinator.js
+wipePlayerData.js
+
+Unresolved imports (4)
+./src/hexasphere  shared/hexasphere.js:2:22
+./point           shared/hexasphere.js:5:13
+./tile            shared/hexasphere.js:82:12
+./face            shared/hexasphere.js:83:12
+
+Additional manual analysis (client-side, not covered by knip):
+
+Orphaned client files (not referenced in any HTML):
+js/admin/presenceChart.js — PresenceChart class, no script tag in admin.html or elsewhere

@@ -372,41 +372,7 @@ class GameRoom {
       // need their cache entries linked to their live sockets
       for (const [socketId, player] of this.players) {
         if (!player.uid) continue;
-        const cacheKey = `${player.uid}:${player.profileIndex}`;
-        let entry = this.profileCacheIndex.get(cacheKey);
-        if (entry) {
-          entry.isOnline = true;
-          entry.socketId = socketId;
-          entry.name = player.name;
-          entry.level = player.level || 1;
-          entry.totalCrypto = player.totalCrypto || 0;
-          entry.territoryCaptured = player.territoryCaptured || 0;
-          entry.avatarColor = player.avatarColor || entry.avatarColor;
-          if (entry.faction !== player.faction) {
-            const oldArr = this.factionProfileCache[entry.faction];
-            const idx = oldArr.indexOf(entry);
-            if (idx !== -1) oldArr.splice(idx, 1);
-            const newArr = this.factionProfileCache[player.faction];
-            if (newArr.indexOf(entry) === -1) newArr.push(entry);
-            entry.faction = player.faction;
-          }
-        } else {
-          entry = {
-            uid: player.uid,
-            profileIndex: player.profileIndex,
-            name: player.name,
-            faction: player.faction,
-            level: player.level || 1,
-            totalCrypto: player.totalCrypto || 0,
-            territoryCaptured: player.territoryCaptured || 0,
-            lastPlayedAt: null,
-            avatarColor: player.avatarColor || null,
-            isOnline: true,
-            socketId: socketId,
-          };
-          this.factionProfileCache[player.faction].push(entry);
-          this.profileCacheIndex.set(cacheKey, entry);
-        }
+        this._upsertProfileCache(player, socketId);
       }
 
       this._markRanksDirty();
@@ -593,23 +559,10 @@ class GameRoom {
       }
     }
 
-    // 6. Build capture state snapshot so clients can restore ownership after reload
-    const captureState = {};
-    for (const [clusterId, state] of this.clusterCaptureState) {
-      const total = state.tics.rust + state.tics.cobalt + state.tics.viridian;
-      if (total > 0 || state.owner) {
-        captureState[clusterId] = {
-          tics: { ...state.tics },
-          owner: state.owner,
-          capacity: state.capacity,
-        };
-      }
-    }
-
-    // 7. Broadcast full reload to all connected clients
+    // 6. Broadcast full reload to all connected clients
     this.io.to(this.roomId).emit("sponsors-reloaded", {
       world: this._worldPayload,
-      captureState,
+      captureState: this._buildCaptureSnapshot(),
       presenceData: this._getPresencePayload(),
     });
 
@@ -818,59 +771,7 @@ class GameRoom {
     this.players.set(socket.id, player);
     socket.join(this.roomId);
 
-    // Update faction profile cache (mark this player as online)
-    if (player.uid && this.profileCacheReady) {
-      const cacheKey = `${player.uid}:${player.profileIndex}`;
-      let entry = this.profileCacheIndex.get(cacheKey);
-      if (entry) {
-        // If faction changed since cache was built, move entry to correct array
-        if (entry.faction !== player.faction) {
-          const oldArr = this.factionProfileCache[entry.faction];
-          const idx = oldArr.indexOf(entry);
-          if (idx !== -1) oldArr.splice(idx, 1);
-          const newArr = this.factionProfileCache[player.faction];
-          if (newArr.indexOf(entry) === -1) newArr.push(entry);
-          entry.faction = player.faction;
-        }
-        entry.isOnline = true;
-        entry.socketId = socket.id;
-        entry.name = player.name;
-        entry.level = player.level || 1;
-        entry.totalCrypto = player.totalCrypto || 0;
-        entry.territoryCaptured = player.territoryCaptured || 0;
-        entry.avatarColor = player.avatarColor || entry.avatarColor;
-      } else {
-        // New player not yet in cache — add them
-        entry = {
-          uid: player.uid,
-          profileIndex: player.profileIndex,
-          name: player.name,
-          faction: player.faction,
-          level: player.level || 1,
-          totalCrypto: player.totalCrypto || 0,
-          territoryCaptured: player.territoryCaptured || 0,
-          lastPlayedAt: null,
-          avatarColor: player.avatarColor || null,
-          isOnline: true,
-          socketId: socket.id,
-        };
-        this.factionProfileCache[player.faction].push(entry);
-        this.profileCacheIndex.set(cacheKey, entry);
-      }
-    }
-
-    // Build current capture state snapshot (only non-empty clusters to save bandwidth)
-    const captureState = {};
-    for (const [clusterId, state] of this.clusterCaptureState) {
-      const total = state.tics.rust + state.tics.cobalt + state.tics.viridian;
-      if (total > 0 || state.owner) {
-        captureState[clusterId] = {
-          tics: { ...state.tics },
-          owner: state.owner,
-          capacity: state.capacity,
-        };
-      }
-    }
+    this._upsertProfileCache(player, socket.id);
 
     // Tell the new player about themselves, all existing players, and the world
     socket.emit("welcome", {
@@ -886,35 +787,13 @@ class GameRoom {
       tickRate: this.tickRate,
       planetRotation: this.planetRotation,
       world: this._worldPayload,
-      captureState,
+      captureState: this._buildCaptureSnapshot(),
       presenceData: this._getPresencePayload(),
       commanders: this._getCommanderSnapshot(),
-      celestial: {
-        moons: this.moons.map(m => ({
-          angle: m.angle, speed: m.speed,
-          distance: m.distance, inclination: m.inclination, radius: m.radius,
-        })),
-        stations: this.stations.map(s => ({
-          orbitalAngle: s.orbitalAngle, speed: s.speed,
-          orbitRadius: s.orbitRadius, inclination: s.inclination,
-          ascendingNode: s.ascendingNode, rotationSpeed: s.rotationSpeed,
-          localRotation: s.localRotation,
-        })),
-        billboards: this.billboardOrbits.map(b => ({
-          orbitalAngle: b.orbitalAngle, speed: b.speed,
-          orbitRadius: b.orbitRadius, inclination: b.inclination,
-          ascendingNode: b.ascendingNode,
-          wobbleX: b.wobbleX, wobbleY: b.wobbleY, wobbleZ: b.wobbleZ,
-        })),
-      },
+      celestial: this._buildCelestialPayload(),
     });
 
-    // Send terrain blocked grid for client-side collision (matches server's grid exactly)
-    socket.emit("terrain-grid", {
-      gridT: this.worldGen._BLOCKED_GRID_T,
-      gridP: this.worldGen._BLOCKED_GRID_P,
-      R: 480,
-    }, Buffer.from(this.worldGen._blockedGrid.buffer));
+    this._emitTerrainGrid(socket);
 
     // Tell everyone else about the new player (waiting — don't spawn yet)
     socket.to(this.roomId).emit("player-joined", {
@@ -1035,18 +914,6 @@ class GameRoom {
     }
 
     // --- Send welcome payload (same structure as addPlayer) ---
-    const captureState = {};
-    for (const [clusterId, state] of this.clusterCaptureState) {
-      const total = state.tics.rust + state.tics.cobalt + state.tics.viridian;
-      if (total > 0 || state.owner) {
-        captureState[clusterId] = {
-          tics: { ...state.tics },
-          owner: state.owner,
-          capacity: state.capacity,
-        };
-      }
-    }
-
     socket.emit("welcome", {
       you: {
         id: saved.id,
@@ -1054,7 +921,6 @@ class GameRoom {
         faction: saved.faction,
         waitingForPortal: saved.waitingForPortal,
         factionTotal: this.factionMemberCounts[saved.faction] || 0,
-        // Reconnection-specific: restore position/state
         reconnected: true,
         theta: saved.theta,
         phi: saved.phi,
@@ -1067,35 +933,13 @@ class GameRoom {
       tickRate: this.tickRate,
       planetRotation: this.planetRotation,
       world: this._worldPayload,
-      captureState,
+      captureState: this._buildCaptureSnapshot(),
       presenceData: this._getPresencePayload(),
       commanders: this._getCommanderSnapshot(),
-      celestial: {
-        moons: this.moons.map(m => ({
-          angle: m.angle, speed: m.speed,
-          distance: m.distance, inclination: m.inclination, radius: m.radius,
-        })),
-        stations: this.stations.map(s => ({
-          orbitalAngle: s.orbitalAngle, speed: s.speed,
-          orbitRadius: s.orbitRadius, inclination: s.inclination,
-          ascendingNode: s.ascendingNode, rotationSpeed: s.rotationSpeed,
-          localRotation: s.localRotation,
-        })),
-        billboards: this.billboardOrbits.map(b => ({
-          orbitalAngle: b.orbitalAngle, speed: b.speed,
-          orbitRadius: b.orbitRadius, inclination: b.inclination,
-          ascendingNode: b.ascendingNode,
-          wobbleX: b.wobbleX, wobbleY: b.wobbleY, wobbleZ: b.wobbleZ,
-        })),
-      },
+      celestial: this._buildCelestialPayload(),
     });
 
-    // Send terrain blocked grid for client-side collision (matches server's grid exactly)
-    socket.emit("terrain-grid", {
-      gridT: this.worldGen._BLOCKED_GRID_T,
-      gridP: this.worldGen._BLOCKED_GRID_P,
-      R: 480,
-    }, Buffer.from(this.worldGen._blockedGrid.buffer));
+    this._emitTerrainGrid(socket);
 
     // Notify other players
     if (!saved.waitingForPortal) {
@@ -1152,19 +996,41 @@ class GameRoom {
   linkPlayerToProfileCache(socketId) {
     const player = this.players.get(socketId);
     if (!player || !player.uid || !this.profileCacheReady) return;
+    this._upsertProfileCache(player, socketId);
+    this._markRanksDirty();
+  }
 
+  // ========================
+  // PROFILE CACHE HELPERS
+  // ========================
+
+  /**
+   * Move a profile cache entry from one faction array to another.
+   * @param {Object} entry - The cache entry to move
+   * @param {string} newFaction - Target faction name
+   */
+  _moveFactionCacheEntry(entry, newFaction) {
+    if (entry.faction === newFaction) return;
+    const oldArr = this.factionProfileCache[entry.faction];
+    const idx = oldArr.indexOf(entry);
+    if (idx !== -1) oldArr.splice(idx, 1);
+    const newArr = this.factionProfileCache[newFaction];
+    if (newArr.indexOf(entry) === -1) newArr.push(entry);
+    entry.faction = newFaction;
+  }
+
+  /**
+   * Upsert a player into the faction profile cache (create or update).
+   * Handles faction moves, online status, and stat syncing.
+   * @param {Object} player - The player state object
+   * @param {string} socketId - The player's socket ID
+   */
+  _upsertProfileCache(player, socketId) {
+    if (!player.uid || !this.profileCacheReady) return;
     const cacheKey = `${player.uid}:${player.profileIndex}`;
     let entry = this.profileCacheIndex.get(cacheKey);
     if (entry) {
-      // If faction changed since cache was built, move entry to correct array
-      if (entry.faction !== player.faction) {
-        const oldArr = this.factionProfileCache[entry.faction];
-        const idx = oldArr.indexOf(entry);
-        if (idx !== -1) oldArr.splice(idx, 1);
-        const newArr = this.factionProfileCache[player.faction];
-        if (newArr.indexOf(entry) === -1) newArr.push(entry);
-        entry.faction = player.faction;
-      }
+      this._moveFactionCacheEntry(entry, player.faction);
       entry.isOnline = true;
       entry.socketId = socketId;
       entry.name = player.name;
@@ -1173,7 +1039,6 @@ class GameRoom {
       entry.territoryCaptured = player.territoryCaptured || 0;
       entry.avatarColor = player.avatarColor || entry.avatarColor;
     } else {
-      // Player not yet in cache — add them
       entry = {
         uid: player.uid,
         profileIndex: player.profileIndex,
@@ -1190,18 +1055,14 @@ class GameRoom {
       this.factionProfileCache[player.faction].push(entry);
       this.profileCacheIndex.set(cacheKey, entry);
     }
-
-    this._markRanksDirty();
   }
 
   /**
-   * Mark a player's profile cache entry as offline (e.g. when they sign out mid-session).
-   * Called before the player's uid is cleared so we can look up the correct cache key.
+   * Mark a player's profile cache entry as offline, preserving latest stats.
+   * @param {Object} player - The player state object
    */
-  unlinkPlayerFromProfileCache(socketId) {
-    const player = this.players.get(socketId);
-    if (!player || !player.uid || !this.profileCacheReady) return;
-
+  _markProfileCacheOffline(player) {
+    if (!player.uid || !this.profileCacheReady) return;
     const cacheKey = `${player.uid}:${player.profileIndex}`;
     const entry = this.profileCacheIndex.get(cacheKey);
     if (entry) {
@@ -1212,7 +1073,179 @@ class GameRoom {
       entry.territoryCaptured = player.territoryCaptured || entry.territoryCaptured;
       entry.avatarColor = player.avatarColor || entry.avatarColor;
     }
+  }
 
+  // ========================
+  // WELCOME PAYLOAD HELPERS
+  // ========================
+
+  /**
+   * Build a snapshot of non-empty cluster capture states.
+   * @returns {Object} Map of clusterId → { tics, owner, capacity }
+   */
+  _buildCaptureSnapshot() {
+    const captureState = {};
+    for (const [clusterId, state] of this.clusterCaptureState) {
+      const total = state.tics.rust + state.tics.cobalt + state.tics.viridian;
+      if (total > 0 || state.owner) {
+        captureState[clusterId] = {
+          tics: { ...state.tics },
+          owner: state.owner,
+          capacity: state.capacity,
+        };
+      }
+    }
+    return captureState;
+  }
+
+  /**
+   * Build the celestial body payload for welcome packets.
+   * @returns {Object} { moons, stations, billboards }
+   */
+  _buildCelestialPayload() {
+    return {
+      moons: this.moons.map(m => ({
+        angle: m.angle, speed: m.speed,
+        distance: m.distance, inclination: m.inclination, radius: m.radius,
+      })),
+      stations: this.stations.map(s => ({
+        orbitalAngle: s.orbitalAngle, speed: s.speed,
+        orbitRadius: s.orbitRadius, inclination: s.inclination,
+        ascendingNode: s.ascendingNode, rotationSpeed: s.rotationSpeed,
+        localRotation: s.localRotation,
+      })),
+      billboards: this.billboardOrbits.map(b => ({
+        orbitalAngle: b.orbitalAngle, speed: b.speed,
+        orbitRadius: b.orbitRadius, inclination: b.inclination,
+        ascendingNode: b.ascendingNode,
+        wobbleX: b.wobbleX, wobbleY: b.wobbleY, wobbleZ: b.wobbleZ,
+      })),
+    };
+  }
+
+  /**
+   * Emit the terrain blocked grid to a socket.
+   * @param {Object} socket - Socket.IO socket
+   */
+  _emitTerrainGrid(socket) {
+    socket.emit("terrain-grid", {
+      gridT: this.worldGen._BLOCKED_GRID_T,
+      gridP: this.worldGen._BLOCKED_GRID_P,
+      R: 480,
+    }, Buffer.from(this.worldGen._blockedGrid.buffer));
+  }
+
+  // ========================
+  // KILL TRACKING HELPERS
+  // ========================
+
+  /**
+   * Process kill/death streak tracking and Tusk announcements after a kill.
+   * @param {Object|null} killer - Killer player state (null if bot/disconnected)
+   * @param {string} killerName - Killer display name
+   * @param {Object} victim - Victim player state
+   * @param {string} victimName - Victim display name
+   * @param {string} killerFaction - Killer's faction
+   * @param {string} killerId - Killer's socket/bot ID
+   * @param {string} victimId - Victim's socket/bot ID
+   */
+  _processKillStreaks(killer, killerName, victim, victimName, killerFaction, killerId, victimId) {
+    if (killer) {
+      killer.killStreak = (killer.killStreak || 0) + 1;
+      killer.totalKills = (killer.totalKills || 0) + 1;
+      const isVictimCommander = this.commanders[victim.faction]?.id === victimId;
+      if (killer.uid) {
+        killer.crypto += 500 * (isVictimCommander ? 10 : 1);
+      }
+      this.tuskChat.onKill(killerName, victimName, killerFaction, victim.faction, killerId, victimId);
+      if (killer.killStreak >= 3) {
+        this.tuskChat.onKillStreak(killerName, killer.killStreak, killerId);
+      }
+      const milestones = [10, 25, 50, 100, 150, 200];
+      if (milestones.includes(killer.totalKills)) {
+        this.tuskChat.onPlayerMilestone(killerName, killer.totalKills, killerId);
+      }
+      if (victim.lastKilledBy === killerId) {
+        this.tuskChat.onRevengeKill(killerName, victimName, killerId, victimId);
+      }
+    }
+
+    victim.killStreak = 0;
+    victim.deathCount = (victim.deathCount || 0) + 1;
+    victim.lastKilledBy = killerId;
+
+    const deathWindow = 300000;
+    if (victim.deathCount === 1) {
+      victim.deathStreakStart = Date.now();
+    }
+    if (victim.deathCount >= 3 && Date.now() - victim.deathStreakStart < deathWindow) {
+      const minutes = Math.floor((Date.now() - victim.deathStreakStart) / 60000) || 1;
+      this.tuskChat.onDeathStreak(victimName, victim.deathCount, minutes, victimId);
+    }
+    if (victim.deathStreakStart && Date.now() - victim.deathStreakStart >= deathWindow) {
+      victim.deathCount = 1;
+      victim.deathStreakStart = Date.now();
+    }
+  }
+
+  // ========================
+  // ROSTER HELPERS
+  // ========================
+
+  /**
+   * Build a condensed roster array for a faction, with the given player's entry marked as self.
+   * @param {Array} roster - The sorted faction roster array
+   * @param {string} socketId - The requesting player's socket ID
+   * @returns {Array} Condensed roster entries (top 50 + self if outside)
+   */
+  _condenseRoster(roster, socketId) {
+    const condensed = [];
+    let playerFound = false;
+
+    for (let i = 0; i < Math.min(roster.length, 50); i++) {
+      const m = roster[i];
+      const liveCrypto = m.socketId ? (this.players.get(m.socketId)?.crypto ?? m.totalCrypto) : m.totalCrypto;
+      condensed.push({
+        id: m.socketId || (m.uid ? `offline_${m.uid}_${m.profileIndex}` : null),
+        rank: m.rank,
+        name: m.name,
+        level: m.level || 1,
+        crypto: liveCrypto || 0,
+        online: m.isOnline,
+        isSelf: m.socketId === socketId,
+        avatarColor: m.avatarColor || null,
+      });
+      if (m.socketId === socketId) playerFound = true;
+    }
+
+    if (!playerFound) {
+      const selfEntry = roster.find(m => m.socketId === socketId);
+      if (selfEntry) {
+        const liveCrypto = this.players.get(selfEntry.socketId)?.crypto ?? selfEntry.totalCrypto;
+        condensed.push({
+          id: selfEntry.socketId,
+          rank: selfEntry.rank,
+          name: selfEntry.name,
+          level: selfEntry.level || 1,
+          crypto: liveCrypto || 0,
+          online: true,
+          isSelf: true,
+          avatarColor: selfEntry.avatarColor || null,
+        });
+      }
+    }
+
+    return condensed;
+  }
+
+  /**
+   * Mark a player's profile cache entry as offline (e.g. when they sign out mid-session).
+   * Called before the player's uid is cleared so we can look up the correct cache key.
+   */
+  unlinkPlayerFromProfileCache(socketId) {
+    const player = this.players.get(socketId);
+    if (!player) return;
+    this._markProfileCacheOffline(player);
     this._markRanksDirty();
   }
 
@@ -1220,20 +1253,7 @@ class GameRoom {
     const player = this.players.get(socketId);
     if (!player) return;
 
-    // Mark offline in profile cache (keep in roster)
-    if (player.uid && this.profileCacheReady) {
-      const cacheKey = `${player.uid}:${player.profileIndex}`;
-      const entry = this.profileCacheIndex.get(cacheKey);
-      if (entry) {
-        entry.isOnline = false;
-        entry.socketId = null;
-        // Persist latest stats so offline ranking stays accurate
-        entry.level = player.level || entry.level;
-        entry.totalCrypto = player.totalCrypto || entry.totalCrypto;
-        entry.territoryCaptured = player.territoryCaptured || entry.territoryCaptured;
-        entry.avatarColor = player.avatarColor || entry.avatarColor;
-      }
-    }
+    this._markProfileCacheOffline(player);
 
     this.players.delete(socketId);
     this.resignedPlayers.delete(socketId);
@@ -1598,40 +1618,8 @@ class GameRoom {
         oldEntry.isOnline = false;
         oldEntry.socketId = null;
       }
-      const newCacheKey = `${player.uid}:${newProfileIndex}`;
-      let newEntry = this.profileCacheIndex.get(newCacheKey);
-      if (newEntry) {
-        // If the new profile's cached faction differs from the player's current faction, move it
-        if (newEntry.faction !== player.faction) {
-          const oldArr = this.factionProfileCache[newEntry.faction];
-          const idx = oldArr.indexOf(newEntry);
-          if (idx !== -1) oldArr.splice(idx, 1);
-          const newArr = this.factionProfileCache[player.faction];
-          if (newArr.indexOf(newEntry) === -1) newArr.push(newEntry);
-          newEntry.faction = player.faction;
-        }
-        newEntry.isOnline = true;
-        newEntry.socketId = socketId;
-        newEntry.name = player.name;
-        newEntry.level = player.level;
-        newEntry.totalCrypto = player.totalCrypto;
-      } else {
-        // New profile not in cache
-        newEntry = {
-          uid: player.uid,
-          profileIndex: newProfileIndex,
-          name: player.name,
-          faction: player.faction,
-          level: player.level || 1,
-          totalCrypto: player.totalCrypto || 0,
-          territoryCaptured: 0,
-          lastPlayedAt: null,
-          isOnline: true,
-          socketId,
-        };
-        this.factionProfileCache[player.faction].push(newEntry);
-        this.profileCacheIndex.set(newCacheKey, newEntry);
-      }
+      // Link to new profile's cache entry
+      this._upsertProfileCache(player, socketId);
     }
 
     // Handle faction change implications
@@ -2329,40 +2317,7 @@ class GameRoom {
               killerName,
             });
 
-            if (killer) {
-              killer.killStreak = (killer.killStreak || 0) + 1;
-              killer.totalKills = (killer.totalKills || 0) + 1;
-              const isVictimCommander = this.commanders[hitPlayer.faction]?.id === target.id;
-              if (killer.uid) {
-                killer.crypto += 500 * (isVictimCommander ? 10 : 1);
-              }
-              this.tuskChat.onKill(killerName, victimName, p.ownerFaction, hitPlayer.faction, p.ownerId, target.id);
-              if (killer.killStreak >= 3) {
-                this.tuskChat.onKillStreak(killerName, killer.killStreak, p.ownerId);
-              }
-              const milestones = [10, 25, 50, 100, 150, 200];
-              if (milestones.includes(killer.totalKills)) {
-                this.tuskChat.onPlayerMilestone(killerName, killer.totalKills, p.ownerId);
-              }
-              if (hitPlayer.lastKilledBy === p.ownerId) {
-                this.tuskChat.onRevengeKill(killerName, victimName, p.ownerId, target.id);
-              }
-            }
-
-            hitPlayer.killStreak = 0;
-            hitPlayer.deathCount = (hitPlayer.deathCount || 0) + 1;
-            hitPlayer.lastKilledBy = p.ownerId;
-
-            const deathWindow = 300000;
-            if (hitPlayer.deathCount === 1) hitPlayer.deathStreakStart = Date.now();
-            if (hitPlayer.deathCount >= 3 && Date.now() - hitPlayer.deathStreakStart < deathWindow) {
-              const minutes = Math.floor((Date.now() - hitPlayer.deathStreakStart) / 60000) || 1;
-              this.tuskChat.onDeathStreak(victimName, hitPlayer.deathCount, minutes, target.id);
-            }
-            if (hitPlayer.deathStreakStart && Date.now() - hitPlayer.deathStreakStart >= deathWindow) {
-              hitPlayer.deathCount = 1;
-              hitPlayer.deathStreakStart = Date.now();
-            }
+            this._processKillStreaks(killer, killerName, hitPlayer, victimName, p.ownerFaction, p.ownerId, target.id);
 
             for (const faction of FACTIONS) {
               if (this.commanders[faction]?.id === target.id) {
@@ -3463,54 +3418,7 @@ class GameRoom {
 
             // Bot killer trash talk is handled by the worker thread via events
 
-            // Track kill/death streaks for Tusk
-            if (killer) {
-              killer.killStreak = (killer.killStreak || 0) + 1;
-              killer.totalKills = (killer.totalKills || 0) + 1;
-              const isVictimCommander = this.commanders[player.faction]?.id === id;
-              if (killer.uid) {
-                killer.crypto += 500 * (isVictimCommander ? 10 : 1); // Kill bounty (authenticated only)
-              }
-
-              // Tusk kill announcement (pass socket IDs for deferred name resolution)
-              this.tuskChat.onKill(killerName, victimName, p.ownerFaction, player.faction, p.ownerId, id);
-
-              // Tusk kill streak announcement (at 3, 5, 7, 10+)
-              if (killer.killStreak >= 3) {
-                this.tuskChat.onKillStreak(killerName, killer.killStreak, p.ownerId);
-              }
-
-              // Tusk player milestone (at 10, 25, 50, 100...)
-              const milestones = [10, 25, 50, 100, 150, 200];
-              if (milestones.includes(killer.totalKills)) {
-                this.tuskChat.onPlayerMilestone(killerName, killer.totalKills, p.ownerId);
-              }
-
-              // Tusk revenge kill (victim killed the killer recently)
-              if (player.lastKilledBy === p.ownerId) {
-                this.tuskChat.onRevengeKill(killerName, victimName, p.ownerId, id);
-              }
-            }
-
-            // Track death streak for victim
-            player.killStreak = 0;
-            player.deathCount = (player.deathCount || 0) + 1;
-            player.lastKilledBy = p.ownerId;
-
-            // Tusk death streak (3+ deaths within 5 minutes)
-            const deathWindow = 300000; // 5 minutes
-            if (player.deathCount === 1) {
-              player.deathStreakStart = Date.now(); // Start window on first death
-            }
-            if (player.deathCount >= 3 && Date.now() - player.deathStreakStart < deathWindow) {
-              const minutes = Math.floor((Date.now() - player.deathStreakStart) / 60000) || 1;
-              this.tuskChat.onDeathStreak(victimName, player.deathCount, minutes, id);
-            }
-            // Reset streak if window expired
-            if (player.deathStreakStart && Date.now() - player.deathStreakStart >= deathWindow) {
-              player.deathCount = 1;
-              player.deathStreakStart = Date.now();
-            }
+            this._processKillStreaks(killer, killerName, player, victimName, p.ownerFaction, p.ownerId, id);
 
             // Kill bodyguards if victim was a commander
             for (const faction of FACTIONS) {
@@ -4775,18 +4683,10 @@ class GameRoom {
     // Update faction
     player.faction = newFaction;
 
-    // Move entry in faction profile cache so _recomputeRanks sees the new faction
     if (player.uid && this.profileCacheReady) {
       const cacheKey = `${player.uid}:${player.profileIndex}`;
       const entry = this.profileCacheIndex.get(cacheKey);
-      if (entry && entry.faction !== newFaction) {
-        const oldArr = this.factionProfileCache[entry.faction];
-        const idx = oldArr.indexOf(entry);
-        if (idx !== -1) oldArr.splice(idx, 1);
-        const newArr = this.factionProfileCache[newFaction];
-        if (newArr.indexOf(entry) === -1) newArr.push(entry);
-        entry.faction = newFaction;
-      }
+      if (entry) this._moveFactionCacheEntry(entry, newFaction);
     }
 
     // Broadcast faction change to all clients
@@ -4864,18 +4764,10 @@ class GameRoom {
         this.commanders[oldFaction] = null;
       }
 
-      // Move entry in faction profile cache so _recomputeRanks sees the new faction
       if (player.uid && this.profileCacheReady) {
         const cacheKey = `${player.uid}:${player.profileIndex}`;
         const entry = this.profileCacheIndex.get(cacheKey);
-        if (entry && entry.faction !== faction) {
-          const oldArr = this.factionProfileCache[entry.faction];
-          const idx = oldArr.indexOf(entry);
-          if (idx !== -1) oldArr.splice(idx, 1);
-          const newArr = this.factionProfileCache[faction];
-          if (newArr.indexOf(entry) === -1) newArr.push(entry);
-          entry.faction = faction;
-        }
+        if (entry) this._moveFactionCacheEntry(entry, faction);
       }
 
       this._markRanksDirty();
@@ -5205,49 +5097,10 @@ class GameRoom {
       const socket = this.io.sockets.sockets.get(socketId);
       if (!socket) continue;
 
-      const condensed = [];
-      let playerFound = false;
-
-      for (let i = 0; i < Math.min(roster.length, 50); i++) {
-        const m = roster[i];
-        // For online players, use live player.crypto (totalCrypto + session earnings);
-        // for offline players, use cached totalCrypto from Firestore.
-        const liveCrypto = m.socketId ? (this.players.get(m.socketId)?.crypto ?? m.totalCrypto) : m.totalCrypto;
-        condensed.push({
-          id: m.socketId || (m.uid ? `offline_${m.uid}_${m.profileIndex}` : null),
-          rank: m.rank,
-          name: m.name,
-          level: m.level || 1,
-          crypto: liveCrypto || 0,
-          online: m.isOnline,
-          isSelf: m.socketId === socketId,
-          avatarColor: m.avatarColor || null,
-        });
-        if (m.socketId === socketId) playerFound = true;
-      }
-
-      // If player is outside top 50, append their entry
-      if (!playerFound) {
-        const selfEntry = roster.find(m => m.socketId === socketId);
-        if (selfEntry) {
-          const liveCrypto = this.players.get(selfEntry.socketId)?.crypto ?? selfEntry.totalCrypto;
-          condensed.push({
-            id: selfEntry.socketId,
-            rank: selfEntry.rank,
-            name: selfEntry.name,
-            level: selfEntry.level || 1,
-            crypto: liveCrypto || 0,
-            online: true,
-            isSelf: true,
-            avatarColor: selfEntry.avatarColor || null,
-          });
-        }
-      }
-
       socket.emit("faction-roster", {
         faction: player.faction,
         total: roster.length,
-        members: condensed,
+        members: this._condenseRoster(roster, socketId),
       });
     }
   }
@@ -5265,46 +5118,10 @@ class GameRoom {
     const socket = this.io.sockets.sockets.get(socketId);
     if (!socket) return;
 
-    const condensed = [];
-    let playerFound = false;
-
-    for (let i = 0; i < Math.min(roster.length, 50); i++) {
-      const m = roster[i];
-      const liveCrypto = m.socketId ? (this.players.get(m.socketId)?.crypto ?? m.totalCrypto) : m.totalCrypto;
-      condensed.push({
-        id: m.socketId || (m.uid ? `offline_${m.uid}_${m.profileIndex}` : null),
-        rank: m.rank,
-        name: m.name,
-        level: m.level || 1,
-        crypto: liveCrypto || 0,
-        online: m.isOnline,
-        isSelf: m.socketId === socketId,
-        avatarColor: m.avatarColor || null,
-      });
-      if (m.socketId === socketId) playerFound = true;
-    }
-
-    if (!playerFound) {
-      const selfEntry = roster.find(m => m.socketId === socketId);
-      if (selfEntry) {
-        const liveCrypto = this.players.get(selfEntry.socketId)?.crypto ?? selfEntry.totalCrypto;
-        condensed.push({
-          id: selfEntry.socketId,
-          rank: selfEntry.rank,
-          name: selfEntry.name,
-          level: selfEntry.level || 1,
-          crypto: liveCrypto || 0,
-          online: true,
-          isSelf: true,
-          avatarColor: selfEntry.avatarColor || null,
-        });
-      }
-    }
-
     socket.emit("faction-roster", {
       faction: player.faction,
       total: roster.length,
-      members: condensed,
+      members: this._condenseRoster(roster, socketId),
     });
   }
 

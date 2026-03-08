@@ -124,3 +124,26 @@ All font tokens are defined in `css/shared-tokens.css`. Anti-aliasing is disable
 | `admin.html` | Admin portal for sponsor/territory management |
 | `sponsors.html` | Public sponsor showcase page (3D) |
 | `firestore.rules` | Firestore security rules |
+
+## Code Quality Rules (Always Apply)
+
+- Write the minimum code necessary to solve the problem. No speculative abstractions.
+- Before adding anything new, check if something already exists that can be reused or extended.
+- Leave every file cleaner than you found it (boy scout rule).
+- If a function exceeds ~40 lines, question whether it should be split.
+- If a file exceeds ~400 lines, question whether it's doing too much.
+- Delete code rather than commenting it out.
+- No dead imports. No unused variables. Ever.
+
+## Before Writing Any Code
+
+- Ask: does this already exist somewhere in the codebase?
+- Ask: is there a simpler way to do this?
+- Ask: will this be easy to delete later if requirements change?
+
+## What To Avoid
+
+- Don't add logging or comments that explain what the code does — the code should explain itself.
+- Don't create helper functions "just in case."
+- Don't leave TODO comments — either do it now or open a GitHub issue.
+- Don't add dead imports or unused variables.

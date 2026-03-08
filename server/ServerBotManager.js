@@ -254,12 +254,6 @@ class ServerBotManager {
    * @param {Object} terrain - TerrainElevation instance
    * @param {Object} worldGen - WorldGenerator instance
    * @param {Map} clusterCaptureState - Reference to GameRoom's capture state
-   */
-  /**
-   * @param {number} sphereRadius - Planet radius (480)
-   * @param {Object} terrain - TerrainElevation instance
-   * @param {Object} worldGen - WorldGenerator instance
-   * @param {Map} clusterCaptureState - Reference to GameRoom's capture state
    * @param {boolean} [workerMode=false] - When true, buffers events instead of emitting via Socket.IO
    */
   constructor(sphereRadius, terrain, worldGen, clusterCaptureState, workerMode = false) {
