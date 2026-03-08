@@ -3146,75 +3146,8 @@ class GameRoom {
       }
     }
 
-    // Bot welders — bots with weldingActive heal nearby friendlies
-    const botStatesWeld = this.botBridge.getStatesForBroadcast();
-    for (const botId in botStatesWeld) {
-      const bs = botStatesWeld[botId];
-      if (!bs.weld || bs.d) continue;
-
-      const botFaction = bs.f;
-      const targets = [];
-
-      // Check human players
-      for (const [tid, target] of this.players) {
-        if (this._isUndeployed(target) || target.isDead) continue;
-        if (target.faction !== botFaction) continue;
-        if (target.hp >= MAX_HP) continue;
-        const dist = sphericalDistance(bs.t, bs.p, target.theta, target.phi);
-        if (dist <= WELD_RANGE_RAD) {
-          targets.push({ id: tid, isBot: false });
-        }
-      }
-
-      // Check other bots
-      for (const otherBotId in botStatesWeld) {
-        if (otherBotId === botId) continue;
-        const obs = botStatesWeld[otherBotId];
-        if (obs.d) continue;
-        if (obs.f !== botFaction) continue;
-        if ((obs.hp || 100) >= MAX_HP) continue;
-        const dist = sphericalDistance(bs.t, bs.p, obs.t, obs.p);
-        if (dist <= WELD_RANGE_RAD) {
-          targets.push({ id: otherBotId, isBot: true });
-        }
-      }
-
-      if (targets.length === 0) continue;
-
-      const healPerTarget = (HEAL_PER_SEC * dt) / targets.length;
-
-      // Use a shared accumulator map for bot welders (lazy init on bridge)
-      if (!this._botWeldAccumulators) this._botWeldAccumulators = {};
-      if (!this._botWeldAccumulators[botId]) this._botWeldAccumulators[botId] = {};
-      const acc = this._botWeldAccumulators[botId];
-
-      const activeTargetIds = new Set();
-      for (const t of targets) {
-        activeTargetIds.add(t.id);
-        if (!acc[t.id]) acc[t.id] = 0;
-        acc[t.id] += healPerTarget;
-
-        const wholeHp = Math.floor(acc[t.id]);
-        if (wholeHp > 0) {
-          acc[t.id] -= wholeHp;
-          if (t.isBot) {
-            this.botBridge.applyHealing(t.id, wholeHp);
-          } else {
-            const target = this.players.get(t.id);
-            if (target) {
-              target.hp = Math.min(MAX_HP, target.hp + wholeHp);
-            }
-          }
-        }
-      }
-
-      // Clean up stale accumulators
-      for (const accId in acc) {
-        if (!activeTargetIds.has(accId)) {
-          delete acc[accId];
-        }
-      }
-    }
+    // Bot welding: healing is done directly in ServerBotManager (bot→bot only).
+    // The weld flag in bot state broadcast handles client-side beam visuals.
   }
 
   _updateProjectiles(dt) {

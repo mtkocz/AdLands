@@ -810,17 +810,14 @@ class MissileSystem {
       this._updateTrackingReticles(camera);
     }
 
-    // Update particle systems — hide Points meshes when camera beyond 260 from surface
+    // Always update particle ages (prevents stale burst on zoom-in);
+    // hide Points meshes when camera beyond 260 from surface
+    this._updateAfterburner(deltaTime, camera);
+    this._updateSmokeTrail(deltaTime, camera);
     const camSurfDist = camera ? camera.position.length() - this.sphereRadius : 0;
-    if (camSurfDist > 260) {
-      if (this._abPoints) this._abPoints.visible = false;
-      if (this._smokePoints) this._smokePoints.visible = false;
-    } else {
-      if (this._abPoints) this._abPoints.visible = true;
-      if (this._smokePoints) this._smokePoints.visible = true;
-      this._updateAfterburner(deltaTime, camera);
-      this._updateSmokeTrail(deltaTime, camera);
-    }
+    const particlesVisible = camSurfDist <= 260;
+    if (this._abPoints) this._abPoints.visible = particlesVisible;
+    if (this._smokePoints) this._smokePoints.visible = particlesVisible;
   }
 
   _updateLockOnSearch(deltaTime, camera) {
@@ -990,11 +987,12 @@ class MissileSystem {
       const moveSpeed = this.config.missileSpeed * dt60;
       m.position.addScaledVector(m.direction, moveSpeed);
 
-      // Maintain altitude by projecting back to cruise height
+      // Maintain altitude — smoothly lerp toward cruise height instead of snapping
       const currentNormal = this._tempVec.copy(m.position).normalize();
       const currentAlt = m.position.length() - this.sphereRadius;
       if (Math.abs(currentAlt - m.cruiseAltitude) > 0.5) {
-        m.position.copy(currentNormal).multiplyScalar(this.sphereRadius + m.cruiseAltitude);
+        const correctedAlt = MathUtils.lerp(currentAlt, m.cruiseAltitude, Math.min(5 * dt, 1));
+        m.position.copy(currentNormal).multiplyScalar(this.sphereRadius + correctedAlt);
       }
 
       // Orient mesh to face travel direction (lookAt + offset for Y-axis mesh)
@@ -1046,6 +1044,7 @@ class MissileSystem {
       if (target) {
         // Target re-acquired — back to cruise
         m.phase = 1;
+        m.phase1Age = 0; // Reset so forward-hemisphere filter grace period applies
         m.isLost = false;
         m.lostAge = 0;
         m.targetTank = target.tank;
@@ -1083,7 +1082,8 @@ class MissileSystem {
       const currentNormal = this._tempVec.copy(m.position).normalize();
       const currentAlt = m.position.length() - this.sphereRadius;
       if (Math.abs(currentAlt - targetAlt) > 0.5) {
-        m.position.copy(currentNormal).multiplyScalar(this.sphereRadius + targetAlt);
+        const correctedAlt = MathUtils.lerp(currentAlt, targetAlt, Math.min(5 * dt, 1));
+        m.position.copy(currentNormal).multiplyScalar(this.sphereRadius + correctedAlt);
       }
 
       // Orient mesh
@@ -1184,7 +1184,7 @@ class MissileSystem {
   // ========================
 
   _createAfterburnerSystem() {
-    const max = 100;
+    const max = 300;
     this._ab = {
       maxParticles: max,
       activeCount: 0,
@@ -1362,7 +1362,7 @@ class MissileSystem {
   // ========================
 
   _createSmokeTrailSystem() {
-    const max = 150;
+    const max = 500;
     this._smoke = {
       maxParticles: max,
       activeCount: 0,

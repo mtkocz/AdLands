@@ -1095,7 +1095,8 @@
               // Local missile — let it finish its visual dive naturally;
               // client-side phase 2 impact check will destroy it
             } else {
-              window.missileSystem.removeByServerId(data.projectileId);
+              // Dive to impact point instead of vanishing mid-air
+              window.missileSystem.crashByServerId(data.projectileId, data.theta, data.phi);
             }
           } else {
             cannonSystem.removeProjectileByServerId?.(data.projectileId);

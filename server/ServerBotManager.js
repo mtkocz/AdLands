@@ -590,7 +590,7 @@ class ServerBotManager {
 
       bot.currentClusterId = this.worldGen.getClusterIdAt(bot.theta, bot.phi);
       if (isStagger) {
-        this._updateWelding(bot, players);
+        this._updateWelding(bot);
         nextProjectileId = this._updateCombat(bot, dt, players, projectiles, nextProjectileId, now);
       }
     }
@@ -1396,33 +1396,31 @@ class ServerBotManager {
   // WELDING (overlay — heals nearby damaged friendlies)
   // ========================
 
-  _updateWelding(bot, players) {
+  _updateWelding(bot) {
     bot.weldingActive = false;
     if (bot.isDead || bot.isDeploying) return;
 
     const WELD_RANGE_RAD = 20 / 480; // 20 world units on R=480 sphere
 
-    // Check friendly bots in range with hp < 100
-    for (const otherBot of this._botArray) {
-      if (otherBot === bot || otherBot.isDead || otherBot.isDeploying) continue;
-      if (otherBot.faction !== bot.faction) continue;
-      if (otherBot.hp >= 100) continue;
-      const dist = this._angularDistance(bot.theta, bot.phi, otherBot.theta, otherBot.phi);
-      if (dist <= WELD_RANGE_RAD) {
-        bot.weldingActive = true;
-        return;
-      }
-    }
+    // Find closest damaged same-faction bot using spatial hash (O(1) lookup)
+    const cellKey = this._getCellKey(bot.theta, bot.phi);
+    const neighborKeys = this._getNeighborKeys(cellKey);
 
-    // Check friendly human players in range with hp < 100
-    for (const [, player] of players) {
-      if (player.isDead || player.waitingForPortal) continue;
-      if (player.faction !== bot.faction) continue;
-      if (player.hp >= 100) continue;
-      const dist = this._angularDistance(bot.theta, bot.phi, player.theta, player.phi);
-      if (dist <= WELD_RANGE_RAD) {
-        bot.weldingActive = true;
-        return;
+    for (let k = 0; k < this._neighborKeysCount; k++) {
+      const cell = this._spatialHash.get(neighborKeys[k]);
+      if (!cell) continue;
+      for (let i = 0; i < cell.length; i++) {
+        const other = cell[i];
+        if (other === bot || other.isDead || other.isDeploying) continue;
+        if (other.faction !== bot.faction) continue;
+        if (other.hp >= 100) continue;
+        const dist = this._angularDistance(bot.theta, bot.phi, other.theta, other.phi);
+        if (dist <= WELD_RANGE_RAD) {
+          bot.weldingActive = true;
+          // Heal 1 HP directly (staggered = ~3 HP/sec effective)
+          other.hp = Math.min(100, other.hp + 1);
+          return;
+        }
       }
     }
   }
@@ -1461,8 +1459,9 @@ class ServerBotManager {
 
       const dist = this._angularDistance(bot.theta, bot.phi, target.theta, target.phi);
 
-      // Missile range: 0.06-0.15 rad (beyond cannon range), 4s cooldown, costs 5 crypto
-      if (dist >= 0.06 && dist < 0.15 && bot.crypto >= 5 && now - bot.lastMissileTime >= 4000) {
+      // Missile: only aggressive bots, beyond cannon range, long cooldown, costs 20 crypto
+      if (dist >= 0.08 && dist < 0.15 && bot.personality > 0.6 &&
+          bot.crypto >= 20 && now - bot.lastMissileTime >= 8000) {
         bot.lastMissileTime = now;
         nextProjectileId = this._fireBotMissile(bot, projectiles, nextProjectileId);
       }
@@ -1607,7 +1606,7 @@ class ServerBotManager {
   _fireBotMissile(bot, projectiles, nextProjectileId) {
     if (bot.isDead || !bot.combatTarget) return nextProjectileId;
 
-    bot.crypto -= 5;
+    bot.crypto -= 20;
 
     const missile = {
       id: nextProjectileId++,
