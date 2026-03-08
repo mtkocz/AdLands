@@ -90,6 +90,42 @@ canvas:not(#tank-preview-canvas) {
     border-right-width: 2px;
 }
 
+/* Missile-tracking reticle: smaller brackets showing what each in-flight missile is chasing */
+.missile-tracking-reticle {
+    position: fixed;
+    width: 28px;
+    height: 28px;
+}
+.missile-tracking-reticle .track-corner {
+    position: absolute;
+    width: 8px;
+    height: 8px;
+    border-color: var(--accent-gold);
+    border-style: solid;
+    border-width: 0;
+    opacity: 0.85;
+}
+.missile-tracking-reticle .track-top-left {
+    top: 0; left: 0;
+    border-top-width: 2px;
+    border-left-width: 2px;
+}
+.missile-tracking-reticle .track-top-right {
+    top: 0; right: 0;
+    border-top-width: 2px;
+    border-right-width: 2px;
+}
+.missile-tracking-reticle .track-bottom-left {
+    bottom: 0; left: 0;
+    border-bottom-width: 2px;
+    border-left-width: 2px;
+}
+.missile-tracking-reticle .track-bottom-right {
+    bottom: 0; right: 0;
+    border-bottom-width: 2px;
+    border-right-width: 2px;
+}
+
 /* Incoming missile warning — flashing red text */
 #missile-incoming-warning {
     position: fixed;

@@ -903,6 +903,11 @@
         const st = Math.sin(data.theta), ct = Math.cos(data.theta);
         _hitWorldPos.set(R * sp * st, R * cp, R * sp * ct);
         cannonSystem._spawnExplosion?.(_hitWorldPos, data.faction || "rust", 1.2);
+
+        // Award +10¢ flare intercept bonus to the flare owner (floating green number)
+        if (data.flareOwnerId === net.playerId && window.cryptoVisuals) {
+          window.cryptoVisuals._spawnFloatingNumber(10, _hitWorldPos);
+        }
       }
     };
 
@@ -1967,6 +1972,7 @@
       const actionLabels = {
         'fast-travel': 'fast travel',
         'fire': 'firing',
+        'flare': 'deploying flare',
         'level-up': 'leveling up',
         'unlock-slot': 'unlocking slot',
       };

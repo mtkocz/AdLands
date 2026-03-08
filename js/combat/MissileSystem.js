@@ -59,8 +59,12 @@ class MissileSystem {
     this._materials = {};
     this._createMissileAssets();
 
-    // Lock-on reticle (DOM)
+    // Lock-on reticle (DOM) — shows what the player is locking onto
     this._createLockOnReticle();
+
+    // Missile-tracking reticles (DOM pool) — one per active missile
+    this._trackingReticles = [];
+    this._trackingReticlePool = [];
 
     // Incoming missile warning (DOM)
     this._incomingMissileCount = 0;
@@ -220,6 +224,85 @@ class MissileSystem {
     }
 
     document.body.appendChild(this.lockOnReticle);
+  }
+
+  _acquireTrackingReticle() {
+    if (this._trackingReticlePool.length > 0) {
+      const el = this._trackingReticlePool.pop();
+      el.style.display = "none";
+      return el;
+    }
+    const el = document.createElement("div");
+    el.className = "missile-tracking-reticle";
+    el.style.cssText =
+      "position:fixed;width:28px;height:28px;pointer-events:none;z-index:9998;" +
+      "will-change:transform;transform:translate(-50%,-50%);display:none;";
+    const corners = ["top-left", "top-right", "bottom-left", "bottom-right"];
+    for (const corner of corners) {
+      const c = document.createElement("div");
+      c.className = "track-corner track-" + corner;
+      el.appendChild(c);
+    }
+    document.body.appendChild(el);
+    return el;
+  }
+
+  _releaseTrackingReticle(el) {
+    el.style.display = "none";
+    this._trackingReticlePool.push(el);
+  }
+
+  _updateTrackingReticles(camera) {
+    // Collect local missiles that have a target (phases 1 and 2)
+    const activeMissiles = [];
+    for (let i = 0; i < this.missiles.length; i++) {
+      const m = this.missiles[i];
+      if (!m.isRemote && m.targetTank && (m.phase === 1 || m.phase === 2)) {
+        activeMissiles.push(m);
+      }
+    }
+
+    // Return excess reticles to pool
+    while (this._trackingReticles.length > activeMissiles.length) {
+      this._releaseTrackingReticle(this._trackingReticles.pop());
+    }
+    // Acquire more if needed
+    while (this._trackingReticles.length < activeMissiles.length) {
+      this._trackingReticles.push(this._acquireTrackingReticle());
+    }
+
+    // Update positions
+    for (let i = 0; i < activeMissiles.length; i++) {
+      const m = activeMissiles[i];
+      const el = this._trackingReticles[i];
+
+      if (this.hideReticle) {
+        el.style.display = "none";
+        continue;
+      }
+
+      const worldPos = this._getTargetWorldPos(m.targetTank);
+      if (!worldPos) {
+        el.style.display = "none";
+        continue;
+      }
+
+      this._tempVec.copy(worldPos).project(camera);
+      if (this._tempVec.z > 1) {
+        el.style.display = "none";
+        continue;
+      }
+
+      const screenX = (this._tempVec.x * 0.5 + 0.5) * window.innerWidth;
+      const screenY = (-this._tempVec.y * 0.5 + 0.5) * window.innerHeight;
+
+      el.style.left = screenX + "px";
+      el.style.top = screenY + "px";
+      el.style.display = "";
+
+      const pulse = Math.sin(performance.now() * 0.008) * 0.12 + 1.0;
+      el.style.transform = `translate(-50%,-50%) scale(${pulse})`;
+    }
   }
 
   _createIncomingWarning() {
@@ -702,15 +785,10 @@ class MissileSystem {
       this._updateMissile(m, deltaTime);
     }
 
-    // Track reticle when not actively locking
+    // Lock-on reticle: only shows what the PLAYER is locking onto (not in-flight missiles)
     if (!this._locking && camera) {
-      const localMissile = this.missiles.find(m => !m.isRemote && m.targetTank);
-      if (localMissile) {
-        // In-flight missile — track its target
-        this._lockedTarget = { tank: localMissile.targetTank };
-        this._updateLockOnReticle(camera);
-      } else if (this._missileEquipped) {
-        // Passive tracking — always show reticle on nearest enemy
+      if (this._missileEquipped) {
+        // Passive tracking — show reticle on nearest enemy
         const target = this._findClosestEnemyTank(this.config.searchRadiusMin);
         this._lockedTarget = target;
         this._updateLockOnReticle(camera);
@@ -718,6 +796,11 @@ class MissileSystem {
         this._lockedTarget = null;
         if (this.lockOnReticle) this.lockOnReticle.style.display = "none";
       }
+    }
+
+    // Missile-tracking reticles: one per active in-flight missile
+    if (camera) {
+      this._updateTrackingReticles(camera);
     }
 
     // Update particle systems — hide Points meshes when camera beyond 260 from surface
@@ -1447,10 +1530,18 @@ class MissileSystem {
     if (this._abPoints) this.scene.remove(this._abPoints);
     if (this._smokePoints) this.scene.remove(this._smokePoints);
 
-    // Remove reticle
+    // Remove reticles
     if (this.lockOnReticle?.parentNode) {
       this.lockOnReticle.parentNode.removeChild(this.lockOnReticle);
     }
+    for (const el of this._trackingReticles) {
+      if (el.parentNode) el.parentNode.removeChild(el);
+    }
+    for (const el of this._trackingReticlePool) {
+      if (el.parentNode) el.parentNode.removeChild(el);
+    }
+    this._trackingReticles.length = 0;
+    this._trackingReticlePool.length = 0;
 
     // Dispose pool items
     for (const item of this._pool) {

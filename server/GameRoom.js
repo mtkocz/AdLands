@@ -127,6 +127,8 @@ class GameRoom {
       cannonBase: 5,
       cannonPerCharge: 1,
       missile: 5,
+      flare: 5,
+      flareIntercept: 10,
       slotUnlock: {
         'defense-1': 15000,
         'tactical-1': 30000,
@@ -2217,8 +2219,15 @@ class GameRoom {
         // Missile hit flare — explode harmlessly, destroy both
         const fl = this.flares[target.flareIndex];
         if (fl) {
+          // Award flare intercept bonus to flare owner
+          const flareOwner = this.players.get(fl.ownerId);
+          if (flareOwner) {
+            flareOwner.crypto += this.costs.flareIntercept;
+          }
+
           this.io.to(this.roomId).emit("flare-hit", {
             flareId: fl.id,
+            flareOwnerId: fl.ownerId,
             missileId: p.id,
             theta: fl.theta,
             phi: fl.phi,
@@ -2389,6 +2398,13 @@ class GameRoom {
 
     // Only 1 active flare per player
     if (this.flares.some(f => f.ownerId === socketId)) return;
+
+    // Economy: deduct flare cost
+    if (player.crypto < this.costs.flare) {
+      this._denyAction(socketId, 'flare', this.costs.flare);
+      return;
+    }
+    this._deductCrypto(player, this.costs.flare);
 
     player.lastFlareTime = now;
 

@@ -370,6 +370,12 @@ class FlareSystem {
       window._mp.socket.emit("fire", { type: "flare" });
     }
 
+    // Show red spend floater for flare cost (5¢)
+    if (window.cryptoVisuals && tank.group) {
+      tank.group.getWorldPosition(this._tempVec);
+      window.cryptoVisuals._spawnFloatingNumber(-5, this._tempVec);
+    }
+
     return true;
   }
 
