@@ -53,6 +53,7 @@ class NetworkManager {
     this.onPlayerHit = null;        // (hitData) => {}
     this.onFlareFired = null;       // (flareData) => {}
     this.onFlareHit = null;         // (flareHitData) => {}
+    this.onMissileLost = null;      // (lostData) => {}
     this.onMissileCrash = null;     // (crashData) => {}
     this.onPlayerKilled = null;     // (killData) => {}
     this.onPlayerRespawned = null;  // (respawnData) => {}
@@ -237,7 +238,12 @@ class NetworkManager {
       if (this.onFlareHit) this.onFlareHit(data);
     });
 
-    // Missile lost target — crashes to ground
+    // Missile lost target — starts wobbling
+    this.socket.on("missile-lost", (data) => {
+      if (this.onMissileLost) this.onMissileLost(data);
+    });
+
+    // Missile wobble expired — crashes to ground
     this.socket.on("missile-crash", (data) => {
       if (this.onMissileCrash) this.onMissileCrash(data);
     });

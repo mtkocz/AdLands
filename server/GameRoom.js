@@ -2162,14 +2162,34 @@ class GameRoom {
     }
 
     if (!target) {
-      // No targets in range — missile crashes to ground (no damage)
-      this.io.to(this.roomId).emit("missile-crash", {
-        missileId: p.id,
-        theta: p.theta,
-        phi: p.phi,
-      });
-      projs[i] = projs[projs.length - 1]; projs.pop();
+      // No targets in range — start or continue wobble timer
+      p.lostAge = (p.lostAge || 0) + dt;
+      if (p.lostAge >= 5) {
+        // Wobble expired — missile crashes to ground (no damage)
+        this.io.to(this.roomId).emit("missile-crash", {
+          missileId: p.id,
+          theta: p.theta,
+          phi: p.phi,
+        });
+        projs[i] = projs[projs.length - 1]; projs.pop();
+        return;
+      }
+      // Emit wobble event once (when first losing target)
+      if (!p.isLost) {
+        p.isLost = true;
+        this.io.to(this.roomId).emit("missile-lost", {
+          missileId: p.id,
+        });
+      }
+      // Keep moving in current heading (no re-targeting)
+      moveOnSphere(p, dt);
       return;
+    }
+
+    // Target found — reset lost state if recovering
+    if (p.isLost) {
+      p.isLost = false;
+      p.lostAge = 0;
     }
 
     p.targetId = target.id;

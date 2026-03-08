@@ -604,18 +604,34 @@ class MissileSystem {
     }
   }
 
-  // Force a missile into crash-dive (phase 3) by server projectile ID
+  // Force a missile into crash-dive (phase 4) by server projectile ID
   crashByServerId(projectileId, theta, phi) {
     for (let i = this.missiles.length - 1; i >= 0; i--) {
       const m = this.missiles[i];
       if (m.serverId === projectileId) {
-        m.phase = 3;
+        m.phase = 4;
         m.targetTank = null;
         // Compute crash point on planet surface from server coords
         const sp = Math.sin(phi), cp = Math.cos(phi);
         const st = Math.sin(theta), ct = Math.cos(theta);
         const R = this.sphereRadius;
         m.diveTarget = new THREE.Vector3(R * sp * st, R * cp, R * sp * ct);
+        return;
+      }
+    }
+  }
+
+  // Force a missile into wobble phase (phase 3) by server projectile ID
+  wobbleByServerId(projectileId) {
+    for (let i = this.missiles.length - 1; i >= 0; i--) {
+      const m = this.missiles[i];
+      if (m.serverId === projectileId) {
+        if (m.phase < 3) {
+          m.phase = 3;
+          m.isLost = true;
+          m.lostAge = 0;
+          m.targetTank = null;
+        }
         return;
       }
     }
@@ -866,13 +882,12 @@ class MissileSystem {
           m.phase = 2;
           m.diveTarget = targetSurface.clone();
         }
-      } else {
-        // No target in range — crash dive to ground
+      } else if (!m.isLost) {
+        // No target in range — enter wobble phase
         m.phase = 3;
+        m.isLost = true;
+        m.lostAge = 0;
         m.targetTank = null;
-        // Crash point: directly below missile on planet surface
-        const crashNormal = this._tempVec.copy(m.position).normalize();
-        m.diveTarget = crashNormal.multiplyScalar(this.sphereRadius).clone();
       }
 
       // Move along current direction
@@ -926,7 +941,62 @@ class MissileSystem {
         return;
       }
     } else if (m.phase === 3) {
-      // CRASH DIVE: No target in range — dive straight to ground, no damage
+      // WOBBLE: No target in range — missile wobbles erratically at cruise altitude
+      m.lostAge = (m.lostAge || 0) + dt;
+      const ownerFaction = m.faction || m.ownerFaction;
+
+      // Still scan for targets — re-lock if one enters range
+      const target = this._findClosestEnemyFromPos(m.position, ownerFaction, null);
+      if (target) {
+        // Target re-acquired — back to cruise
+        m.phase = 1;
+        m.isLost = false;
+        m.lostAge = 0;
+        m.targetTank = target.tank;
+      } else if (m.lostAge >= 5) {
+        // Wobble time expired — crash dive
+        m.phase = 4;
+        const crashNormal = this._tempVec.copy(m.position).normalize();
+        m.diveTarget = crashNormal.multiplyScalar(this.sphereRadius).clone();
+      }
+
+      // Wobble: perturb direction with increasing intensity
+      const wobbleIntensity = Math.min(m.lostAge / 5, 1.0); // 0→1 over 5s
+      const wobbleFreq = 3 + wobbleIntensity * 5; // Speed up wobble over time
+      const wobbleAmp = 0.3 + wobbleIntensity * 1.2; // Wider arcs over time
+      const wobbleX = Math.sin(m.lostAge * wobbleFreq) * wobbleAmp * dt;
+      const wobbleY = Math.cos(m.lostAge * wobbleFreq * 1.3) * wobbleAmp * 0.7 * dt;
+
+      // Build perpendicular axes to current direction for wobble offset
+      const up = this._tempVec.copy(m.position).normalize();
+      const right = this._tempVec2.crossVectors(m.direction, up).normalize();
+      const localUp = this._tempVec3.crossVectors(right, m.direction).normalize();
+
+      m.direction.addScaledVector(right, wobbleX);
+      m.direction.addScaledVector(localUp, wobbleY);
+      m.direction.normalize();
+
+      // Slow down over time (engine sputtering)
+      const speedFactor = 1.0 - wobbleIntensity * 0.5;
+      const moveSpeed = this.config.missileSpeed * speedFactor * dt60;
+      m.position.addScaledVector(m.direction, moveSpeed);
+
+      // Maintain altitude (gradually lose altitude as wobble intensifies)
+      const altitudeLoss = wobbleIntensity * 2; // Lose up to 2 units of altitude
+      const targetAlt = m.cruiseAltitude - altitudeLoss;
+      const currentNormal = this._tempVec.copy(m.position).normalize();
+      const currentAlt = m.position.length() - this.sphereRadius;
+      if (Math.abs(currentAlt - targetAlt) > 0.5) {
+        m.position.copy(currentNormal).multiplyScalar(this.sphereRadius + targetAlt);
+      }
+
+      // Orient mesh
+      const lookTarget = this._tempVec2.copy(m.position).add(m.direction);
+      m.poolItem.group.position.copy(m.position);
+      m.poolItem.group.lookAt(lookTarget);
+      m.poolItem.group.quaternion.multiply(this._meshOrientQuat);
+    } else if (m.phase === 4) {
+      // CRASH DIVE: Wobble expired — dive to ground, no damage
       const diveTarget = m.diveTarget;
 
       const desired = this._tempVec3
@@ -941,7 +1011,7 @@ class MissileSystem {
       const moveSpeed = this.config.missileSpeed * 1.2 * dt60;
       m.position.addScaledVector(m.direction, Math.min(moveSpeed, dist));
 
-      // Orient mesh to face travel direction
+      // Orient mesh
       const lookTarget = this._tempVec2.copy(m.position).add(m.direction);
       m.poolItem.group.position.copy(m.position);
       m.poolItem.group.lookAt(lookTarget);

@@ -906,10 +906,16 @@
       }
     };
 
+    net.onMissileLost = (data) => {
+      if (window.missileSystem) {
+        window.missileSystem.wobbleByServerId(data.missileId);
+        window.missileSystem.hideIncomingWarning();
+      }
+    };
+
     net.onMissileCrash = (data) => {
       if (window.missileSystem) {
         window.missileSystem.crashByServerId(data.missileId, data.theta, data.phi);
-        window.missileSystem.hideIncomingWarning();
       }
     };
 
