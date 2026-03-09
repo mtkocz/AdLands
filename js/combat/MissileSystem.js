@@ -314,7 +314,7 @@ class MissileSystem {
 
   showIncomingWarning() {
     this._incomingMissileCount++;
-    if (this._incomingWarning) {
+    if (this._incomingWarning && !this.hideReticle) {
       this._incomingWarning.style.display = "";
     }
   }
@@ -740,6 +740,11 @@ class MissileSystem {
   // ========================
 
   update(deltaTime, frustum, camera) {
+    // Suppress incoming warning when not deployed
+    if (this.hideReticle && this._incomingWarning) {
+      this._incomingWarning.style.display = "none";
+    }
+
     // Update lock-on search while holding fire (expands radius + camera pullback)
     if (this._locking) {
       this._updateLockOnSearch(deltaTime, camera);

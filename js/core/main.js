@@ -4086,7 +4086,7 @@
       cannonSystem.updateCharge(deltaTime, tank, playerFaction);
     }
     cannonSystem.update(deltaTime, sharedFrustum, isFarView);
-    missileSystem.hideReticle = isFarView || !hasSpawnedIn;
+    missileSystem.hideReticle = isFarView || !hasSpawnedIn || tank.isDead;
     missileSystem.update(deltaTime, sharedFrustum, camera);  // has own 260-unit distance cull
     flareSystem.update(deltaTime, camera);                    // has own 260-unit distance cull
 
