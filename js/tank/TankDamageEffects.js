@@ -586,18 +586,11 @@ class TankDamageEffects {
                 void main() {
                     if (vAlpha < 0.001) discard;
 
-                    // Rotated square
+                    // Axis-aligned square (no rotation)
                     vec2 coord = gl_PointCoord - vec2(0.5);
-                    float c = cos(vRotation);
-                    float s = sin(vRotation);
-                    vec2 rc = vec2(coord.x * c - coord.y * s, coord.x * s + coord.y * c);
-                    if (abs(rc.x) > 0.4 || abs(rc.y) > 0.4) discard;
+                    if (abs(coord.x) > 0.5 || abs(coord.y) > 0.5) discard;
 
-                    // Soft edge falloff (missile-style)
-                    float dist = max(abs(rc.x), abs(rc.y));
-                    float alpha = vAlpha * (1.0 - dist * 1.5);
-
-                    gl_FragColor = vec4(vColor * 0.8, alpha);
+                    gl_FragColor = vec4(vColor * 0.8, vAlpha);
                 }
             `,
             transparent: true,
@@ -648,7 +641,7 @@ class TankDamageEffects {
 
             this.fire.ages[idx] = 0;
             this.fire.lifetimes[idx] = 0.25 + Math.random() * 0.4;  // 0.25-0.65s (missile-like)
-            this.fire.sizes[idx] = 0.8 + Math.random() * 1.0;  // Smaller, tighter particles
+            this.fire.sizes[idx] = 1.2 + Math.random() * 1.5;  // 50% larger
             this.fire.rotations[idx] = Math.random() * Math.PI * 2;
             this.fire.rotationSpeeds[idx] = (Math.random() - 0.5) * 3.0;
 

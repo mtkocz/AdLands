@@ -58,7 +58,11 @@ const TARGET_CELL_THETA = (Math.PI * 2) / TARGET_GRID_THETA;
 
 class TargetSpatialHash {
   constructor() {
-    this._cells = new Map();
+    // Fixed-size cell length array — avoids Map overhead entirely
+    this._cellLengths = new Int32Array(TARGET_GRID_PHI * TARGET_GRID_THETA);
+    // Cell storage: flat arrays of pooled entry indices per cell
+    this._cellBuckets = new Array(TARGET_GRID_PHI * TARGET_GRID_THETA);
+    for (let i = 0; i < this._cellBuckets.length; i++) this._cellBuckets[i] = [];
     this._pool = [];       // reuse entry objects to avoid GC
     this._poolIdx = 0;
     this._neighborBuf = new Int32Array(49); // max 7×7 = 49 cells
@@ -67,7 +71,8 @@ class TargetSpatialHash {
 
   /** Rebuild from all targetable entities. Call once per tick. */
   rebuild(players, botBridge, flares) {
-    this._cells.clear();
+    // Reset all cell lengths to 0 (reuse arrays, no allocation)
+    this._cellLengths.fill(0);
     this._poolIdx = 0;
 
     // Players
@@ -93,8 +98,6 @@ class TargetSpatialHash {
 
   _add(id, theta, phi, faction, isFlare, flareIndex, ownerId) {
     const key = this._cellKey(theta, phi);
-    let cell = this._cells.get(key);
-    if (!cell) { cell = []; this._cells.set(key, cell); }
 
     let entry;
     if (this._poolIdx < this._pool.length) {
@@ -112,14 +115,23 @@ class TargetSpatialHash {
     entry.isFlare = isFlare;
     entry.flareIndex = flareIndex;
     entry.ownerId = ownerId;
-    cell.push(entry);
+
+    // Append to cell bucket (reuse array, track length separately)
+    const len = this._cellLengths[key];
+    const bucket = this._cellBuckets[key];
+    if (len < bucket.length) {
+      bucket[len] = entry;
+    } else {
+      bucket.push(entry);
+    }
+    this._cellLengths[key] = len + 1;
   }
 
   _cellKey(theta, phi) {
     const phiIdx = Math.min(TARGET_GRID_PHI - 1, Math.max(0, Math.floor(phi / TARGET_CELL_PHI)));
     let t = theta;
-    while (t < 0) t += Math.PI * 2;
-    while (t >= Math.PI * 2) t -= Math.PI * 2;
+    if (t < 0) t += Math.PI * 2;
+    else if (t >= Math.PI * 2) t -= Math.PI * 2;
     const thetaIdx = Math.min(TARGET_GRID_THETA - 1, Math.floor(t / TARGET_CELL_THETA));
     return phiIdx * TARGET_GRID_THETA + thetaIdx;
   }
@@ -131,8 +143,8 @@ class TargetSpatialHash {
   getNeighborKeys(theta, phi, radius) {
     const centerPhi = Math.min(TARGET_GRID_PHI - 1, Math.max(0, Math.floor(phi / TARGET_CELL_PHI)));
     let t = theta;
-    while (t < 0) t += Math.PI * 2;
-    while (t >= Math.PI * 2) t -= Math.PI * 2;
+    if (t < 0) t += Math.PI * 2;
+    else if (t >= Math.PI * 2) t -= Math.PI * 2;
     const centerTheta = Math.min(TARGET_GRID_THETA - 1, Math.floor(t / TARGET_CELL_THETA));
 
     const spanPhi = Math.ceil(radius / TARGET_CELL_PHI);
@@ -164,10 +176,12 @@ class TargetSpatialHash {
     let bestDist = maxDist;
 
     for (let k = 0; k < this._neighborCount; k++) {
-      const cell = this._cells.get(keys[k]);
-      if (!cell) continue;
-      for (let i = 0; i < cell.length; i++) {
-        const e = cell[i];
+      const cellKey = keys[k];
+      const cellLen = this._cellLengths[cellKey];
+      if (cellLen === 0) continue;
+      const bucket = this._cellBuckets[cellKey];
+      for (let i = 0; i < cellLen; i++) {
+        const e = bucket[i];
         if (e.id === excludeId) continue;
         if (e.isFlare) {
           // Flares attract all missiles except their owner's
@@ -2210,6 +2224,10 @@ class GameRoom {
   }
 
   _findNearestEnemyForMissile(socketId, player, maxDistRad) {
+    // Ensure spatial hash is fresh (may not have been rebuilt if no missiles were in flight)
+    if (!this._hasMissiles) {
+      this._targetHash.rebuild(this.players, this.botBridge, this.flares);
+    }
     return this._targetHash.findNearest(
       player.theta, player.phi, player.faction, socketId, maxDistRad
     );
@@ -2838,10 +2856,16 @@ class GameRoom {
     // 1.9. Update welding guns (tactical healing)
     this._updateWeldingGuns(dt);
 
-    // 2. Rebuild target spatial hash (once per tick — used by missile retargeting)
-    this._targetHash.rebuild(this.players, this.botBridge, this.flares);
+    // 2. Rebuild target spatial hash only when missiles exist (used by missile retargeting)
+    this._hasMissiles = false;
+    for (let i = 0; i < this.projectiles.length; i++) {
+      if (this.projectiles[i].type === "missile") { this._hasMissiles = true; break; }
+    }
+    if (this._hasMissiles) {
+      this._targetHash.rebuild(this.players, this.botBridge, this.flares);
+    }
 
-    // 2. Update projectiles (includes shield collision + reflection)
+    // 2b. Update projectiles (includes shield collision + reflection)
     this._updateProjectiles(dt);
 
     // 2.5. Update flares (age + expiry)
