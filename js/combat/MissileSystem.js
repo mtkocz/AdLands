@@ -1257,14 +1257,12 @@ class MissileSystem {
             coord.x * c - coord.y * s,
             coord.x * s + coord.y * c
           );
-          if (abs(rotatedCoord.x) > 0.4 || abs(rotatedCoord.y) > 0.4) discard;
+          if (abs(rotatedCoord.x) > 0.5 || abs(rotatedCoord.y) > 0.5) discard;
           // Warm color gradient: yellow core -> orange -> red
           vec3 coreColor = vec3(1.0, 0.9, 0.3);
           vec3 outerColor = vec3(1.0, 0.3, 0.05);
           vec3 color = mix(coreColor, outerColor, vLifeRatio) * 0.8;
-          float dist = max(abs(rotatedCoord.x), abs(rotatedCoord.y));
-          float alpha = vAlpha * (1.0 - dist * 1.5);
-          gl_FragColor = vec4(color, alpha);
+          gl_FragColor = vec4(color, vAlpha);
         }
       `,
       transparent: true,
