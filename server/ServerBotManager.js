@@ -592,7 +592,8 @@ class ServerBotManager {
 
       bot.currentClusterId = this.worldGen.getClusterIdAt(bot.theta, bot.phi);
       if (isStagger) {
-        this._updateWelding(bot, players);
+        const staggerDt = dt * (this._botArray.length / botsPerTick);
+        this._updateWelding(bot, players, staggerDt);
         nextProjectileId = this._updateCombat(bot, dt, players, projectiles, nextProjectileId, now);
       }
     }
@@ -1388,11 +1389,13 @@ class ServerBotManager {
   // WELDING (overlay — heals nearby damaged friendlies)
   // ========================
 
-  _updateWelding(bot, players) {
+  _updateWelding(bot, players, staggerDt) {
     bot.weldingActive = false;
     if (bot.isDead || bot.isDeploying) return;
 
     const WELD_RANGE_RAD = 20 / 480; // 20 world units on R=480 sphere
+    const HEAL_PER_SEC = 10;
+    const healAmount = Math.max(1, Math.round(HEAL_PER_SEC * staggerDt));
 
     // Check nearby players first (prioritize healing humans)
     for (const [id, player] of players) {
@@ -1402,7 +1405,7 @@ class ServerBotManager {
       const dist = this._angularDistance(bot.theta, bot.phi, player.theta, player.phi);
       if (dist <= WELD_RANGE_RAD) {
         bot.weldingActive = true;
-        this._pendingPlayerHeals.push({ playerId: id, amount: 1 });
+        this._pendingPlayerHeals.push({ playerId: id, amount: healAmount });
         return;
       }
     }
@@ -1422,7 +1425,7 @@ class ServerBotManager {
         const dist = this._angularDistance(bot.theta, bot.phi, other.theta, other.phi);
         if (dist <= WELD_RANGE_RAD) {
           bot.weldingActive = true;
-          other.hp = Math.min(100, other.hp + 1);
+          other.hp = Math.min(100, other.hp + healAmount);
           return;
         }
       }

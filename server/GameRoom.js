@@ -3294,7 +3294,7 @@ class GameRoom {
       }
     }
 
-    // Bot welding: healing is done directly in ServerBotManager (bot→bot only).
+    // Bot welding: healing is done directly in ServerBotManager (bot→bot and bot→player).
     // The weld flag in bot state broadcast handles client-side beam visuals.
   }
 
