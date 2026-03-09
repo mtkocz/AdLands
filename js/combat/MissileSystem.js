@@ -256,7 +256,7 @@ class MissileSystem {
     const activeMissiles = [];
     for (let i = 0; i < this.missiles.length; i++) {
       const m = this.missiles[i];
-      if (!m.isRemote && m.targetTank && (m.phase === 1 || m.phase === 2)) {
+      if (m.targetTank && (m.phase === 1 || m.phase === 2)) {
         activeMissiles.push(m);
       }
     }
@@ -997,9 +997,10 @@ class MissileSystem {
         // Compute elevated target position (same altitude as missile)
         const targetSurface = target.worldPos;
         const targetNormal = this._tempVec.copy(targetSurface).normalize();
+        const targetSurfaceR = this._getSurfaceRadius(targetSurface);
         const targetElevated = this._tempVec2
           .copy(targetNormal)
-          .multiplyScalar(this.sphereRadius + m.cruiseAltitude);
+          .multiplyScalar(targetSurfaceR + m.cruiseAltitude);
 
         // Desired direction to target
         const desired = this._tempVec3
@@ -1087,17 +1088,16 @@ class MissileSystem {
         return;
       }
     } else if (m.phase === 3) {
-      // WOBBLE: No target in range — missile wobbles erratically at cruise altitude
+      // STRAIGHT FLIGHT: No target — fly straight, scan for re-lock, then crash
       m.lostAge = (m.lostAge || 0) + dt;
       const ownerFaction = m.faction || m.ownerFaction;
 
-      // Scan for nearby targets to re-lock (short range only — prevents infinite re-lock cycles)
+      // Scan for nearby targets to re-lock (max 2 re-locks)
       const reLocks = m.reLockCount || 0;
       const target = reLocks < 2
         ? this._findClosestEnemyFromPos(m.position, ownerFaction, null, 30)
         : null;
       if (target) {
-        // Target re-acquired — back to cruise (max 2 re-locks)
         m.phase = 1;
         m.phase1Age = 0;
         m.isLost = false;
@@ -1105,41 +1105,21 @@ class MissileSystem {
         m.targetTank = target.tank;
         m.reLockCount = reLocks + 1;
       } else if (m.lostAge >= 5) {
-        // Wobble time expired — crash dive
         m.phase = 4;
         const crashNormal = this._tempVec.copy(m.position).normalize();
         m.diveTarget = crashNormal.multiplyScalar(this.sphereRadius).clone();
       }
 
-      // Wobble: perturb direction with increasing intensity
-      const wobbleIntensity = Math.min(m.lostAge / 5, 1.0); // 0→1 over 5s
-      const wobbleFreq = 3 + wobbleIntensity * 5; // Speed up wobble over time
-      const wobbleAmp = 0.3 + wobbleIntensity * 1.2; // Wider arcs over time
-      const wobbleX = Math.sin(m.lostAge * wobbleFreq) * wobbleAmp;
-      const wobbleY = Math.cos(m.lostAge * wobbleFreq * 1.3) * wobbleAmp * 0.7;
-
-      // Build perpendicular axes to current direction for wobble offset
-      const up = this._tempVec.copy(m.position).normalize();
-      const right = this._tempVec2.crossVectors(m.direction, up).normalize();
-      const localUp = this._tempVec3.crossVectors(right, m.direction).normalize();
-
-      m.direction.addScaledVector(right, wobbleX);
-      m.direction.addScaledVector(localUp, wobbleY);
-      m.direction.normalize();
-
-      // Slow down over time (engine sputtering)
-      const speedFactor = 1.0 - wobbleIntensity * 0.5;
-      const moveSpeed = this.config.missileSpeed * speedFactor * dt60;
+      // Fly straight at full speed
+      const moveSpeed = this.config.missileSpeed * dt60;
       m.position.addScaledVector(m.direction, moveSpeed);
 
-      // Maintain altitude above actual terrain (gradually lose altitude as wobble intensifies)
-      const altitudeLoss = wobbleIntensity * 2;
-      const targetAlt = m.cruiseAltitude - altitudeLoss;
+      // Maintain cruise altitude
       const surfaceR = this._getSurfaceRadius(m.position);
       const currentNormal = this._tempVec.copy(m.position).normalize();
       const currentAlt = m.position.length() - surfaceR;
-      if (Math.abs(currentAlt - targetAlt) > 0.5) {
-        const correctedAlt = MathUtils.lerp(currentAlt, targetAlt, Math.min(5 * dt, 1));
+      if (Math.abs(currentAlt - m.cruiseAltitude) > 0.5) {
+        const correctedAlt = MathUtils.lerp(currentAlt, m.cruiseAltitude, Math.min(5 * dt, 1));
         m.position.copy(currentNormal).multiplyScalar(surfaceR + correctedAlt);
       }
 
@@ -1149,9 +1129,9 @@ class MissileSystem {
       m.poolItem.group.lookAt(lookTarget);
       m.poolItem.group.quaternion.multiply(this._meshOrientQuat);
 
-      // Terrain collision check (wobble can push missile into terrain)
-      const wobbleAlt = m.position.length() - this._getSurfaceRadius(m.position);
-      if (wobbleAlt < 1.5) {
+      // Terrain collision
+      const straightAlt = m.position.length() - this._getSurfaceRadius(m.position);
+      if (straightAlt < 1.5) {
         const idx = this.missiles.indexOf(m);
         if (idx >= 0) this._destroyMissile(idx, m.position);
         return;

@@ -1113,8 +1113,10 @@
               // Local missile — let it finish its visual dive naturally;
               // client-side phase 2 impact check will destroy it
             } else {
-              // Dive to impact point instead of vanishing mid-air
-              window.missileSystem.crashByServerId(data.projectileId, data.theta, data.phi);
+              // Destroy the visual missile immediately at the impact point
+              // (the visual lags behind the server, so a slow crash-dive
+              // causes explosions with no visible missile preceding them)
+              window.missileSystem.removeByServerId(data.projectileId);
             }
           } else {
             cannonSystem.removeProjectileByServerId?.(data.projectileId);
