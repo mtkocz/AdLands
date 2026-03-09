@@ -591,7 +591,7 @@ class ServerBotManager {
 
       bot.currentClusterId = this.worldGen.getClusterIdAt(bot.theta, bot.phi);
       if (isStagger) {
-        this._updateWelding(bot);
+        this._updateWelding(bot, players);
         nextProjectileId = this._updateCombat(bot, dt, players, projectiles, nextProjectileId, now);
       }
     }
@@ -1381,13 +1381,26 @@ class ServerBotManager {
   // WELDING (overlay — heals nearby damaged friendlies)
   // ========================
 
-  _updateWelding(bot) {
+  _updateWelding(bot, players) {
     bot.weldingActive = false;
     if (bot.isDead || bot.isDeploying) return;
 
     const WELD_RANGE_RAD = 20 / 480; // 20 world units on R=480 sphere
 
-    // Find closest damaged same-faction bot using spatial hash (O(1) lookup)
+    // Check nearby players first (prioritize healing humans)
+    for (const [, player] of players) {
+      if (player.isDead || player.isDeploying) continue;
+      if (player.faction !== bot.faction) continue;
+      if (player.hp >= 100) continue;
+      const dist = this._angularDistance(bot.theta, bot.phi, player.theta, player.phi);
+      if (dist <= WELD_RANGE_RAD) {
+        bot.weldingActive = true;
+        player.hp = Math.min(100, player.hp + 1);
+        return;
+      }
+    }
+
+    // Then check nearby bots via spatial hash
     const cellKey = this._getCellKey(bot.theta, bot.phi);
     const neighborKeys = this._getNeighborKeys(cellKey);
 
@@ -1402,7 +1415,6 @@ class ServerBotManager {
         const dist = this._angularDistance(bot.theta, bot.phi, other.theta, other.phi);
         if (dist <= WELD_RANGE_RAD) {
           bot.weldingActive = true;
-          // Heal 1 HP directly (staggered = ~3 HP/sec effective)
           other.hp = Math.min(100, other.hp + 1);
           return;
         }

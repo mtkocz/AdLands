@@ -781,9 +781,16 @@ class MissileSystem {
         continue;
       }
 
-      // Safety timeout — very long, missile keeps searching
-      if (m.age > 60) {
+      // Safety timeout
+      if (m.age > 15) {
         this._destroyMissile(i, m.position);
+        continue;
+      }
+
+      // NaN position guard — destroy corrupted missiles
+      if (isNaN(m.position.x)) {
+        if (m.poolItem) this._releasePoolItem(m.poolItem);
+        this.missiles.splice(i, 1);
         continue;
       }
 
@@ -1064,14 +1071,18 @@ class MissileSystem {
       const ownerFaction = m.faction || m.ownerFaction;
 
       // Scan for nearby targets to re-lock (short range only — prevents infinite re-lock cycles)
-      const target = this._findClosestEnemyFromPos(m.position, ownerFaction, null, 30);
+      const reLocks = m.reLockCount || 0;
+      const target = reLocks < 2
+        ? this._findClosestEnemyFromPos(m.position, ownerFaction, null, 30)
+        : null;
       if (target) {
-        // Target re-acquired — back to cruise
+        // Target re-acquired — back to cruise (max 2 re-locks)
         m.phase = 1;
-        m.phase1Age = 0; // Reset so forward-hemisphere filter grace period applies
+        m.phase1Age = 0;
         m.isLost = false;
         m.lostAge = 0;
         m.targetTank = target.tank;
+        m.reLockCount = reLocks + 1;
       } else if (m.lostAge >= 5) {
         // Wobble time expired — crash dive
         m.phase = 4;
