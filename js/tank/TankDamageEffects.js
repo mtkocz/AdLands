@@ -161,7 +161,7 @@ class TankDamageEffects {
 
             // Frame-rate independent emission using accumulator
             if (effects.smoke) {
-                effects.emitAccum += dt * 12.5; // 12.5 smoke particles per second
+                effects.emitAccum += dt * 25; // 25 smoke particles per second
                 const emitCount = Math.floor(effects.emitAccum);
                 if (emitCount > 0) {
                     effects.emitAccum -= emitCount;
@@ -169,7 +169,7 @@ class TankDamageEffects {
                 }
             }
             if (effects.fire) {
-                effects.fireAccum += dt * 20; // 20 fire particles per second (more, smaller particles)
+                effects.fireAccum += dt * 40; // 40 fire particles per second
                 const emitCount = Math.floor(effects.fireAccum);
                 if (emitCount > 0) {
                     effects.fireAccum -= emitCount;
@@ -226,7 +226,7 @@ class TankDamageEffects {
     // ========================
 
     _createSmokeSystem() {
-        const maxParticles = 450;
+        const maxParticles = 900;
 
         this.smoke = {
             maxParticles,
@@ -504,7 +504,7 @@ class TankDamageEffects {
     // ========================
 
     _createFireSystem() {
-        const maxParticles = 120;
+        const maxParticles = 240;
 
         this.fire = {
             maxParticles,
