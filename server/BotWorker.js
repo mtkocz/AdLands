@@ -68,6 +68,7 @@ parentPort.on("message", (msg) => {
       // Collect outputs
       const newProjectiles = botManager.drainProjectiles();
       const events = botManager.drainEvents();
+      const playerHeals = botManager.drainPlayerHeals();
       const botStates = botManager.getStatesForBroadcast();
       const positions = botManager.getPositionsFlat();
 
@@ -80,6 +81,7 @@ parentPort.on("message", (msg) => {
         positions: positions.slice(), // Copy since getPositionsFlat reuses buffer
         newProjectiles,
         events,
+        playerHeals,
       };
 
       // Include bot IDs + names only on change (spawn/despawn)

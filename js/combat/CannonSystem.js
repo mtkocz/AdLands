@@ -316,8 +316,8 @@ class CannonSystem {
     // Set to default layer (layer 0) for visibility
     mesh.layers.set(0);
 
-    // Set render order to ensure it renders on top of terrain
-    mesh.renderOrder = 100;
+    // Render before other game objects so tanks/missiles/effects occlude decals
+    mesh.renderOrder = -1;
 
     // Disable frustum culling (will be parented to rotating planet)
     mesh.frustumCulled = false;

@@ -223,6 +223,7 @@ class BotWorkerBridge {
       nextProjectileId: output.nextProjectileId,
       newProjectiles: output.newProjectiles || [],
       events: output.events || [],
+      playerHeals: output.playerHeals || [],
     };
   }
 

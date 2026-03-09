@@ -2845,6 +2845,13 @@ class GameRoom {
     for (const evt of botResult.events) {
       this.io.to(this.roomId).emit(evt.type, evt.data);
     }
+    // Apply bot welding heals to human players
+    for (const heal of botResult.playerHeals) {
+      const player = this.players.get(heal.playerId);
+      if (player && !player.isDead) {
+        player.hp = Math.min(100, player.hp + heal.amount);
+      }
+    }
 
     const _t3 = Date.now();
     // 1.7. Tank-to-tank collision (player-player + player-bot)

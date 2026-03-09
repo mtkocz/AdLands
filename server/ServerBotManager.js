@@ -295,6 +295,7 @@ class ServerBotManager {
     // Worker mode: buffered events + projectiles (replaces Socket.IO emission)
     this._pendingEvents = [];
     this._pendingProjectiles = [];
+    this._pendingPlayerHeals = [];
 
     // Trash talk state
     this._lastGlobalChatTime = 0;
@@ -941,6 +942,12 @@ class ServerBotManager {
     return projectiles;
   }
 
+  drainPlayerHeals() {
+    const heals = this._pendingPlayerHeals;
+    this._pendingPlayerHeals = [];
+    return heals;
+  }
+
   /**
    * Get flat Float32Array of bot positions + metadata for main-thread spatial hash.
    * Stride: 6 floats per bot (theta, phi, heading, speed, flags, clusterId)
@@ -1388,14 +1395,14 @@ class ServerBotManager {
     const WELD_RANGE_RAD = 20 / 480; // 20 world units on R=480 sphere
 
     // Check nearby players first (prioritize healing humans)
-    for (const [, player] of players) {
+    for (const [id, player] of players) {
       if (player.isDead || player.isDeploying) continue;
       if (player.faction !== bot.faction) continue;
       if (player.hp >= 100) continue;
       const dist = this._angularDistance(bot.theta, bot.phi, player.theta, player.phi);
       if (dist <= WELD_RANGE_RAD) {
         bot.weldingActive = true;
-        player.hp = Math.min(100, player.hp + 1);
+        this._pendingPlayerHeals.push({ playerId: id, amount: 1 });
         return;
       }
     }
