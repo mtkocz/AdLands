@@ -535,65 +535,45 @@ class TankDamageEffects {
             },
             vertexShader: `
                 uniform vec3 uCameraPos;
-
                 attribute float aAge;
                 attribute float aLifetime;
                 attribute float aSize;
                 attribute float aRotation;
-
                 varying float vAlpha;
-                varying vec3 vColor;
-                varying float vLifeRatio;
                 varying float vRotation;
-
+                varying float vLifeRatio;
                 void main() {
                     float lifeRatio = clamp(aAge / max(aLifetime, 0.01), 0.0, 1.0);
-                    vLifeRatio = lifeRatio;
                     vRotation = aRotation;
-
-                    // Distance-based fade (invisible beyond 260 units)
-                    float distToCamera = distance(position, uCameraPos);
-                    float distanceFade = 1.0 - smoothstep(100.0, 260.0, distToCamera);
-
-                    // Fire grows slightly (like missile afterburner)
-                    float sizeFactor = 1.0 + lifeRatio * 0.5;
-
-                    // Smooth fade in/out (missile-style smoothstep curves)
+                    vLifeRatio = lifeRatio;
                     float fadeIn = smoothstep(0.0, 0.1, lifeRatio);
                     float fadeOut = 1.0 - smoothstep(0.4, 1.0, lifeRatio);
-                    vAlpha = fadeIn * fadeOut * 0.7 * distanceFade;
-
-                    // Bright warm colors (missile-inspired): yellow core -> orange -> red
-                    if (lifeRatio < 0.35) {
-                        vColor = mix(vec3(1.0, 0.85, 0.3), vec3(1.0, 0.5, 0.1), lifeRatio / 0.35);
-                    } else if (lifeRatio < 0.7) {
-                        vColor = mix(vec3(1.0, 0.5, 0.1), vec3(0.7, 0.2, 0.05), (lifeRatio - 0.35) / 0.35);
-                    } else {
-                        vColor = mix(vec3(0.7, 0.2, 0.05), vec3(0.3, 0.08, 0.02), (lifeRatio - 0.7) / 0.3);
-                    }
-
+                    float distToCamera = distance(position, uCameraPos);
+                    float distanceFade = 1.0 - smoothstep(100.0, 260.0, distToCamera);
+                    vAlpha = fadeIn * fadeOut * distanceFade;
                     vec4 mvPosition = modelViewMatrix * vec4(position, 1.0);
-                    gl_PointSize = aSize * sizeFactor * (300.0 / -mvPosition.z);
+                    gl_PointSize = aSize * (1.0 + lifeRatio * 0.5) * (400.0 / -mvPosition.z);
                     gl_Position = projectionMatrix * mvPosition;
                 }
             `,
             fragmentShader: `
                 varying float vAlpha;
-                varying vec3 vColor;
-                varying float vLifeRatio;
                 varying float vRotation;
-
+                varying float vLifeRatio;
                 void main() {
                     if (vAlpha < 0.001) discard;
-
-                    // Rotated square
                     vec2 coord = gl_PointCoord - vec2(0.5);
                     float c = cos(vRotation);
                     float s = sin(vRotation);
-                    vec2 rc = vec2(coord.x * c - coord.y * s, coord.x * s + coord.y * c);
-                    if (abs(rc.x) > 0.5 || abs(rc.y) > 0.5) discard;
-
-                    gl_FragColor = vec4(vColor * 0.8, vAlpha);
+                    vec2 rotatedCoord = vec2(
+                        coord.x * c - coord.y * s,
+                        coord.x * s + coord.y * c
+                    );
+                    if (abs(rotatedCoord.x) > 0.5 || abs(rotatedCoord.y) > 0.5) discard;
+                    vec3 coreColor = vec3(1.0, 0.9, 0.3);
+                    vec3 outerColor = vec3(1.0, 0.3, 0.05);
+                    vec3 color = mix(coreColor, outerColor, vLifeRatio) * 0.8;
+                    gl_FragColor = vec4(color, vAlpha);
                 }
             `,
             transparent: true,

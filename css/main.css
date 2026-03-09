@@ -141,7 +141,7 @@ canvas:not(#tank-preview-canvas) {
     animation: missile-warn-flash 0.4s steps(2) infinite;
     letter-spacing: 4px;
     border: 2px solid #ff3333;
-    padding: 8px 16px;
+    padding: 24px 16px 8px;
     line-height: var(--font-size-header);
     display: flex;
     align-items: center;
