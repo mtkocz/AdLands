@@ -211,7 +211,7 @@ class BotWorkerBridge {
       if (this._missedTicks > 3 && this._missedTicks % 100 === 0) {
         console.warn(`[BotWorkerBridge] No worker output for ${this._missedTicks} ticks`);
       }
-      return { nextProjectileId: this._nextProjectileId, newProjectiles: [], events: [] };
+      return { nextProjectileId: this._nextProjectileId, newProjectiles: [], events: [], playerHeals: [] };
     }
 
     const output = this._pendingOutput;
