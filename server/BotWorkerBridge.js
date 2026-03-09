@@ -54,7 +54,11 @@ class BotWorkerBridge {
     this._botStates = {};         // Broadcast states cache
 
     // Main-thread spatial hash (rebuilt from Float32Array each tick)
-    this._spatialHash = new Map();
+    // Fixed-size buckets + length array — zero GC per rebuild
+    const totalCells = SPATIAL_GRID_PHI * SPATIAL_GRID_THETA;
+    this._spatialCellLengths = new Int32Array(totalCells);
+    this._spatialBuckets = new Array(totalCells);
+    for (let i = 0; i < totalCells; i++) this._spatialBuckets[i] = [];
     this._spatialCellSize = { phi: SPATIAL_CELL_PHI, theta: SPATIAL_CELL_THETA };
     this._neighborKeysBuf = new Int32Array(9);
     this._neighborKeysCount = 0;
@@ -341,7 +345,8 @@ class BotWorkerBridge {
   // ========================
 
   _rebuildSpatialHash() {
-    this._spatialHash.clear();
+    // Reset all cell lengths (zero-alloc clear)
+    this._spatialCellLengths.fill(0);
     const positions = this._positions;
     const ids = this._botIds;
     if (!positions || !ids) return;
@@ -359,16 +364,12 @@ class BotWorkerBridge {
       const phi = positions[off + 1];
       const key = this._getCellKey(theta, phi);
 
-      if (!this._spatialHash.has(key)) {
-        this._spatialHash.set(key, []);
-      }
-
       // Reuse proxy objects from pool
       let proxy;
       if (this._proxyPoolUsed < this._proxyPool.length) {
         proxy = this._proxyPool[this._proxyPoolUsed];
       } else {
-        proxy = { id: "", theta: 0, phi: 0, heading: 0, speed: 0, isDead: false, isDeploying: false };
+        proxy = { id: "", theta: 0, phi: 0, heading: 0, speed: 0, faction: "", isDead: false, isDeploying: false };
         this._proxyPool.push(proxy);
       }
       this._proxyPoolUsed++;
@@ -378,10 +379,19 @@ class BotWorkerBridge {
       proxy.phi = phi;
       proxy.heading = positions[off + 2];
       proxy.speed = positions[off + 3];
+      proxy.faction = FACTION_BY_INDEX[(flags >> 4) & 0x3];
       proxy.isDead = false;
       proxy.isDeploying = false;
 
-      this._spatialHash.get(key).push(proxy);
+      // Append to bucket (reuse array, track length separately)
+      const len = this._spatialCellLengths[key];
+      const bucket = this._spatialBuckets[key];
+      if (len < bucket.length) {
+        bucket[len] = proxy;
+      } else {
+        bucket.push(proxy);
+      }
+      this._spatialCellLengths[key] = len + 1;
     }
   }
 
@@ -418,55 +428,49 @@ class BotWorkerBridge {
 
   /**
    * Check if a projectile at (theta, phi) hits any alive bot.
-   * Uses cached Float32Array positions from worker (one tick old — acceptable).
+   * Uses spatial hash for O(~10) checks instead of O(300) brute force.
    * @returns {Object|null} Proxy { id, theta, phi, heading, ... } or null
    */
   checkProjectileHit(theta, phi, ownerFaction, ownerId) {
-    const positions = this._positions;
-    const ids = this._botIds;
-    if (!positions || !ids) return null;
+    if (!this._spatialBuckets) return null;
 
     const R = this._sphereRadius;
+    const cellKey = this._getCellKey(theta, phi);
+    const neighborKeys = this._getNeighborKeys(cellKey);
+    const nCount = this._neighborKeysCount;
 
-    for (let i = 0; i < ids.length; i++) {
-      const off = i * POS_STRIDE;
-      const flags = positions[off + 4];
-      const isDead = (flags & 1) !== 0;
-      const isDeploying = (flags & 2) !== 0;
-      if (isDead || isDeploying) continue;
+    for (let ni = 0; ni < nCount; ni++) {
+      const nk = neighborKeys[ni];
+      const cellLen = this._spatialCellLengths[nk];
+      if (cellLen === 0) continue;
+      const bucket = this._spatialBuckets[nk];
 
-      const botFaction = FACTION_BY_INDEX[(flags >> 4) & 0x3];
-      if (botFaction === ownerFaction) continue; // No friendly fire
-      if (ids[i] === ownerId) continue;          // Can't hit yourself
+      for (let ci = 0; ci < cellLen; ci++) {
+        const bot = bucket[ci];
+        if (bot.id === ownerId) continue;
+        if (bot.faction === ownerFaction) continue;
 
-      const botTheta = positions[off];
-      const botPhi = positions[off + 1];
-      const botHeading = positions[off + 2];
+        let dTheta = theta - bot.theta;
+        if (dTheta > Math.PI) dTheta -= Math.PI * 2;
+        else if (dTheta < -Math.PI) dTheta += Math.PI * 2;
+        const dPhi = phi - bot.phi;
 
-      let dTheta = theta - botTheta;
-      while (dTheta > Math.PI) dTheta -= Math.PI * 2;
-      while (dTheta < -Math.PI) dTheta += Math.PI * 2;
-      const dPhi = phi - botPhi;
+        const sinPhi = Math.sin(bot.phi);
+        const safeSin = Math.abs(sinPhi) < 0.01 ? 0.01 * Math.sign(sinPhi || 1) : sinPhi;
 
-      // Spherical correction: scale dTheta by sin(phi) for true arc distance
-      const sinPhi = Math.sin(botPhi);
-      const safeSin = Math.abs(sinPhi) < 0.01 ? 0.01 * Math.sign(sinPhi || 1) : sinPhi;
+        const northOff = dPhi * R;
+        const eastOff = dTheta * safeSin * R;
 
-      // Convert to world-space offsets (matching GameRoom player hit detection)
-      const northOff = dPhi * R;
-      const eastOff = dTheta * safeSin * R;
+        if (northOff * northOff + eastOff * eastOff > BOT_HIT_QUICK_REJECT * BOT_HIT_QUICK_REJECT * R * R) continue;
 
-      // Quick reject in world units
-      if (northOff * northOff + eastOff * eastOff > BOT_HIT_QUICK_REJECT * BOT_HIT_QUICK_REJECT * R * R) continue;
+        const cosH = Math.cos(bot.heading);
+        const sinH = Math.sin(bot.heading);
+        const localFwd = -cosH * northOff - sinH * eastOff;
+        const localRgt =  sinH * northOff - cosH * eastOff;
 
-      // Oriented-box check in tank's local frame (matching GameRoom player hit detection)
-      const cosH = Math.cos(botHeading);
-      const sinH = Math.sin(botHeading);
-      const localFwd = -cosH * northOff - sinH * eastOff;
-      const localRgt =  sinH * northOff - cosH * eastOff;
-
-      if (Math.abs(localFwd) < BOT_HIT_HALF_LEN && Math.abs(localRgt) < BOT_HIT_HALF_WID) {
-        return { id: ids[i], theta: botTheta, phi: botPhi, heading: botHeading };
+        if (Math.abs(localFwd) < BOT_HIT_HALF_LEN && Math.abs(localRgt) < BOT_HIT_HALF_WID) {
+          return bot;
+        }
       }
     }
     return null;

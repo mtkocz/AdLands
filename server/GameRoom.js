@@ -3039,7 +3039,7 @@ class GameRoom {
 
     // --- Player-Bot collisions (using bridge spatial hash, player-only push) ---
     const bb = this.botBridge;
-    if (!bb || !bb._spatialHash || bb._spatialHash.size === 0) return;
+    if (!bb || !bb._spatialBuckets) return;
 
     for (let i = 0; i < playerArray.length; i++) {
       const player = playerArray[i];
@@ -3048,10 +3048,12 @@ class GameRoom {
       const nCount = bb._neighborKeysCount;
 
       for (let ni = 0; ni < nCount; ni++) {
-        const cellBots = bb._spatialHash.get(neighborKeys[ni]);
-        if (!cellBots) continue;
+        const nk = neighborKeys[ni];
+        const cellLen = bb._spatialCellLengths[nk];
+        if (cellLen === 0) continue;
+        const cellBots = bb._spatialBuckets[nk];
 
-        for (let ci = 0; ci < cellBots.length; ci++) {
+        for (let ci = 0; ci < cellLen; ci++) {
           const bot = cellBots[ci];
           // Only push the player — bot is authoritative on worker thread
           this._resolvePlayerBotCollision(player, bot, MIN_DIST, PUSH_BUFFER, SPEED_DAMPEN);
