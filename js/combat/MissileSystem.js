@@ -156,11 +156,9 @@ class MissileSystem {
     }
 
     // Point light for glow
-    const light = new THREE.PointLight(0xffffff, 2, 25);
+    const light = new THREE.PointLight(0xffffff, 1, 15);
     light.position.set(0, -0.6, 0); // At tail
     group.add(light);
-
-    group.scale.set(3, 3, 3);
     group.position.set(0, -9999, 0);
 
     return { group, bodyMesh, noseMesh, light, inUse: false };
@@ -1287,13 +1285,13 @@ class MissileSystem {
       // Tail position (behind missile body) — use actual travel direction, not getWorldDirection
       // (getWorldDirection returns group -Z which is wrong after _meshOrientQuat multiply)
       const travelDir = missile.direction || missile.surfaceNormal;
-      const tailOffset = this._tempVec.copy(travelDir).multiplyScalar(-2.4);
+      const tailOffset = this._tempVec.copy(travelDir).multiplyScalar(-0.8);
       const pos = this._tempVec2.copy(missile.position).add(tailOffset);
 
       // Random spread
-      pos.x += (Math.random() - 0.5) * 0.8;
-      pos.y += (Math.random() - 0.5) * 0.8;
-      pos.z += (Math.random() - 0.5) * 0.8;
+      pos.x += (Math.random() - 0.5) * 0.3;
+      pos.y += (Math.random() - 0.5) * 0.3;
+      pos.z += (Math.random() - 0.5) * 0.3;
 
       ab.positions[i * 3] = pos.x;
       ab.positions[i * 3 + 1] = pos.y;
@@ -1306,7 +1304,7 @@ class MissileSystem {
 
       ab.ages[i] = 0;
       ab.lifetimes[i] = 0.25 + Math.random() * 0.35; // 0.25-0.6s
-      ab.sizes[i] = 1.2 + Math.random() * 1.2;
+      ab.sizes[i] = 0.4 + Math.random() * 0.4;
       ab.rotations[i] = Math.random() * Math.PI * 2;
       ab.rotationSpeeds[i] = (Math.random() - 0.5) * 3;
 
@@ -1476,7 +1474,7 @@ class MissileSystem {
 
       smoke.ages[i] = 0;
       smoke.lifetimes[i] = 1.0 + Math.random() * 1.5; // 1-2.5s
-      smoke.sizes[i] = 3.0 + Math.random() * 3.0;
+      smoke.sizes[i] = 1.5 + Math.random() * 1.5;
       smoke.rotations[i] = Math.random() * Math.PI * 2;
       smoke.rotationSpeeds[i] = (Math.random() - 0.5) * 1.5;
 

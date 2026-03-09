@@ -835,6 +835,14 @@
 
       const remoteTank = remoteTanks.get(data.id);
 
+      // Route to missile system before distance cull — missiles travel far
+      if (data.type === "missile") {
+        if (window.missileSystem) {
+          window.missileSystem.spawnRemoteMissile(data, remoteTank);
+        }
+        return;
+      }
+
       // Skip projectile visuals for tanks far from the player (not worth spawning)
       if (remoteTank?.group) {
         remoteTank.group.getWorldPosition(_remoteWorldPos);
@@ -853,14 +861,6 @@
             remoteTank.barrelMesh.position.z = baseZ;
           }
         }, 150);
-      }
-
-      // Route to missile system if this is a missile fire event
-      if (data.type === "missile") {
-        if (window.missileSystem) {
-          window.missileSystem.spawnRemoteMissile(data, remoteTank);
-        }
-        return;
       }
 
       // Spawn projectile visual — prefer remoteTank (has full effects),
