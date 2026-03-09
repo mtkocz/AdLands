@@ -375,7 +375,7 @@ class TankDamageEffects {
             tankGroup.updateMatrixWorld();
             _emitOffset.set(
                 (Math.random() - 0.5) * 1.5,  // Spread across rear
-                1.0 + Math.random() * 0.5,    // Above hull
+                1.5 + Math.random() * 0.5,    // Above hull (raised)
                 2.0 + Math.random() * 0.5     // Rear of tank
             );
             _emitOffset.applyMatrix4(tankGroup.matrixWorld);
@@ -625,7 +625,7 @@ class TankDamageEffects {
             tankGroup.updateMatrixWorld();
             _emitOffset.set(
                 (Math.random() - 0.5) * 0.8,  // Tight spread
-                0.8 + Math.random() * 0.3,    // Slightly lower
+                1.3 + Math.random() * 0.3,    // Raised origin
                 1.8 + Math.random() * 0.4     // Rear of tank
             );
             _emitOffset.applyMatrix4(tankGroup.matrixWorld);
