@@ -4094,7 +4094,7 @@
     capturePulse.update(deltaTime, sharedFrustum, camera);   // has own 260-unit distance cull
     cryptoVisuals.update(deltaTime);
     tankHeadlights.update(deltaTime, camera);  // has own 260-unit distance fade
-    dustShockwave.update(deltaTime, sharedFrustum); // fades at 200 units, needs update for cleanup
+    dustShockwave.update(deltaTime, sharedFrustum, isFarView);
     if (!isFarView) {
       treadTracks.update(tank, deltaTime, camera, isFarView, sharedFrustum);
       treadDust.update(deltaTime, camera, isFarView, sharedFrustum);

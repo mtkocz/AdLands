@@ -195,6 +195,7 @@ class CannonSystem {
     const circleTexture = new THREE.CanvasTexture(canvas);
     circleTexture.minFilter = THREE.NearestFilter;
     circleTexture.magFilter = THREE.NearestFilter;
+    circleTexture.premultiplyAlpha = false;
 
     // Per-faction materials — subtle faction tint over explosion palette
     this.lodExplosionMaterials = {};
@@ -490,7 +491,7 @@ class CannonSystem {
    * @param {THREE.Vector3} position - World position of the dead tank
    */
   spawnOilPuddle(position) {
-    if (!this.planet) {
+    if (!this.planet || this.isOrbitalView) {
       console.warn("[OIL PUDDLE] Planet not set");
       return;
     }
@@ -572,6 +573,22 @@ class CannonSystem {
   _updateOilPuddles(deltaTime, frustum) {
     const cfg = this.oilPuddleConfig;
     const fadeStart = cfg.lifetime - cfg.fadeOutDuration;
+
+    // Hide all puddles in orbital view
+    if (this.isOrbitalView) {
+      for (let i = this.oilPuddles.length - 1; i >= 0; i--) {
+        const puddle = this.oilPuddles[i];
+        puddle.age += deltaTime;
+        puddle.mesh.visible = false;
+        if (puddle.age >= cfg.lifetime) {
+          if (this.planet) this.planet.hexGroup.remove(puddle.mesh);
+          puddle.material.map.dispose();
+          puddle.material.dispose();
+          this.oilPuddles.splice(i, 1);
+        }
+      }
+      return;
+    }
 
     for (let i = this.oilPuddles.length - 1; i >= 0; i--) {
       const puddle = this.oilPuddles[i];
@@ -1655,6 +1672,21 @@ void main() {
   }
 
   _updateMuzzleEffects(deltaTime, frustum = null) {
+    // Hide muzzle flares in orbital view
+    if (this.isOrbitalView) {
+      for (let i = this.muzzleFlares.length - 1; i >= 0; i--) {
+        const flare = this.muzzleFlares[i];
+        flare.age += deltaTime;
+        flare.sprite.visible = false;
+        if (flare.age >= flare.duration) {
+          this.scene.remove(flare.sprite);
+          flare.sprite.material.dispose();
+          this.muzzleFlares.splice(i, 1);
+        }
+      }
+      return;
+    }
+
     // Update muzzle flares
     for (let i = this.muzzleFlares.length - 1; i >= 0; i--) {
       const flare = this.muzzleFlares[i];
@@ -1701,6 +1733,23 @@ void main() {
 
   _updateExplosions(deltaTime, frustum = null) {
     const cfg = this.explosionConfig;
+
+    // Hide full explosions in orbital view (LOD explosions handle orbital)
+    if (this.isOrbitalView) {
+      for (let i = this.explosions.length - 1; i >= 0; i--) {
+        const exp = this.explosions[i];
+        exp.age += deltaTime;
+        exp.sprite.visible = false;
+        if (exp.light) exp.light.visible = false;
+        if (exp.age >= exp.duration) {
+          this.scene.remove(exp.sprite);
+          exp.material.dispose();
+          if (exp.light) { this.scene.remove(exp.light); exp.light.dispose(); }
+          this.explosions.splice(i, 1);
+        }
+      }
+      return;
+    }
 
     for (let i = this.explosions.length - 1; i >= 0; i--) {
       const exp = this.explosions[i];

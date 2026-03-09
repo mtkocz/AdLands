@@ -836,8 +836,16 @@ class DustShockwave {
    * Update all active shockwaves
    * @param {number} deltaTime - Time since last frame in seconds
    */
-  update(deltaTime, frustum = null) {
+  update(deltaTime, frustum = null, isOrbitalView = false) {
     const cfg = this.config;
+
+    // Hide all effects in orbital view (age + dispose, but skip rendering)
+    if (isOrbitalView) {
+      this._ageOutShockwaves(deltaTime);
+      this._ageOutDustwaveSprites(deltaTime);
+      this._ageOutMuzzleSmokeSprites(deltaTime);
+      return;
+    }
 
     // Cache camera world position for distance fade
     if (this.gameCamera?.camera) {
@@ -1152,6 +1160,58 @@ class DustShockwave {
   /**
    * Clean up all resources
    */
+  _ageOutShockwaves(deltaTime) {
+    for (let i = this.shockwaves.length - 1; i >= 0; i--) {
+      const sw = this.shockwaves[i];
+      sw.age += deltaTime;
+      sw.mesh.visible = false;
+      if (sw.age / sw.duration >= 1) {
+        if (sw.parent) { sw.parent.remove(sw.mesh); } else { this.scene.remove(sw.mesh); }
+        sw.material.dispose();
+        this.shockwaves.splice(i, 1);
+      }
+    }
+  }
+
+  _ageOutDustwaveSprites(deltaTime) {
+    for (let i = this.dustwaveSprites.length - 1; i >= 0; i--) {
+      const sprite = this.dustwaveSprites[i];
+      sprite.age += deltaTime;
+      sprite.sprite.visible = false;
+      if (sprite.shadowSprite) sprite.shadowSprite.visible = false;
+      if (sprite.age / sprite.duration >= 1) {
+        if (sprite.parent) { sprite.parent.remove(sprite.sprite); } else { this.scene.remove(sprite.sprite); }
+        this._dustwaveMaterialPool.push(sprite.material);
+        if (sprite.shadowSprite) {
+          this.scene.remove(sprite.shadowSprite);
+          if (sprite.shadowTexture) sprite.shadowTexture.dispose();
+          sprite.shadowSprite.material.dispose();
+        }
+        this.dustwaveSprites.splice(i, 1);
+      }
+    }
+  }
+
+  _ageOutMuzzleSmokeSprites(deltaTime) {
+    const cfg = this.muzzleSmokeConfig;
+    for (let i = this.muzzleSmokeSprites.length - 1; i >= 0; i--) {
+      const sprite = this.muzzleSmokeSprites[i];
+      sprite.age += deltaTime;
+      sprite.sprite.visible = false;
+      if (sprite.shadowSprite) sprite.shadowSprite.visible = false;
+      if (sprite.age / cfg.duration >= 1) {
+        this.scene.remove(sprite.sprite);
+        this._muzzleSmokeMaterialPool.push(sprite.material);
+        if (sprite.shadowSprite) {
+          this.scene.remove(sprite.shadowSprite);
+          if (sprite.shadowTexture) sprite.shadowTexture.dispose();
+          sprite.shadowSprite.material.dispose();
+        }
+        this.muzzleSmokeSprites.splice(i, 1);
+      }
+    }
+  }
+
   dispose() {
     for (const sw of this.shockwaves) {
       if (sw.parent) {

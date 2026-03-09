@@ -122,7 +122,7 @@ const BOT_PIVOT_OFFSET = 0.6;
 // Pole avoidance — hard limit must be outside polar hole boundary (~0.253 rad)
 const BOT_POLE_SOFT_LIMIT = 0.6;
 const BOT_POLE_HARD_LIMIT = 0.35;
-const BOT_POLE_REPULSION_STRENGTH = 0.015;
+const BOT_POLE_REPULSION_STRENGTH = 0.01;
 
 // Collision avoidance
 const BOT_AVOID_DISTANCE = 0.04;
@@ -524,6 +524,7 @@ class ServerBotManager {
   update(dt, players, projectiles, planetRotation, tick, nextProjectileId) {
     const now = Date.now();
     this._pathfindCount = 0; // Reset per-tick pathfind budget
+    this._activeBotMissiles = 0; // Reset per-tick missile cap
     this._planetRotation = planetRotation; // Store for use in sub-methods
 
     // Deploy bots whose timers have expired
@@ -807,22 +808,6 @@ class ServerBotManager {
       const threat = this._detectCollisionThreat(bot);
       bot._cachedThreat = threat.threat;
       bot._cachedSteer = threat.steerDirection;
-    }
-
-    // Pole wander redirect: if bot is near a pole and wandering toward it, flip away
-    const distFromNorthPole = bot.phi;
-    const distFromSouthPole = Math.PI - bot.phi;
-    const distFromNearestPole = Math.min(distFromNorthPole, distFromSouthPole);
-    if (distFromNearestPole < BOT_POLE_SOFT_LIMIT) {
-      // Heading 0 = north (toward north pole), PI = south (toward south pole)
-      const polewardHeading = distFromNorthPole < distFromSouthPole ? 0 : Math.PI;
-      let delta = polewardHeading - bot.wanderDirection;
-      while (delta > Math.PI) delta -= Math.PI * 2;
-      while (delta < -Math.PI) delta += Math.PI * 2;
-      if (Math.abs(delta) < Math.PI / 2) {
-        // Wandering toward pole — redirect away
-        bot.wanderDirection += (delta > 0 ? -1 : 1) * 0.5;
-      }
     }
 
     // Target-directed steering (suppressed during terrain avoidance)
@@ -1459,10 +1444,12 @@ class ServerBotManager {
 
       const dist = this._angularDistance(bot.theta, bot.phi, target.theta, target.phi);
 
-      // Missile: only aggressive bots, beyond cannon range, long cooldown, costs 20 crypto
-      if (dist >= 0.08 && dist < 0.15 && bot.personality > 0.6 &&
-          bot.crypto >= 20 && now - bot.lastMissileTime >= 8000) {
+      // Missile: rare — only aggressive bots, beyond cannon range, global cap of 3 active
+      if (dist >= 0.08 && dist < 0.15 && bot.personality > 0.7 &&
+          bot.crypto >= 20 && now - bot.lastMissileTime >= 15000 &&
+          this._activeBotMissiles < 3) {
         bot.lastMissileTime = now;
+        this._activeBotMissiles++;
         nextProjectileId = this._fireBotMissile(bot, projectiles, nextProjectileId);
       }
       // Cannon range: < 0.08 rad, personality-based cooldown

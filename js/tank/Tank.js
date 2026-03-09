@@ -1893,12 +1893,14 @@ Tank.updateTankLOD = function (
     }
   }
 
-  // Screen-space size culling for very distant tanks
-  const apparentSize = (5 / distanceToCamera) * 1000;
-  if (distanceToCamera > LOD_DISTANCE && apparentSize < MIN_SCREENSPACE) {
-    tank.group.visible = false;
-    tank._lodState = -1;
-    return false;
+  // Screen-space size culling for very distant tanks (skip in orbital view — show all)
+  if (!isOrbitalView) {
+    const apparentSize = (5 / distanceToCamera) * 1000;
+    if (distanceToCamera > LOD_DISTANCE && apparentSize < MIN_SCREENSPACE) {
+      tank.group.visible = false;
+      tank._lodState = -1;
+      return false;
+    }
   }
 
   // Tank is visible
