@@ -624,7 +624,7 @@ class TankDamageEffects {
 
             this.fire.ages[idx] = 0;
             this.fire.lifetimes[idx] = 0.25 + Math.random() * 0.4;  // 0.25-0.65s (missile-like)
-            this.fire.sizes[idx] = 0.9 + Math.random() * 1.125;  // 25% smaller
+            this.fire.sizes[idx] = 0.675 + Math.random() * 0.844;
             this.fire.rotations[idx] = Math.random() * Math.PI * 2;
             this.fire.rotationSpeeds[idx] = (Math.random() - 0.5) * 3.0;
 
