@@ -169,7 +169,7 @@ class TankDamageEffects {
                 }
             }
             if (effects.fire) {
-                effects.fireAccum += dt * 12.5; // 12.5 fire particles per second
+                effects.fireAccum += dt * 20; // 20 fire particles per second (more, smaller particles)
                 const emitCount = Math.floor(effects.fireAccum);
                 if (emitCount > 0) {
                     effects.fireAccum -= emitCount;
@@ -226,7 +226,7 @@ class TankDamageEffects {
     // ========================
 
     _createSmokeSystem() {
-        const maxParticles = 391;
+        const maxParticles = 450;
 
         this.smoke = {
             maxParticles,
@@ -288,10 +288,10 @@ class TankDamageEffects {
                     float distToCamera = distance(position, uCameraPos);
                     float distanceFade = 1.0 - smoothstep(100.0, 260.0, distToCamera);
 
-                    // Fade in quickly, stay visible longer, then fade out
+                    // Fade in quickly, smoother fade out (missile-style)
                     float fadeIn = smoothstep(0.0, 0.05, lifeRatio);
-                    float fadeOut = 1.0 - smoothstep(0.6, 1.0, lifeRatio);
-                    vAlpha = fadeIn * fadeOut * 0.3585 * aOpacity * distanceFade;
+                    float fadeOut = 1.0 - smoothstep(0.5, 1.0, lifeRatio);
+                    vAlpha = fadeIn * fadeOut * 0.3 * aOpacity * distanceFade;
 
                     // Gray (0) or black (1) smoke - pass brightness to fragment
                     vBrightness = mix(0.45, 0.05, aColor);
@@ -393,9 +393,9 @@ class TankDamageEffects {
             this.smoke.velocities[i3 + 2] = _emitNormal.z * speed + (Math.random() - 0.5) * 0.2;
 
             this.smoke.ages[idx] = 0;
-            this.smoke.lifetimes[idx] = 1.1 + Math.random() * 0.75;  // 1.1-1.85 seconds
+            this.smoke.lifetimes[idx] = 1.2 + Math.random() * 1.3;  // 1.2-2.5s (lingers like missile smoke)
             this.smoke.colors[idx] = smokeType === 'black' ? 1.0 : 0.0;
-            this.smoke.sizes[idx] = 2.53 + Math.random() * 1.69;
+            this.smoke.sizes[idx] = 1.8 + Math.random() * 1.5;  // Smaller start, grows more
             this.smoke.rotations[idx] = Math.random() * Math.PI * 2;
             this.smoke.rotationSpeeds[idx] = (Math.random() - 0.5) * (0.5 + Math.random() * 3.5);  // varied: some barely spin, some up to ±2 rad/sec
             this.smoke.opacities[idx] = tankOpacity;  // Initial opacity from tank
@@ -428,8 +428,8 @@ class TankDamageEffects {
 
             const i3 = i * 3;
 
-            // Slow down over time (drag) - frame-rate independent
-            const dragFactor = Math.pow(0.98, dt * 60);
+            // Slow down over time (drag) - frame-rate independent (less drag = lingers more)
+            const dragFactor = Math.pow(0.985, dt * 60);
             this.smoke.velocities[i3] *= dragFactor;
             this.smoke.velocities[i3 + 1] *= dragFactor;
             this.smoke.velocities[i3 + 2] *= dragFactor;
@@ -504,7 +504,7 @@ class TankDamageEffects {
     // ========================
 
     _createFireSystem() {
-        const maxParticles = 75;
+        const maxParticles = 120;
 
         this.fire = {
             maxParticles,
@@ -555,20 +555,21 @@ class TankDamageEffects {
                     float distToCamera = distance(position, uCameraPos);
                     float distanceFade = 1.0 - smoothstep(100.0, 260.0, distToCamera);
 
-                    // Fire shrinks as it rises
-                    float sizeFactor = 1.0 - lifeRatio * 0.6;
+                    // Fire grows slightly (like missile afterburner)
+                    float sizeFactor = 1.0 + lifeRatio * 0.5;
 
-                    // Fast fade
-                    vAlpha = (1.0 - lifeRatio) * 0.6375 * distanceFade;
+                    // Smooth fade in/out (missile-style smoothstep curves)
+                    float fadeIn = smoothstep(0.0, 0.1, lifeRatio);
+                    float fadeOut = 1.0 - smoothstep(0.4, 1.0, lifeRatio);
+                    vAlpha = fadeIn * fadeOut * 0.7 * distanceFade;
 
-                    // Darker flame colors to reduce bloom washout
-                    // Yellow-orange core -> orange -> red-brown -> dark
-                    if (lifeRatio < 0.3) {
-                        vColor = mix(vec3(0.7, 0.5, 0.15), vec3(0.65, 0.35, 0.08), lifeRatio / 0.3);
-                    } else if (lifeRatio < 0.6) {
-                        vColor = mix(vec3(0.65, 0.35, 0.08), vec3(0.5, 0.15, 0.03), (lifeRatio - 0.3) / 0.3);
+                    // Bright warm colors (missile-inspired): yellow core -> orange -> red
+                    if (lifeRatio < 0.35) {
+                        vColor = mix(vec3(1.0, 0.85, 0.3), vec3(1.0, 0.5, 0.1), lifeRatio / 0.35);
+                    } else if (lifeRatio < 0.7) {
+                        vColor = mix(vec3(1.0, 0.5, 0.1), vec3(0.7, 0.2, 0.05), (lifeRatio - 0.35) / 0.35);
                     } else {
-                        vColor = mix(vec3(0.5, 0.15, 0.03), vec3(0.2, 0.06, 0.02), (lifeRatio - 0.6) / 0.4);
+                        vColor = mix(vec3(0.7, 0.2, 0.05), vec3(0.3, 0.08, 0.02), (lifeRatio - 0.7) / 0.3);
                     }
 
                     vec4 mvPosition = modelViewMatrix * vec4(position, 1.0);
@@ -583,14 +584,20 @@ class TankDamageEffects {
                 varying float vRotation;
 
                 void main() {
+                    if (vAlpha < 0.001) discard;
+
                     // Rotated square
                     vec2 coord = gl_PointCoord - vec2(0.5);
                     float c = cos(vRotation);
                     float s = sin(vRotation);
                     vec2 rc = vec2(coord.x * c - coord.y * s, coord.x * s + coord.y * c);
-                    if (abs(rc.x) > 0.45 || abs(rc.y) > 0.45) discard;
+                    if (abs(rc.x) > 0.4 || abs(rc.y) > 0.4) discard;
 
-                    gl_FragColor = vec4(vColor * 0.9, vAlpha);
+                    // Soft edge falloff (missile-style)
+                    float dist = max(abs(rc.x), abs(rc.y));
+                    float alpha = vAlpha * (1.0 - dist * 1.5);
+
+                    gl_FragColor = vec4(vColor * 0.8, alpha);
                 }
             `,
             transparent: true,
@@ -621,7 +628,7 @@ class TankDamageEffects {
             // Get tank world position (engine area, slightly lower than smoke)
             tankGroup.updateMatrixWorld();
             _emitOffset.set(
-                (Math.random() - 0.5) * 1.0,  // Narrower spread
+                (Math.random() - 0.5) * 0.8,  // Tight spread
                 0.8 + Math.random() * 0.3,    // Slightly lower
                 1.8 + Math.random() * 0.4     // Rear of tank
             );
@@ -631,19 +638,19 @@ class TankDamageEffects {
             this.fire.positions[i3 + 1] = _emitOffset.y;
             this.fire.positions[i3 + 2] = _emitOffset.z;
 
-            // Upward velocity with flickering motion
+            // Outward velocity with spread (missile-style)
             _emitNormal.copy(_emitOffset).normalize();
-            const speed = 1.5 + Math.random() * 1.0;
+            const speed = 1.2 + Math.random() * 0.8;
 
-            this.fire.velocities[i3] = _emitNormal.x * speed + (Math.random() - 0.5) * 0.8;
-            this.fire.velocities[i3 + 1] = _emitNormal.y * speed + (Math.random() - 0.5) * 0.8;
-            this.fire.velocities[i3 + 2] = _emitNormal.z * speed + (Math.random() - 0.5) * 0.8;
+            this.fire.velocities[i3] = _emitNormal.x * speed + (Math.random() - 0.5) * 1.2;
+            this.fire.velocities[i3 + 1] = _emitNormal.y * speed + (Math.random() - 0.5) * 1.2;
+            this.fire.velocities[i3 + 2] = _emitNormal.z * speed + (Math.random() - 0.5) * 1.2;
 
             this.fire.ages[idx] = 0;
-            this.fire.lifetimes[idx] = 0.3 + Math.random() * 0.4;  // 0.3-0.7 seconds (shorter than smoke)
-            this.fire.sizes[idx] = 2.0 + Math.random() * 1.5;
+            this.fire.lifetimes[idx] = 0.25 + Math.random() * 0.4;  // 0.25-0.65s (missile-like)
+            this.fire.sizes[idx] = 0.8 + Math.random() * 1.0;  // Smaller, tighter particles
             this.fire.rotations[idx] = Math.random() * Math.PI * 2;
-            this.fire.rotationSpeeds[idx] = (Math.random() - 0.5) * (1.0 + Math.random() * 10.0);  // varied: some slow, some up to ±5.5 rad/sec
+            this.fire.rotationSpeeds[idx] = (Math.random() - 0.5) * 3.0;
 
             this.fire.activeCount++;
         }
