@@ -3958,8 +3958,10 @@
     planet.hexGroup.updateMatrixWorld();
 
     // Disable tank controls in orbital view (unless fast travel is active)
+    // Include transitioning-to-orbital so LOD/culling treats zoom-out as orbital
     const isOrbitalView =
-      gameCamera.mode === "orbital" || gameCamera.mode === "fastTravel";
+      gameCamera.mode === "orbital" || gameCamera.mode === "fastTravel" ||
+      (gameCamera.transitioning && (gameCamera.transitionType === "toOrbital" || gameCamera.transitionType === "toFastTravel"));
     // Distance-based cutoff for visual effects (260 units from surface)
     const cameraSurfaceDist = camera.position.length() - CONFIG.sphereRadius;
     const isFarView = cameraSurfaceDist > 260;

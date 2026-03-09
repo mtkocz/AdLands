@@ -426,8 +426,12 @@ class BotTanks {
           metalness: 0.6,
           flatShading: true,
         }),
-        // LOD material with terminator-aware lighting
-        lod: this._createLODMaterial(colors.primary),
+        lod: new THREE.MeshStandardMaterial({
+          color: colors.primary,
+          roughness: 0.8,
+          metalness: 0.2,
+          flatShading: true,
+        }),
       };
     }
 
