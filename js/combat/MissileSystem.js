@@ -256,7 +256,7 @@ class MissileSystem {
     const activeMissiles = [];
     for (let i = 0; i < this.missiles.length; i++) {
       const m = this.missiles[i];
-      if (m.targetTank && (m.phase === 1 || m.phase === 2)) {
+      if (!m.isRemote && m.targetTank && (m.phase === 1 || m.phase === 2)) {
         activeMissiles.push(m);
       }
     }
