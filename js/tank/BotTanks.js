@@ -344,9 +344,6 @@ class BotTanks {
     // Create shared geometries and materials for performance (reused across all bots)
     this._setupSharedAssets();
 
-    // Create InstancedMesh pools for LOD rendering (lodBox + shadowBlob)
-    this._setupInstancedMeshes();
-
     // Orbital phantom dots (server-reported positions for bots outside spatial filter)
     this._setupOrbitalPhantoms();
 
@@ -472,57 +469,6 @@ class BotTanks {
       this._lodDotMaterials[factionName] =
         this._createLODDotMaterial(pureFactionColor);
     }
-  }
-
-  /**
-   * Create InstancedMesh pools for LOD box and shadow blob rendering.
-   * Replaces per-bot individual meshes with batched instanced draws.
-   * lodBox: 3 InstancedMesh (one per faction), shadowBlob: 1 InstancedMesh (shared material).
-   */
-  _setupInstancedMeshes() {
-    const maxPerFaction = Math.ceil(this.TARGET_TOTAL_PLAYERS / 3) + 10; // ~60 per faction
-    const factionNames = ["rust", "cobalt", "viridian"];
-
-    // InstancedMesh pools for LOD boxes (one per faction for different materials)
-    this._instancedLodBox = {};
-    for (const faction of factionNames) {
-      const im = new THREE.InstancedMesh(
-        this._sharedGeom.lodBox,
-        this._sharedMat[faction].lod,
-        maxPerFaction,
-      );
-      im.count = 0;
-      im.castShadow = false;
-      im.receiveShadow = false;
-      im.frustumCulled = false; // We handle culling per-bot
-      this._instancedLodBox[faction] = im;
-      this.planet.hexGroup.add(im);
-    }
-
-    // Single InstancedMesh for shadow blobs (same material for all factions)
-    this._instancedShadowBlob = new THREE.InstancedMesh(
-      this._shadowGeometry,
-      this._shadowMaterial,
-      this.TARGET_TOTAL_PLAYERS,
-    );
-    this._instancedShadowBlob.count = 0;
-    this._instancedShadowBlob.castShadow = false;
-    this._instancedShadowBlob.receiveShadow = false;
-    this._instancedShadowBlob.frustumCulled = false;
-    this._instancedShadowBlob.renderOrder = -1;
-    this.planet.hexGroup.add(this._instancedShadowBlob);
-
-    // Precomputed constant offset matrices (local to bot.group)
-    this._lodBoxOffset = new THREE.Matrix4().makeTranslation(0, 0.75, 0);
-    this._shadowBlobOffset = new THREE.Matrix4()
-      .makeTranslation(0, -0.3, 0)
-      .multiply(new THREE.Matrix4().makeRotationX(-Math.PI / 2));
-
-    // Preallocated temps for per-frame instance matrix computation
-    this._instanceTemp = {
-      matrix: new THREE.Matrix4(),
-      botMatrix: new THREE.Matrix4(),
-    };
   }
 
   /**
@@ -677,83 +623,6 @@ class BotTanks {
     return texture;
   }
 
-  _createLODMaterial(color) {
-    // Custom shader material for LOD tanks with proper lighting
-    // Responds to sun and fill lights like detailed tanks, plus terminator shadowing
-    return new THREE.ShaderMaterial({
-      uniforms: {
-        uColor: { value: new THREE.Color(color) },
-        // Sun light (warm, from +X)
-        uSunDirection: { value: new THREE.Vector3(1, 0, 0) },
-        uSunColor: { value: new THREE.Color(0xffd9b7) },
-        uSunIntensity: { value: 1.5 },
-        // Fill light (cool, from -X)
-        uFillDirection: { value: new THREE.Vector3(-1, 0, 0) },
-        uFillColor: { value: new THREE.Color(0x6b8e99) },
-        uFillIntensity: { value: 0.75 },
-        // Ambient light
-        uAmbientColor: { value: new THREE.Color(0x3366aa) },
-        uAmbientIntensity: { value: 0.4 },
-      },
-      vertexShader: `
-                varying vec3 vWorldPosition;
-                varying vec3 vWorldNormal;
-
-                void main() {
-                    #ifdef USE_INSTANCING
-                        vec4 worldPos = modelMatrix * instanceMatrix * vec4(position, 1.0);
-                        vWorldNormal = normalize(mat3(modelMatrix) * mat3(instanceMatrix) * normal);
-                    #else
-                        vec4 worldPos = modelMatrix * vec4(position, 1.0);
-                        vWorldNormal = normalize(mat3(modelMatrix) * normal);
-                    #endif
-                    vWorldPosition = worldPos.xyz;
-                    gl_Position = projectionMatrix * viewMatrix * worldPos;
-                }
-            `,
-      fragmentShader: `
-                uniform vec3 uColor;
-                uniform vec3 uSunDirection;
-                uniform vec3 uSunColor;
-                uniform float uSunIntensity;
-                uniform vec3 uFillDirection;
-                uniform vec3 uFillColor;
-                uniform float uFillIntensity;
-                uniform vec3 uAmbientColor;
-                uniform float uAmbientIntensity;
-
-                varying vec3 vWorldPosition;
-                varying vec3 vWorldNormal;
-
-                void main() {
-                    vec3 normal = normalize(vWorldNormal);
-
-                    // Planet surface normal (for terminator calculation)
-                    vec3 surfaceNormal = normalize(vWorldPosition);
-
-                    // Terminator factor: only affects sun light (like real shadows would)
-                    // Tanks on dark side don't receive sunlight
-                    float sunFacing = dot(surfaceNormal, uSunDirection);
-                    float terminatorShadow = smoothstep(-0.2, 0.2, sunFacing);
-
-                    // Start with ambient light (always present, no terminator reduction)
-                    vec3 lighting = uAmbientColor * uAmbientIntensity;
-
-                    // Sun diffuse (blocked by terminator on dark side)
-                    float sunDiffuse = max(dot(normal, uSunDirection), 0.0);
-                    lighting += uSunColor * uSunIntensity * sunDiffuse * terminatorShadow;
-
-                    // Fill light diffuse (not affected by terminator - it comes from opposite side)
-                    float fillDiffuse = max(dot(normal, uFillDirection), 0.0);
-                    lighting += uFillColor * uFillIntensity * fillDiffuse;
-
-                    vec3 finalColor = uColor * lighting;
-                    gl_FragColor = vec4(finalColor, 1.0);
-                }
-            `,
-    });
-  }
-
   _spawnBots() {
     // Spawn bots to fill up to TARGET_TOTAL_PLAYERS minus human players
     // Initially spawn 299 (leaving room for local player = 300 total)
@@ -856,8 +725,26 @@ class BotTanks {
     hitbox.userData.type = "tank";
     group.add(hitbox);
 
-    // LOD box and shadow blob are rendered via InstancedMesh (see _setupInstancedMeshes)
-    // No individual meshes created per bot — saves ~400 draw calls in orbital view
+    // LOD box (simplified mesh shown at distance for enemies)
+    const lodMesh = new THREE.Mesh(
+      this._sharedGeom.lodBox,
+      this._sharedMat[factionName].lod,
+    );
+    lodMesh.position.set(0, 0.75, 0);
+    lodMesh.visible = false;
+    lodMesh.castShadow = false;
+    lodMesh.receiveShadow = false;
+    group.add(lodMesh);
+
+    // Shadow blob (fake shadow for LOD mode)
+    const shadowBlob = new THREE.Mesh(this._shadowGeometry, this._shadowMaterial);
+    shadowBlob.position.set(0, -0.3, 0);
+    shadowBlob.rotation.x = -Math.PI / 2;
+    shadowBlob.visible = false;
+    shadowBlob.castShadow = false;
+    shadowBlob.receiveShadow = false;
+    shadowBlob.renderOrder = -1;
+    group.add(shadowBlob);
 
     // Commander mode: billboarded dot with shader-based dark outline
     const lodDot = new THREE.Mesh(
@@ -984,10 +871,10 @@ class BotTanks {
       bodyGroup,
       turretGroup,
       hitbox,
-      lodMesh: null, // Rendered via InstancedMesh
+      lodMesh,
       lodDot,
       lodDotOutline,
-      shadowBlob: null, // Rendered via InstancedMesh
+      shadowBlob,
       detailedMeshes,
       faction: factionName,
       theta,
@@ -1159,14 +1046,11 @@ class BotTanks {
       // 4b. Turret rotation (spring-based, matches player)
       this._updateBotTurret(bot, deltaTime);
 
-      // 5. Visibility culling (sets bot._lodState for instanced rendering)
+      // 5. Visibility culling (toggles lodMesh/lodDot/detailedMeshes visibility)
       if (camera && frustum) {
         this._updateBotVisibility(bot, frustum, cameraWorldPos);
       }
     });
-
-    // 6. Batch-update InstancedMesh buffers for LOD boxes and shadow blobs
-    this._updateInstancedLOD();
   }
 
   // ========================
@@ -1187,58 +1071,6 @@ class BotTanks {
     Tank.updateTankLOD(bot, cameraWorldPos, frustum, this._lodOptions || {});
   }
 
-  /**
-   * Update InstancedMesh buffers for all bot LOD boxes and shadow blobs.
-   * Called once per frame after all bot positions/visibility have been updated.
-   * Reads bot._lodState (set by Tank.updateTankLOD) to determine which instances to write.
-   */
-  _updateInstancedLOD() {
-    const temp = this._instanceTemp;
-
-    // Reset instance counts
-    const lodBoxCounts = { rust: 0, cobalt: 0, viridian: 0 };
-    let shadowBlobCount = 0;
-
-    for (let i = 0; i < this.bots.length; i++) {
-      const bot = this.bots[i];
-
-      // Only write instances for bots in "box" LOD state (state 1)
-      // State -1: hidden (culled), 0: detail meshes, 2: dot (individual mesh)
-      if (bot._lodState !== 1) continue;
-
-      const faction = bot.faction;
-      const boxIdx = lodBoxCounts[faction];
-      const im = this._instancedLodBox[faction];
-
-      if (boxIdx < im.instanceMatrix.count) {
-        // Compose bot's local-to-hexGroup transform from current position/quaternion/scale
-        temp.botMatrix.compose(bot.group.position, bot.group.quaternion, bot.group.scale);
-
-        // LOD box: bot transform × offset (0, 0.75, 0)
-        temp.matrix.copy(temp.botMatrix).multiply(this._lodBoxOffset);
-        im.setMatrixAt(boxIdx, temp.matrix);
-        lodBoxCounts[faction]++;
-
-        // Shadow blob: bot transform × offset (0, -0.3, 0) + rotateX(-PI/2)
-        temp.matrix.copy(temp.botMatrix).multiply(this._shadowBlobOffset);
-        this._instancedShadowBlob.setMatrixAt(shadowBlobCount, temp.matrix);
-        shadowBlobCount++;
-      }
-    }
-
-    // Update instance counts and mark buffers dirty
-    for (const faction of ["rust", "cobalt", "viridian"]) {
-      const im = this._instancedLodBox[faction];
-      im.count = lodBoxCounts[faction];
-      if (im.count > 0) {
-        im.instanceMatrix.needsUpdate = true;
-      }
-    }
-    this._instancedShadowBlob.count = shadowBlobCount;
-    if (shadowBlobCount > 0) {
-      this._instancedShadowBlob.instanceMatrix.needsUpdate = true;
-    }
-  }
 
   // ========================
   // AI STATE MACHINE

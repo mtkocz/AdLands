@@ -405,9 +405,9 @@ class ServerBotManager {
       _lastTerrainThreat: null,
       _centerBlocked: false,
 
-      // Combat
+      // Combat — weapon type fixed at spawn (missile bots ~15%)
+      weaponType: Math.random() < 0.15 ? "missile" : "cannon",
       lastFireTime: 0,
-      lastMissileTime: 0,
       combatTarget: null,
       combatScanTimer: 0,
       combatLockTime: 0,
@@ -1442,20 +1442,21 @@ class ServerBotManager {
       // Fire if cooldown expired and within range (skip if welding)
       if (bot.weldingActive) return nextProjectileId;
 
+      const cooldown = BOT_FIRE_COOLDOWN_MIN + bot.personality * (BOT_FIRE_COOLDOWN_MAX - BOT_FIRE_COOLDOWN_MIN);
+      if (now - bot.lastFireTime < cooldown) return nextProjectileId;
+
       const dist = this._angularDistance(bot.theta, bot.phi, target.theta, target.phi);
 
-      // Missile: rare — only aggressive bots, beyond cannon range, global cap of 3 active
-      if (dist >= 0.08 && dist < 0.15 && bot.personality > 0.7 &&
-          bot.crypto >= 20 && now - bot.lastMissileTime >= 15000 &&
-          this._activeBotMissiles < 3) {
-        bot.lastMissileTime = now;
-        this._activeBotMissiles++;
-        nextProjectileId = this._fireBotMissile(bot, projectiles, nextProjectileId);
-      }
-      // Cannon range: < 0.08 rad, personality-based cooldown
-      else if (dist < 0.08) {
-        const cooldown = BOT_FIRE_COOLDOWN_MIN + bot.personality * (BOT_FIRE_COOLDOWN_MAX - BOT_FIRE_COOLDOWN_MIN);
-        if (now - bot.lastFireTime >= cooldown) {
+      if (bot.weaponType === "missile") {
+        // Missile bots: fire at 0.06-0.15 rad, costs 20 crypto, global cap 3
+        if (dist >= 0.06 && dist < 0.15 && bot.crypto >= 20 && this._activeBotMissiles < 3) {
+          bot.lastFireTime = now;
+          this._activeBotMissiles++;
+          nextProjectileId = this._fireBotMissile(bot, projectiles, nextProjectileId);
+        }
+      } else {
+        // Cannon bots: fire at < 0.08 rad
+        if (dist < 0.08) {
           bot.lastFireTime = now;
           nextProjectileId = this._fireBotProjectile(bot, projectiles, nextProjectileId);
         }
