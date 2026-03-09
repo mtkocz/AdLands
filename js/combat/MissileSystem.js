@@ -935,6 +935,15 @@ class MissileSystem {
       Math.atan2(-toTarget.x, toTarget.z) + Math.PI;
   }
 
+  _getSurfaceRadius(worldPos) {
+    if (!this.planet?.terrainElevation || !this.planet.hexGroup) return this.sphereRadius;
+    this._tempVec3.copy(worldPos);
+    this.planet.hexGroup.worldToLocal(this._tempVec3);
+    const elevation = this.planet.terrainElevation.getElevationAtPosition(this._tempVec3);
+    if (elevation <= 0) return this.sphereRadius;
+    return this.sphereRadius + elevation * this.planet.terrainElevation.config.EXTRUSION_HEIGHT;
+  }
+
   // ========================
   // MISSILE TRAJECTORY
   // ========================
@@ -1020,12 +1029,16 @@ class MissileSystem {
       const moveSpeed = this.config.missileSpeed * dt60;
       m.position.addScaledVector(m.direction, moveSpeed);
 
-      // Maintain altitude — smoothly lerp toward cruise height instead of snapping
+      // Maintain altitude above actual terrain (not base sphere)
+      const surfaceR = this._getSurfaceRadius(m.position);
       const currentNormal = this._tempVec.copy(m.position).normalize();
-      const currentAlt = m.position.length() - this.sphereRadius;
-      if (Math.abs(currentAlt - m.cruiseAltitude) > 0.5) {
+      const currentAlt = m.position.length() - surfaceR;
+      if (currentAlt < m.cruiseAltitude - 0.5) {
+        const correctedAlt = MathUtils.lerp(currentAlt, m.cruiseAltitude, Math.min(8 * dt, 1));
+        m.position.copy(currentNormal).multiplyScalar(surfaceR + correctedAlt);
+      } else if (currentAlt > m.cruiseAltitude + 0.5) {
         const correctedAlt = MathUtils.lerp(currentAlt, m.cruiseAltitude, Math.min(5 * dt, 1));
-        m.position.copy(currentNormal).multiplyScalar(this.sphereRadius + correctedAlt);
+        m.position.copy(currentNormal).multiplyScalar(surfaceR + correctedAlt);
       }
 
       // Orient mesh to face travel direction (lookAt + offset for Y-axis mesh)
@@ -1057,8 +1070,8 @@ class MissileSystem {
       m.poolItem.group.lookAt(lookTarget);
       m.poolItem.group.quaternion.multiply(this._meshOrientQuat);
 
-      const altitude = m.position.length() - this.sphereRadius;
-      if (altitude < 1.5 || dist < 1.5) {
+      const altAboveTerrain = m.position.length() - this._getSurfaceRadius(m.position);
+      if (altAboveTerrain < 1.5 || dist < 1.5) {
         const idx = this.missiles.indexOf(m);
         if (idx >= 0) {
           this._destroyMissile(idx, m.position);
@@ -1111,14 +1124,15 @@ class MissileSystem {
       const moveSpeed = this.config.missileSpeed * speedFactor * dt60;
       m.position.addScaledVector(m.direction, moveSpeed);
 
-      // Maintain altitude (gradually lose altitude as wobble intensifies)
-      const altitudeLoss = wobbleIntensity * 2; // Lose up to 2 units of altitude
+      // Maintain altitude above actual terrain (gradually lose altitude as wobble intensifies)
+      const altitudeLoss = wobbleIntensity * 2;
       const targetAlt = m.cruiseAltitude - altitudeLoss;
+      const surfaceR = this._getSurfaceRadius(m.position);
       const currentNormal = this._tempVec.copy(m.position).normalize();
-      const currentAlt = m.position.length() - this.sphereRadius;
+      const currentAlt = m.position.length() - surfaceR;
       if (Math.abs(currentAlt - targetAlt) > 0.5) {
         const correctedAlt = MathUtils.lerp(currentAlt, targetAlt, Math.min(5 * dt, 1));
-        m.position.copy(currentNormal).multiplyScalar(this.sphereRadius + correctedAlt);
+        m.position.copy(currentNormal).multiplyScalar(surfaceR + correctedAlt);
       }
 
       // Orient mesh
@@ -1153,9 +1167,9 @@ class MissileSystem {
       m.poolItem.group.lookAt(lookTarget);
       m.poolItem.group.quaternion.multiply(this._meshOrientQuat);
 
-      // Check impact (close to surface)
-      const altitude = m.position.length() - this.sphereRadius;
-      if (altitude < 1.5 || dist < 1.5) {
+      // Check impact (close to terrain surface)
+      const altAboveTerrain = m.position.length() - this._getSurfaceRadius(m.position);
+      if (altAboveTerrain < 1.5 || dist < 1.5) {
         const idx = this.missiles.indexOf(m);
         if (idx >= 0) {
           this._destroyMissile(idx, m.position);

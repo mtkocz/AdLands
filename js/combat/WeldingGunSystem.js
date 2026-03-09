@@ -114,8 +114,9 @@ class WeldingGunSystem {
     sparkGeo.setAttribute('aSize', new THREE.BufferAttribute(this._sparkSizes, 1));
 
     const sparkMat = new THREE.ShaderMaterial({
-      uniforms: {},
+      uniforms: { uCameraPos: { value: new THREE.Vector3() } },
       vertexShader: [
+        'uniform vec3 uCameraPos;',
         'attribute float aAge;',
         'attribute float aLifetime;',
         'attribute float aSize;',
@@ -123,7 +124,11 @@ class WeldingGunSystem {
         'void main() {',
         '  if (aLifetime <= 0.0) { gl_PointSize = 0.0; gl_Position = vec4(2.0,2.0,2.0,1.0); vAlpha = 0.0; return; }',
         '  float life = aAge / aLifetime;',
-        '  vAlpha = life < 1.0 ? (1.0 - life) : 0.0;',
+        '  float distFade = 1.0 - smoothstep(80.0, 160.0, distance(position, uCameraPos));',
+        '  vec3 toCamera = uCameraPos - position;',
+        '  float backface = dot(normalize(position), normalize(toCamera));',
+        '  float occlude = smoothstep(-0.05, 0.1, backface);',
+        '  vAlpha = life < 1.0 ? (1.0 - life) * distFade * occlude : 0.0;',
         '  vec4 mvPos = modelViewMatrix * vec4(position, 1.0);',
         '  gl_PointSize = aSize * (200.0 / -mvPos.z) * vAlpha;',
         '  gl_Position = projectionMatrix * mvPos;',
@@ -170,8 +175,9 @@ class WeldingGunSystem {
     smokeGeo.setAttribute('aSize', new THREE.BufferAttribute(this._smokeSizes, 1));
 
     const smokeMat = new THREE.ShaderMaterial({
-      uniforms: {},
+      uniforms: { uCameraPos: { value: new THREE.Vector3() } },
       vertexShader: [
+        'uniform vec3 uCameraPos;',
         'attribute float aAge;',
         'attribute float aLifetime;',
         'attribute float aSize;',
@@ -179,7 +185,11 @@ class WeldingGunSystem {
         'void main() {',
         '  if (aLifetime <= 0.0) { gl_PointSize = 0.0; gl_Position = vec4(2.0,2.0,2.0,1.0); vAlpha = 0.0; return; }',
         '  float life = aAge / aLifetime;',
-        '  vAlpha = life < 1.0 ? (1.0 - life * life) * 0.6 : 0.0;',
+        '  float distFade = 1.0 - smoothstep(80.0, 160.0, distance(position, uCameraPos));',
+        '  vec3 toCamera = uCameraPos - position;',
+        '  float backface = dot(normalize(position), normalize(toCamera));',
+        '  float occlude = smoothstep(-0.05, 0.1, backface);',
+        '  vAlpha = life < 1.0 ? (1.0 - life * life) * 0.6 * distFade * occlude : 0.0;',
         '  float grow = 1.0 + life * 2.0;',
         '  vec4 mvPos = modelViewMatrix * vec4(position, 1.0);',
         '  gl_PointSize = aSize * grow * (200.0 / -mvPos.z);',
@@ -247,13 +257,27 @@ class WeldingGunSystem {
       this.beams[i].mesh.visible = false;
       this._lights[i].visible = false;
     }
+    this._sparkPoints.visible = false;
+    this._smokePoints.visible = false;
   }
 
-  update(localTank, remoteTanks, playerFaction, dt) {
+  update(localTank, remoteTanks, playerFaction, dt, camera) {
     this._dt = dt;
     this._jitterTimer += dt;
     const shouldJitter = this._jitterTimer >= this._jitterInterval;
     if (shouldJitter) this._jitterTimer = 0;
+
+    // Distance culling — hide everything beyond surface combat range
+    const camDist = camera ? camera.position.length() - this.R : 0;
+    if (camDist > 260) {
+      this.hideAll();
+      this._updateSparks(dt);
+      this._updateSmoke(dt);
+      return;
+    }
+
+    this._sparkPoints.visible = true;
+    this._smokePoints.visible = true;
 
     // Hide all beams and lights
     for (let i = 0; i < this.beams.length; i++) {
@@ -266,6 +290,8 @@ class WeldingGunSystem {
     this._prevHealedTankIds = this._healedTankIds;
     this._healedTankIds = tmp;
     this._healedTankIds.clear();
+
+    const camPos = camera ? camera.position : null;
 
     let beamIdx = 0;
     const sparkTargets = []; // { pos, origin } pairs for spark emission
@@ -309,6 +335,12 @@ class WeldingGunSystem {
       if (beamIdx >= this.beams.length) break;
 
       welder.group.getWorldPosition(this._tmpFrom);
+
+      // Planet occlusion — skip if welder is on the far side
+      if (camPos) {
+        this._tmpDir.copy(camPos).sub(this._tmpFrom);
+        if (this._tmpFrom.dot(this._tmpDir) <= 0) continue;
+      }
 
       for (const [targetId, target] of remoteTanks) {
         if (beamIdx >= this.beams.length) break;
@@ -371,6 +403,12 @@ class WeldingGunSystem {
     // Update spark particles
     this._updateSparks(dt);
     this._updateSmoke(dt);
+
+    // Update camera position uniforms for distance/occlusion culling in shaders
+    if (camera) {
+      this._sparkPoints.material.uniforms.uCameraPos.value.copy(camera.position);
+      this._smokePoints.material.uniforms.uCameraPos.value.copy(camera.position);
+    }
 
     // Award crypto for healing (1 crypto per HP healed, floating number once/sec per target)
     this._updateHealCrypto(dt, localHealTargetCount, localHealTargetPositions);

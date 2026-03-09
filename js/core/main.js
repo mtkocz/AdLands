@@ -3996,14 +3996,10 @@
     }
     shieldEffect.updateShield('local', tank.shieldActive, tank.shieldArcAngle, tank.shieldEnergy, deltaTime);
 
-    // Update welding gun beams (skip when far — cyan point lights are expensive)
+    // Update welding gun beams (distance culling handled internally)
     const remoteTanks = window._mpState?.remoteTanks;
     if (remoteTanks) {
-      if (!isFarView) {
-        weldingGunSystem.update(tank, remoteTanks, playerFaction, deltaTime);
-      } else {
-        weldingGunSystem.hideAll();
-      }
+      weldingGunSystem.update(tank, remoteTanks, playerFaction, deltaTime, camera);
     }
 
     environment.update(camera, deltaTime);

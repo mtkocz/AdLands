@@ -30,6 +30,7 @@ class TankDamageEffects {
 
         this._createSmokeSystem();
         this._createFireSystem();
+        this._createFireLightPool();
     }
 
     // ========================
@@ -129,6 +130,9 @@ class TankDamageEffects {
     setVisible(v) {
         if (this.smokeSystem) this.smokeSystem.visible = v;
         if (this.fireSystem) this.fireSystem.visible = v;
+        if (this.fireLights) {
+            for (const entry of this.fireLights) entry.light.visible = v && !!entry.assignedTank;
+        }
     }
 
     /**
@@ -191,7 +195,10 @@ class TankDamageEffects {
         this._updateSmoke(dt);
         this._updateFire(dt);
 
-        // 3. Frustum culling AFTER update so bounding spheres use current data
+        // 3. Update fire point lights
+        if (camera) this._updateFireLights(camera);
+
+        // 4. Frustum culling AFTER update so bounding spheres use current data
         if (frustum) {
             if (this.smokeSystem && this.smoke.activeCount > 0) {
                 if (!this.smoke.boundingSphereValid) {
@@ -728,6 +735,62 @@ class TankDamageEffects {
     }
 
     // ========================
+    // FIRE POINT LIGHTS
+    // ========================
+
+    _createFireLightPool() {
+        const poolSize = 6;
+        this.fireLights = [];
+        for (let i = 0; i < poolSize; i++) {
+            const light = new THREE.PointLight(0xff6a00, 0, 18, 2);
+            light.visible = false;
+            this.scene.add(light);
+            this.fireLights.push({ light, assignedTank: null, flickerPhase: Math.random() * 100 });
+        }
+    }
+
+    _updateFireLights(camera) {
+        const burningTanks = [];
+        for (const [tankId, effects] of this.tankEffects) {
+            if (!effects.fire || !effects.tankGroup) continue;
+            _dmgTankWorldPos.setFromMatrixPosition(effects.tankGroup.matrixWorld);
+            const distSq = camera ? _dmgTankWorldPos.distanceToSquared(camera.position) : 0;
+            burningTanks.push({ tankId, effects, distSq });
+        }
+
+        burningTanks.sort((a, b) => a.distSq - b.distSq);
+
+        for (let i = 0; i < this.fireLights.length; i++) {
+            const entry = this.fireLights[i];
+            if (i < burningTanks.length) {
+                const tank = burningTanks[i];
+                entry.assignedTank = tank.tankId;
+                entry.flickerPhase += 0.15 + Math.random() * 0.1;
+
+                // Position at fire emission point
+                _emitOffset.set(0, 1.5, 1.9);
+                _emitOffset.applyMatrix4(tank.effects.tankGroup.matrixWorld);
+                entry.light.position.copy(_emitOffset);
+
+                // Flicker intensity using layered sine waves
+                const flicker = 0.55 + 0.3 * Math.sin(entry.flickerPhase * 7.3)
+                    + 0.15 * Math.sin(entry.flickerPhase * 13.7);
+                entry.light.intensity = Math.max(0.1, flicker) * 1.8;
+
+                // Shift color slightly between orange and yellow-orange
+                const colorShift = 0.5 + 0.5 * Math.sin(entry.flickerPhase * 5.1);
+                entry.light.color.setRGB(1.0, 0.35 + colorShift * 0.2, 0.05);
+
+                entry.light.visible = true;
+            } else {
+                entry.assignedTank = null;
+                entry.light.visible = false;
+                entry.light.intensity = 0;
+            }
+        }
+    }
+
+    // ========================
     // CLEANUP
     // ========================
 
@@ -742,6 +805,13 @@ class TankDamageEffects {
             this.scene.remove(this.fireSystem);
             this.fireSystem.geometry.dispose();
             this.fireSystem.material.dispose();
+        }
+
+        if (this.fireLights) {
+            for (const entry of this.fireLights) {
+                this.scene.remove(entry.light);
+            }
+            this.fireLights = [];
         }
 
         this.tankEffects.clear();
