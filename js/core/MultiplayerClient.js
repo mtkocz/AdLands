@@ -114,8 +114,16 @@
         }
       }
 
-      // Compute player world position once for distance culling
-      tank.group.getWorldPosition(_playerWorldPos);
+      // Compute reference position for distance culling.
+      // During portal preview (fast travel active, camera near surface), use
+      // camera position so bots near the previewed portal are visible — the
+      // player's tank is still at their old position.
+      const isFastTravelPreview = mp.fastTravel && mp.fastTravel.active && camera;
+      if (isFastTravelPreview) {
+        camera.getWorldPosition(_playerWorldPos);
+      } else {
+        tank.group.getWorldPosition(_playerWorldPos);
+      }
       const isOrbital = lodOptions && lodOptions.isOrbitalView;
 
       // Update all remote tanks (interpolation + LOD + death fade)
