@@ -247,7 +247,7 @@ class CannonSystem {
   }
 
   _spawnImpactDecal(position, sizeScale = 1) {
-    if (!this.impactDecalTexture || !this.planet) {
+    if (!this.impactDecalTexture || !this.planet || this.isOrbitalView) {
       return;
     }
 
@@ -338,6 +338,22 @@ class CannonSystem {
   _updateImpactDecals(deltaTime, frustum) {
     const cfg = this.impactDecalConfig;
     const fadeStart = cfg.lifetime - cfg.fadeOutDuration;
+
+    // Hide all decals in orbital view
+    if (this.isOrbitalView) {
+      for (let i = this.impactDecals.length - 1; i >= 0; i--) {
+        const decal = this.impactDecals[i];
+        decal.age += deltaTime;
+        decal.mesh.visible = false;
+        if (decal.age >= cfg.lifetime) {
+          if (this.planet) this.planet.hexGroup.remove(decal.mesh);
+          decal.material.alphaMap = null;
+          decal.material.dispose();
+          this.impactDecals.splice(i, 1);
+        }
+      }
+      return;
+    }
 
     for (let i = this.impactDecals.length - 1; i >= 0; i--) {
       const decal = this.impactDecals[i];
