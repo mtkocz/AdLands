@@ -926,6 +926,7 @@
     net.onMissileIncoming = (data) => {
       if (window.missileSystem) {
         window.missileSystem.showIncomingWarning();
+        window.missileSystem.retargetToPlayerByServerId(data.missileId);
       }
     };
 
@@ -1113,10 +1114,18 @@
               // Local missile — let it finish its visual dive naturally;
               // client-side phase 2 impact check will destroy it
             } else {
-              // Destroy the visual missile immediately at the impact point
-              // (the visual lags behind the server, so a slow crash-dive
-              // causes explosions with no visible missile preceding them)
-              window.missileSystem.removeByServerId(data.projectileId);
+              // Compute victim's world position for the explosion
+              let impactPos = null;
+              if (data.targetId === net.playerId && tank.group) {
+                impactPos = tank.group.position.clone();
+              } else {
+                const victim = remoteTanks.get(data.targetId);
+                if (victim?.group) {
+                  impactPos = new THREE.Vector3();
+                  victim.group.getWorldPosition(impactPos);
+                }
+              }
+              window.missileSystem.removeByServerId(data.projectileId, impactPos);
             }
           } else {
             cannonSystem.removeProjectileByServerId?.(data.projectileId);

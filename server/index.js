@@ -614,8 +614,8 @@ io.on("connection", (socket) => {
     if (![0, 1, 2].includes(profileIndex)) return;
     if (!profileData || typeof profileData !== "object") return;
 
-    // Save current profile stats to Firestore
-    await mainRoom.savePlayerProfile(socket.id);
+    // Save current profile stats to Firestore (force — switching profiles)
+    await mainRoom.savePlayerProfile(socket.id, { force: true });
 
     // Update socket references
     socket.profileData = profileData;
@@ -885,7 +885,7 @@ io.on("connection", (socket) => {
     // Save profile to Firestore before removing the player
     if (socket.uid) {
       try {
-        await mainRoom.savePlayerProfile(socket.id);
+        await mainRoom.savePlayerProfile(socket.id, { force: true });
       } catch (err) {
         console.warn(`[Server] Failed to save profile on disconnect for ${socket.id}:`, err.message);
       }

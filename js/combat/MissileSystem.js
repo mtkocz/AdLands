@@ -439,6 +439,20 @@ class MissileSystem {
     return closest;
   }
 
+  // Resolve server-assigned target ID to a { tank, worldPos } result
+  _resolveServerTarget(serverTargetId) {
+    let tank = null;
+    if (serverTargetId === "local") {
+      tank = this.playerTank;
+    } else if (window._mpState?.remoteTanks) {
+      tank = window._mpState.remoteTanks.get(serverTargetId);
+    }
+    if (!tank || tank.isDead) return null;
+    const pos = this._getTargetWorldPos(tank);
+    if (!pos) return null;
+    return { tank, worldPos: pos.clone() };
+  }
+
   // Find closest enemy from a missile's world position (for in-flight retargeting)
   // missileDir: current travel direction (if provided, only targets in forward hemisphere)
   // maxRange: maximum distance in world units (default: searchRadiusMax = 120)
@@ -679,12 +693,13 @@ class MissileSystem {
       age: 0,
       launchSpeed: 5,
       cruiseAltitude: this.config.cruiseAltitude,
-      targetTank: null, // Will find target each frame
+      targetTank: null,
       targetFaction: null,
       direction: null,  // Initialized when entering phase 1
       isRemote: true,
       ownerFaction: faction,
       serverId: data.projectileId,
+      serverTargetId: data.targetId || null,
       shadowBB,
     };
 
@@ -697,11 +712,22 @@ class MissileSystem {
     }
   }
 
-  // Remove a missile by server projectile ID (when server reports hit)
-  removeByServerId(projectileId) {
+  // Remove a missile by server projectile ID, exploding at impactPos if provided
+  removeByServerId(projectileId, impactPos) {
     for (let i = this.missiles.length - 1; i >= 0; i--) {
       if (this.missiles[i].serverId === projectileId) {
-        this._destroyMissile(i, this.missiles[i].position);
+        this._destroyMissile(i, impactPos || this.missiles[i].position);
+        return;
+      }
+    }
+  }
+
+  // Retarget a remote missile to the local player (called on missile-incoming)
+  retargetToPlayerByServerId(missileId) {
+    for (let i = this.missiles.length - 1; i >= 0; i--) {
+      const m = this.missiles[i];
+      if (m.serverId === missileId && m.isRemote) {
+        m.serverTargetId = "local";
         return;
       }
     }
@@ -985,11 +1011,18 @@ class MissileSystem {
       // CRUISE / HOMING: Steer toward target at altitude
       m.phase1Age = (m.phase1Age || 0) + dt;
       const ownerFaction = m.faction || m.ownerFaction;
-      // Skip forward-hemisphere filter during first 1s (missile is still curving from vertical)
-      const useHemisphere = m.phase1Age > 1.0;
-      const target = this._findClosestEnemyFromPos(
-        m.position, ownerFaction, useHemisphere ? m.direction : null
-      );
+
+      // For remote missiles, resolve server's target instead of finding closest
+      let target = null;
+      if (m.isRemote && m.serverTargetId) {
+        target = this._resolveServerTarget(m.serverTargetId);
+      }
+      if (!target) {
+        const useHemisphere = m.phase1Age > 1.0;
+        target = this._findClosestEnemyFromPos(
+          m.position, ownerFaction, useHemisphere ? m.direction : null
+        );
+      }
 
       if (target) {
         m.targetTank = target.tank;
@@ -1058,7 +1091,13 @@ class MissileSystem {
     } else if (m.phase === 2) {
       // TERMINAL DIVE: Steer downward toward ground target (no forward filter — committed to dive)
       const ownerFaction = m.faction || m.ownerFaction;
-      const target = this._findClosestEnemyFromPos(m.position, ownerFaction, null);
+      let target = null;
+      if (m.isRemote && m.serverTargetId) {
+        target = this._resolveServerTarget(m.serverTargetId);
+      }
+      if (!target) {
+        target = this._findClosestEnemyFromPos(m.position, ownerFaction, null);
+      }
       const diveTarget = target ? target.worldPos : m.diveTarget;
       if (!diveTarget) { m.phase = 3; m.isLost = true; m.lostAge = 0; return; }
 

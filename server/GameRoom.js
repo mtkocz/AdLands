@@ -461,15 +461,15 @@ class GameRoom {
     // Load all Firestore profiles into cache (async, non-blocking)
     this._loadAllProfiles();
 
-    // Periodic auto-save: persist all active players every 60 seconds
-    this._autoSaveInterval = setInterval(() => this._autoSaveAllPlayers(), 60000);
+    // Periodic auto-save: persist all active players every 2 minutes
+    this._autoSaveInterval = setInterval(() => this._autoSaveAllPlayers(), 120000);
 
-    // Periodic capture state save: persist faction ownership every 60 seconds
+    // Periodic capture state save: persist faction ownership every 5 minutes
     this._captureSaveInterval = setInterval(() => {
       this.saveCaptureState().catch(err => {
         console.warn(`[Room ${this.roomId}] Capture state auto-save error:`, err.message);
       });
-    }, 60000);
+    }, 300000);
   }
 
   /**
@@ -1455,11 +1455,20 @@ class GameRoom {
    * Save a player's session stats to Firestore.
    * Called periodically (every 60s), on disconnect, and before profile switch.
    */
-  async savePlayerProfile(socketId) {
+  async savePlayerProfile(socketId, { force = false } = {}) {
     const player = this.players.get(socketId);
     if (!player || !player.uid) return; // Skip guests
 
+    // Throttle: skip if saved within the last 60s (unless forced by auto-save/disconnect)
+    const now = Date.now();
+    if (!force && player._lastSavedAt && now - player._lastSavedAt < 60000) {
+      player._saveDirty = true;
+      return;
+    }
+
     try {
+      player._lastSavedAt = now;
+      player._saveDirty = false;
       const { getFirestore } = require("./firebaseAdmin");
       const db = getFirestore();
       const admin = require("firebase-admin");
@@ -1512,19 +1521,18 @@ class GameRoom {
         player._sessionDefendTime = 0;
       }
 
-      await profileRef.update(updates);
-
-      // Also update denormalized level on account profiles array.
-      // MUST read-modify-write the full array; dot-notation (profiles.0.level)
-      // converts the Firestore array into a map, corrupting profile data.
+      // Batch profile update + denormalized account level into a single transaction
+      // (saves 1 write vs doing them separately)
       const accountRef = db.collection("accounts").doc(player.uid);
       await db.runTransaction(async (t) => {
         const accountDoc = await t.get(accountRef);
-        if (!accountDoc.exists) return;
-        const profiles = accountDoc.data().profiles;
-        if (Array.isArray(profiles) && profiles[player.profileIndex]) {
-          profiles[player.profileIndex].level = player.level;
-          t.update(accountRef, { profiles });
+        t.update(profileRef, updates);
+        if (accountDoc.exists) {
+          const profiles = accountDoc.data().profiles;
+          if (Array.isArray(profiles) && profiles[player.profileIndex]) {
+            profiles[player.profileIndex].level = player.level;
+            t.update(accountRef, { profiles });
+          }
         }
       });
 
@@ -1552,7 +1560,7 @@ class GameRoom {
     const saves = [];
     for (const [socketId, player] of this.players) {
       if (player.uid) {
-        saves.push(this.savePlayerProfile(socketId));
+        saves.push(this.savePlayerProfile(socketId, { force: true }));
       }
     }
     await Promise.allSettled(saves);
@@ -2964,18 +2972,7 @@ class GameRoom {
       this._tuskFactionUpdate();
     }
 
-    // 8. Save authenticated player profiles to Firestore (every 60 seconds)
-    this._profileSaveCounter = (this._profileSaveCounter || 0) + 1;
-    if (this._profileSaveCounter >= this.tickRate * 60) {
-      this._profileSaveCounter = 0;
-      for (const [socketId, player] of this.players) {
-        if (player.uid) {
-          this.savePlayerProfile(socketId).catch((err) =>
-            console.warn(`[Room ${this.roomId}] Profile save failed for ${socketId}:`, err.message)
-          );
-        }
-      }
-    }
+    // 8. Profile auto-save handled by _autoSaveInterval (setInterval, not tick loop)
 
     this.lastTickTime = now;
 
