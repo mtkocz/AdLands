@@ -3969,9 +3969,12 @@
       tank.setControlsEnabled(!isOrbitalView);
     }
 
-    // Notify server of view mode transitions so it can skip spatial filtering
+    // Notify server of view mode transitions so it can skip spatial filtering.
+    // Switch to "ground" early when camera swoops below 260 units (even during
+    // fastTravel→surface transition) so the server starts sending nearby bots
+    // before deployment completes — tanks are visible as the camera arrives.
     if (window.networkManager?.connected) {
-      const viewMode = isOrbitalView ? "orbital" : "ground";
+      const viewMode = (isOrbitalView && isFarView) ? "orbital" : "ground";
       if (viewMode !== window._lastSentViewMode) {
         window._lastSentViewMode = viewMode;
         window.networkManager.sendViewMode(viewMode);

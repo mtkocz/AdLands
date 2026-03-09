@@ -119,15 +119,31 @@
       const isOrbital = lodOptions && lodOptions.isOrbitalView;
 
       // Update all remote tanks (interpolation + LOD + death fade)
+      if (!mp._lodDebugTimer) mp._lodDebugTimer = 0;
+      mp._lodDebugTimer += deltaTime;
+      let lodDebugCounts = null;
+      if (mp._lodDebugTimer > 2) {
+        mp._lodDebugTimer = 0;
+        lodDebugCounts = { total: 0, bots: 0, hasGroup: 0, hasLodMesh: 0, lodMeshVisible: 0, groupVisible: 0, dead: 0, distCulled: 0, lodState: {} };
+      }
       for (const [id, remoteTank] of remoteTanks) {
         remoteTank.update(deltaTime);
         remoteTank.updateFade();
+
+        if (lodDebugCounts) {
+          lodDebugCounts.total++;
+          if (id.startsWith("bot-")) lodDebugCounts.bots++;
+          if (remoteTank.group) lodDebugCounts.hasGroup++;
+          if (remoteTank.lodMesh) lodDebugCounts.hasLodMesh++;
+          if (remoteTank.isDead) lodDebugCounts.dead++;
+        }
 
         // Player-distance culling: hide tanks far from player (skip in orbital view)
         if (!isOrbital && remoteTank.group) {
           remoteTank.group.getWorldPosition(_remoteWorldPos);
           if (_remoteWorldPos.distanceToSquared(_playerWorldPos) > PLAYER_RENDER_DIST_SQ) {
             remoteTank.group.visible = false;
+            if (lodDebugCounts) lodDebugCounts.distCulled++;
             continue; // Skip LOD computation for distant tanks
           }
         }
@@ -135,6 +151,16 @@
         if (camera) {
           remoteTank.updateLOD(camera, frustum, lodOptions);
         }
+
+        if (lodDebugCounts && remoteTank.group) {
+          if (remoteTank.group.visible) lodDebugCounts.groupVisible++;
+          if (remoteTank.lodMesh?.visible) lodDebugCounts.lodMeshVisible++;
+          const state = remoteTank._lodState ?? "none";
+          lodDebugCounts.lodState[state] = (lodDebugCounts.lodState[state] || 0) + 1;
+        }
+      }
+      if (lodDebugCounts) {
+        console.log("[LOD-MP]", `orbital=${isOrbital}`, `cmdr=${lodOptions?.isHumanCommander}`, `faction=${lodOptions?.viewerFaction}`, lodDebugCounts);
       }
 
       // Update all remote bodyguards (interpolation + death fade)
