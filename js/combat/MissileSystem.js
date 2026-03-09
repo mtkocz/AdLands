@@ -489,6 +489,21 @@ class MissileSystem {
       }
     }
 
+    // Local player is a valid target for remote (enemy) missiles
+    if (this.playerTank && !this.playerTank.isDead &&
+        this.playerTank.faction !== ownerFaction) {
+      const pos = this._getTargetWorldPos(this.playerTank);
+      if (pos) {
+        if (!missileDir || this._tempVec.copy(pos).sub(missilePos).dot(missileDir) >= 0) {
+          const dist = pos.distanceTo(missilePos);
+          if (dist < closestDist && dist <= range) {
+            closest = { tank: this.playerTank, worldPos: pos.clone(), distance: dist };
+            closestDist = dist;
+          }
+        }
+      }
+    }
+
     // Flares as decoy targets (attract missiles from any faction)
     if (window.flareSystem) {
       const flares = window.flareSystem.getActiveFlares();
@@ -945,7 +960,8 @@ class MissileSystem {
         m.direction = m.surfaceNormal.clone();
       }
 
-      // Orient mesh: nose (+Y) points along surface normal (upward)
+      // Sync mesh position and orient nose (+Y) along surface normal (upward)
+      m.poolItem.group.position.copy(m.position);
       const upQuat = this._tempQuat;
       upQuat.setFromUnitVectors(this._upVec, m.surfaceNormal);
       m.poolItem.group.quaternion.copy(upQuat);
