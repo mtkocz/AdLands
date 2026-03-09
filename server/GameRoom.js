@@ -2182,7 +2182,13 @@ class GameRoom {
       p.lostAge = 0;
     }
 
+    const prevTarget = p.targetId;
     p.targetId = target.id;
+
+    // Notify new target when missile retargets to a different player
+    if (p.targetId !== prevTarget && !target.isFlare && this.players.has(p.targetId)) {
+      this._emitToSocket(p.targetId, "missile-incoming", { missileId: p.id });
+    }
 
     // Compute heading toward target on sphere
     const sinPhi = Math.sin(p.phi);

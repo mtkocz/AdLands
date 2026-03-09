@@ -911,6 +911,12 @@
       }
     };
 
+    net.onMissileIncoming = (data) => {
+      if (window.missileSystem) {
+        window.missileSystem.showIncomingWarning();
+      }
+    };
+
     net.onMissileLost = (data) => {
       if (window.missileSystem) {
         window.missileSystem.wobbleByServerId(data.missileId);
