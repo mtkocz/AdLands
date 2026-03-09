@@ -142,6 +142,9 @@ canvas:not(#tank-preview-canvas) {
     letter-spacing: 4px;
     border: 2px solid #ff3333;
     padding: 8px 16px;
+    line-height: var(--font-size-header);
+    display: flex;
+    align-items: center;
     box-shadow: 0 0 8px rgba(255, 0, 0, 0.4), inset 0 0 8px rgba(255, 0, 0, 0.1);
 }
 @keyframes missile-warn-flash {

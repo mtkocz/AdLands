@@ -211,7 +211,6 @@ class CannonSystem {
         opacity: 1,
         blending: THREE.AdditiveBlending,
         depthWrite: false,
-        depthTest: false, // Always render on top — avoids z-fighting at orbital distance
       });
     }
   }
@@ -1232,14 +1231,7 @@ void main() {
     poolItem.mesh.layers.set(1); // BLOOM_LAYER only - per-object bloom control
     this.scene.add(poolItem.mesh); // Add to scene
 
-    // Create and attach point light to projectile (faction-colored glow)
-    const projectileLight = new THREE.PointLight(
-      FACTION_COLORS[faction].hex,
-      5, // intensity
-      30, // distance (falloff range)
-    );
-    projectileLight.layers.set(0); // Default layer so it affects all objects
-    poolItem.mesh.add(projectileLight); // Parent to projectile mesh
+    // Pool item already has a built-in PointLight (set up in acquireProjectile)
 
     // Spawn muzzle flare (bright faction-colored flash at barrel tip, directional)
     this._spawnMuzzleFlare(
@@ -1286,7 +1278,7 @@ void main() {
     this.projectiles.push({
       poolItem: poolItem, // Pool reference instead of direct mesh
       mesh: poolItem.mesh, // Keep mesh reference for compatibility
-      light: projectileLight, // Point light attached to projectile
+      light: null, // Pool item's built-in light handles glow
       faction: faction,
       position: _muzzleWorld.clone(),
       velocity: _shotDirWorld.multiplyScalar(speed).clone(),
@@ -1351,14 +1343,7 @@ void main() {
     poolItem.mesh.layers.set(1); // BLOOM_LAYER
     this.scene.add(poolItem.mesh);
 
-    // Create point light
-    const projectileLight = new THREE.PointLight(
-      FACTION_COLORS[faction].hex,
-      5,
-      30,
-    );
-    projectileLight.layers.set(0);
-    poolItem.mesh.add(projectileLight);
+    // Pool item already has a built-in PointLight (set up in acquireProjectile)
 
     // Spawn muzzle flare
     this._spawnMuzzleFlare(_muzzleWorld, _shotDirWorld, faction, sizeScale);
@@ -1386,7 +1371,7 @@ void main() {
     this.projectiles.push({
       poolItem: poolItem,
       mesh: poolItem.mesh,
-      light: projectileLight,
+      light: null,
       faction: faction,
       position: _muzzleWorld.clone(),
       velocity: _shotDirWorld.multiplyScalar(speed).clone(),
@@ -1430,13 +1415,7 @@ void main() {
     poolItem.mesh.layers.set(1); // BLOOM_LAYER
     this.scene.add(poolItem.mesh);
 
-    const projectileLight = new THREE.PointLight(
-      FACTION_COLORS[faction]?.hex || 0x00ccff,
-      5,
-      30,
-    );
-    projectileLight.layers.set(0);
-    poolItem.mesh.add(projectileLight);
+    // Pool item already has a built-in PointLight (set up in acquireProjectile)
 
     // Muzzle flare at spawn point
     this._spawnMuzzleFlare(_muzzleWorld, _shotDirWorld, faction, sizeScale);
@@ -1446,7 +1425,7 @@ void main() {
     this.projectiles.push({
       poolItem: poolItem,
       mesh: poolItem.mesh,
-      light: projectileLight,
+      light: null,
       faction: faction,
       position: _muzzleWorld.clone(),
       velocity: _shotDirWorld.clone().multiplyScalar(speed),
@@ -1605,9 +1584,9 @@ void main() {
     // Position in local space
     sprite.position.copy(localPosition);
 
-    // Offset above surface (enough to clear terrain + avoid z-fighting at orbital distance)
+    // Offset above surface (enough to clear terrain + avoid z-fighting)
     const surfaceNormal = localPosition.clone().normalize();
-    sprite.position.addScaledVector(surfaceNormal, 2);
+    sprite.position.addScaledVector(surfaceNormal, 4);
 
     sprite.scale.setScalar(cfg.baseSize * sizeScale * 1.5); // Start big — punch
     sprite.layers.enable(1); // Bloom glow + visible in main pass

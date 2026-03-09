@@ -47,6 +47,145 @@ const BOT_NAME_POOL = [
 // Grace period for reconnecting players (ms)
 const RECONNECT_GRACE_MS = 30000;
 
+// ========================
+// Unified target spatial hash — O(1) neighbor lookup for missile retargeting,
+// initial lock-on, and any future proximity queries across all entity types.
+// ========================
+const TARGET_GRID_PHI = 32;
+const TARGET_GRID_THETA = 64;
+const TARGET_CELL_PHI = Math.PI / TARGET_GRID_PHI;
+const TARGET_CELL_THETA = (Math.PI * 2) / TARGET_GRID_THETA;
+
+class TargetSpatialHash {
+  constructor() {
+    this._cells = new Map();
+    this._pool = [];       // reuse entry objects to avoid GC
+    this._poolIdx = 0;
+    this._neighborBuf = new Int32Array(49); // max 7×7 = 49 cells
+    this._neighborCount = 0;
+  }
+
+  /** Rebuild from all targetable entities. Call once per tick. */
+  rebuild(players, botBridge, flares) {
+    this._cells.clear();
+    this._poolIdx = 0;
+
+    // Players
+    for (const [id, p] of players) {
+      if (p.isDead || p.waitingForPortal) continue;
+      this._add(id, p.theta, p.phi, p.faction, false, -1, null);
+    }
+
+    // Bots
+    const botStates = botBridge.getStatesForBroadcast();
+    for (const botId in botStates) {
+      const bs = botStates[botId];
+      if (bs.d === 1) continue;
+      this._add(botId, bs.t, bs.p, bs.f, false, -1, null);
+    }
+
+    // Flares (decoy targets — faction null, attract all enemies)
+    for (let fi = 0; fi < flares.length; fi++) {
+      const fl = flares[fi];
+      this._add(fl.id, fl.theta, fl.phi, null, true, fi, fl.ownerId);
+    }
+  }
+
+  _add(id, theta, phi, faction, isFlare, flareIndex, ownerId) {
+    const key = this._cellKey(theta, phi);
+    let cell = this._cells.get(key);
+    if (!cell) { cell = []; this._cells.set(key, cell); }
+
+    let entry;
+    if (this._poolIdx < this._pool.length) {
+      entry = this._pool[this._poolIdx];
+    } else {
+      entry = { id: "", theta: 0, phi: 0, faction: null, isFlare: false, flareIndex: -1, ownerId: null };
+      this._pool.push(entry);
+    }
+    this._poolIdx++;
+
+    entry.id = id;
+    entry.theta = theta;
+    entry.phi = phi;
+    entry.faction = faction;
+    entry.isFlare = isFlare;
+    entry.flareIndex = flareIndex;
+    entry.ownerId = ownerId;
+    cell.push(entry);
+  }
+
+  _cellKey(theta, phi) {
+    const phiIdx = Math.min(TARGET_GRID_PHI - 1, Math.max(0, Math.floor(phi / TARGET_CELL_PHI)));
+    let t = theta;
+    while (t < 0) t += Math.PI * 2;
+    while (t >= Math.PI * 2) t -= Math.PI * 2;
+    const thetaIdx = Math.min(TARGET_GRID_THETA - 1, Math.floor(t / TARGET_CELL_THETA));
+    return phiIdx * TARGET_GRID_THETA + thetaIdx;
+  }
+
+  /**
+   * Get cell keys within a radius (in radians) of a position.
+   * Returns pre-allocated buffer + sets this._neighborCount.
+   */
+  getNeighborKeys(theta, phi, radius) {
+    const centerPhi = Math.min(TARGET_GRID_PHI - 1, Math.max(0, Math.floor(phi / TARGET_CELL_PHI)));
+    let t = theta;
+    while (t < 0) t += Math.PI * 2;
+    while (t >= Math.PI * 2) t -= Math.PI * 2;
+    const centerTheta = Math.min(TARGET_GRID_THETA - 1, Math.floor(t / TARGET_CELL_THETA));
+
+    const spanPhi = Math.ceil(radius / TARGET_CELL_PHI);
+    const spanTheta = Math.ceil(radius / TARGET_CELL_THETA);
+    let count = 0;
+
+    for (let dp = -spanPhi; dp <= spanPhi; dp++) {
+      const p = centerPhi + dp;
+      if (p < 0 || p >= TARGET_GRID_PHI) continue;
+      for (let dt = -spanTheta; dt <= spanTheta; dt++) {
+        const tidx = (centerTheta + dt + TARGET_GRID_THETA) % TARGET_GRID_THETA;
+        this._neighborBuf[count++] = p * TARGET_GRID_THETA + tidx;
+        if (count >= this._neighborBuf.length) break;
+      }
+      if (count >= this._neighborBuf.length) break;
+    }
+    this._neighborCount = count;
+    return this._neighborBuf;
+  }
+
+  /**
+   * Find nearest enemy target within maxDist radians of (theta, phi).
+   * Skips same faction, skips excludeId (missile owner).
+   * Returns { id, theta, phi, isFlare, flareIndex } or null.
+   */
+  findNearest(theta, phi, ownerFaction, excludeId, maxDist) {
+    const keys = this.getNeighborKeys(theta, phi, maxDist);
+    let best = null;
+    let bestDist = maxDist;
+
+    for (let k = 0; k < this._neighborCount; k++) {
+      const cell = this._cells.get(keys[k]);
+      if (!cell) continue;
+      for (let i = 0; i < cell.length; i++) {
+        const e = cell[i];
+        if (e.id === excludeId) continue;
+        if (e.isFlare) {
+          // Flares attract all missiles except their owner's
+          if (e.ownerId === excludeId) continue;
+        } else {
+          if (e.faction === ownerFaction) continue;
+        }
+        const dist = sphericalDistance(theta, phi, e.theta, e.phi);
+        if (dist < bestDist) {
+          bestDist = dist;
+          best = e;
+        }
+      }
+    }
+    return best;
+  }
+}
+
 // Kick players after 60 seconds of no meaningful input
 const INACTIVITY_TIMEOUT_MS = 60000;
 
@@ -77,6 +216,9 @@ class GameRoom {
     // Flares (missile countermeasures)
     this.flares = [];
     this.nextFlareId = 1;
+
+    // Unified target spatial hash (players + bots + flares) for missile retargeting
+    this._targetHash = new TargetSpatialHash();
 
     // Server time tracking
     this.planetRotation = 0;
@@ -2041,6 +2183,8 @@ class GameRoom {
       launchDuration: 0.5,
       damage: Math.round(25 * 1.5), // 38 damage (missile multiplier)
       targetId: target.id,
+      _retargetPhase: 2, // retarget on first tick
+      _hasTarget: false,
     };
 
     this.projectiles.push(missile);
@@ -2066,34 +2210,9 @@ class GameRoom {
   }
 
   _findNearestEnemyForMissile(socketId, player, maxDistRad) {
-    let closest = null;
-    let closestDist = Infinity;
-
-    // Check players
-    for (const [id, p] of this.players) {
-      if (id === socketId) continue;
-      if (this._isUndeployed(p) || p.isDead) continue;
-      if (p.faction === player.faction) continue;
-      const dist = sphericalDistance(player.theta, player.phi, p.theta, p.phi);
-      if (dist < closestDist && dist <= maxDistRad) {
-        closest = { id, theta: p.theta, phi: p.phi, isBot: false };
-        closestDist = dist;
-      }
-    }
-
-    // Check bots
-    const botStates = this.botBridge.getStatesForBroadcast();
-    for (const botId in botStates) {
-      const bs = botStates[botId];
-      if (bs.f === player.faction || bs.d === 1) continue;
-      const dist = sphericalDistance(player.theta, player.phi, bs.t, bs.p);
-      if (dist < closestDist && dist <= maxDistRad) {
-        closest = { id: botId, theta: bs.t, phi: bs.p, isBot: true };
-        closestDist = dist;
-      }
-    }
-
-    return closest;
+    return this._targetHash.findNearest(
+      player.theta, player.phi, player.faction, socketId, maxDistRad
+    );
   }
 
   _updateMissileProjectile(p, dt, i, projs) {
@@ -2105,7 +2224,7 @@ class GameRoom {
       return; // No collision during launch
     }
 
-    // Phase 1: Cruise/Homing — re-acquire nearest target each tick
+    // Phase 1: Cruise/Homing
     const owner = this.players.get(p.ownerId) || this.botBridge.getBot(p.ownerId);
     if (!owner) {
       // Owner disconnected/despawned, remove missile
@@ -2113,45 +2232,32 @@ class GameRoom {
       return;
     }
 
-    // Find nearest enemy from MISSILE position (not owner position)
-    // Range-limited: only targets within maxRetargetRad (~120 world units on R=480)
-    const maxRetargetRad = 0.25; // Same as initial lock-on range cap
-    let target = null;
-    let targetDist = Infinity;
+    // Retarget every 3rd tick (still ~3.3×/sec at 10 ticks/sec) via spatial hash.
+    // Between retargets, keep flying toward last cached position.
+    const maxRetargetRad = 0.25;
 
-    for (const [id, pl] of this.players) {
-      if (id === p.ownerId || this._isUndeployed(pl) || pl.isDead) continue;
-      if (pl.faction === p.ownerFaction) continue;
-      const dist = sphericalDistance(p.theta, p.phi, pl.theta, pl.phi);
-      if (dist < targetDist && dist <= maxRetargetRad) {
-        target = { id, theta: pl.theta, phi: pl.phi, isBot: false };
-        targetDist = dist;
+    if (!p._retargetPhase) p._retargetPhase = 0;
+    if (++p._retargetPhase >= 3) {
+      p._retargetPhase = 0;
+      const found = this._targetHash.findNearest(
+        p.theta, p.phi, p.ownerFaction, p.ownerId, maxRetargetRad
+      );
+      if (found) {
+        // Copy fields onto missile — pool entries get overwritten on next rebuild()
+        p._tgtId = found.id;
+        p._tgtTheta = found.theta;
+        p._tgtPhi = found.phi;
+        p._tgtFaction = found.faction;
+        p._tgtIsFlare = found.isFlare;
+        p._tgtFlareIndex = found.flareIndex;
+        p._tgtOwnerId = found.ownerId;
+        p._hasTarget = true;
+      } else {
+        p._hasTarget = false;
       }
     }
 
-    const botStates = this.botBridge.getStatesForBroadcast();
-    for (const botId in botStates) {
-      const bs = botStates[botId];
-      if (bs.f === p.ownerFaction || bs.d === 1) continue;
-      const dist = sphericalDistance(p.theta, p.phi, bs.t, bs.p);
-      if (dist < targetDist && dist <= maxRetargetRad) {
-        target = { id: botId, theta: bs.t, phi: bs.p, isBot: true };
-        targetDist = dist;
-      }
-    }
-
-    // Flares as decoy targets — attract ALL missiles (skip own-owner flares)
-    for (let fi = 0; fi < this.flares.length; fi++) {
-      const fl = this.flares[fi];
-      if (fl.ownerId === p.ownerId) continue; // Don't eat your own missile
-      const dist = sphericalDistance(p.theta, p.phi, fl.theta, fl.phi);
-      if (dist < targetDist && dist <= maxRetargetRad) {
-        target = { id: fl.id, theta: fl.theta, phi: fl.phi, isFlare: true, flareIndex: fi };
-        targetDist = dist;
-      }
-    }
-
-    if (!target) {
+    if (!p._hasTarget) {
       // No targets in range — start or continue wobble timer
       p.lostAge = (p.lostAge || 0) + dt;
       if (p.lostAge >= 5) {
@@ -2183,20 +2289,20 @@ class GameRoom {
     }
 
     const prevTarget = p.targetId;
-    p.targetId = target.id;
+    p.targetId = p._tgtId;
 
     // Notify new target when missile retargets to a different player
-    if (p.targetId !== prevTarget && !target.isFlare && this.players.has(p.targetId)) {
+    if (p.targetId !== prevTarget && !p._tgtIsFlare && this.players.has(p.targetId)) {
       this._emitToSocket(p.targetId, "missile-incoming", { missileId: p.id });
     }
 
     // Compute heading toward target on sphere
     const sinPhi = Math.sin(p.phi);
     const safeSin = Math.abs(sinPhi) < 0.01 ? 0.01 * Math.sign(sinPhi || 1) : sinPhi;
-    let dTheta = target.theta - p.theta;
+    let dTheta = p._tgtTheta - p.theta;
     while (dTheta > Math.PI) dTheta -= Math.PI * 2;
     while (dTheta < -Math.PI) dTheta += Math.PI * 2;
-    const dPhi = target.phi - p.phi;
+    const dPhi = p._tgtPhi - p.phi;
     const northOff = -dPhi;
     const eastOff = dTheta * safeSin;
     p.heading = Math.atan2(-eastOff, northOff);
@@ -2205,13 +2311,13 @@ class GameRoom {
     moveOnSphere(p, dt);
 
     // Check arrival — distance in world units (~2.4 world units = 0.005 rad on R=480)
-    const arrivalDist = sphericalDistance(p.theta, p.phi, target.theta, target.phi);
+    const arrivalDist = sphericalDistance(p.theta, p.phi, p._tgtTheta, p._tgtPhi);
     const ARRIVAL_THRESHOLD = 0.005; // ~2.4 world units on R=480
 
     if (arrivalDist < ARRIVAL_THRESHOLD) {
-      if (target.isFlare) {
+      if (p._tgtIsFlare) {
         // Missile hit flare — explode harmlessly, destroy both
-        const fl = this.flares[target.flareIndex];
+        const fl = this.flares[p._tgtFlareIndex];
         if (fl) {
           // Award flare intercept bonus to flare owner
           const flareOwner = this.players.get(fl.ownerId);
@@ -2228,7 +2334,7 @@ class GameRoom {
             faction: p.faction,
           });
           // Remove flare (swap-remove)
-          this.flares[target.flareIndex] = this.flares[this.flares.length - 1];
+          this.flares[p._tgtFlareIndex] = this.flares[this.flares.length - 1];
           this.flares.pop();
         }
         // Remove missile
@@ -2239,23 +2345,25 @@ class GameRoom {
       // Impact! Apply damage — bypass shields entirely
       const damage = p.damage || 38;
 
-      if (target.isBot) {
+      const tgtId = p._tgtId;
+      const isBot = typeof tgtId === "string" && tgtId.startsWith("bot-");
+      if (isBot) {
         // Bot hit
-        const botState = botStates[target.id];
+        const botState = this.botBridge.getBot(tgtId);
         const botHp = botState ? botState.hp : 100;
         const botFaction = botState ? botState.f : "rust";
-        const botName = this.botBridge.getBotName(target.id) || "Bot";
+        const botName = this.botBridge.getBotName(tgtId) || "Bot";
 
         const attacker = this.players.get(p.ownerId);
         const attackerName = attacker ? attacker.name : "Unknown";
-        this.botBridge.applyDamage(target.id, damage, p.ownerId, attackerName);
+        this.botBridge.applyDamage(tgtId, damage, p.ownerId, attackerName);
 
         if (attacker) {
           attacker.crypto += Math.floor(damage);
         }
 
         this.io.to(this.roomId).emit("player-hit", {
-          targetId: target.id,
+          targetId: tgtId,
           attackerId: p.ownerId,
           damage,
           hp: Math.max(0, botHp - damage),
@@ -2267,7 +2375,7 @@ class GameRoom {
 
         if (botHp - damage <= 0) {
           this.io.to(this.roomId).emit("player-killed", {
-            victimId: target.id,
+            victimId: tgtId,
             killerId: p.ownerId,
             victimFaction: botFaction,
             killerFaction: p.ownerFaction,
@@ -2282,18 +2390,18 @@ class GameRoom {
         }
       } else {
         // Player hit
-        const hitPlayer = this.players.get(target.id);
+        const hitPlayer = this.players.get(tgtId);
         if (hitPlayer && !hitPlayer.isDead) {
           hitPlayer.hp -= damage;
 
           const attacker = this.players.get(p.ownerId);
           if (attacker) {
-            const isTargetCommander = this.commanders[hitPlayer.faction]?.id === target.id;
+            const isTargetCommander = this.commanders[hitPlayer.faction]?.id === tgtId;
             attacker.crypto += Math.floor(damage * (isTargetCommander ? 10 : 1));
           }
 
           this.io.to(this.roomId).emit("player-hit", {
-            targetId: target.id,
+            targetId: tgtId,
             attackerId: p.ownerId,
             damage,
             hp: hitPlayer.hp,
@@ -2315,7 +2423,7 @@ class GameRoom {
             const victimName = hitPlayer.name;
 
             this.io.to(this.roomId).emit("player-killed", {
-              victimId: target.id,
+              victimId: tgtId,
               killerId: p.ownerId,
               victimFaction: hitPlayer.faction,
               killerFaction: p.ownerFaction,
@@ -2323,17 +2431,17 @@ class GameRoom {
               killerName,
             });
 
-            this._processKillStreaks(killer, killerName, hitPlayer, victimName, p.ownerFaction, p.ownerId, target.id);
+            this._processKillStreaks(killer, killerName, hitPlayer, victimName, p.ownerFaction, p.ownerId, tgtId);
 
             for (const faction of FACTIONS) {
-              if (this.commanders[faction]?.id === target.id) {
+              if (this.commanders[faction]?.id === tgtId) {
                 this.bodyguardManager.killAllForFaction(faction);
                 break;
               }
             }
 
             this._markRanksDirty();
-            setTimeout(() => this._respawnPlayer(target.id), 10300);
+            setTimeout(() => this._respawnPlayer(tgtId), 10300);
           }
         }
       }
@@ -2729,6 +2837,9 @@ class GameRoom {
 
     // 1.9. Update welding guns (tactical healing)
     this._updateWeldingGuns(dt);
+
+    // 2. Rebuild target spatial hash (once per tick — used by missile retargeting)
+    this._targetHash.rebuild(this.players, this.botBridge, this.flares);
 
     // 2. Update projectiles (includes shield collision + reflection)
     this._updateProjectiles(dt);

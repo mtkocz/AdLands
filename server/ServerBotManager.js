@@ -1613,6 +1613,8 @@ class ServerBotManager {
       launchDuration: 0.5,
       damage: 38, // 25 * 1.5 missile multiplier
       targetId: bot.combatTarget,
+      _retargetPhase: 2, // retarget on first tick
+      _hasTarget: false,
     };
 
     if (this._workerMode) {
