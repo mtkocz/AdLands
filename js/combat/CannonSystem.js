@@ -188,9 +188,7 @@ class CannonSystem {
     g.addColorStop(0.22, "#ffffff");
     g.addColorStop(0.23, "#ff8820");
     g.addColorStop(0.52, "#ff8820");
-    g.addColorStop(0.53, "#551100");
-    g.addColorStop(0.78, "#551100");
-    g.addColorStop(0.79, "rgba(0,0,0,0)");
+    g.addColorStop(0.53, "rgba(255,136,32,0)");
     g.addColorStop(1, "rgba(0,0,0,0)");
     ctx.fillStyle = g;
     ctx.fillRect(0, 0, size, size);
