@@ -1046,6 +1046,14 @@ class MissileSystem {
       m.poolItem.group.position.copy(m.position);
       m.poolItem.group.lookAt(lookTarget);
       m.poolItem.group.quaternion.multiply(this._meshOrientQuat);
+
+      // Terrain collision check (steep terrain can rise faster than altitude correction)
+      const cruiseAlt = m.position.length() - this._getSurfaceRadius(m.position);
+      if (cruiseAlt < 1.5) {
+        const idx = this.missiles.indexOf(m);
+        if (idx >= 0) this._destroyMissile(idx, m.position);
+        return;
+      }
     } else if (m.phase === 2) {
       // TERMINAL DIVE: Steer downward toward ground target (no forward filter — committed to dive)
       const ownerFaction = m.faction || m.ownerFaction;
@@ -1140,6 +1148,14 @@ class MissileSystem {
       m.poolItem.group.position.copy(m.position);
       m.poolItem.group.lookAt(lookTarget);
       m.poolItem.group.quaternion.multiply(this._meshOrientQuat);
+
+      // Terrain collision check (wobble can push missile into terrain)
+      const wobbleAlt = m.position.length() - this._getSurfaceRadius(m.position);
+      if (wobbleAlt < 1.5) {
+        const idx = this.missiles.indexOf(m);
+        if (idx >= 0) this._destroyMissile(idx, m.position);
+        return;
+      }
     } else if (m.phase === 4) {
       // CRASH DIVE: Wobble expired — dive to ground, no damage
       const diveTarget = m.diveTarget;
