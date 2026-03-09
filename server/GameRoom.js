@@ -2217,6 +2217,7 @@ class GameRoom {
       phi: player.phi,
       projectileId: missile.id,
       targetId: target.id,
+      faction: player.faction,
       wx: fLift * fSp * fSt,
       wy: fLift * fCp,
       wz: fLift * fSp * fCt,
@@ -4479,20 +4480,30 @@ class GameRoom {
     if (!this._filteredPayloads) this._filteredPayloads = new Map();
     const filteredPayloads = this._filteredPayloads;
 
-    // --- Pre-encode shared orbital buffer (humans only, no bots) ---
+    // --- Pre-encode shared orbital buffer (humans + ALL bots) ---
     // All orbital players see the same entity set, so encode once and reuse.
+    // Include all bots so orbital viewers see tanks moving across the planet.
+    const botIds = Object.keys(botStates);
+    const orbitalIds = humanIds.concat(botIds);
+
     if (!this._orbitalEntities) this._orbitalEntities = [];
     const orbitalEntities = this._orbitalEntities;
-    orbitalEntities.length = humanIds.length;
+    orbitalEntities.length = orbitalIds.length;
     for (let i = 0; i < humanIds.length; i++) {
       orbitalEntities[i] = playerStates[humanIds[i]];
     }
+    for (let i = 0; i < botIds.length; i++) {
+      orbitalEntities[humanIds.length + i] = playerStates[botIds[i]];
+    }
     const orbitalBinaryBuf = BinaryStateProtocol.encode(orbitalEntities);
     const orbitalNames = {};
-    // No bot names needed for orbital (humans don't have .n)
+    for (let i = 0; i < botIds.length; i++) {
+      const bs = botStates[botIds[i]];
+      if (bs && bs.n) orbitalNames[botIds[i]] = bs.n;
+    }
 
     // Orbital payload metadata (shared across all orbital players except self-fields)
-    statePayload.ids = humanIds;
+    statePayload.ids = orbitalIds;
     statePayload.names = orbitalNames;
     statePayload.op = savedOp;
     statePayload.opn = savedOpn;
@@ -4533,7 +4544,7 @@ class GameRoom {
       this._payloadEmitCount++;
       if (this._payloadEmitCount % 50 === 0) {
         this._payloadByteSum += JSON.stringify(statePayload).length + orbitalBinaryBuf.byteLength;
-        this._payloadEntitySum += humanIds.length;
+        this._payloadEntitySum += orbitalIds.length;
         this._payloadCount++;
       }
 

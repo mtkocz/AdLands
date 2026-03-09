@@ -653,7 +653,7 @@ class MissileSystem {
 
   // Spawn visual-only missile from remote player
   spawnRemoteMissile(data, remoteTank) {
-    const faction = remoteTank?.faction || "rust";
+    const faction = data.faction || remoteTank?.faction || "rust";
     const poolItem = this._acquirePoolItem(faction);
     if (!poolItem) return;
 
