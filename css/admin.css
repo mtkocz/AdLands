@@ -705,6 +705,22 @@ body {
     margin-bottom: var(--space-xxs);
 }
 
+.sponsor-card-detail {
+    font-family: var(--font-small);
+    font-size: var(--font-size-small);
+    color: var(--accent-cyan);
+}
+
+.sponsor-card-url {
+    font-family: var(--font-small);
+    font-size: var(--font-size-small);
+}
+
+.sponsor-card-url a {
+    color: var(--accent-gold);
+    text-decoration: none;
+}
+
 .sponsor-card-stats {
     font-family: var(--font-small);
     font-size: var(--font-size-small);

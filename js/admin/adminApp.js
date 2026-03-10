@@ -1416,6 +1416,20 @@
         if (!isGroupInquiry && hasPendingImage) groupBadgeHtml += ' <span class="pending-status-badge">PENDING</span>';
         if (!isGroupInquiry && isNewTerritory && !hasPendingImage) groupBadgeHtml += ' <span class="new-status-badge">NEW</span>';
 
+        // For player territories, resolve display info from first member
+        let playerInfoHtml = "";
+        if (hasPlayerTerritory) {
+          const pName = escapeHtml(first.ownerEmail || first.ownerUid || "Unknown");
+          const pTitle = first.pendingTitle || first._approvedTitle || first.title || "";
+          const pTagline = first.pendingTagline || first._approvedTagline || first.tagline || "";
+          const pUrl = first.pendingWebsiteUrl || first._approvedUrl || first.websiteUrl || "";
+          const titlePart = pTitle ? escapeHtml(pTitle) : "";
+          const taglinePart = pTagline ? (titlePart ? " &middot; " : "") + escapeHtml(pTagline) : "";
+          const detailLine = (titlePart || taglinePart) ? `<div class="sponsor-card-detail">${titlePart}${taglinePart}</div>` : "";
+          const urlLine = pUrl ? `<div class="sponsor-card-url"><a href="${escapeHtml(pUrl)}" target="_blank" rel="noopener">${escapeHtml(pUrl)}</a></div>` : "";
+          playerInfoHtml = detailLine + urlLine;
+        }
+
         htmlParts.push(`
             <div class="sponsor-group${isGroupEditing ? " editing expanded" : ""}${isGroupPaused ? " paused" : ""}${groupHighlight}" data-name="${escapeHtml(groupKey)}">
                 <div class="sponsor-group-header">
@@ -1429,6 +1443,7 @@
                     </div>
                     <div class="sponsor-card-info">
                         <div class="sponsor-card-name">${escapeHtml(hasPlayerTerritory ? (first.ownerEmail || first.ownerUid || "Unknown") : first.name)}${groupBadgeHtml}</div>
+                        ${playerInfoHtml}
                         <span class="sponsor-group-badge">${members.length} ${members.length === 1 ? "territory" : "territories"}</span>
                         <div class="sponsor-card-stats">
                             ${totalTiles} tiles${groupMoonCount > 0 ? ", " + groupMoonCount + " moons" : ""}${groupBbCount > 0 ? ", " + groupBbCount + " billboards" : ""}, ${totalRewards} rewards
