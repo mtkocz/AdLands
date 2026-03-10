@@ -399,7 +399,11 @@ function createSponsorRoutes(sponsorStore, gameRoom, { imageUrls, contentHashes,
     const { reason } = req.body || {};
 
     // Capture sponsor data before deleting so we can notify the owner
-    const sponsor = sponsorStore.getById(deletedId);
+    // Look up by SponsorStore ID first, then fall back to _territoryId
+    let sponsor = sponsorStore.getById(deletedId);
+    if (!sponsor) {
+      sponsor = sponsorStore.getAll().find((s) => s._territoryId === deletedId);
+    }
     if (!sponsor) return res.status(404).json({ errors: ["Sponsor not found"] });
 
     // Cancel Stripe subscription if one exists
@@ -413,7 +417,7 @@ function createSponsorRoutes(sponsorStore, gameRoom, { imageUrls, contentHashes,
       const territoryId = sponsor._territoryId;
 
       if (!territoryId) {
-        console.warn(`[sponsorRoutes] Player territory ${deletedId} missing _territoryId — cannot clean up Firestore`);
+        console.warn(`[sponsorRoutes] Player territory ${sponsor.id} missing _territoryId — cannot clean up Firestore`);
       } else {
         try {
           const db = getFirestore();
@@ -424,10 +428,10 @@ function createSponsorRoutes(sponsorStore, gameRoom, { imageUrls, contentHashes,
       }
     }
 
-    const deleted = await sponsorStore.delete(deletedId);
+    const deleted = await sponsorStore.delete(sponsor.id);
     if (!deleted) return res.status(404).json({ errors: ["Sponsor not found"] });
     // Remove orphaned image files for deleted sponsor
-    await cleanupSponsorImages(deletedId);
+    await cleanupSponsorImages(sponsor.id);
 
     // Delete Firestore document (already deactivated above as safety net)
     if (sponsor.ownerType === "player") {
@@ -448,7 +452,7 @@ function createSponsorRoutes(sponsorStore, gameRoom, { imageUrls, contentHashes,
           if (s.uid === sponsor.ownerUid) {
             s.emit("territory-deleted", {
               territoryId,
-              sponsorStorageId: deletedId,
+              sponsorStorageId: sponsor.id,
               reason: reason || "Territory removed by admin",
             });
           }

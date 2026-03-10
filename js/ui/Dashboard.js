@@ -3276,21 +3276,20 @@ class Dashboard {
 
     // Show confirmation popup
     this._showCancelConfirmation(label, async () => {
-      // Resolve SponsorStore ID for server DELETE
-      let storageId = territory._sponsorStorageId;
-      if (!storageId && typeof SponsorStorage !== "undefined" && SponsorStorage._cache) {
+      // Resolve SponsorStore ID for server DELETE (falls back to territoryId)
+      let deleteId = territory._sponsorStorageId;
+      if (!deleteId && typeof SponsorStorage !== "undefined" && SponsorStorage._cache) {
         const match = SponsorStorage.getAll().find((s) => s._territoryId === territoryId);
-        if (match) { storageId = match.id; }
+        if (match) { deleteId = match.id; }
       }
+      if (!deleteId) deleteId = territoryId;
 
       // Delete via server (cancels Stripe subscription + cleans up SponsorStore)
-      if (storageId) {
-        try {
-          const res = await fetch(`/api/sponsors/${storageId}`, { method: "DELETE" });
-          if (!res.ok) console.warn("[Dashboard] Server territory delete failed:", res.status);
-        } catch (e) {
-          console.warn("[Dashboard] Server territory delete failed:", e);
-        }
+      try {
+        const res = await fetch(`/api/sponsors/${deleteId}`, { method: "DELETE" });
+        if (!res.ok) console.warn("[Dashboard] Server territory delete failed:", res.status);
+      } catch (e) {
+        console.warn("[Dashboard] Server territory delete failed:", e);
       }
 
       // Remove cluster from planet
