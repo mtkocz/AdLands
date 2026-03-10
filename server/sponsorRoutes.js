@@ -559,8 +559,8 @@ function createSponsorRoutes(sponsorStore, gameRoom, { imageUrls, contentHashes,
           };
           if (sponsor.ownerType === "player") updateFields.logoImage = null;
 
-          // Calculate price and create Stripe subscription
-          const amountCents = stripeService.calculateMonthlyPriceCents(sponsor, tierMap);
+          // Calculate price breakdown and create Stripe subscription
+          const { lineItems, discountPercent } = stripeService.buildInvoiceLineItems(sponsor, tierMap);
           const description = approvedTitle || sponsor.name || `Territory ${territoryId}`;
           const customerName = sponsor.inquiryData?.contactName || sponsor.playerName || null;
 
@@ -570,7 +570,8 @@ function createSponsorRoutes(sponsorStore, gameRoom, { imageUrls, contentHashes,
             sponsorId: req.params.id,
             territoryId,
             description,
-            amountCents,
+            lineItems,
+            discountPercent,
           });
 
           updateFields.stripeCustomerId = customerId;
@@ -615,8 +616,10 @@ function createSponsorRoutes(sponsorStore, gameRoom, { imageUrls, contentHashes,
             }
           }
 
-          console.log(`[Territory] Approved & invoiced for ${territoryId} ($${(amountCents / 100).toFixed(2)}/mo)`);
-          return res.json({ success: true, action: "invoiced", amountCents, subscriptionId: subscription.id });
+          const subtotalCents = lineItems.reduce((sum, li) => sum + li.unitAmountCents * li.quantity, 0);
+          const totalCents = Math.round(subtotalCents * (1 - (discountPercent || 0) / 100));
+          console.log(`[Territory] Approved & invoiced for ${territoryId} ($${(totalCents / 100).toFixed(2)}/mo)`);
+          return res.json({ success: true, action: "invoiced", amountCents: totalCents, subscriptionId: subscription.id });
         }
 
         // === LEGACY PATH (Stripe disabled) — immediate activation ===
@@ -823,7 +826,7 @@ function createSponsorRoutes(sponsorStore, gameRoom, { imageUrls, contentHashes,
           return res.status(400).json({ errors: ["No contact email found for this inquiry — cannot send invoice"] });
         }
 
-        const amountCents = stripeService.calculateMonthlyPriceCents(sponsor, tierMap);
+        const { lineItems, discountPercent } = stripeService.buildInvoiceLineItems(sponsor, tierMap);
         const description = sponsor.name || `Territory ${req.params.id}`;
         const customerName = sponsor.inquiryData?.contactName || null;
 
@@ -833,7 +836,8 @@ function createSponsorRoutes(sponsorStore, gameRoom, { imageUrls, contentHashes,
           sponsorId: req.params.id,
           territoryId: req.params.id,
           description,
-          amountCents,
+          lineItems,
+          discountPercent,
         });
 
         await sponsorStore.update(req.params.id, {
@@ -847,8 +851,10 @@ function createSponsorRoutes(sponsorStore, gameRoom, { imageUrls, contentHashes,
 
         await reExtractImages(req.params.id);
 
-        console.log(`[Inquiry] Approved & invoiced ${req.params.id} (${sponsor.name}) — $${(amountCents / 100).toFixed(2)}/mo`);
-        return res.json({ success: true, action: "invoiced", amountCents, subscriptionId: subscription.id });
+        const subtotalCents = lineItems.reduce((sum, li) => sum + li.unitAmountCents * li.quantity, 0);
+        const totalCents = Math.round(subtotalCents * (1 - (discountPercent || 0) / 100));
+        console.log(`[Inquiry] Approved & invoiced ${req.params.id} (${sponsor.name}) — $${(totalCents / 100).toFixed(2)}/mo`);
+        return res.json({ success: true, action: "invoiced", amountCents: totalCents, subscriptionId: subscription.id });
       }
 
       // === LEGACY PATH (Stripe disabled) — immediate activation ===

@@ -378,6 +378,7 @@ class GameRoom {
     this.sponsorClusterMap = new Map(); // sponsorId → clusterId
     this.clusterSponsorMap = new Map(); // clusterId → sponsorId
     this.sponsorHoldTimers = new Map(); // sponsorId → { owner, capturedAt, holdDuration }
+    this.clusterRenterUidMap = new Map(); // clusterId → ownerUid (for renter capture boost)
 
     if (this.sponsorStore) {
       this.sponsors = this.sponsorStore.getAll().filter(s => {
@@ -647,6 +648,7 @@ class GameRoom {
     this.sponsorClusterMap.clear();
     this.clusterSponsorMap.clear();
     this.sponsorHoldTimers.clear();
+    this.clusterRenterUidMap.clear();
 
     // 3. Re-read and re-apply sponsors (exclude paused, include pending inquiries)
     this.sponsors = this.sponsorStore.getAll().filter(s => {
@@ -3966,7 +3968,9 @@ class GameRoom {
       if (!clusterTankCounts.has(player.currentClusterId)) {
         clusterTankCounts.set(player.currentClusterId, { rust: 0, cobalt: 0, viridian: 0 });
       }
-      clusterTankCounts.get(player.currentClusterId)[player.faction]++;
+      const renterUid = this.clusterRenterUidMap.get(player.currentClusterId);
+      const isRenter = renterUid && player.uid === renterUid;
+      clusterTankCounts.get(player.currentClusterId)[player.faction] += isRenter ? 1.5 : 1;
     }
 
     // 1b. Count server bots in clusters (from worker thread position data)
@@ -4133,8 +4137,10 @@ class GameRoom {
       player._lastTicCryptoTics = currentTics;
 
       if (gained) {
-        const cryptoAwarded = 10;
-        player.crypto += 10;
+        const renterUid = this.clusterRenterUidMap.get(player.currentClusterId);
+        const isRenter = renterUid && player.uid === renterUid;
+        const cryptoAwarded = isRenter ? 15 : 10;
+        player.crypto += cryptoAwarded;
         const ticPayload = {
           id: player.currentClusterId,
           t: { r: state.tics.rust, c: state.tics.cobalt, v: state.tics.viridian },
@@ -5390,6 +5396,7 @@ class GameRoom {
       // Track mappings
       this.sponsorClusterMap.set(sponsor.id, sponsorClusterId);
       this.clusterSponsorMap.set(sponsorClusterId, sponsor.id);
+      if (sponsor.ownerUid) this.clusterRenterUidMap.set(sponsorClusterId, sponsor.ownerUid);
 
       // Initialize hold timer
       this.sponsorHoldTimers.set(sponsor.id, {

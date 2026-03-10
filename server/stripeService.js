@@ -30,33 +30,53 @@ function isEnabled() {
 }
 
 /**
- * Calculate monthly price for a territory in cents.
- * Uses HexTierSystem for accurate per-tile tier pricing and cluster discounts.
+ * Build detailed invoice line items for a territory.
  * @param {Object} sponsor - Sponsor record from SponsorStore
  * @param {Map} tierMap - Tile index → tier ID map (from WorldGenerator)
- * @returns {number} Total monthly price in cents
+ * @returns {{ lineItems: Array<{name: string, unitAmountCents: number, quantity: number}>, discountPercent: number }}
  */
-function calculateMonthlyPriceCents(sponsor, tierMap) {
-  // Moon territories — price by moon index
+function buildInvoiceLineItems(sponsor, tierMap) {
+  // Moon territories
   if (sponsor.territoryType === "moon") {
     const moonIndex = sponsor.inquiryData?.moonIndex ?? 0;
     const price = HexTierSystem.MOON_PRICES[moonIndex] || HexTierSystem.MOON_PRICES[0];
-    return Math.round(price * 100);
+    const label = HexTierSystem.MOON_LABELS[moonIndex] || `Moon ${moonIndex + 1}`;
+    return {
+      lineItems: [{ name: label, unitAmountCents: Math.round(price * 100), quantity: 1 }],
+      discountPercent: 0,
+    };
   }
 
-  // Billboard territories — price by orbit tier
+  // Billboard territories
   if (sponsor.territoryType === "billboard") {
     const bbIndex = sponsor.inquiryData?.billboardIndex ?? 0;
     const price = HexTierSystem.getBillboardPrice(bbIndex);
-    return Math.round(price * 100);
+    const label = HexTierSystem.getBillboardLabel(bbIndex);
+    return {
+      lineItems: [{ name: label, unitAmountCents: Math.round(price * 100), quantity: 1 }],
+      discountPercent: 0,
+    };
   }
 
-  // Hex territories — per-tile tier pricing with cluster discount
+  // Hex territories — per-tier line items with cluster discount
   const tiles = sponsor.cluster?.tileIndices || [];
-  if (tiles.length === 0 || !tierMap) return 0;
+  if (tiles.length === 0 || !tierMap) return { lineItems: [], discountPercent: 0 };
 
   const pricing = HexTierSystem.calculatePricing(tiles, tierMap);
-  return Math.round(pricing.total * 100);
+  const lineItems = [];
+
+  for (const tierId of HexTierSystem.RENTABLE_TIERS) {
+    const count = pricing.byTier[tierId];
+    if (!count) continue;
+    const tier = HexTierSystem.TIERS[tierId];
+    lineItems.push({
+      name: `${tier.name} Hex`,
+      unitAmountCents: Math.round(tier.price * 100),
+      quantity: count,
+    });
+  }
+
+  return { lineItems, discountPercent: pricing.discount };
 }
 
 /**
@@ -79,40 +99,57 @@ async function findOrCreateCustomer(email, name) {
 }
 
 /**
- * Create a Stripe subscription for a territory.
- * Sends an invoice email to the customer automatically.
+ * Create a Stripe subscription for a territory with itemized line items.
  * @param {Object} params
  * @param {string} params.customerId - Stripe customer ID
  * @param {string} params.sponsorId - SponsorStore ID
  * @param {string} params.territoryId - Firestore territory ID (for player territories)
  * @param {string} params.description - Human-readable territory description
- * @param {number} params.amountCents - Monthly price in cents
+ * @param {Array<{name: string, unitAmountCents: number, quantity: number}>} params.lineItems
+ * @param {number} [params.discountPercent] - Cluster discount percentage (0-30)
  * @returns {Promise<import('stripe').Stripe.Subscription>}
  */
-async function createSubscription({ customerId, sponsorId, territoryId, description, amountCents }) {
+async function createSubscription({ customerId, sponsorId, territoryId, description, lineItems, discountPercent }) {
   if (!stripe) throw new Error("Stripe not initialized");
 
-  const product = await stripe.products.create({
-    name: `AdLands Territory: ${description}`,
-    metadata: { sponsorId, territoryId: territoryId || "" },
-  });
-
-  const subscription = await stripe.subscriptions.create({
-    customer: customerId,
-    collection_method: "send_invoice",
-    days_until_due: 7,
-    items: [{
+  // Create a product per line item
+  const items = [];
+  for (const item of lineItems) {
+    const product = await stripe.products.create({
+      name: `AdLands: ${item.name}`,
+      metadata: { sponsorId, territoryId: territoryId || "" },
+    });
+    items.push({
       price_data: {
         currency: "usd",
         product: product.id,
-        unit_amount: amountCents,
+        unit_amount: item.unitAmountCents,
         recurring: { interval: "month" },
       },
-    }],
-    metadata: { sponsorId, territoryId: territoryId || "" },
-  });
+      quantity: item.quantity,
+    });
+  }
 
-  return subscription;
+  // Create a coupon for cluster discount if applicable
+  const subscriptionParams = {
+    customer: customerId,
+    collection_method: "send_invoice",
+    days_until_due: 7,
+    items,
+    description: `AdLands Territory: ${description}`,
+    metadata: { sponsorId, territoryId: territoryId || "" },
+  };
+
+  if (discountPercent > 0) {
+    const coupon = await stripe.coupons.create({
+      percent_off: discountPercent,
+      duration: "forever",
+      name: HexTierSystem.getDiscountLabel(discountPercent) || "Cluster Discount",
+    });
+    subscriptionParams.discounts = [{ coupon: coupon.id }];
+  }
+
+  return stripe.subscriptions.create(subscriptionParams);
 }
 
 /**
@@ -161,7 +198,7 @@ module.exports = {
   init,
   getStripe,
   isEnabled,
-  calculateMonthlyPriceCents,
+  buildInvoiceLineItems,
   findOrCreateCustomer,
   createSubscription,
   cancelSubscription,
