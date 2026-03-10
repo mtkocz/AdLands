@@ -1402,7 +1402,7 @@
 
         const groupKey = getGroupKey(first);
         const isGroupEditing = editingGroup && editingGroup.groupKey === groupKey;
-        const groupLogoSrc = first.logoUrl || first.logoImage;
+        const groupLogoSrc = first.logoUrl || first.logoImage || (hasPlayerTerritory && first.ownerProfilePicture) || null;
         const isGroupPaused = members.some((s) => !!s.paused);
         const isGroupInquiry = members.some((s) => s.ownerType === "inquiry");
         const isNewTerritory = hasPlayerTerritory && members.some((s) => s.imageStatus === "placeholder" || !s.imageStatus);
@@ -1426,7 +1426,7 @@
           const titlePart = pTitle ? escapeHtml(pTitle) : "";
           const taglinePart = pTagline ? (titlePart ? " &middot; " : "") + escapeHtml(pTagline) : "";
           const detailLine = (titlePart || taglinePart) ? `<div class="sponsor-card-detail">${titlePart}${taglinePart}</div>` : "";
-          const urlLine = pUrl ? `<div class="sponsor-card-url"><a href="${escapeHtml(pUrl)}" target="_blank" rel="noopener">${escapeHtml(pUrl)}</a></div>` : "";
+          const urlLine = pUrl ? `<div class="sponsor-card-url">${escapeHtml(pUrl)}</div>` : "";
           playerInfoHtml = detailLine + urlLine;
         }
 

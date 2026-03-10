@@ -79,10 +79,19 @@ async function reconcilePlayerTerritories() {
     // Batch-lookup emails for all owner UIDs
     const ownerUids = [...new Set(snap.docs.map(d => d.data().ownerUid).filter(Boolean))];
     const emailMap = new Map();
+    const profilePicMap = new Map();
     for (const uid of ownerUids) {
       try {
         const acc = await db.collection("accounts").doc(uid).get();
-        if (acc.exists) emailMap.set(uid, acc.data().email || null);
+        if (acc.exists) {
+          const accData = acc.data();
+          emailMap.set(uid, accData.email || null);
+          const profileIdx = accData.activeProfileIndex || 0;
+          const profileDoc = await db.collection("accounts").doc(uid).collection("profiles").doc(String(profileIdx)).get();
+          if (profileDoc.exists && profileDoc.data().profilePicture) {
+            profilePicMap.set(uid, profileDoc.data().profilePicture);
+          }
+        }
       } catch (_) {}
     }
 
@@ -92,6 +101,7 @@ async function reconcilePlayerTerritories() {
       const existing = sponsorStore.getAll().find(s => s._territoryId === doc.id);
       const email = emailMap.get(data.ownerUid);
       const displayName = email || data.playerName || "Player";
+      const profilePic = profilePicMap.get(data.ownerUid) || null;
       if (!existing) {
         const result = await sponsorStore.create({
           _territoryId: doc.id,
@@ -105,14 +115,15 @@ async function reconcilePlayerTerritories() {
           imageStatus: data.imageStatus || "placeholder",
           ownerUid: data.ownerUid,
           ownerEmail: email || null,
+          ownerProfilePicture: profilePic,
         });
         if (result.sponsor) created++;
         else if (result.errors) console.warn(`[Reconcile] Failed for ${doc.id}:`, result.errors);
       } else {
-        // Only update name to email if we actually found one — never downgrade to profile name
         const updates = {};
         if (email && existing.name !== email) updates.name = email;
         if (email && existing.ownerEmail !== email) updates.ownerEmail = email;
+        if (profilePic && existing.ownerProfilePicture !== profilePic) updates.ownerProfilePicture = profilePic;
         if (Object.keys(updates).length > 0) {
           await sponsorStore.update(existing.id, updates);
         }
@@ -694,6 +705,7 @@ io.on("connection", (socket) => {
         if (accountDoc.exists) ownerEmail = accountDoc.data().email || ownerEmail;
       } catch (_) {}
       const displayName = ownerEmail || playerName || "Player";
+      const ownerProfilePicture = socket.profileData?.profilePicture || null;
 
       // All player-submitted info goes to pending fields awaiting admin approval
       const hasPendingContent = safeTitle || safeTagline || safeUrl || pendingImage;
@@ -737,6 +749,7 @@ io.on("connection", (socket) => {
         pendingImage: pendingImage || null,
         ownerUid: socket.uid,
         ownerEmail: ownerEmail || null,
+        ownerProfilePicture,
       });
       if (createResult.errors) {
         console.warn(`[Territory] SponsorStore create failed for ${territoryId}:`, createResult.errors);
