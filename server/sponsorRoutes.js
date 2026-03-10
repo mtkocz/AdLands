@@ -485,7 +485,24 @@ function createSponsorRoutes(sponsorStore, gameRoom, { imageUrls, contentHashes,
         // When Stripe is enabled: stage approved content, send invoice, wait for payment.
         // When Stripe is disabled: activate immediately (legacy behavior).
         if (stripeService.isEnabled()) {
-          const customerEmail = sponsor.ownerEmail || sponsor.inquiryData?.contactEmail;
+          let customerEmail = sponsor.ownerEmail || sponsor.inquiryData?.contactEmail;
+
+          // Fetch email from Firebase Auth if not cached on sponsor record
+          if (!customerEmail && sponsor.ownerUid) {
+            try {
+              const db = getFirestore();
+              const acc = await db.collection("accounts").doc(sponsor.ownerUid).get();
+              if (acc.exists && acc.data().email) {
+                customerEmail = acc.data().email;
+              } else {
+                const userRecord = await require("firebase-admin").auth().getUser(sponsor.ownerUid);
+                customerEmail = userRecord.email;
+              }
+            } catch (e) {
+              console.warn("[Territory] Failed to fetch owner email:", e.message);
+            }
+          }
+
           if (!customerEmail) {
             return res.status(400).json({ errors: ["No email found for this territory owner — cannot send invoice"] });
           }
