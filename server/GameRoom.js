@@ -2849,11 +2849,7 @@ class GameRoom {
     for (const proj of botResult.newProjectiles) {
       this.projectiles.push(proj);
     }
-    // Replay buffered Socket.IO events from worker
-    for (const evt of botResult.events) {
-      this.io.to(this.roomId).emit(evt.type, evt.data);
-    }
-    // Apply bot welding heals to human players
+    // Apply bot welding heals to human players (before broadcast so HP is up-to-date)
     for (const heal of botResult.playerHeals) {
       const player = this.players.get(heal.playerId);
       if (player && !player.isDead) {
@@ -2892,9 +2888,16 @@ class GameRoom {
     if (this.tick % 2 === 0) this._updateCapture();
 
     const _t5 = Date.now();
-    // 4. Broadcast world state to all clients
+    // 4. Broadcast world state to all clients (BEFORE reliable bot events to
+    //    ensure transport.writable is true for this volatile emit)
     this._broadcastState();
     const _t6 = Date.now();
+
+    // 4b. Replay buffered bot events AFTER state broadcast — these are reliable
+    // emits (player-hit, player-killed) that saturate the transport write buffer
+    for (const evt of botResult.events) {
+      this.io.to(this.roomId).emit(evt.type, evt.data);
+    }
 
     // 5. Recompute faction ranks (every 1 second, or immediately when dirty)
     // Runs BEFORE commander-sync so the snapshot is always up-to-date
