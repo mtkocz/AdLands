@@ -5,20 +5,10 @@
  */
 
 const { getFirestore } = require("./firebaseAdmin");
+const HexTierSystem = require("../js/admin/hexTierSystem");
 
 /** @type {import('stripe').default | null} */
 let stripe = null;
-
-/** Monthly price per hex by tier (in USD cents) */
-const TIER_PRICES_CENTS = {
-  HOTZONE: 1500,
-  PRIME: 700,
-  FRONTIER: 300,
-};
-
-/** Monthly price for moons and billboards (in USD cents) */
-const MOON_PRICE_CENTS = 5000;
-const BILLBOARD_PRICE_CENTS = 2500;
 
 function init() {
   const key = process.env.STRIPE_SECRET_KEY;
@@ -40,40 +30,37 @@ function isEnabled() {
 }
 
 /**
- * Calculate monthly price for a territory based on its tier breakdown.
+ * Calculate monthly price for a territory in cents.
+ * Uses HexTierSystem for accurate per-tile tier pricing and cluster discounts.
  * @param {Object} sponsor - Sponsor record from SponsorStore
- * @param {Map|Object} [tierMap] - Tile index → tier ID map (optional, for hex pricing)
+ * @param {Map} tierMap - Tile index → tier ID map (from WorldGenerator)
  * @returns {number} Total monthly price in cents
  */
 function calculateMonthlyPriceCents(sponsor, tierMap) {
-  // Moon territories
-  if (sponsor.territoryType === "moon") return MOON_PRICE_CENTS;
-
-  // Billboard territories
-  if (sponsor.territoryType === "billboard") return BILLBOARD_PRICE_CENTS;
-
-  // Hex territories — price by tier
-  const tiles = sponsor.cluster?.tileIndices || [];
-  if (tiles.length === 0) return 0;
-
-  // If we have a tier map, calculate per-tile
-  if (tierMap) {
-    let total = 0;
-    for (const idx of tiles) {
-      const tier = tierMap.get ? tierMap.get(idx) : tierMap[idx];
-      total += TIER_PRICES_CENTS[tier] || TIER_PRICES_CENTS.FRONTIER;
-    }
-    return total;
+  // Moon territories — price by moon index
+  if (sponsor.territoryType === "moon") {
+    const moonIndex = sponsor.inquiryData?.moonIndex ?? 0;
+    const price = HexTierSystem.MOON_PRICES[moonIndex] || HexTierSystem.MOON_PRICES[0];
+    return Math.round(price * 100);
   }
 
-  // Fallback: use sponsor's tierName for all tiles
-  const pricePerTile = TIER_PRICES_CENTS[sponsor.tierName] || TIER_PRICES_CENTS.FRONTIER;
-  return pricePerTile * tiles.length;
+  // Billboard territories — price by orbit tier
+  if (sponsor.territoryType === "billboard") {
+    const bbIndex = sponsor.inquiryData?.billboardIndex ?? 0;
+    const price = HexTierSystem.getBillboardPrice(bbIndex);
+    return Math.round(price * 100);
+  }
+
+  // Hex territories — per-tile tier pricing with cluster discount
+  const tiles = sponsor.cluster?.tileIndices || [];
+  if (tiles.length === 0 || !tierMap) return 0;
+
+  const pricing = HexTierSystem.calculatePricing(tiles, tierMap);
+  return Math.round(pricing.total * 100);
 }
 
 /**
  * Find or create a Stripe customer for the given email.
- * Stores the Stripe customer ID in Firestore for reuse.
  * @param {string} email
  * @param {string} [name]
  * @returns {Promise<string>} Stripe customer ID
@@ -81,11 +68,9 @@ function calculateMonthlyPriceCents(sponsor, tierMap) {
 async function findOrCreateCustomer(email, name) {
   if (!stripe) throw new Error("Stripe not initialized");
 
-  // Check if customer already exists in Stripe
   const existing = await stripe.customers.list({ email, limit: 1 });
   if (existing.data.length > 0) return existing.data[0].id;
 
-  // Create new customer
   const customer = await stripe.customers.create({
     email,
     name: name || undefined,
@@ -107,7 +92,6 @@ async function findOrCreateCustomer(email, name) {
 async function createSubscription({ customerId, sponsorId, territoryId, description, amountCents }) {
   if (!stripe) throw new Error("Stripe not initialized");
 
-  // Create product first (required by newer Stripe API versions)
   const product = await stripe.products.create({
     name: `AdLands Territory: ${description}`,
     metadata: { sponsorId, territoryId: territoryId || "" },
@@ -183,7 +167,4 @@ module.exports = {
   cancelSubscription,
   constructWebhookEvent,
   saveStripeIds,
-  TIER_PRICES_CENTS,
-  MOON_PRICE_CENTS,
-  BILLBOARD_PRICE_CENTS,
 };

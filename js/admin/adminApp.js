@@ -1331,9 +1331,9 @@
               ? `<img src="${textureSrc}" alt="" class="territory-thumb-img">`
               : '<span class="territory-thumb-empty"></span>';
 
-            const infoTitle = s.pendingTitle || s.title || s.name || "";
-            const infoTagline = s.pendingTagline || s.tagline || "";
-            const infoUrl = s.pendingWebsiteUrl || s.websiteUrl || "";
+            const infoTitle = s.pendingTitle || s._approvedTitle || s.title || s.name || "";
+            const infoTagline = s.pendingTagline || s._approvedTagline || s.tagline || "";
+            const infoUrl = s.pendingWebsiteUrl || s._approvedUrl || s.websiteUrl || "";
 
             const titleLine = infoTitle
               ? `<strong>${escapeHtml(infoTitle)}</strong>`

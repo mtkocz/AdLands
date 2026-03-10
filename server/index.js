@@ -189,6 +189,12 @@ let inquiryRouter;
   mainRoom = new GameRoom(io, "main", sponsorStore, sponsorImageUrls, moonSponsorStore, moonSponsorImageUrls, billboardSponsorStore, billboardSponsorImageUrls);
   await mainRoom.start();
 
+  // Build tier map from world geometry for accurate Stripe pricing
+  const HexTierSystem = require("../js/admin/hexTierSystem");
+  const wr = mainRoom.worldResult;
+  const sphereRadius = mainRoom.worldGen?.radius || 480;
+  const tierMap = wr ? HexTierSystem.buildTierMap(wr.tiles, sphereRadius, wr.adjacencyMap) : new Map();
+
   // Mount sponsor API routes (after GameRoom so live reload can broadcast)
   app.use("/api/sponsors", createSponsorRoutes(sponsorStore, mainRoom, {
     imageUrls: sponsorImageUrls,
@@ -196,6 +202,7 @@ let inquiryRouter;
     gameDir,
     moonSponsorStore,
     billboardSponsorStore,
+    tierMap,
   }));
 
   // Mount moon sponsor API routes

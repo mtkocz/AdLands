@@ -186,7 +186,7 @@ async function cleanupSponsorImageFiles(sponsorId, texDir) {
   }
 }
 
-function createSponsorRoutes(sponsorStore, gameRoom, { imageUrls, contentHashes, gameDir, moonSponsorStore, billboardSponsorStore } = {}) {
+function createSponsorRoutes(sponsorStore, gameRoom, { imageUrls, contentHashes, gameDir, moonSponsorStore, billboardSponsorStore, tierMap } = {}) {
   const router = Router();
 
   // Resend email config (reuses SMTP_PASS as API key)
@@ -279,15 +279,16 @@ function createSponsorRoutes(sponsorStore, gameRoom, { imageUrls, contentHashes,
     const sponsors = sponsorStore.getAll();
     const out = full ? sponsors : sponsors.map(toLite);
 
-    // Enrich player territories with ownerEmail from Firestore accounts
+    // Enrich player territories with ownerEmail from Firebase Auth
     const playerSponsors = out.filter(s => s.ownerType === "player" && s.ownerUid && !s.ownerEmail);
     if (playerSponsors.length > 0) {
+      const admin = require("firebase-admin");
       const uids = [...new Set(playerSponsors.map(s => s.ownerUid))];
       const emailMap = new Map();
       for (const uid of uids) {
         try {
-          const acc = await getFirestore().collection("accounts").doc(uid).get();
-          if (acc.exists && acc.data().email) emailMap.set(uid, acc.data().email);
+          const userRecord = await admin.auth().getUser(uid);
+          if (userRecord.email) emailMap.set(uid, userRecord.email);
         } catch (e) {
           console.warn(`[SponsorRoutes] Failed to look up email for uid ${uid}:`, e.message || e);
         }
@@ -526,7 +527,7 @@ function createSponsorRoutes(sponsorStore, gameRoom, { imageUrls, contentHashes,
           if (sponsor.ownerType === "player") updateFields.logoImage = null;
 
           // Calculate price and create Stripe subscription
-          const amountCents = stripeService.calculateMonthlyPriceCents(sponsor);
+          const amountCents = stripeService.calculateMonthlyPriceCents(sponsor, tierMap);
           const description = approvedTitle || sponsor.name || `Territory ${territoryId}`;
           const customerName = sponsor.inquiryData?.contactName || sponsor.playerName || null;
 
@@ -789,7 +790,7 @@ function createSponsorRoutes(sponsorStore, gameRoom, { imageUrls, contentHashes,
           return res.status(400).json({ errors: ["No contact email found for this inquiry — cannot send invoice"] });
         }
 
-        const amountCents = stripeService.calculateMonthlyPriceCents(sponsor);
+        const amountCents = stripeService.calculateMonthlyPriceCents(sponsor, tierMap);
         const description = sponsor.name || `Territory ${req.params.id}`;
         const customerName = sponsor.inquiryData?.contactName || null;
 

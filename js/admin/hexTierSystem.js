@@ -380,3 +380,6 @@ const HexTierSystem = {
 if (typeof window !== "undefined") {
   window.HexTierSystem = HexTierSystem;
 }
+if (typeof module !== "undefined") {
+  module.exports = HexTierSystem;
+}
