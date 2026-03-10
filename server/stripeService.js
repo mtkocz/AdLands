@@ -107,6 +107,12 @@ async function findOrCreateCustomer(email, name) {
 async function createSubscription({ customerId, sponsorId, territoryId, description, amountCents }) {
   if (!stripe) throw new Error("Stripe not initialized");
 
+  // Create product first (required by newer Stripe API versions)
+  const product = await stripe.products.create({
+    name: `AdLands Territory: ${description}`,
+    metadata: { sponsorId, territoryId: territoryId || "" },
+  });
+
   const subscription = await stripe.subscriptions.create({
     customer: customerId,
     collection_method: "send_invoice",
@@ -114,10 +120,7 @@ async function createSubscription({ customerId, sponsorId, territoryId, descript
     items: [{
       price_data: {
         currency: "usd",
-        product_data: {
-          name: `AdLands Territory: ${description}`,
-          metadata: { sponsorId, territoryId: territoryId || "" },
-        },
+        product: product.id,
         unit_amount: amountCents,
         recurring: { interval: "month" },
       },
