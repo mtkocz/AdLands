@@ -402,6 +402,11 @@ function createSponsorRoutes(sponsorStore, gameRoom, { imageUrls, contentHashes,
     const sponsor = sponsorStore.getById(deletedId);
     if (!sponsor) return res.status(404).json({ errors: ["Sponsor not found"] });
 
+    // Cancel Stripe subscription if one exists
+    if (sponsor.stripeSubscriptionId && stripeService.isEnabled()) {
+      await stripeService.cancelSubscription(sponsor.stripeSubscriptionId);
+    }
+
     // Deactivate in Firestore FIRST — prevents reconcilePlayerTerritories() from
     // re-creating the territory even if the server crashes before SponsorStore delete
     if (sponsor.ownerType === "player") {

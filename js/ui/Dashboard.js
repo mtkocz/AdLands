@@ -3271,53 +3271,81 @@ class Dashboard {
     if (idx === -1) return;
 
     const territory = this._playerTerritories[idx];
+    const tierLabels = { outpost: "Outpost", compound: "Compound", stronghold: "Stronghold" };
+    const label = tierLabels[territory.tierName] || "Territory";
 
-    // Remove cluster from planet (restores tiles to procedural clusters)
-    if (this._territoryPlanet) {
-      this._territoryPlanet.removeSponsorCluster(territoryId);
-    }
+    // Show confirmation popup
+    this._showCancelConfirmation(label, async () => {
+      // Resolve SponsorStore ID for server DELETE
+      let storageId = territory._sponsorStorageId;
+      if (!storageId && typeof SponsorStorage !== "undefined" && SponsorStorage._cache) {
+        const match = SponsorStorage.getAll().find((s) => s._territoryId === territoryId);
+        if (match) { storageId = match.id; }
+      }
 
-    // Remove from local array
-    this._playerTerritories.splice(idx, 1);
-
-    // Remove from Firestore if authenticated
-    if (window.firestoreSync?.isActive && window.authManager?.uid) {
-      firebase.firestore().collection("territories").doc(territoryId).delete().catch((e) =>
-        console.warn("[Dashboard] Firestore territory delete failed:", e),
-      );
-    }
-
-    // Remove from SponsorStorage
-    if (typeof SponsorStorage !== "undefined" && SponsorStorage._cache) {
-      const storageId = territory._sponsorStorageId;
+      // Delete via server (cancels Stripe subscription + cleans up SponsorStore)
       if (storageId) {
-        SponsorStorage.delete(storageId).catch((e) =>
-          console.warn("[Dashboard] SponsorStorage delete failed:", e),
-        );
-      } else {
-        // Fallback: find by _territoryId
-        const allSponsors = SponsorStorage.getAll();
-        const match = allSponsors.find((s) => s._territoryId === territoryId);
-        if (match) {
-          SponsorStorage.delete(match.id).catch((e) =>
-            console.warn("[Dashboard] SponsorStorage delete failed:", e),
-          );
+        try {
+          const res = await fetch(`/api/sponsors/${storageId}`, { method: "DELETE" });
+          if (!res.ok) console.warn("[Dashboard] Server territory delete failed:", res.status);
+        } catch (e) {
+          console.warn("[Dashboard] Server territory delete failed:", e);
         }
       }
-    }
 
-    // Update localStorage fallback
-    this._savePlayerTerritories();
+      // Remove cluster from planet
+      if (this._territoryPlanet) {
+        this._territoryPlanet.removeSponsorCluster(territoryId);
+      }
 
-    // Update UI
-    this._renderTerritoryList();
+      // Remove from local array
+      this._playerTerritories.splice(idx, 1);
 
-    const tierLabels = { outpost: "Outpost", compound: "Compound", stronghold: "Stronghold" };
-    this.addNotification(
-      `Subscription cancelled: ${tierLabels[territory.tierName] || "Territory"}`,
-      "info",
-      "territory",
-    );
+      // Remove from Firestore
+      if (window.firestoreSync?.isActive && window.authManager?.uid) {
+        firebase.firestore().collection("territories").doc(territoryId).delete().catch((e) =>
+          console.warn("[Dashboard] Firestore territory delete failed:", e),
+        );
+      }
+
+      this._savePlayerTerritories();
+      this._renderTerritoryList();
+      this.addNotification(`Subscription cancelled: ${label}`, "info", "territory");
+    });
+  }
+
+  _showCancelConfirmation(territoryLabel, onConfirm) {
+    const existing = document.getElementById("cancel-confirm-overlay");
+    if (existing) existing.remove();
+
+    const overlay = document.createElement("div");
+    overlay.id = "cancel-confirm-overlay";
+    overlay.className = "modal-overlay";
+    overlay.innerHTML = `
+      <div class="modal-container" style="max-width:360px;">
+        <div class="modal-header">
+          <span class="modal-title">Cancel Territory</span>
+          <button class="modal-close" id="cancel-confirm-close">&times;</button>
+        </div>
+        <div class="modal-body" style="padding:16px;font-family:var(--font-body);font-size:var(--font-size-body);color:var(--text-primary);">
+          <p style="margin:0 0 16px;">Are you sure you want to cancel your <strong>${territoryLabel}</strong> subscription? This will deactivate your territory and stop billing.</p>
+          <div style="display:flex;gap:8px;justify-content:flex-end;">
+            <button id="cancel-confirm-no" style="padding:8px 16px;background:var(--bg-surface);border:1px solid var(--border-color);color:var(--text-primary);cursor:pointer;font-family:var(--font-body);font-size:var(--font-size-body);">Keep Territory</button>
+            <button id="cancel-confirm-yes" style="padding:8px 16px;background:#c0392b;border:none;color:#fff;cursor:pointer;font-family:var(--font-body);font-size:var(--font-size-body);">Cancel Subscription</button>
+          </div>
+        </div>
+      </div>
+    `;
+    document.body.appendChild(overlay);
+
+    const close = () => overlay.remove();
+    document.getElementById("cancel-confirm-close").onclick = close;
+    document.getElementById("cancel-confirm-no").onclick = close;
+    overlay.addEventListener("click", (e) => { if (e.target === overlay) close(); });
+    document.getElementById("cancel-confirm-yes").onclick = () => {
+      close();
+      onConfirm();
+    };
   }
 
   _renderTerritoryList() {
