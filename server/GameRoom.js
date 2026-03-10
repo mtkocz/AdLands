@@ -3004,10 +3004,13 @@ class GameRoom {
       const kbps = this._payloadCount ? Math.round(this._payloadByteSum / (n / 10) / 1024 * 10) / 10 : 0;
       const wt = this.botBridge.drainWorkerTiming();
       const workerStr = wt ? ` | worker avg=${wt.avg.toFixed(1)}ms max=${wt.max.toFixed(1)}ms (update=${wt.updateAvg.toFixed(1)} collect=${wt.collectAvg.toFixed(1)}) missed=${wt.missed}/${wt.count + wt.missed}` : '';
-      console.warn(`[Tick] avg=${(this._tickSum/n).toFixed(0)}ms max=${this._tickMax}ms | players=${(p[0]/n).toFixed(0)} guards=${(p[1]/n).toFixed(0)} bots=${(p[2]/n).toFixed(0)} collide=${(p[3]/n).toFixed(0)} proj=${(p[4]/n).toFixed(0)} broadcast=${(p[5]/n).toFixed(0)} | n=${this.botBridge.botCount}bots ${this.players.size}players | payload=${avgBytes}B ${avgEntities}ents ${kbps}KB/s${workerStr}`);
+      const vs = this._volatileStats || { attempts: 0, blocked: 0 };
+      const volatileStr = vs.attempts ? ` | volatile=${vs.blocked}/${vs.attempts}blocked (${Math.round(vs.blocked/vs.attempts*100)}%)` : '';
+      console.warn(`[Tick] avg=${(this._tickSum/n).toFixed(0)}ms max=${this._tickMax}ms | players=${(p[0]/n).toFixed(0)} guards=${(p[1]/n).toFixed(0)} bots=${(p[2]/n).toFixed(0)} collide=${(p[3]/n).toFixed(0)} proj=${(p[4]/n).toFixed(0)} broadcast=${(p[5]/n).toFixed(0)} | n=${this.botBridge.botCount}bots ${this.players.size}players | payload=${avgBytes}B ${avgEntities}ents ${kbps}KB/s${workerStr}${volatileStr}`);
       this._tickSum = 0; this._tickMax = 0; this._tickCount = 0;
       this._phaseSum = [0,0,0,0,0,0];
       this._payloadByteSum = 0; this._payloadEntitySum = 0; this._payloadCount = 0; this._payloadEmitCount = 0;
+      this._volatileStats = { attempts: 0, blocked: 0 };
     }
   }
 
@@ -4564,7 +4567,12 @@ class GameRoom {
       }
 
       const socket = this.io.sockets.sockets.get(socketId);
-      if (socket) socket.volatile.emit("state", statePayload, orbitalBinaryBuf);
+      if (socket) {
+        if (!this._volatileStats) this._volatileStats = { attempts: 0, blocked: 0 };
+        this._volatileStats.attempts++;
+        if (socket.conn && socket.conn.transport && !socket.conn.transport.writable) this._volatileStats.blocked++;
+        socket.volatile.emit("state", statePayload, orbitalBinaryBuf);
+      }
 
       // Restore rounded values in shared buffer for next orbital player
       if (selfIdx >= 0 && selfState) {
@@ -4702,7 +4710,12 @@ class GameRoom {
       }
 
       const socket = this.io.sockets.sockets.get(socketId);
-      if (socket) socket.volatile.emit("state", statePayload, binaryBuf);
+      if (socket) {
+        if (!this._volatileStats) this._volatileStats = { attempts: 0, blocked: 0 };
+        this._volatileStats.attempts++;
+        if (socket.conn && socket.conn.transport && !socket.conn.transport.writable) this._volatileStats.blocked++;
+        socket.volatile.emit("state", statePayload, binaryBuf);
+      }
     }
 
     // Restore orbital data on shared payload (for next tick's op computation)
