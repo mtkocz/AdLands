@@ -338,8 +338,8 @@ class NetworkManager {
       if (this.onPortalRejected) this.onPortalRejected();
     });
 
-    // Batched bot events — single emit replaces dozens of individual frames
-    this.socket.on("bot-events", (events) => {
+    // Batched game events — all tick combat/game events arrive in a single frame
+    this.socket.on("game-events", (events) => {
       for (let i = 0; i < events.length; i++) {
         const evt = events[i];
         switch (evt.type) {
@@ -350,6 +350,11 @@ class NetworkManager {
           case "player-killed": if (this.onPlayerKilled) this.onPlayerKilled(evt.data); break;
           case "player-respawned": if (this.onPlayerRespawned) this.onPlayerRespawned(evt.data); break;
           case "chat": if (this.onChatMessage) this.onChatMessage(evt.data); break;
+          case "missile-crash": if (this.onMissileCrash) this.onMissileCrash(evt.data); break;
+          case "missile-lost": if (this.onMissileLost) this.onMissileLost(evt.data); break;
+          case "flare-hit": if (this.onFlareHit) this.onFlareHit(evt.data); break;
+          case "bodyguard-killed": if (this.onPlayerKilled) this.onPlayerKilled(evt.data); break;
+          case "territory-update": if (this.onTerritoryUpdate) this.onTerritoryUpdate(evt.data); break;
         }
       }
     });

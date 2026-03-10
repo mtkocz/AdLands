@@ -231,6 +231,11 @@ class GameRoom {
     this.flares = [];
     this.nextFlareId = 1;
 
+    // Per-tick event buffer — reliable game events are queued here during
+    // tick processing, then flushed as a single "game-events" batch AFTER
+    // the volatile state broadcast to avoid saturating the transport
+    this._tickEventQueue = [];
+
     // Unified target spatial hash (players + bots + flares) for missile retargeting
     this._targetHash = new TargetSpatialHash();
 
@@ -2289,7 +2294,7 @@ class GameRoom {
       p.lostAge = (p.lostAge || 0) + dt;
       if (p.lostAge >= 5) {
         // Wobble expired — missile crashes to ground (no damage)
-        this.io.to(this.roomId).emit("missile-crash", {
+        this._queueRoomEvent("missile-crash", {
           missileId: p.id,
           theta: p.theta,
           phi: p.phi,
@@ -2300,7 +2305,7 @@ class GameRoom {
       // Emit wobble event once (when first losing target)
       if (!p.isLost) {
         p.isLost = true;
-        this.io.to(this.roomId).emit("missile-lost", {
+        this._queueRoomEvent("missile-lost", {
           missileId: p.id,
         });
       }
@@ -2352,7 +2357,7 @@ class GameRoom {
             flareOwner.crypto += this.costs.flareIntercept;
           }
 
-          this.io.to(this.roomId).emit("flare-hit", {
+          this._queueRoomEvent("flare-hit", {
             flareId: fl.id,
             flareOwnerId: fl.ownerId,
             missileId: p.id,
@@ -2389,7 +2394,7 @@ class GameRoom {
           attacker.crypto += Math.floor(damage);
         }
 
-        this.io.to(this.roomId).emit("player-hit", {
+        this._queueRoomEvent("player-hit", {
           targetId: tgtId,
           attackerId: p.ownerId,
           damage,
@@ -2401,7 +2406,7 @@ class GameRoom {
         });
 
         if (botHp - damage <= 0) {
-          this.io.to(this.roomId).emit("player-killed", {
+          this._queueRoomEvent("player-killed", {
             victimId: tgtId,
             killerId: p.ownerId,
             victimFaction: botFaction,
@@ -2427,7 +2432,7 @@ class GameRoom {
             attacker.crypto += Math.floor(damage * (isTargetCommander ? 10 : 1));
           }
 
-          this.io.to(this.roomId).emit("player-hit", {
+          this._queueRoomEvent("player-hit", {
             targetId: tgtId,
             attackerId: p.ownerId,
             damage,
@@ -2449,7 +2454,7 @@ class GameRoom {
             const killerName = killer ? killer.name : "Unknown";
             const victimName = hitPlayer.name;
 
-            this.io.to(this.roomId).emit("player-killed", {
+            this._queueRoomEvent("player-killed", {
               victimId: tgtId,
               killerId: p.ownerId,
               victimFaction: hitPlayer.faction,
@@ -2888,16 +2893,17 @@ class GameRoom {
     if (this.tick % 2 === 0) this._updateCapture();
 
     const _t5 = Date.now();
-    // 4. Broadcast world state to all clients (BEFORE reliable bot events to
-    //    ensure transport.writable is true for this volatile emit)
+    // 4. Broadcast world state to all clients (BEFORE reliable game events
+    //    to ensure transport.writable is true for this volatile emit)
     this._broadcastState();
     const _t6 = Date.now();
 
-    // 4b. Replay buffered bot events as a single batched emit to avoid
-    // saturating the transport with dozens of individual Socket.IO frames
-    if (botResult.events.length > 0) {
-      this.io.to(this.roomId).emit("bot-events", botResult.events);
+    // 4b. Merge bot worker events into the tick queue, then flush everything
+    // as a single "game-events" emit — one Socket.IO frame instead of dozens
+    for (let i = 0; i < botResult.events.length; i++) {
+      this._tickEventQueue.push(botResult.events[i]);
     }
+    this._flushTickEvents();
 
     // 5. Recompute faction ranks (every 1 second, or immediately when dirty)
     // Runs BEFORE commander-sync so the snapshot is always up-to-date
@@ -3474,7 +3480,7 @@ class GameRoom {
             attacker.crypto += Math.floor(damage * (isTargetCommander ? 10 : 1));
           }
 
-          this.io.to(this.roomId).emit("player-hit", {
+          this._queueRoomEvent("player-hit", {
             targetId: id,
             attackerId: p.ownerId,
             damage: damage,
@@ -3496,7 +3502,7 @@ class GameRoom {
             const killerName = killer ? killer.name : (killerBotName || "Unknown");
             const victimName = player.name;
 
-            this.io.to(this.roomId).emit("player-killed", {
+            this._queueRoomEvent("player-killed", {
               victimId: id,
               killerId: p.ownerId,
               victimFaction: player.faction,
@@ -3553,7 +3559,7 @@ class GameRoom {
             attacker.crypto += Math.floor(damage);
           }
 
-          this.io.to(this.roomId).emit("player-hit", {
+          this._queueRoomEvent("player-hit", {
             targetId: botHit.id,
             attackerId: p.ownerId,
             damage,
@@ -3566,7 +3572,7 @@ class GameRoom {
           // Check if this hit likely killed the bot (approximate — worker confirms next tick)
           if (botHp - damage <= 0) {
             const killerName = attackerName;
-            this.io.to(this.roomId).emit("player-killed", {
+            this._queueRoomEvent("player-killed", {
               victimId: botHit.id,
               killerId: p.ownerId,
               victimFaction: botFaction,
@@ -3598,7 +3604,7 @@ class GameRoom {
           const damage = p.damage || 25;
           const result = this.bodyguardManager.applyDamage(bgHit.id, damage);
 
-          this.io.to(this.roomId).emit("player-hit", {
+          this._queueRoomEvent("player-hit", {
             targetId: bgHit.id,
             attackerId: p.ownerId,
             damage: damage,
@@ -3609,7 +3615,7 @@ class GameRoom {
           });
 
           if (result.killed) {
-            this.io.to(this.roomId).emit("bodyguard-killed", {
+            this._queueRoomEvent("bodyguard-killed", {
               id: bgHit.id,
               faction: bgHit.faction,
               killerFaction: p.ownerFaction,
@@ -3834,6 +3840,16 @@ class GameRoom {
   _emitToSocket(socketId, event, data) {
     const socket = this.io.sockets.sockets.get(socketId);
     if (socket) socket.emit(event, data);
+  }
+
+  _queueRoomEvent(type, data) {
+    this._tickEventQueue.push({ type, data });
+  }
+
+  _flushTickEvents() {
+    if (this._tickEventQueue.length === 0) return;
+    this.io.to(this.roomId).emit("game-events", this._tickEventQueue);
+    this._tickEventQueue = [];
   }
 
   // ========================
@@ -4160,7 +4176,7 @@ class GameRoom {
 
     // 3. Broadcast territory changes to all clients
     if (territoryChanges.length > 0) {
-      this.io.to(this.roomId).emit("territory-update", territoryChanges);
+      this._queueRoomEvent("territory-update", territoryChanges);
 
       // Notify Tusk about cluster captures
       for (const change of territoryChanges) {
