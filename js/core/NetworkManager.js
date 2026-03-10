@@ -198,36 +198,7 @@ class NetworkManager {
     // Payload: JSON metadata + binary ArrayBuffer for entity positions.
     // BinaryStateProtocol.decode uses an internal object pool to reuse entry objects,
     // reducing ~2000 object allocations/sec to near zero (cuts GC pauses).
-    this._stateArrivalTimes = [];
-    this._stateGapMax = 0;
-    this._stateCount = 0;
-    this._lastStateTime = 0;
     this.socket.on("state", (meta, binaryBuf) => {
-      // Track inter-packet timing for jitter diagnostics
-      const now = performance.now();
-      if (this._lastStateTime > 0) {
-        const gap = now - this._lastStateTime;
-        this._stateArrivalTimes.push(gap);
-        if (gap > this._stateGapMax) this._stateGapMax = gap;
-      }
-      this._lastStateTime = now;
-      this._stateCount++;
-
-      // Log every 100 packets (~10 seconds)
-      if (this._stateCount % 100 === 0 && this._stateArrivalTimes.length > 0) {
-        const gaps = this._stateArrivalTimes;
-        const avg = gaps.reduce((a, b) => a + b, 0) / gaps.length;
-        const sorted = gaps.slice().sort((a, b) => a - b);
-        const p95 = sorted[Math.floor(sorted.length * 0.95)];
-        const p99 = sorted[Math.floor(sorted.length * 0.99)];
-        const jitterGaps = gaps.filter(g => g > 150);
-        console.warn(
-          `[NetStats] packets=${gaps.length} gap avg=${avg.toFixed(0)}ms p95=${p95.toFixed(0)}ms p99=${p99.toFixed(0)}ms max=${this._stateGapMax.toFixed(0)}ms spikes(>150ms)=${jitterGaps.length} | ping=${this.ping}ms smooth=${this.smoothPing.toFixed(0)}ms jitter=${this.jitter.toFixed(0)}ms`
-        );
-        this._stateArrivalTimes = [];
-        this._stateGapMax = 0;
-      }
-
       // Decode binary entity data into the players object
       if (binaryBuf && meta.ids) {
         meta.players = BinaryStateProtocol.decode(binaryBuf, meta.ids);

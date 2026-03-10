@@ -115,6 +115,9 @@ class ServerFactionCoordinator {
       const enemyPresence = this._countEnemyBots(cluster.id, allCoordinators);
       priority -= enemyPresence * 8;
 
+      const friendlyAssigned = this.assignedBots.get(cluster.id);
+      if (friendlyAssigned) priority -= friendlyAssigned.size * 6;
+
       priority += Math.random() * 10;
 
       if (priority > 10) {
@@ -140,7 +143,7 @@ class ServerFactionCoordinator {
       return true;
     });
 
-    const numTargets = Math.min(14, Math.ceil(availableBots.length / 3));
+    const numTargets = Math.min(20, Math.ceil(availableBots.length / 3));
     let assignedCount = 0;
 
     for (
@@ -154,7 +157,7 @@ class ServerFactionCoordinator {
       const botsNeeded = Math.min(
         Math.max(2, Math.ceil(target.tileCount / 20) + 1),
         Math.ceil(availableBots.length / numTargets),
-        8,
+        5,
       );
 
       this.assignedBots.set(target.clusterId, new Set());

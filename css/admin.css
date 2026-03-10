@@ -1445,6 +1445,9 @@ body {
     margin-top: 4px;
 }
 .territory-review-status.approved { color: #2a5; }
+.territory-review-status.invoiced { color: #da5; }
+.territory-review-status.active { color: #2a5; }
+.territory-review-status.expired { color: #a55; }
 .territory-review-status.rejected { color: #e55; }
 
 /* Pending review section — separated from approved territories */

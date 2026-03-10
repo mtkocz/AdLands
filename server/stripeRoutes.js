@@ -1,0 +1,233 @@
+/**
+ * AdLands - Stripe Webhook Routes
+ * Handles Stripe webhook events for territory payment processing.
+ *
+ * POST /api/stripe/webhook — receives Stripe events (invoice.paid, subscription.deleted)
+ *
+ * IMPORTANT: The webhook endpoint must receive the raw body (not JSON-parsed)
+ * for signature verification. This is handled in index.js by mounting the route
+ * before the global express.json() middleware.
+ */
+
+const { Router } = require("express");
+const express = require("express");
+const stripeService = require("./stripeService");
+const { getFirestore } = require("./firebaseAdmin");
+
+/**
+ * @param {Object} sponsorStore - SponsorStore instance
+ * @param {Object} gameRoom - GameRoom instance (for broadcasting)
+ * @param {Object} opts
+ * @param {Function} opts.reExtractImages - Re-extract sponsor images after activation
+ * @param {Function} opts.reloadIfLive - Reload world data for connected clients
+ */
+function createStripeRoutes(sponsorStore, gameRoom, { reExtractImages, reloadIfLive } = {}) {
+  const router = Router();
+
+  // Webhook endpoint — must use raw body for signature verification
+  router.post("/webhook", express.raw({ type: "application/json" }), async (req, res) => {
+    if (!stripeService.isEnabled()) {
+      return res.status(503).json({ error: "Stripe not configured" });
+    }
+
+    const sig = req.headers["stripe-signature"];
+    if (!sig) return res.status(400).json({ error: "Missing stripe-signature header" });
+
+    let event;
+    try {
+      event = stripeService.constructWebhookEvent(req.body, sig);
+    } catch (err) {
+      console.error("[Stripe] Webhook signature verification failed:", err.message);
+      return res.status(400).json({ error: "Invalid signature" });
+    }
+
+    try {
+      switch (event.type) {
+        case "invoice.paid":
+          await handleInvoicePaid(event.data.object, sponsorStore, gameRoom, { reExtractImages, reloadIfLive });
+          break;
+
+        case "customer.subscription.deleted":
+          await handleSubscriptionDeleted(event.data.object, sponsorStore, gameRoom, { reloadIfLive });
+          break;
+
+        default:
+          // Ignore other events
+          break;
+      }
+    } catch (err) {
+      console.error(`[Stripe] Error handling ${event.type}:`, err);
+      // Still return 200 — Stripe retries on non-2xx and we don't want infinite retries
+      // for bugs in our handler
+    }
+
+    res.json({ received: true });
+  });
+
+  return router;
+}
+
+/**
+ * Handle invoice.paid — activate the territory.
+ * This fires on first payment and every subsequent monthly payment.
+ */
+async function handleInvoicePaid(invoice, sponsorStore, gameRoom, { reExtractImages, reloadIfLive }) {
+  const subscriptionId = invoice.subscription;
+  if (!subscriptionId) return;
+
+  // Find the sponsor by stripeSubscriptionId
+  const sponsor = findSponsorBySubscription(sponsorStore, subscriptionId);
+  if (!sponsor) {
+    console.warn("[Stripe] invoice.paid — no sponsor found for subscription:", subscriptionId);
+    return;
+  }
+
+  // Skip if already active (idempotency for recurring payments)
+  if (sponsor.submissionStatus === "active" || sponsor.paymentStatus === "active") {
+    console.log("[Stripe] Territory already active, skipping:", sponsor.id);
+    return;
+  }
+
+  const territoryId = sponsor._territoryId || sponsor.id;
+
+  // Activate territory — move pending fields to active
+  const updateFields = {
+    submissionStatus: "active",
+    paymentStatus: "active",
+    activatedAt: new Date().toISOString(),
+  };
+
+  // For player territories with pending content, promote to active
+  if (sponsor.ownerType === "player") {
+    if (sponsor._approvedTitle != null) updateFields.title = sponsor._approvedTitle;
+    if (sponsor._approvedTagline != null) updateFields.tagline = sponsor._approvedTagline;
+    if (sponsor._approvedUrl != null) updateFields.websiteUrl = sponsor._approvedUrl;
+    if (sponsor._approvedImage != null) updateFields.patternImage = sponsor._approvedImage;
+
+    // Clear staging fields
+    updateFields._approvedTitle = null;
+    updateFields._approvedTagline = null;
+    updateFields._approvedUrl = null;
+    updateFields._approvedImage = null;
+  }
+
+  await sponsorStore.update(sponsor.id, updateFields);
+
+  // Re-extract images
+  if (reExtractImages) {
+    try { await reExtractImages(sponsor.id); } catch (e) {
+      console.warn("[Stripe] Image re-extraction failed:", e.message);
+    }
+  }
+
+  // Update Firestore
+  try {
+    const db = getFirestore();
+    const firestoreUpdate = {
+      paymentStatus: "active",
+      activatedAt: require("firebase-admin").firestore.FieldValue.serverTimestamp(),
+    };
+    if (updateFields.title != null) firestoreUpdate.title = updateFields.title;
+    if (updateFields.tagline != null) firestoreUpdate.tagline = updateFields.tagline;
+    if (updateFields.websiteUrl != null) firestoreUpdate.websiteUrl = updateFields.websiteUrl;
+    if (updateFields.patternImage != null) firestoreUpdate.patternImage = updateFields.patternImage;
+
+    await db.collection("territories").doc(territoryId).update(firestoreUpdate);
+  } catch (e) {
+    console.warn("[Stripe] Firestore update failed:", e.message);
+  }
+
+  // Broadcast to game clients
+  if (gameRoom) {
+    gameRoom.io.to(gameRoom.roomId).emit("territory-submission-approved", {
+      territoryId,
+      title: updateFields.title || sponsor.title,
+      tagline: updateFields.tagline || sponsor.tagline,
+      websiteUrl: updateFields.websiteUrl || sponsor.websiteUrl,
+      patternImage: sponsor.patternImage,
+      patternAdjustment: sponsor.patternAdjustment || {},
+      tileIndices: sponsor.cluster?.tileIndices || [],
+    });
+
+    // Notify the owning player
+    if (sponsor.ownerUid) {
+      const sockets = await gameRoom.io.in(gameRoom.roomId).fetchSockets();
+      for (const s of sockets) {
+        if (s.uid === sponsor.ownerUid) {
+          s.emit("territory-review-result", {
+            territoryId,
+            status: "active",
+            message: "Payment received! Your territory is now live.",
+          });
+        }
+      }
+    }
+
+    // Notify admin sockets
+    gameRoom.io.to(gameRoom.roomId).emit("territory-payment-received", {
+      sponsorId: sponsor.id,
+      territoryId,
+      sponsorName: sponsor.name || sponsor.title,
+    });
+  }
+
+  if (reloadIfLive) reloadIfLive();
+  console.log(`[Stripe] Territory activated after payment: ${territoryId}`);
+}
+
+/**
+ * Handle customer.subscription.deleted — deactivate the territory.
+ * This fires when all retries exhausted or subscription manually cancelled.
+ */
+async function handleSubscriptionDeleted(subscription, sponsorStore, gameRoom, { reloadIfLive }) {
+  const sponsor = findSponsorBySubscription(sponsorStore, subscription.id);
+  if (!sponsor) {
+    console.warn("[Stripe] subscription.deleted — no sponsor found:", subscription.id);
+    return;
+  }
+
+  const territoryId = sponsor._territoryId || sponsor.id;
+
+  // Deactivate territory
+  await sponsorStore.update(sponsor.id, {
+    paymentStatus: "expired",
+    active: false,
+    deactivatedAt: new Date().toISOString(),
+  });
+
+  // Update Firestore
+  try {
+    const db = getFirestore();
+    await db.collection("territories").doc(territoryId).update({
+      paymentStatus: "expired",
+      active: false,
+      deactivatedAt: require("firebase-admin").firestore.FieldValue.serverTimestamp(),
+    });
+  } catch (e) {
+    console.warn("[Stripe] Firestore deactivation failed:", e.message);
+  }
+
+  // Notify admin
+  if (gameRoom) {
+    gameRoom.io.to(gameRoom.roomId).emit("territory-payment-expired", {
+      sponsorId: sponsor.id,
+      territoryId,
+      sponsorName: sponsor.name || sponsor.title,
+    });
+  }
+
+  if (reloadIfLive) reloadIfLive();
+  console.log(`[Stripe] Territory deactivated — subscription ended: ${territoryId}`);
+}
+
+/**
+ * Find a sponsor by its Stripe subscription ID.
+ */
+function findSponsorBySubscription(sponsorStore, subscriptionId) {
+  for (const s of sponsorStore.getAll()) {
+    if (s.stripeSubscriptionId === subscriptionId) return s;
+  }
+  return null;
+}
+
+module.exports = { createStripeRoutes };

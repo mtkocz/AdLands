@@ -21,6 +21,8 @@ const { createMoonSponsorRoutes, extractMoonSponsorImages } = require("./moonSpo
 const BillboardSponsorStore = require("./BillboardSponsorStore");
 const { createBillboardSponsorRoutes, extractBillboardSponsorImages } = require("./billboardSponsorRoutes");
 const { initFirebaseAdmin, verifyToken, getFirestore } = require("./firebaseAdmin");
+const stripeService = require("./stripeService");
+const { createStripeRoutes } = require("./stripeRoutes");
 
 // ========================
 // CONFIG
@@ -33,6 +35,7 @@ const PORT = process.env.PORT || 3000;
 // ========================
 
 initFirebaseAdmin();
+stripeService.init();
 
 // ========================
 // SERVER SETUP
@@ -40,6 +43,16 @@ initFirebaseAdmin();
 
 const app = express();
 if (compression) app.use(compression());
+
+// Stripe webhook must be mounted BEFORE express.json() — it needs the raw body for signature verification.
+// The route handler uses express.raw() internally.
+// We mount a placeholder here; the actual router is attached once GameRoom is ready.
+let stripeRouter = null;
+app.use("/api/stripe", (req, res, next) => {
+  if (stripeRouter) return stripeRouter(req, res, next);
+  res.status(503).json({ error: "Server initializing" });
+});
+
 app.use(express.json({ limit: "50mb" }));
 const server = http.createServer(app);
 
@@ -201,6 +214,22 @@ let inquiryRouter;
   const { createInquiryRoutes, sendViaResend } = require('./inquiryRoutes');
   inquiryRouter = createInquiryRoutes({ sponsorStore, mainRoom });
   app.use('/api/sponsor-inquiry', inquiryRouter);
+
+  // Attach Stripe webhook router (mounted early for raw body parsing, wired here for GameRoom access)
+  if (stripeService.isEnabled()) {
+    const reloadIfLive = () => {
+      if (mainRoom && typeof mainRoom.reloadSponsors === "function") {
+        mainRoom.reloadSponsors();
+        if (typeof mainRoom.reloadMoonSponsors === "function") mainRoom.reloadMoonSponsors();
+        if (typeof mainRoom.reloadBillboardSponsors === "function") mainRoom.reloadBillboardSponsors();
+      }
+    };
+    const reExtractImages = async (onlyId) => {
+      await extractSponsorImages(sponsorStore, gameDir, onlyId);
+    };
+    stripeRouter = createStripeRoutes(sponsorStore, mainRoom, { reExtractImages, reloadIfLive });
+    console.log("[Stripe] Webhook route mounted at /api/stripe/webhook");
+  }
 
   // Password reset via Firebase Admin SDK + Resend
   const admin = require("firebase-admin");

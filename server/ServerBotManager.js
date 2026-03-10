@@ -130,8 +130,8 @@ const BOT_AVOID_ANGLE = Math.PI / 2.5;
 const BOT_AVOID_STRENGTH = 1.0;
 
 // Omnidirectional separation (anti-bunching)
-const BOT_SEPARATION_RADIUS = 0.06;
-const BOT_SEPARATION_STRENGTH = 0.55;
+const BOT_SEPARATION_RADIUS = 0.10;
+const BOT_SEPARATION_STRENGTH = 1.0;
 
 // Terrain navigation
 const BOT_STUCK_CHECK_INTERVAL = 0.5;
@@ -712,10 +712,10 @@ class ServerBotManager {
             if (other !== bot && !other.isDead && other.faction === bot.faction &&
                 other.currentClusterId === bot.currentClusterId) {
               friendlyCount++;
-              if (friendlyCount >= 6) break;
+              if (friendlyCount >= 4) break;
             }
           }
-          if (friendlyCount >= 6) {
+          if (friendlyCount >= 4) {
             bot.targetClusterId = null;
             bot.targetPosition = null;
             bot.pathWaypoints = [];

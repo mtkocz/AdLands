@@ -1352,10 +1352,16 @@
               actionsHtml += `
                 <button class="btn-approve approve-submission-btn" data-id="${s.id}">Approve</button>
                 <button class="btn-reject reject-submission-btn" data-id="${s.id}">Reject</button>`;
+            } else if (subStatus === "invoiced") {
+              actionsHtml += `<span class="territory-review-status invoiced">Invoiced</span>`;
+            } else if (subStatus === "active") {
+              actionsHtml += `<span class="territory-review-status active">Active</span>`;
             } else if (subStatus === "approved") {
               actionsHtml += `<span class="territory-review-status approved">Approved</span>`;
             } else if (subStatus === "rejected") {
               actionsHtml += `<span class="territory-review-status rejected">Rejected</span>`;
+            } else if (s.paymentStatus === "expired") {
+              actionsHtml += `<span class="territory-review-status expired">Expired</span>`;
             }
 
             return `
@@ -2265,7 +2271,12 @@
       }
 
       if (!hadConflicts) {
-        showToast(`Accepted inquiry "${members[0].name}" — ${members.length} ${members.length === 1 ? "territory" : "territories"} activated`, "success");
+        // Check if the last activation result was an invoice (Stripe enabled)
+        const lastRes = await fetch(`/api/sponsors/${encodeURIComponent(members[members.length - 1].id)}`, { method: "GET" });
+        const lastSponsor = await lastRes.json();
+        const wasInvoiced = lastSponsor?.paymentStatus === "invoiced";
+        const actionWord = wasInvoiced ? "invoiced" : "activated";
+        showToast(`Accepted inquiry "${members[0].name}" — ${members.length} ${members.length === 1 ? "territory" : "territories"} ${actionWord}`, "success");
         handleClearForm();
         await SponsorStorage.reload();
         refreshSponsorsList();
@@ -2357,12 +2368,16 @@
       });
       const result = await res.json();
       if (result.success) {
-        showToast(
-          action === "approve"
-            ? "Submission approved and broadcast to players"
-            : "Submission rejected. Player notified.",
-          "success",
-        );
+        let msg;
+        if (result.action === "invoiced") {
+          const amt = (result.amountCents / 100).toFixed(2);
+          msg = `Approved! Invoice sent ($${amt}/mo). Territory activates on payment.`;
+        } else if (action === "approve") {
+          msg = "Submission approved and broadcast to players";
+        } else {
+          msg = "Submission rejected. Player notified.";
+        }
+        showToast(msg, "success");
         await SponsorStorage.reload();
         refreshSponsorsList();
       } else {

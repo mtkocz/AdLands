@@ -14,6 +14,7 @@ let applyPixelArtFilter;
 try { applyPixelArtFilter = require("./pixelArtFilter").applyPixelArtFilter; } catch (e) { /* optional — needs sharp */ }
 const { getFirestore } = require("./firebaseAdmin");
 const { sendViaResend } = require("./inquiryRoutes");
+const stripeService = require("./stripeService");
 
 /**
  * Find an existing file on disk matching a prefix (e.g. "sponsor_123." or "sponsor_123_logo.").
@@ -480,7 +481,94 @@ function createSponsorRoutes(sponsorStore, gameRoom, { imageUrls, contentHashes,
         const approvedUrl = overrides?.websiteUrl ?? sponsor.pendingWebsiteUrl ?? sponsor.websiteUrl ?? "";
         const approvedImage = overrides?.patternImage ?? sponsor.pendingImage ?? sponsor.patternImage ?? null;
 
-        // Move all pending fields to active in SponsorStore
+        // === STRIPE INVOICING PATH ===
+        // When Stripe is enabled: stage approved content, send invoice, wait for payment.
+        // When Stripe is disabled: activate immediately (legacy behavior).
+        if (stripeService.isEnabled()) {
+          const customerEmail = sponsor.ownerEmail || sponsor.inquiryData?.contactEmail;
+          if (!customerEmail) {
+            return res.status(400).json({ errors: ["No email found for this territory owner — cannot send invoice"] });
+          }
+
+          // Stage approved content (not yet visible to players — activated by webhook)
+          const updateFields = {
+            _approvedTitle: approvedTitle,
+            _approvedTagline: approvedTagline,
+            _approvedUrl: approvedUrl,
+            _approvedImage: approvedImage,
+            pendingTitle: null,
+            pendingTagline: null,
+            pendingWebsiteUrl: null,
+            pendingImage: null,
+            patternImage: approvedImage,
+            submissionStatus: "invoiced",
+            imageStatus: "approved",
+            reviewedAt: new Date().toISOString(),
+            rejectionReason: null,
+          };
+          if (sponsor.ownerType === "player") updateFields.logoImage = null;
+
+          // Calculate price and create Stripe subscription
+          const amountCents = stripeService.calculateMonthlyPriceCents(sponsor);
+          const description = approvedTitle || sponsor.name || `Territory ${territoryId}`;
+          const customerName = sponsor.inquiryData?.contactName || sponsor.playerName || null;
+
+          const customerId = await stripeService.findOrCreateCustomer(customerEmail, customerName);
+          const subscription = await stripeService.createSubscription({
+            customerId,
+            sponsorId: req.params.id,
+            territoryId,
+            description,
+            amountCents,
+          });
+
+          updateFields.stripeCustomerId = customerId;
+          updateFields.stripeSubscriptionId = subscription.id;
+          updateFields.paymentStatus = "invoiced";
+
+          await sponsorStore.update(req.params.id, updateFields);
+
+          // Re-extract image so it's ready when payment arrives
+          if (approvedImage) await reExtractImages(req.params.id);
+
+          // Save Stripe IDs to Firestore
+          try {
+            const db = getFirestore();
+            await db.collection("territories").doc(territoryId).update({
+              pendingTitle: null,
+              pendingTagline: null,
+              pendingWebsiteUrl: null,
+              pendingImage: null,
+              submissionStatus: "invoiced",
+              paymentStatus: "invoiced",
+              stripeCustomerId: customerId,
+              stripeSubscriptionId: subscription.id,
+              reviewedAt: require("firebase-admin").firestore.FieldValue.serverTimestamp(),
+              rejectionReason: null,
+            });
+          } catch (e) {
+            console.warn("[Territory] Firestore invoiced update failed:", e.message);
+          }
+
+          // Notify the player that invoice has been sent
+          if (gameRoom && sponsor.ownerUid) {
+            const sockets = await gameRoom.io.in(gameRoom.roomId).fetchSockets();
+            for (const s of sockets) {
+              if (s.uid === sponsor.ownerUid) {
+                s.emit("territory-review-result", {
+                  territoryId,
+                  status: "invoiced",
+                  message: "Your territory has been approved! Check your email for the payment invoice.",
+                });
+              }
+            }
+          }
+
+          console.log(`[Territory] Approved & invoiced for ${territoryId} ($${(amountCents / 100).toFixed(2)}/mo)`);
+          return res.json({ success: true, action: "invoiced", amountCents, subscriptionId: subscription.id });
+        }
+
+        // === LEGACY PATH (Stripe disabled) — immediate activation ===
         const updateFields = {
           name: sponsor.ownerType === "player" ? sponsor.name : (approvedTitle || sponsor.name),
           title: approvedTitle,
@@ -496,18 +584,11 @@ function createSponsorRoutes(sponsorStore, gameRoom, { imageUrls, contentHashes,
           reviewedAt: new Date().toISOString(),
           rejectionReason: null,
         };
-        // Player territories don't have a separate logo — clear any stale logoImage
-        if (sponsor.ownerType === "player") {
-          updateFields.logoImage = null;
-        }
+        if (sponsor.ownerType === "player") updateFields.logoImage = null;
         await sponsorStore.update(req.params.id, updateFields);
 
-        // Re-extract image to static file
-        if (approvedImage) {
-          await reExtractImages(req.params.id);
-        }
+        if (approvedImage) await reExtractImages(req.params.id);
 
-        // Update Firestore
         try {
           const db = getFirestore();
           await db.collection("territories").doc(territoryId).update({
@@ -527,7 +608,6 @@ function createSponsorRoutes(sponsorStore, gameRoom, { imageUrls, contentHashes,
           console.warn("[Territory] Firestore approve update failed:", e.message);
         }
 
-        // Broadcast approved submission to all connected players
         const urls = _imageUrls[req.params.id] || {};
         if (gameRoom) {
           gameRoom.io.to(gameRoom.roomId).emit("territory-submission-approved", {
@@ -540,7 +620,6 @@ function createSponsorRoutes(sponsorStore, gameRoom, { imageUrls, contentHashes,
             tileIndices: sponsor.cluster?.tileIndices || [],
           });
 
-          // Notify the owning player specifically
           if (sponsor.ownerUid) {
             const sockets = await gameRoom.io.in(gameRoom.roomId).fetchSockets();
             for (const s of sockets) {
@@ -558,7 +637,6 @@ function createSponsorRoutes(sponsorStore, gameRoom, { imageUrls, contentHashes,
           }
         }
 
-        // Update world payload so future joiners see approved content
         reloadIfLive();
 
         console.log(`[Territory] Submission approved for ${territoryId}`);
@@ -687,7 +765,42 @@ function createSponsorRoutes(sponsorStore, gameRoom, { imageUrls, contentHashes,
         });
       }
 
-      // Activate: change ownerType to admin, set active
+      // === STRIPE INVOICING PATH for inquiries ===
+      if (stripeService.isEnabled()) {
+        const customerEmail = sponsor.inquiryData?.contactEmail;
+        if (!customerEmail) {
+          return res.status(400).json({ errors: ["No contact email found for this inquiry — cannot send invoice"] });
+        }
+
+        const amountCents = stripeService.calculateMonthlyPriceCents(sponsor);
+        const description = sponsor.name || `Territory ${req.params.id}`;
+        const customerName = sponsor.inquiryData?.contactName || null;
+
+        const customerId = await stripeService.findOrCreateCustomer(customerEmail, customerName);
+        const subscription = await stripeService.createSubscription({
+          customerId,
+          sponsorId: req.params.id,
+          territoryId: req.params.id,
+          description,
+          amountCents,
+        });
+
+        await sponsorStore.update(req.params.id, {
+          ownerType: "admin",
+          active: false,
+          paymentStatus: "invoiced",
+          submissionStatus: "invoiced",
+          stripeCustomerId: customerId,
+          stripeSubscriptionId: subscription.id,
+        });
+
+        await reExtractImages(req.params.id);
+
+        console.log(`[Inquiry] Approved & invoiced ${req.params.id} (${sponsor.name}) — $${(amountCents / 100).toFixed(2)}/mo`);
+        return res.json({ success: true, action: "invoiced", amountCents, subscriptionId: subscription.id });
+      }
+
+      // === LEGACY PATH (Stripe disabled) — immediate activation ===
       await sponsorStore.update(req.params.id, {
         ownerType: "admin",
         active: true,
