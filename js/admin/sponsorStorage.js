@@ -277,10 +277,12 @@ const SponsorStorage = {
       if (!res.ok) return cached;
       const full = await res.json();
       full._hasFull = true;
-      // Merge full data into cache
+      // Merge full data into cache, preserving lite-only fields (patternUrl, logoUrl, etc.)
       const index = this._cache.sponsors.findIndex((s) => s.id === id);
-      if (index !== -1) this._cache.sponsors[index] = full;
-      return full;
+      if (index !== -1) {
+        this._cache.sponsors[index] = { ...this._cache.sponsors[index], ...full };
+      }
+      return this._cache.sponsors[index] || full;
     } catch (e) {
       console.warn("[SponsorStorage] fetchFull failed:", e);
       return cached;

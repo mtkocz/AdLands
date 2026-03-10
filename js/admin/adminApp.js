@@ -235,6 +235,19 @@
       });
     }
 
+    // Apply deferred pattern preview after paint-drag ends
+    window.addEventListener("mouseup", () => {
+      if (_patternDirtyAfterPaint) {
+        _patternDirtyAfterPaint = false;
+        const tiles = hexSelector.getSelectedTiles();
+        const formData = sponsorForm.getFormData();
+        if (formData.patternImage && tiles.length > 0) {
+          _lastPatternImage = formData.patternImage;
+          hexSelector.setPatternPreview(formData.patternImage, formData.patternAdjustment);
+        }
+      }
+    });
+
     // Window resize
     window.addEventListener("resize", handleResize);
 
@@ -254,11 +267,8 @@
           if (editingGroup && editingGroup.groupKey === group.dataset.name) {
             // Already editing this group — toggle collapse
             group.classList.toggle("expanded");
-          } else if (group.classList.contains("expanded")) {
-            // Expanded but not editing — collapse it
-            group.classList.remove("expanded");
           } else {
-            // Collapsed — expand and load sponsor info into form panel
+            // Select and expand this group for editing
             group.classList.add("expanded");
             editGroup(group.dataset.name, null).catch(err => {
               console.error("[AdminApp] editGroup failed:", err);
@@ -501,29 +511,41 @@
     selectedTilesListEl.textContent = parts.join(" | ");
 
     // Update pattern preview when selection changes (tiles, moons, or billboards)
-    const formData = sponsorForm.getFormData();
-    if (formData.patternImage && (selectedTiles.length > 0 || selectedMoons.length > 0 || selectedBillboards.length > 0)) {
-      // Selection changed — need full texture apply (but track image to avoid redundant reload)
-      _lastPatternImage = formData.patternImage;
-      hexSelector.setPatternPreview(
-        formData.patternImage,
-        formData.patternAdjustment,
-      );
+    // Skip expensive pattern reapply during paint-drag — will apply on mouseup
+    if (hexSelector.isPainting) {
+      _patternDirtyAfterPaint = true;
     } else {
-      _lastPatternImage = null;
-      hexSelector.setPatternPreview(null);
+      _patternDirtyAfterPaint = false;
+      const formData = sponsorForm.getFormData();
+      if (formData.patternImage && (selectedTiles.length > 0 || selectedMoons.length > 0 || selectedBillboards.length > 0)) {
+        _lastPatternImage = formData.patternImage;
+        hexSelector.setPatternPreview(
+          formData.patternImage,
+          formData.patternAdjustment,
+        );
+      } else {
+        _lastPatternImage = null;
+        hexSelector.setPatternPreview(null);
+      }
     }
 
-    // Live-update revenue total and editing sponsor's card
-    updateLiveRevenue(selectedTiles);
+    // Live-update revenue total and editing sponsor's card (throttled to once per frame)
+    _pendingRevenueTiles = selectedTiles;
+    if (!_revenueRafId) {
+      _revenueRafId = requestAnimationFrame(() => {
+        _revenueRafId = 0;
+        if (_pendingRevenueTiles !== null) {
+          _updateLiveRevenueImpl(_pendingRevenueTiles);
+          _pendingRevenueTiles = null;
+        }
+      });
+    }
   }
 
-  /**
-   * Recalculate the monthly revenue total from all sponsors.
-   * When editing, substitutes the active cluster's stored tiles with the live
-   * hex-selector selection and patches the editing card/row in-place.
-   */
-  function updateLiveRevenue(liveSelectedTiles) {
+  let _revenueRafId = 0;
+  let _pendingRevenueTiles = null;
+
+  function _updateLiveRevenueImpl(liveSelectedTiles) {
     const tierMap = hexSelector ? hexSelector.getTierMap() : null;
     if (!tierMap || typeof HexTierSystem === "undefined") return;
 
@@ -661,6 +683,8 @@
 
   // Track the last pattern image data URL to avoid redundant texture reloads
   let _lastPatternImage = null;
+  // Deferred pattern apply after paint-drag ends
+  let _patternDirtyAfterPaint = false;
 
   function handleFormChange(formData) {
     // Update pattern preview on selected tiles, moons, and billboards in real-time
@@ -1132,7 +1156,18 @@
     );
   }
 
+  // Debounced wrapper — batches multiple rapid calls into a single DOM update
+  let _refreshScheduled = false;
   function refreshSponsorsList() {
+    if (_refreshScheduled) return;
+    _refreshScheduled = true;
+    queueMicrotask(() => {
+      _refreshScheduled = false;
+      _refreshSponsorsListImpl();
+    });
+  }
+
+  function _refreshSponsorsListImpl() {
     const allSponsors = SponsorStorage.getAll();
 
     // Apply tab filter
@@ -2604,10 +2639,10 @@
     }, 3000);
   }
 
+  const _escapeDiv = document.createElement("div");
   function escapeHtml(text) {
-    const div = document.createElement("div");
-    div.textContent = text;
-    return div.innerHTML;
+    _escapeDiv.textContent = text;
+    return _escapeDiv.innerHTML;
   }
 
   // ========================

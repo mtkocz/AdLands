@@ -279,26 +279,50 @@ function createSponsorRoutes(sponsorStore, gameRoom, { imageUrls, contentHashes,
     const sponsors = sponsorStore.getAll();
     const out = full ? sponsors : sponsors.map(toLite);
 
-    // Enrich player territories with ownerEmail from Firebase Auth
-    const playerSponsors = out.filter(s => s.ownerType === "player" && s.ownerUid && !s.ownerEmail);
-    if (playerSponsors.length > 0) {
+    // Enrich player territories with ownerEmail and profile picture
+    const playerSponsors = out.filter(s => s.ownerType === "player" && s.ownerUid);
+    const needsEmail = playerSponsors.filter(s => !s.ownerEmail);
+    const needsProfilePic = playerSponsors.filter(s => !s.ownerProfilePicture);
+    if (needsEmail.length > 0 || needsProfilePic.length > 0) {
       const admin = require("firebase-admin");
-      const uids = [...new Set(playerSponsors.map(s => s.ownerUid))];
+      const db = getFirestore();
+      const uids = [...new Set(playerSponsors.filter(s => !s.ownerEmail || !s.ownerProfilePicture).map(s => s.ownerUid))];
       const emailMap = new Map();
+      const profilePicMap = new Map();
       for (const uid of uids) {
         try {
-          const userRecord = await admin.auth().getUser(uid);
-          if (userRecord.email) emailMap.set(uid, userRecord.email);
+          if (needsEmail.some(s => s.ownerUid === uid)) {
+            const userRecord = await admin.auth().getUser(uid);
+            if (userRecord.email) emailMap.set(uid, userRecord.email);
+          }
+          if (needsProfilePic.some(s => s.ownerUid === uid)) {
+            const accDoc = await db.collection("accounts").doc(uid).get();
+            if (accDoc.exists) {
+              const profileIdx = accDoc.data().activeProfileIndex || 0;
+              const profileDoc = await db.collection("accounts").doc(uid).collection("profiles").doc(String(profileIdx)).get();
+              if (profileDoc.exists && profileDoc.data().profilePicture) {
+                profilePicMap.set(uid, profileDoc.data().profilePicture);
+              }
+            }
+          }
         } catch (e) {
-          console.warn(`[SponsorRoutes] Failed to look up email for uid ${uid}:`, e.message || e);
+          console.warn(`[SponsorRoutes] Failed to enrich uid ${uid}:`, e.message || e);
         }
       }
       for (const s of playerSponsors) {
+        const persist = {};
         const email = emailMap.get(s.ownerUid);
-        if (email) {
+        if (email && !s.ownerEmail) {
           s.ownerEmail = email;
-          // Persist back to store so future requests don't need the lookup
-          sponsorStore.update(s.id, { ownerEmail: email }).catch(() => {});
+          persist.ownerEmail = email;
+        }
+        const pic = profilePicMap.get(s.ownerUid);
+        if (pic && !s.ownerProfilePicture) {
+          s.ownerProfilePicture = pic;
+          persist.ownerProfilePicture = pic;
+        }
+        if (Object.keys(persist).length > 0) {
+          sponsorStore.update(s.id, persist).catch(() => {});
         }
       }
     }

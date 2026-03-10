@@ -485,6 +485,7 @@ class DustShockwave {
    * @param {THREE.Object3D} parent - Optional parent to attach shockwave to (e.g., tank group)
    */
   emit(position, scale = 1, parent = null, clipCenter = null) {
+    if (document.hidden) return;
     if (!this.shockwaveTexture) return;
 
     const cfg = this.config;

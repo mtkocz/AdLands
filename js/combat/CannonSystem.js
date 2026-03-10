@@ -1440,6 +1440,8 @@ void main() {
   }
 
   _spawnExplosion(position, faction, sizeScale = 1, clipCenter = null) {
+    if (document.hidden) return;
+
     // Don't spawn if no planet reference
     if (!this.planet) {
       console.warn("[CANNON] Cannot spawn explosion - no planet reference");

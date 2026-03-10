@@ -1441,9 +1441,7 @@ class HexSelector {
 
       this.selectedTiles.delete(tileIndex);
       if (mesh.userData.originalMaterial) {
-        if (mesh.material !== mesh.userData.originalMaterial) {
-          mesh.material.dispose();
-        }
+        // Don't dispose shared pattern materials during paint — they're reused by other tiles
         mesh.material = mesh.userData.originalMaterial;
         delete mesh.userData.originalMaterial;
       }
@@ -2694,21 +2692,40 @@ class HexSelector {
    * @param {Object} adjustment - { scale, offsetX, offsetY, inputBlack, inputGamma, inputWhite, outputBlack, outputWhite, saturation }
    */
   updatePatternAdjustment(adjustment) {
+    const prevScale = this.patternAdjustment.scale;
+    const prevOffsetX = this.patternAdjustment.offsetX;
+    const prevOffsetY = this.patternAdjustment.offsetY;
+
     this.patternAdjustment = {
       scale: adjustment.scale || 1.0,
       offsetX: adjustment.offsetX || 0,
       offsetY: adjustment.offsetY || 0,
-      // Input levels
       inputBlack: adjustment.inputBlack ?? 0,
       inputGamma: adjustment.inputGamma ?? 1.0,
       inputWhite: adjustment.inputWhite ?? 255,
-      // Output levels
       outputBlack: adjustment.outputBlack ?? 0,
       outputWhite: adjustment.outputWhite ?? 255,
-      // Saturation
       saturation: adjustment.saturation ?? 1.0,
     };
 
+    // If only color adjustments changed (not scale/offset), try fast uniform update
+    const scaleOrOffsetChanged =
+      prevScale !== this.patternAdjustment.scale ||
+      prevOffsetX !== this.patternAdjustment.offsetX ||
+      prevOffsetY !== this.patternAdjustment.offsetY;
+
+    if (!scaleOrOffsetChanged && this.patternTexture && this.selectedTiles.size > 0) {
+      // Fast path: update shader uniforms in-place without recreating materials/UVs
+      if (this._updateTileShaderUniforms()) {
+        this._needsRender = true;
+        // Still update moons and billboards (they're cheap — only 1-3 items)
+        if (this.selectedMoons.size > 0) this._applyPatternToSelectedMoons();
+        if (this.selectedBillboards.size > 0) this._applyPatternToSelectedBillboards();
+        return;
+      }
+    }
+
+    // Full rebuild (scale/offset changed, or fast path not available)
     if (this.patternTexture && this.selectedTiles.size > 0) {
       this._applyPatternToSelectedTiles();
     }
@@ -2718,6 +2735,40 @@ class HexSelector {
     if (this.patternTexture && this.selectedBillboards.size > 0) {
       this._applyPatternToSelectedBillboards();
     }
+  }
+
+  _updateTileShaderUniforms() {
+    const inputBlack = (this.patternAdjustment.inputBlack ?? 0) / 255.0;
+    const inputWhite = (this.patternAdjustment.inputWhite ?? 255) / 255.0;
+    const gamma = this.patternAdjustment.inputGamma ?? 1.0;
+    const outputBlack = (this.patternAdjustment.outputBlack ?? 0) / 255.0;
+    const outputWhite = (this.patternAdjustment.outputWhite ?? 255) / 255.0;
+    const saturation = this.patternAdjustment.saturation ?? 1.0;
+
+    let updated = false;
+    for (const tileIndex of this.selectedTiles) {
+      const mesh = this.tileIndexToMesh.get(tileIndex);
+      if (!mesh) continue;
+      const mat = mesh.material;
+      if (!mat.uniforms) {
+        // MeshBasicMaterial (default adjustments) — need full rebuild to switch to ShaderMaterial
+        if (inputBlack !== 0 || inputWhite !== 1 || gamma !== 1 ||
+            outputBlack !== 0 || outputWhite !== 1 || saturation !== 1) {
+          return false;
+        }
+        updated = true;
+        continue;
+      }
+      // ShaderMaterial — update uniforms in-place
+      mat.uniforms.uInputBlack.value = inputBlack;
+      mat.uniforms.uInputWhite.value = inputWhite;
+      mat.uniforms.uGamma.value = gamma;
+      mat.uniforms.uOutputBlack.value = outputBlack;
+      mat.uniforms.uOutputWhite.value = outputWhite;
+      mat.uniforms.uSaturation.value = saturation;
+      updated = true;
+    }
+    return updated;
   }
 
   _applyPatternToSelectedTiles() {
@@ -2761,6 +2812,9 @@ class HexSelector {
     // Scale factor: at scale=1, texture fills the cluster once
     const uvScale = 1.0 / scale;
 
+    // Create a single shared material for all selected tiles (avoids per-tile shader compilation)
+    const sharedMaterial = this._createColorAdjustedMaterial();
+
     for (const tileIndex of this.selectedTiles) {
       const mesh = this.tileIndexToMesh.get(tileIndex);
       if (!mesh) continue;
@@ -2802,10 +2856,10 @@ class HexSelector {
         mesh.userData.originalMaterial = mesh.material;
       }
 
-      if (mesh.material !== mesh.userData.originalMaterial) {
+      if (mesh.material !== mesh.userData.originalMaterial && mesh.material !== sharedMaterial) {
         mesh.material.dispose();
       }
-      mesh.material = this._createColorAdjustedMaterial();
+      mesh.material = sharedMaterial;
     }
     this._needsRender = true;
   }
@@ -2902,6 +2956,7 @@ class HexSelector {
   }
 
   _clearPatternFromSelectedTiles() {
+    let sharedDisposed = null;
     for (const tileIndex of this.selectedTiles) {
       const mesh = this.tileIndexToMesh.get(tileIndex);
       if (!mesh) continue;
@@ -2909,10 +2964,13 @@ class HexSelector {
       // Restore original material
       if (mesh.userData.originalMaterial) {
         if (mesh.material !== mesh.userData.originalMaterial) {
-          mesh.material.dispose();
+          // Dispose shared material only once
+          if (mesh.material !== sharedDisposed) {
+            sharedDisposed = mesh.material;
+            mesh.material.dispose();
+          }
         }
         mesh.material = mesh.userData.originalMaterial;
-        // Keep selected color
         mesh.material.color.setHex(0xffd700);
         mesh.material.emissive.setHex(0x333300);
       }
