@@ -105,6 +105,15 @@ class BotWorkerBridge {
         this._pendingOutput = msg;
         this._missedTicks = 0;
 
+        // Accumulate worker timing for [Tick] log
+        if (msg._workerMs != null) {
+          this._workerMsSum = (this._workerMsSum || 0) + msg._workerMs;
+          this._workerUpdateMsSum = (this._workerUpdateMsSum || 0) + msg._workerUpdateMs;
+          this._workerCollectMsSum = (this._workerCollectMsSum || 0) + msg._workerCollectMs;
+          this._workerMsMax = Math.max(this._workerMsMax || 0, msg._workerMs);
+          this._workerMsCount = (this._workerMsCount || 0) + 1;
+        }
+
         // Update cached data
         if (msg.botIds) {
           this._botIds = msg.botIds;
@@ -208,6 +217,7 @@ class BotWorkerBridge {
   processPendingOutput() {
     if (!this._pendingOutput) {
       this._missedTicks++;
+      this._missedTicksTotal = (this._missedTicksTotal || 0) + 1;
       if (this._missedTicks > 3 && this._missedTicks % 100 === 0) {
         console.warn(`[BotWorkerBridge] No worker output for ${this._missedTicks} ticks`);
       }
@@ -243,6 +253,31 @@ class BotWorkerBridge {
       clusterData: clusterData.map(c => ({ id: c.id, tiles: c.tiles.slice() })),
       tileClusterMap: Array.from(worldGen.tileClusterMap.entries()),
     });
+  }
+
+  // ========================
+  // WORKER TIMING
+  // ========================
+
+  drainWorkerTiming() {
+    const n = this._workerMsCount || 0;
+    if (n === 0) return null;
+    const missed = this._missedTicksTotal || 0;
+    const result = {
+      avg: this._workerMsSum / n,
+      max: this._workerMsMax,
+      updateAvg: this._workerUpdateMsSum / n,
+      collectAvg: this._workerCollectMsSum / n,
+      count: n,
+      missed,
+    };
+    this._workerMsSum = 0;
+    this._workerUpdateMsSum = 0;
+    this._workerCollectMsSum = 0;
+    this._workerMsMax = 0;
+    this._workerMsCount = 0;
+    this._missedTicksTotal = 0;
+    return result;
   }
 
   // ========================

@@ -44,6 +44,7 @@ parentPort.on("message", (msg) => {
   switch (msg.type) {
     case "tick-input": {
       const { dt, planetRotation, tick, nextProjectileId, players } = msg;
+      const _wt0 = performance.now();
 
       // Build a Map from the player array (ServerBotManager expects Map)
       const playerMap = new Map();
@@ -59,11 +60,13 @@ parentPort.on("message", (msg) => {
         }
       }
 
+      const _wt1 = performance.now();
       // Run full bot update — AI, physics, combat, terrain collision
       // In worker mode, projectiles are buffered internally instead of pushing to shared array
       const updatedNextId = botManager.update(
         dt, playerMap, [], planetRotation, tick, nextProjectileId
       );
+      const _wt2 = performance.now();
 
       // Collect outputs
       const newProjectiles = botManager.drainProjectiles();
@@ -71,6 +74,7 @@ parentPort.on("message", (msg) => {
       const playerHeals = botManager.drainPlayerHeals();
       const botStates = botManager.getStatesForBroadcast();
       const positions = botManager.getPositionsFlat();
+      const _wt3 = performance.now();
 
       const output = {
         type: "tick-output",
@@ -82,6 +86,10 @@ parentPort.on("message", (msg) => {
         newProjectiles,
         events,
         playerHeals,
+        // Worker timing (ms, microsecond precision)
+        _workerMs: _wt3 - _wt0,
+        _workerUpdateMs: _wt2 - _wt1,
+        _workerCollectMs: _wt3 - _wt2,
       };
 
       // Include bot IDs + names only on change (spawn/despawn)
