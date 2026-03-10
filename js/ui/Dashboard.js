@@ -3337,6 +3337,7 @@ class Dashboard {
       </div>
     `;
     document.body.appendChild(overlay);
+    requestAnimationFrame(() => overlay.classList.add("visible"));
 
     const close = () => overlay.remove();
     document.getElementById("cancel-confirm-close").onclick = close;
