@@ -4486,6 +4486,10 @@ class GameRoom {
     if (!this._filteredPayloads) this._filteredPayloads = new Map();
     const filteredPayloads = this._filteredPayloads;
 
+    // Pre-allocated encode buffer (reused across all per-player encodes)
+    // 300 entities × 20 bytes = 6000 bytes max; oversized to avoid realloc
+    if (!this._encodeBuf) this._encodeBuf = new ArrayBuffer(400 * 20);
+
     // --- Pre-encode shared orbital buffer (humans + ALL bots) ---
     // All orbital players see the same entity set, so encode once and reuse.
     // Include all bots so orbital viewers see tanks moving across the planet.
@@ -4501,7 +4505,12 @@ class GameRoom {
     for (let i = 0; i < botIds.length; i++) {
       orbitalEntities[humanIds.length + i] = playerStates[botIds[i]];
     }
-    const orbitalBinaryBuf = BinaryStateProtocol.encode(orbitalEntities);
+    // Grow encode buffer if needed (rare — only on first tick or entity count spike)
+    const orbitalByteLen = orbitalEntities.length * 20;
+    if (this._encodeBuf.byteLength < orbitalByteLen) {
+      this._encodeBuf = new ArrayBuffer(orbitalEntities.length * 20 * 2);
+    }
+    const orbitalBinaryBuf = BinaryStateProtocol.encodeInto(orbitalEntities, this._encodeBuf);
     const orbitalNames = {};
     for (let i = 0; i < botIds.length; i++) {
       const bs = botStates[botIds[i]];
@@ -4519,7 +4528,7 @@ class GameRoom {
     const TWO_PI = Math.PI * 2;
     const ANGLE_SCALE = 65535 / TWO_PI;
     const FACTION_TO_IDX = { rust: 0, cobalt: 1, viridian: 2 };
-    const orbitalDv = new DataView(orbitalBinaryBuf);
+    const orbitalDv = new DataView(orbitalBinaryBuf.buffer, 0, orbitalBinaryBuf.byteLength);
 
     for (const [socketId, player] of this.players) {
       if (player._viewMode !== "orbital") continue;
@@ -4664,7 +4673,12 @@ class GameRoom {
         if (state.n) names[id] = state.n;
       }
 
-      const binaryBuf = BinaryStateProtocol.encode(binaryEntities);
+      // Grow shared encode buffer if needed
+      const neededBytes = entityCount * 20;
+      if (this._encodeBuf.byteLength < neededBytes) {
+        this._encodeBuf = new ArrayBuffer(entityCount * 20 * 2);
+      }
+      const binaryBuf = BinaryStateProtocol.encodeInto(binaryEntities, this._encodeBuf);
 
       // Build metadata (everything that isn't per-entity position data)
       statePayload.ids = ids;
