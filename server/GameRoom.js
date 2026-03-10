@@ -2893,10 +2893,10 @@ class GameRoom {
     this._broadcastState();
     const _t6 = Date.now();
 
-    // 4b. Replay buffered bot events AFTER state broadcast — these are reliable
-    // emits (player-hit, player-killed) that saturate the transport write buffer
-    for (const evt of botResult.events) {
-      this.io.to(this.roomId).emit(evt.type, evt.data);
+    // 4b. Replay buffered bot events as a single batched emit to avoid
+    // saturating the transport with dozens of individual Socket.IO frames
+    if (botResult.events.length > 0) {
+      this.io.to(this.roomId).emit("bot-events", botResult.events);
     }
 
     // 5. Recompute faction ranks (every 1 second, or immediately when dirty)

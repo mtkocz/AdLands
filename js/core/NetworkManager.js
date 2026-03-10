@@ -338,6 +338,22 @@ class NetworkManager {
       if (this.onPortalRejected) this.onPortalRejected();
     });
 
+    // Batched bot events — single emit replaces dozens of individual frames
+    this.socket.on("bot-events", (events) => {
+      for (let i = 0; i < events.length; i++) {
+        const evt = events[i];
+        switch (evt.type) {
+          case "player-joined": if (this.onPlayerJoined) this.onPlayerJoined(evt.data); break;
+          case "player-left": if (this.onPlayerLeft) this.onPlayerLeft(evt.data); break;
+          case "player-fired": if (this.onPlayerFired) this.onPlayerFired(evt.data); break;
+          case "player-hit": if (this.onPlayerHit) this.onPlayerHit(evt.data); break;
+          case "player-killed": if (this.onPlayerKilled) this.onPlayerKilled(evt.data); break;
+          case "player-respawned": if (this.onPlayerRespawned) this.onPlayerRespawned(evt.data); break;
+          case "chat": if (this.onChatMessage) this.onChatMessage(evt.data); break;
+        }
+      }
+    });
+
     // Respawn: server tells us to choose a portal
     this.socket.on("respawn-choose-portal", (data) => {
       if (this.onRespawnChoosePortal) this.onRespawnChoosePortal(data);
