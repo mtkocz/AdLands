@@ -1126,10 +1126,16 @@ body {
 .sponsor-group-chevron {
     flex-shrink: 0;
     width: 16px;
+    padding: var(--space-xs);
     font-family: var(--font-small);
     font-size: var(--font-size-small);
     color: var(--text-muted);
+    cursor: pointer;
     transition: transform 0.2s ease;
+}
+
+.sponsor-group-chevron:hover {
+    color: var(--text-primary);
 }
 
 .sponsor-group.expanded .sponsor-group-chevron {

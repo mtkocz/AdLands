@@ -263,18 +263,16 @@
           togglePauseSponsor(group.dataset.name);
         } else if (e.target.closest(".add-cluster-btn")) {
           addClusterToGroup(group.dataset.name);
+        } else if (e.target.closest(".sponsor-group-chevron")) {
+          // Chevron arrow — toggle collapse/expand of nested territories
+          group.classList.toggle("expanded");
         } else if (!e.target.closest(".sponsor-card-actions")) {
-          if (editingGroup && editingGroup.groupKey === group.dataset.name) {
-            // Already editing this group — toggle collapse
-            group.classList.toggle("expanded");
-          } else {
-            // Select and expand this group for editing
-            group.classList.add("expanded");
-            editGroup(group.dataset.name, null).catch(err => {
-              console.error("[AdminApp] editGroup failed:", err);
-              showToast("Failed to load sponsor: " + (err.message || err), "error");
-            });
-          }
+          // Clicking anywhere else on the header — select group for editing
+          group.classList.add("expanded");
+          editGroup(group.dataset.name, null).catch(err => {
+            console.error("[AdminApp] editGroup failed:", err);
+            showToast("Failed to load sponsor: " + (err.message || err), "error");
+          });
         }
         return;
       }
