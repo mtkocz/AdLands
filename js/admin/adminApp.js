@@ -49,6 +49,11 @@
   // Currently active form view: 'info' or 'territories'
   let activeView = "info";
 
+  // Conflict ownership maps for click-to-remove (populated by updateInquiryConflicts)
+  let _conflictTileOwners = new Map();
+  let _conflictMoonOwners = new Map();
+  let _conflictBillboardOwners = new Map();
+
   // ========================
   // INITIALIZATION
   // ========================
@@ -91,6 +96,7 @@
       width: hexContainer.clientWidth,
       height: hexContainer.clientHeight,
       onSelectionChange: handleSelectionChange,
+      onConflictRemove: handleConflictRemove,
     });
 
     // Initialize sponsor form
@@ -2160,6 +2166,10 @@
     const conflictMoons = [];
     const conflictBillboards = [];
     const conflictNames = new Set();
+    // Map conflict items to their owning sponsor for click-to-remove
+    _conflictTileOwners = new Map();  // tileIndex → sponsorId
+    _conflictMoonOwners = new Map();  // moonIndex → moonSlotIndex
+    _conflictBillboardOwners = new Map(); // bbIndex → bbSlotIndex
 
     // Use live selection from hex selector for the active territory (unsaved edits)
     const activeId = editingGroup ? editingGroup.ids[editingGroup.activeIndex] : (singleSponsor ? singleSponsor.id : null);
@@ -2180,6 +2190,7 @@
           if (tileSet.has(t)) {
             conflictTiles.push(t);
             conflictNames.add(s.name);
+            _conflictTileOwners.set(t, s.id);
           }
         }
       }
@@ -2196,6 +2207,7 @@
           if (assignedMap.has(mi)) {
             conflictMoons.push(mi);
             conflictNames.add(assignedMap.get(mi));
+            _conflictMoonOwners.set(mi, mi);
           }
         }
       }
@@ -2212,6 +2224,7 @@
           if (assignedMap.has(bi)) {
             conflictBillboards.push(bi);
             conflictNames.add(assignedMap.get(bi));
+            _conflictBillboardOwners.set(bi, bi);
           }
         }
       }
@@ -2232,13 +2245,46 @@
       if (conflictMoons.length > 0) parts.push(`${conflictMoons.length} moon${conflictMoons.length !== 1 ? "s" : ""}`);
       if (conflictBillboards.length > 0) parts.push(`${conflictBillboards.length} billboard${conflictBillboards.length !== 1 ? "s" : ""}`);
       const nameList = [...conflictNames].map(n => `"${n}"`).join(", ");
-      conflictOverrideInfo.textContent = `${parts.join(", ")} conflict with ${nameList}`;
+      conflictOverrideInfo.textContent = `${parts.join(", ")} conflict with ${nameList} — click to remove`;
       conflictOverrideSection.style.display = "";
     }
   }
 
+  async function handleConflictRemove(type, index) {
+    if (busy) return;
+    busy = true;
+    try {
+      if (type === 'tile') {
+        const sponsorId = _conflictTileOwners.get(index);
+        if (!sponsorId) return;
+        const res = await fetch(`/api/sponsors/${encodeURIComponent(sponsorId)}/remove-tiles`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ tiles: [index] }),
+        });
+        if (!res.ok) { showToast("Failed to remove tile", "error"); return; }
+      } else if (type === 'moon') {
+        const res = await fetch(`/api/moon-sponsors/${index}`, { method: "DELETE" });
+        if (!res.ok) { showToast("Failed to clear moon slot", "error"); return; }
+        if (moonManager) await moonManager.load();
+        updateAssignedMoons();
+      } else if (type === 'billboard') {
+        const res = await fetch(`/api/billboard-sponsors/${index}`, { method: "DELETE" });
+        if (!res.ok) { showToast("Failed to clear billboard slot", "error"); return; }
+        if (billboardManager) await billboardManager.load();
+        updateAssignedBillboards();
+      }
+      await SponsorStorage.reload();
+      updateInquiryConflicts();
+    } catch (err) {
+      showToast("Conflict remove failed: " + err.message, "error");
+    } finally {
+      busy = false;
+    }
+  }
+
   /**
-   * Override: delete conflicting sponsors and activate all inquiry territories in the group.
+   * Override: accept requested territory and remove conflicting hexes/moons/billboards from other sponsors.
    */
   async function handleConflictOverride() {
     if (busy) return;
@@ -2255,7 +2301,7 @@
     }
     if (members.length === 0) return;
 
-    if (!confirm("This will delete the conflicting sponsor territories and replace them. Continue?")) return;
+    if (!confirm("This will remove conflicting hexes/moons/billboards from other sponsors and accept this territory. Continue?")) return;
 
     busy = true;
     try {
@@ -2272,7 +2318,7 @@
         }
       }
 
-      showToast(`Overridden conflicting territories for "${members[0].name}"`, "success");
+      showToast(`Accepted territory for "${members[0].name}" — conflicts removed`, "success");
       handleClearForm();
       await SponsorStorage.reload();
       refreshSponsorsList();

@@ -389,6 +389,18 @@
     if (inquiryModal) inquiryModal.classList.add("hidden");
   }
 
+  function showConfirmation(text) {
+    const el = document.createElement("div");
+    el.textContent = text;
+    el.style.cssText = "position:fixed;top:24px;left:50%;transform:translateX(-50%);background:var(--bg-surface,#1a1a2e);color:var(--accent-cyan,#00cccc);font-family:var(--font-body);font-size:var(--font-size-body);padding:12px 24px;border:1px solid var(--accent-cyan,#00cccc);z-index:10000;opacity:0;transition:opacity .3s";
+    document.body.appendChild(el);
+    requestAnimationFrame(() => el.style.opacity = "1");
+    setTimeout(() => {
+      el.style.opacity = "0";
+      setTimeout(() => el.remove(), 300);
+    }, 3000);
+  }
+
   if (inquireBtn) {
     inquireBtn.addEventListener("click", showInquiryModal);
   }
@@ -455,12 +467,9 @@
         const result = await response.json();
 
         if (result.success) {
-          if (formMessage) {
-            formMessage.className = "form-message success";
-            formMessage.textContent = "Inquiry sent successfully! We'll be in touch soon.";
-          }
-          // Reset form fields
           inquiryForm.reset();
+          hideInquiryModal();
+          showConfirmation("Inquiry sent successfully!");
         } else {
           throw new Error(result.error || "Failed to send inquiry");
         }

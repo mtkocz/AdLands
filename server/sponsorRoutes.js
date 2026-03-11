@@ -417,6 +417,26 @@ function createSponsorRoutes(sponsorStore, gameRoom, { imageUrls, contentHashes,
     res.json(result.sponsor);
   });
 
+  // POST /api/sponsors/:id/remove-tiles — strip specific tiles from a sponsor's cluster
+  router.post("/:id/remove-tiles", async (req, res) => {
+    const { tiles } = req.body || {};
+    if (!Array.isArray(tiles) || tiles.length === 0) {
+      return res.status(400).json({ errors: ["tiles array required"] });
+    }
+    const sponsor = sponsorStore.getById(req.params.id);
+    if (!sponsor) return res.status(404).json({ errors: ["Sponsor not found"] });
+
+    const currentTiles = sponsor.cluster?.tileIndices || [];
+    const removeSet = new Set(tiles);
+    const remaining = currentTiles.filter(t => !removeSet.has(t));
+
+    await sponsorStore.update(req.params.id, {
+      cluster: { ...sponsor.cluster, tileIndices: remaining },
+    });
+    reloadIfLive();
+    res.json({ success: true, remaining: remaining.length });
+  });
+
   // DELETE /api/sponsors/:id — delete sponsor
   router.delete("/:id", async (req, res) => {
     const deletedId = req.params.id;
@@ -787,23 +807,34 @@ function createSponsorRoutes(sponsorStore, gameRoom, { imageUrls, contentHashes,
         }
       }
 
-      // Force mode: delete conflicting sponsors entirely
+      // Force mode: strip overlapping tiles from conflicting sponsors (not delete them)
       if (tiles.length > 0 && force) {
         const tileSet = new Set(tiles);
-        const toDelete = [];
+        let stripped = 0;
         for (const s of sponsorStore.getAll()) {
           if (s.id === req.params.id) continue;
           if (!s.cluster?.tileIndices) continue;
-          const overlapping = s.cluster.tileIndices.filter(t => tileSet.has(t));
-          if (overlapping.length > 0) toDelete.push(s.id);
+          const remaining = s.cluster.tileIndices.filter(t => !tileSet.has(t));
+          if (remaining.length < s.cluster.tileIndices.length) {
+            await sponsorStore.update(s.id, {
+              cluster: { ...s.cluster, tileIndices: remaining },
+            });
+            stripped++;
+          }
         }
-        for (const id of toDelete) {
-          await sponsorStore.delete(id);
-          await cleanupSponsorImages(id);
+        if (stripped > 0) {
+          console.log(`[Inquiry] Stripped conflicting tiles from ${stripped} sponsors for activation`);
         }
-        if (toDelete.length > 0) {
-          console.log(`[Inquiry] Deleted ${toDelete.length} conflicting sponsors for activation`);
-        }
+      }
+
+      // Force mode: clear conflicting moon/billboard slots
+      if (force && sponsor.territoryType === "moon" && sponsor.inquiryData?.moonIndex != null && moonSponsorStore) {
+        const slot = moonSponsorStore.getAll()[sponsor.inquiryData.moonIndex];
+        if (slot) await moonSponsorStore.clear(sponsor.inquiryData.moonIndex);
+      }
+      if (force && sponsor.territoryType === "billboard" && sponsor.inquiryData?.billboardIndex != null && billboardSponsorStore) {
+        const slot = billboardSponsorStore.getAll()[sponsor.inquiryData.billboardIndex];
+        if (slot) await billboardSponsorStore.clear(sponsor.inquiryData.billboardIndex);
       }
 
       // Assign moon if this is a moon territory
