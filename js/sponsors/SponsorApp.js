@@ -392,7 +392,7 @@
   function showConfirmation(text) {
     const el = document.createElement("div");
     el.textContent = text;
-    el.style.cssText = "position:fixed;top:24px;left:50%;transform:translateX(-50%);background:var(--bg-surface,#1a1a2e);color:var(--accent-cyan,#00cccc);font-family:var(--font-body);font-size:var(--font-size-body);padding:12px 24px;border:1px solid var(--accent-cyan,#00cccc);z-index:10000;opacity:0;transition:opacity .3s";
+    el.style.cssText = "position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);background:var(--bg-surface,#1a1a2e);color:var(--accent-cyan,#00cccc);font-family:var(--font-body);font-size:var(--font-size-body);padding:12px 24px;border:1px solid var(--accent-cyan,#00cccc);z-index:10000;opacity:0;transition:opacity .3s";
     document.body.appendChild(el);
     requestAnimationFrame(() => el.style.opacity = "1");
     setTimeout(() => {

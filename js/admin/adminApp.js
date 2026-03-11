@@ -1583,8 +1583,16 @@
     hexSelector.clearSelection();
 
     const hasTiles = sponsor.cluster?.tileIndices?.length > 0;
-    const moonIndices = moonManager && sponsor.name ? moonManager.getMoonsForSponsor(sponsor.name) : [];
-    const bbIndices = billboardManager && sponsor.name ? billboardManager.getBillboardsForSponsor(sponsor.name) : [];
+    let moonIndices = moonManager && sponsor.name ? moonManager.getMoonsForSponsor(sponsor.name) : [];
+    let bbIndices = billboardManager && sponsor.name ? billboardManager.getBillboardsForSponsor(sponsor.name) : [];
+
+    // Fall back to inquiry data for unassigned moon/billboard slots
+    if (moonIndices.length === 0 && sponsor.inquiryData?.moonIndex != null) {
+      moonIndices = [sponsor.inquiryData.moonIndex];
+    }
+    if (bbIndices.length === 0 && sponsor.inquiryData?.billboardIndex != null) {
+      bbIndices = [sponsor.inquiryData.billboardIndex];
+    }
 
     // Load the territory's type-specific selection
     if (hasTiles) {
@@ -1743,8 +1751,10 @@
       if (!tt) {
         if (sponsor.cluster?.tileIndices?.length > 0) tt = 'hex';
         else {
-          const fallbackMoons = moonManager ? moonManager.getMoonsForSponsor(editingGroup.name) : [];
-          const fallbackBbs = billboardManager ? billboardManager.getBillboardsForSponsor(editingGroup.name) : [];
+          let fallbackMoons = moonManager ? moonManager.getMoonsForSponsor(editingGroup.name) : [];
+          let fallbackBbs = billboardManager ? billboardManager.getBillboardsForSponsor(editingGroup.name) : [];
+          if (fallbackMoons.length === 0 && sponsor.inquiryData?.moonIndex != null) fallbackMoons = [sponsor.inquiryData.moonIndex];
+          if (fallbackBbs.length === 0 && sponsor.inquiryData?.billboardIndex != null) fallbackBbs = [sponsor.inquiryData.billboardIndex];
           if (fallbackMoons.length > 0) tt = 'moon';
           else if (fallbackBbs.length > 0) tt = 'billboard';
         }
@@ -1755,14 +1765,16 @@
 
       if (tt === 'moon') {
         hexSelector.clearSelection();
-        const moonIndices = moonManager ? moonManager.getMoonsForSponsor(editingGroup.name) : [];
+        let moonIndices = moonManager ? moonManager.getMoonsForSponsor(editingGroup.name) : [];
+        if (moonIndices.length === 0 && sponsor.inquiryData?.moonIndex != null) moonIndices = [sponsor.inquiryData.moonIndex];
         if (moonIndices.length > 0) {
           hexSelector.setSelectedMoons(moonIndices);
           hexSelector.transitionToMoon(moonIndices);
         }
       } else if (tt === 'billboard') {
         hexSelector.clearSelection();
-        const bbIndices = billboardManager ? billboardManager.getBillboardsForSponsor(editingGroup.name) : [];
+        let bbIndices = billboardManager ? billboardManager.getBillboardsForSponsor(editingGroup.name) : [];
+        if (bbIndices.length === 0 && sponsor.inquiryData?.billboardIndex != null) bbIndices = [sponsor.inquiryData.billboardIndex];
         if (bbIndices.length > 0) {
           hexSelector.setSelectedBillboards(bbIndices);
           hexSelector.transitionToBillboard(bbIndices);

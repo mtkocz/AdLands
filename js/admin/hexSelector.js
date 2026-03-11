@@ -574,7 +574,6 @@ class HexSelector {
     // Select new (limit: 1 per territory, take first valid)
     for (const bi of billboardIndices) {
       if (bi < 0 || bi >= this.billboardGroups.length) continue;
-      if (this.assignedBillboards.has(bi)) continue;
       this.selectedBillboards.add(bi);
       const group = this.billboardGroups[bi];
       const adPanel = group && group.children.find((c) => c.userData.isAdPanel);
@@ -1361,7 +1360,6 @@ class HexSelector {
     // Select new moon (limit: 1 per territory, take first valid)
     for (const mi of moonIndices) {
       if (mi < 0 || mi >= this.moonMeshes.length) continue;
-      if (this.assignedMoons.has(mi)) continue;
       this.selectedMoons.add(mi);
       const mesh = this.moonMeshes[mi];
       if (mesh) {
@@ -2138,13 +2136,12 @@ class HexSelector {
     // Select new tiles (bypasses neighbor constraint for loading saved data)
     for (const tileIndex of tileIndices) {
       if (this.excludedTiles.has(tileIndex)) continue;
-      if (this.assignedTiles.has(tileIndex)) continue;
 
       const mesh = this.tileIndexToMesh.get(tileIndex);
       if (mesh) {
         this.selectedTiles.add(tileIndex);
         mesh.material.color.setHex(0xffd700);
-        mesh.material.emissive.setHex(0x333300);
+        if (mesh.material.emissive) mesh.material.emissive.setHex(0x333300);
       }
     }
 
