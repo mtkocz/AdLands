@@ -83,7 +83,7 @@ function createStripeRoutes(sponsorStore, gameRoom, { reExtractImages, reloadIfL
  */
 async function handleInvoicePaid(invoice, sponsorStore, gameRoom, { reExtractImages, reloadIfLive }) {
   const subscriptionId = invoice.subscription;
-  console.log("[Stripe] handleInvoicePaid — subscription:", subscriptionId, "status:", invoice.status, "billing_reason:", invoice.billing_reason);
+  console.log("[Stripe] handleInvoicePaid — subscription:", subscriptionId, "keys:", Object.keys(invoice).join(","));
   if (!subscriptionId) {
     console.warn("[Stripe] invoice.paid — no subscription ID on invoice:", invoice.id);
     return;
