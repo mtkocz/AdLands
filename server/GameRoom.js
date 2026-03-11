@@ -383,10 +383,8 @@ class GameRoom {
     if (this.sponsorStore) {
       this.sponsors = this.sponsorStore.getAll().filter(s => {
         if (s.paused) return false;
-        if (s.active !== false) return true;
-        // Include pending inquiry hex territories
-        if (s.ownerType === "inquiry" && s.cluster?.tileIndices?.length > 0) return true;
-        return false;
+        if (s.active === false) return false;
+        return true;
       });
       this._applySponsorClusters(worldResult);
       // Rebuild blocked grid now that sponsor tiles have been de-elevated
@@ -651,12 +649,11 @@ class GameRoom {
     this.sponsorHoldTimers.clear();
     this.clusterRenterUidMap.clear();
 
-    // 3. Re-read and re-apply sponsors (exclude paused, include pending inquiries)
+    // 3. Re-read and re-apply sponsors (exclude paused and inactive)
     this.sponsors = this.sponsorStore.getAll().filter(s => {
       if (s.paused) return false;
-      if (s.active !== false) return true;
-      if (s.ownerType === "inquiry" && s.cluster?.tileIndices?.length > 0) return true;
-      return false;
+      if (s.active === false) return false;
+      return true;
     });
     this._applySponsorClusters(wr);
     // Rebuild blocked grid now that sponsor tiles have been de-elevated
