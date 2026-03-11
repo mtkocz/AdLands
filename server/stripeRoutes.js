@@ -92,6 +92,7 @@ async function handleInvoicePaid(invoice, sponsorStore, gameRoom, { reExtractIma
 
   // Activate territory — move pending fields to active
   const updateFields = {
+    active: true,
     submissionStatus: "active",
     paymentStatus: "active",
     activatedAt: new Date().toISOString(),

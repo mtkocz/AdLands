@@ -543,6 +543,7 @@ function createSponsorRoutes(sponsorStore, gameRoom, { imageUrls, contentHashes,
 
           // Stage approved content (not yet visible to players — activated by webhook)
           const updateFields = {
+            active: false,
             _approvedTitle: approvedTitle,
             _approvedTagline: approvedTagline,
             _approvedUrl: approvedUrl,

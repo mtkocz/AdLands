@@ -3971,9 +3971,7 @@ class GameRoom {
       if (!clusterTankCounts.has(player.currentClusterId)) {
         clusterTankCounts.set(player.currentClusterId, { rust: 0, cobalt: 0, viridian: 0 });
       }
-      const renterUid = this.clusterRenterUidMap.get(player.currentClusterId);
-      const isRenter = renterUid && player.uid === renterUid;
-      clusterTankCounts.get(player.currentClusterId)[player.faction] += isRenter ? 1.5 : 1;
+      clusterTankCounts.get(player.currentClusterId)[player.faction]++;
     }
 
     // 1b. Count server bots in clusters (from worker thread position data)
@@ -3995,6 +3993,20 @@ class GameRoom {
     this.captureSecondCounter++;
     if (this.captureSecondCounter < this.tickRate / 2) return;
     this.captureSecondCounter = 0;
+
+    // Build capture weights: start from tank counts, add renter bonus (+0.5 per renter)
+    const clusterCaptureWeights = new Map();
+    for (const [clusterId, counts] of clusterTankCounts) {
+      clusterCaptureWeights.set(clusterId, { rust: counts.rust, cobalt: counts.cobalt, viridian: counts.viridian });
+    }
+    for (const [id, player] of this.players) {
+      if (this._isUndeployed(player) || player.currentClusterId == null) continue;
+      const renterUid = this.clusterRenterUidMap.get(player.currentClusterId);
+      if (renterUid && player.uid === renterUid) {
+        const w = clusterCaptureWeights.get(player.currentClusterId);
+        if (w) w[player.faction] += 0.5;
+      }
+    }
 
     // 2-pre. Accumulate presence data for sponsor line graphs
     for (const [clusterId, counts] of clusterTankCounts) {
@@ -4035,7 +4047,7 @@ class GameRoom {
     // 2a. Process capture logic for each cluster with players in it
     const territoryChanges = [];
 
-    for (const [clusterId, counts] of clusterTankCounts) {
+    for (const [clusterId, counts] of clusterCaptureWeights) {
       const state = this.clusterCaptureState.get(clusterId);
       if (!state) continue;
 
