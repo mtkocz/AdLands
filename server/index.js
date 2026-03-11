@@ -15,7 +15,7 @@ const path = require("path");
 const { Server } = require("socket.io");
 const GameRoom = require("./GameRoom");
 const SponsorStore = require("./SponsorStore");
-const { createSponsorRoutes, extractSponsorImages } = require("./sponsorRoutes");
+const { createSponsorRoutes, extractSponsorImages, cleanupSponsorImageFiles } = require("./sponsorRoutes");
 const MoonSponsorStore = require("./MoonSponsorStore");
 const { createMoonSponsorRoutes, extractMoonSponsorImages } = require("./moonSponsorRoutes");
 const BillboardSponsorStore = require("./BillboardSponsorStore");
@@ -245,7 +245,9 @@ let inquiryRouter;
     const reExtractImages = async (onlyId) => {
       await extractSponsorImages(sponsorStore, gameDir, onlyId);
     };
-    stripeRouter = createStripeRoutes(sponsorStore, mainRoom, { reExtractImages, reloadIfLive });
+    const texDir = path.join(gameDir, "sponsor-textures");
+    const cleanupImages = (id) => cleanupSponsorImageFiles(id, texDir);
+    stripeRouter = createStripeRoutes(sponsorStore, mainRoom, { reExtractImages, reloadIfLive, cleanupSponsorImages: cleanupImages });
     console.log("[Stripe] Webhook route mounted at /api/stripe/webhook");
   }
 

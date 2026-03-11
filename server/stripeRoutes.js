@@ -20,8 +20,9 @@ const { getFirestore } = require("./firebaseAdmin");
  * @param {Object} opts
  * @param {Function} opts.reExtractImages - Re-extract sponsor images after activation
  * @param {Function} opts.reloadIfLive - Reload world data for connected clients
+ * @param {Function} opts.cleanupSponsorImages - Remove orphaned image files for a sponsor
  */
-function createStripeRoutes(sponsorStore, gameRoom, { reExtractImages, reloadIfLive } = {}) {
+function createStripeRoutes(sponsorStore, gameRoom, { reExtractImages, reloadIfLive, cleanupSponsorImages } = {}) {
   const router = Router();
 
   // Webhook endpoint — must use raw body for signature verification
@@ -48,7 +49,7 @@ function createStripeRoutes(sponsorStore, gameRoom, { reExtractImages, reloadIfL
           break;
 
         case "customer.subscription.deleted":
-          await handleSubscriptionDeleted(event.data.object, sponsorStore, gameRoom, { reloadIfLive });
+          await handleSubscriptionDeleted(event.data.object, sponsorStore, gameRoom, { reloadIfLive, cleanupSponsorImages });
           break;
 
         default:
@@ -180,7 +181,7 @@ async function handleInvoicePaid(invoice, sponsorStore, gameRoom, { reExtractIma
  * Handle customer.subscription.deleted — deactivate the territory.
  * This fires when all retries exhausted or subscription manually cancelled.
  */
-async function handleSubscriptionDeleted(subscription, sponsorStore, gameRoom, { reloadIfLive }) {
+async function handleSubscriptionDeleted(subscription, sponsorStore, gameRoom, { reloadIfLive, cleanupSponsorImages }) {
   const sponsor = findSponsorBySubscription(sponsorStore, subscription.id);
   if (!sponsor) {
     console.warn("[Stripe] subscription.deleted — no sponsor found:", subscription.id);
@@ -188,37 +189,53 @@ async function handleSubscriptionDeleted(subscription, sponsorStore, gameRoom, {
   }
 
   const territoryId = sponsor._territoryId || sponsor.id;
+  const sponsorId = sponsor.id;
 
-  // Deactivate territory
-  await sponsorStore.update(sponsor.id, {
-    paymentStatus: "expired",
-    active: false,
-    deactivatedAt: new Date().toISOString(),
-  });
+  // Delete from Firestore
+  if (sponsor.ownerType === "player" && territoryId) {
+    try {
+      const db = getFirestore();
+      await db.collection("territories").doc(territoryId).delete();
+    } catch (e) {
+      console.warn("[Stripe] Firestore territory delete failed:", e.message);
+    }
+  }
 
-  // Update Firestore
-  try {
-    const db = getFirestore();
-    await db.collection("territories").doc(territoryId).update({
-      paymentStatus: "expired",
-      active: false,
-      deactivatedAt: require("firebase-admin").firestore.FieldValue.serverTimestamp(),
-    });
-  } catch (e) {
-    console.warn("[Stripe] Firestore deactivation failed:", e.message);
+  // Delete from SponsorStore
+  await sponsorStore.delete(sponsorId);
+
+  // Clean up image files
+  if (cleanupSponsorImages) {
+    try { await cleanupSponsorImages(sponsorId); } catch (e) {
+      console.warn("[Stripe] Image cleanup failed:", e.message);
+    }
+  }
+
+  // Notify the owning player
+  if (gameRoom && sponsor.ownerUid) {
+    const sockets = await gameRoom.io.in(gameRoom.roomId).fetchSockets();
+    for (const s of sockets) {
+      if (s.uid === sponsor.ownerUid) {
+        s.emit("territory-deleted", {
+          territoryId,
+          sponsorStorageId: sponsorId,
+          reason: "Subscription cancelled",
+        });
+      }
+    }
   }
 
   // Notify admin
   if (gameRoom) {
     gameRoom.io.to(gameRoom.roomId).emit("territory-payment-expired", {
-      sponsorId: sponsor.id,
+      sponsorId,
       territoryId,
       sponsorName: sponsor.name || sponsor.title,
     });
   }
 
   if (reloadIfLive) reloadIfLive();
-  console.log(`[Stripe] Territory deactivated — subscription ended: ${territoryId}`);
+  console.log(`[Stripe] Territory removed — subscription ended: ${territoryId}`);
 }
 
 /**

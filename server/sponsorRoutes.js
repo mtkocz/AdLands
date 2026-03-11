@@ -961,4 +961,4 @@ function buildClaimNotificationEmail(sponsor) {
   `;
 }
 
-module.exports = { createSponsorRoutes, extractSponsorImages };
+module.exports = { createSponsorRoutes, extractSponsorImages, cleanupSponsorImageFiles };
