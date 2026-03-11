@@ -2124,7 +2124,7 @@
     const panel = document.getElementById("inquiry-details");
     if (!panel) return;
 
-    if (!sponsor || sponsor.ownerType !== "inquiry" || !sponsor.inquiryData) {
+    if (!sponsor || !sponsor.inquiryData) {
       panel.style.display = "none";
       panel.innerHTML = "";
       return;
@@ -2179,10 +2179,12 @@
       ${d.message ? `<div class="inquiry-detail-row"><span class="inquiry-detail-label">Message:</span><span class="inquiry-detail-value inquiry-message">${escapeHtml(d.message)}</span></div>` : ""}
       ${pricingHtml}
       <div class="inquiry-detail-row"><span class="inquiry-detail-label">Submitted:</span><span class="inquiry-detail-value">${submitted}</span></div>
+      ${sponsor.ownerType === "inquiry" ? `
       <div class="inquiry-actions">
         <button type="button" class="btn btn-accept-inquiry">Accept Inquiry</button>
         <button type="button" class="btn btn-reject-inquiry">Reject</button>
-      </div>
+      </div>` : `
+      <div class="inquiry-detail-row"><span class="inquiry-detail-label">Status:</span><span class="inquiry-detail-value">${escapeHtml(sponsor.submissionStatus || sponsor.paymentStatus || "accepted")}</span></div>`}
     `;
     panel.style.display = "";
 
@@ -2406,9 +2408,15 @@
 
       const actionWord = members.length > 1 ? "territories" : "territory";
       showToast(`Accepted "${members[0].name}" — ${members.length} ${actionWord} on 1 invoice`, "success");
-      handleClearForm();
+      const groupKey = editingGroup ? editingGroup.groupKey : null;
       await SponsorStorage.reload();
       refreshSponsorsList();
+      // Re-enter the group so inquiry info stays visible
+      if (groupKey) {
+        editGroup(groupKey);
+      } else {
+        handleClearForm();
+      }
     } catch (err) {
       showToast("Accept failed: " + err.message, "error");
     } finally {
