@@ -886,7 +886,7 @@ function createSponsorRoutes(sponsorStore, gameRoom, { imageUrls, contentHashes,
 
         for (const sponsor of sponsors) {
           await sponsorStore.update(sponsor.id, {
-            ownerType: "admin",
+            ownerType: "sponsor",
             active: false,
             paymentStatus: "invoiced",
             submissionStatus: "invoiced",
@@ -904,7 +904,7 @@ function createSponsorRoutes(sponsorStore, gameRoom, { imageUrls, contentHashes,
 
       // === LEGACY PATH (Stripe disabled) — immediate activation ===
       for (const sponsor of sponsors) {
-        await sponsorStore.update(sponsor.id, { ownerType: "admin", active: true });
+        await sponsorStore.update(sponsor.id, { ownerType: "sponsor", active: true });
         await reExtractImages(sponsor.id);
       }
       reloadIfLive();
@@ -1015,7 +1015,7 @@ function createSponsorRoutes(sponsorStore, gameRoom, { imageUrls, contentHashes,
         });
 
         await sponsorStore.update(req.params.id, {
-          ownerType: "admin",
+          ownerType: "sponsor",
           active: false,
           paymentStatus: "invoiced",
           submissionStatus: "invoiced",
@@ -1033,7 +1033,7 @@ function createSponsorRoutes(sponsorStore, gameRoom, { imageUrls, contentHashes,
 
       // === LEGACY PATH (Stripe disabled) — immediate activation ===
       await sponsorStore.update(req.params.id, {
-        ownerType: "admin",
+        ownerType: "sponsor",
         active: true,
       });
 

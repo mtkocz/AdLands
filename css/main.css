@@ -1976,6 +1976,7 @@ body.tip-dragging .chat-mention.tip-highlight {
     display: flex;
     flex-direction: column;
     overflow: hidden;
+    overflow: clip; /* Firefox: enforce clipping despite clip-path + filter */
     pointer-events: auto;
     /* Pixelated outline via SVG filter (single-pass, replaces 8 chained drop-shadows) */
     filter: url(#pixel-outline-2);
