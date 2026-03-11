@@ -505,8 +505,14 @@ class HexSelector {
         adPanel.material = adPanel.userData.originalMaterial;
         delete adPanel.userData.originalMaterial;
       }
-      adPanel.material.color.setHex(0x888888);
-      adPanel.material.emissive.setHex(0x111111);
+      // Restore to assigned color if billboard belongs to another sponsor
+      if (this.assignedBillboards.has(billboardIndex)) {
+        adPanel.material.color.setHex(0x664444);
+        adPanel.material.emissive.setHex(0x220000);
+      } else {
+        adPanel.material.color.setHex(0x888888);
+        adPanel.material.emissive.setHex(0x111111);
+      }
     } else {
       // Limit: 1 billboard per territory — deselect current before selecting new
       if (this.selectedBillboards.size > 0) {
@@ -1118,10 +1124,10 @@ class HexSelector {
         // Reject if type-locked to something else
         if (this.selectionTypeLock && this.selectionTypeLock !== 'billboards') return;
         const bbIndex = bbIntersects[0].object.userData.billboardIndex;
-        if (!this.assignedBillboards.has(bbIndex)) {
-          this._toggleBillboardSelection(bbIndex);
-          this._checkAndUpdateTypeLock();
-        }
+        // Allow deselecting assigned billboards if currently selected (conflict resolution)
+        if (this.assignedBillboards.has(bbIndex) && !this.selectedBillboards.has(bbIndex)) return;
+        this._toggleBillboardSelection(bbIndex);
+        this._checkAndUpdateTypeLock();
         return;
       }
     }
@@ -1134,10 +1140,10 @@ class HexSelector {
         if (this.selectionTypeLock && this.selectionTypeLock !== 'moons') return;
         const moonMesh = moonIntersects[0].object;
         const moonIndex = moonMesh.userData.moonIndex;
-        if (!this.assignedMoons.has(moonIndex)) {
-          this._toggleMoonSelection(moonIndex);
-          this._checkAndUpdateTypeLock();
-        }
+        // Allow deselecting assigned moons if currently selected (conflict resolution)
+        if (this.assignedMoons.has(moonIndex) && !this.selectedMoons.has(moonIndex)) return;
+        this._toggleMoonSelection(moonIndex);
+        this._checkAndUpdateTypeLock();
         return;
       }
     }
@@ -1151,9 +1157,9 @@ class HexSelector {
       const mesh = intersects[0].object;
       const tileIndex = mesh.userData.tileIndex;
 
-      // Skip excluded and already assigned tiles
+      // Skip excluded tiles; allow deselecting assigned tiles if currently selected (conflict resolution)
       if (mesh.userData.isExcluded) return;
-      if (this.assignedTiles.has(tileIndex)) return;
+      if (this.assignedTiles.has(tileIndex) && !this.selectedTiles.has(tileIndex)) return;
 
       this._toggleSelection(tileIndex);
       this._checkAndUpdateTypeLock();
@@ -1258,8 +1264,14 @@ class HexSelector {
         mesh.material = mesh.userData.originalMaterial;
         delete mesh.userData.originalMaterial;
       }
-      mesh.material.color.setHex(0x888888);
-      mesh.material.emissive.setHex(0x111111);
+      // Restore to assigned color if moon belongs to another sponsor
+      if (this.assignedMoons.has(moonIndex)) {
+        mesh.material.color.setHex(0x664444);
+        mesh.material.emissive.setHex(0x220000);
+      } else {
+        mesh.material.color.setHex(0x888888);
+        mesh.material.emissive.setHex(0x111111);
+      }
     } else {
       // Limit: 1 moon per territory — deselect current before selecting new
       if (this.selectedMoons.size > 0) {
@@ -1428,6 +1440,7 @@ class HexSelector {
 
     if (this.paintMode === "add") {
       if (this.selectedTiles.has(tileIndex)) return; // Already selected
+      if (this.assignedTiles.has(tileIndex)) return; // Belongs to another sponsor
       if (!this._canSelectTile(tileIndex)) return;
 
       this.selectedTiles.add(tileIndex);
@@ -1444,6 +1457,13 @@ class HexSelector {
         // Don't dispose shared pattern materials during paint — they're reused by other tiles
         mesh.material = mesh.userData.originalMaterial;
         delete mesh.userData.originalMaterial;
+      }
+      // Restore to assigned color (dimmed red) if tile belongs to another sponsor
+      if (this.assignedTiles.has(tileIndex)) {
+        const red = new THREE.Color(0x660000);
+        const tierColor = new THREE.Color(mesh.userData.tierColor || 0x4a4a4a);
+        red.lerp(tierColor, 0.5);
+        mesh.userData.originalColor = red.getHex();
       }
       mesh.material.color.setHex(mesh.userData.originalColor);
       if (mesh.material.emissive) {
@@ -1476,6 +1496,13 @@ class HexSelector {
         }
         mesh.material = mesh.userData.originalMaterial;
         delete mesh.userData.originalMaterial;
+      }
+      // Restore to assigned color (dimmed red) if tile belongs to another sponsor
+      if (this.assignedTiles.has(tileIndex)) {
+        const red = new THREE.Color(0x660000);
+        const tierColor = new THREE.Color(mesh.userData.tierColor || 0x4a4a4a);
+        red.lerp(tierColor, 0.5);
+        mesh.userData.originalColor = red.getHex();
       }
       mesh.material.color.setHex(mesh.userData.originalColor);
       if (mesh.material.emissive) {
