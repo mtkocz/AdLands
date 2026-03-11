@@ -3384,36 +3384,74 @@
       .forEach((el) => el.classList.remove("hidden"));
   }
 
+  /** Generate a small construction-stripe icon (cached after first call) */
+  let _constructionLogoCache = null;
+  function getConstructionLogo() {
+    if (_constructionLogoCache) return _constructionLogoCache;
+    const c = document.createElement("canvas");
+    c.width = 64; c.height = 64;
+    const ctx = c.getContext("2d");
+    ctx.fillStyle = "#1a1a1a";
+    ctx.fillRect(0, 0, 64, 64);
+    ctx.strokeStyle = "#c8a800";
+    ctx.lineWidth = 6;
+    for (let i = -64; i < 128; i += 16) {
+      ctx.beginPath();
+      ctx.moveTo(i, 0);
+      ctx.lineTo(i + 64, 64);
+      ctx.stroke();
+    }
+    _constructionLogoCache = c.toDataURL("image/png");
+    return _constructionLogoCache;
+  }
+
   function showTerritoryIntelPopup(clickX, clickY, sponsor, clusterId) {
     // Close profile card if open
     if (window.profileCard?.isVisible) {
       window.profileCard.hide();
     }
     resetIntelPopupState();
+
+    // Determine if this is an unpaid player territory (placeholder/pending/invoiced)
+    const isUnpaidPlayer = sponsor.ownerType === "player" &&
+      sponsor.paymentStatus !== "active" && sponsor.submissionStatus !== "active" && sponsor.submissionStatus !== "approved";
+
     const logoEl = document.getElementById("intel-logo");
-    const logoSrc = (sponsor.ownerType === "player"
-      ? (sponsor.patternImage || sponsor.patternUrl)
-      : (sponsor.logoImage || sponsor.patternImage || sponsor.patternUrl)) || null;
-    if (logoSrc) {
-      logoEl.src = logoSrc;
+    if (isUnpaidPlayer) {
+      logoEl.src = getConstructionLogo();
       logoEl.classList.remove("hidden");
     } else {
-      logoEl.classList.add("hidden");
+      const logoSrc = (sponsor.ownerType === "player"
+        ? (sponsor.patternImage || sponsor.patternUrl)
+        : (sponsor.logoImage || sponsor.patternImage || sponsor.patternUrl)) || null;
+      if (logoSrc) {
+        logoEl.src = logoSrc;
+        logoEl.classList.remove("hidden");
+      } else {
+        logoEl.classList.add("hidden");
+      }
     }
 
-    document.getElementById("intel-name").textContent =
-      (sponsor.ownerType === "player" && sponsor.title) ? sponsor.title : (sponsor.name || "Unknown Sponsor");
-    document.getElementById("intel-tagline").textContent =
-      sponsor.tagline || "";
-
-    const urlSection = document.getElementById("intel-url-section");
-    const urlEl = document.getElementById("intel-url");
-    if (sponsor.websiteUrl) {
-      urlEl.href = sponsor.websiteUrl;
-      urlEl.textContent = sponsor.websiteUrl.replace(/^https?:\/\//, "");
-      urlSection.classList.remove("hidden");
-    } else {
+    if (isUnpaidPlayer) {
+      document.getElementById("intel-name").textContent = "Under Construction";
+      document.getElementById("intel-tagline").textContent = "";
+      const urlSection = document.getElementById("intel-url-section");
       urlSection.classList.add("hidden");
+    } else {
+      document.getElementById("intel-name").textContent =
+        (sponsor.ownerType === "player" && sponsor.title) ? sponsor.title : (sponsor.name || "Unknown Sponsor");
+      document.getElementById("intel-tagline").textContent =
+        sponsor.tagline || "";
+
+      const urlSection = document.getElementById("intel-url-section");
+      const urlEl = document.getElementById("intel-url");
+      if (sponsor.websiteUrl) {
+        urlEl.href = sponsor.websiteUrl;
+        urlEl.textContent = sponsor.websiteUrl.replace(/^https?:\/\//, "");
+        urlSection.classList.remove("hidden");
+      } else {
+        urlSection.classList.add("hidden");
+      }
     }
 
     const cluster = planet.clusterData[clusterId];

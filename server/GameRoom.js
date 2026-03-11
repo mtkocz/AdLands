@@ -5476,6 +5476,8 @@ class GameRoom {
         entry.isPlayerTerritory = true; // backward compat for cached clients
         entry.ownerUid = s.ownerUid || null;
         entry.imageStatus = s.imageStatus || null;
+        entry.submissionStatus = s.submissionStatus || null;
+        entry.paymentStatus = s.paymentStatus || null;
         entry.tierName = s.tierName || null;
         entry._territoryId = s._territoryId || null;
         entry.title = s._approvedTitle || s.title || "";
