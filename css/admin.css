@@ -1427,6 +1427,7 @@ body {
     max-height: 120px;
     border: 1px solid #333;
     image-rendering: pixelated;
+    image-rendering: crisp-edges;
 }
 .territory-review-actions {
     display: flex;
@@ -1670,6 +1671,7 @@ textarea.review-comment {
     height: 100%;
     object-fit: cover;
     image-rendering: pixelated;
+    image-rendering: crisp-edges;
 }
 .territory-thumb-empty {
     width: 100%;

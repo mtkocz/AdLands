@@ -1371,6 +1371,7 @@ canvas {
     width: 100%;
     height: calc(var(--grid) * 20); /* 80px */
     image-rendering: pixelated;
+    image-rendering: crisp-edges;
 }
 
 #intel-graph-legend {
@@ -1978,8 +1979,8 @@ body.tip-dragging .chat-mention.tip-highlight {
     pointer-events: auto;
     /* Pixelated outline via SVG filter (single-pass, replaces 8 chained drop-shadows) */
     filter: url(#pixel-outline-2);
-    /* Performance: isolate layout recalculations */
-    contain: layout style paint;
+    /* Performance: isolate layout recalculations (no 'paint' — clips SVG filter outlines in Firefox) */
+    contain: layout style;
 }
 
 .chat-section.squad {
@@ -2355,8 +2356,8 @@ body.tip-dragging .chat-mention.tip-highlight {
     font-family: var(--font-body);
     /* Pixelated outline via SVG filter (single-pass, replaces 8 chained drop-shadows) */
     filter: url(#pixel-outline-2);
-    /* Performance: isolate layout and promote to compositor layer */
-    contain: layout style paint;
+    /* Performance: isolate layout (no 'paint' — clips SVG filter outlines in Firefox) */
+    contain: layout style;
     will-change: transform, opacity;
 }
 
@@ -3838,6 +3839,22 @@ body.tip-dragging .chat-mention.tip-highlight {
     cursor: pointer;
 }
 
+.rental-control-row input[type="range"]::-moz-range-track {
+    background: var(--border-dark);
+    height: 4px;
+    border: none;
+    border-radius: 0;
+}
+
+.rental-control-row input[type="range"]::-moz-range-thumb {
+    width: 10px;
+    height: 10px;
+    background: var(--accent-cyan);
+    border-radius: 0;
+    cursor: pointer;
+    border: none;
+}
+
 .rental-control-value {
     font-family: var(--font-small);
     font-size: var(--font-size-small);
@@ -4274,6 +4291,22 @@ body.tip-dragging .chat-mention.tip-highlight {
     background: var(--accent-cyan);
     border-radius: 0;
     cursor: pointer;
+}
+
+.territory-control-row input[type="range"]::-moz-range-track {
+    background: var(--border-dark);
+    height: 4px;
+    border: none;
+    border-radius: 0;
+}
+
+.territory-control-row input[type="range"]::-moz-range-thumb {
+    width: 10px;
+    height: 10px;
+    background: var(--accent-cyan);
+    border-radius: 0;
+    cursor: pointer;
+    border: none;
 }
 
 .territory-control-value {

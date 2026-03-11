@@ -1566,10 +1566,8 @@
       window.scrollTo({ top: 0, behavior: "smooth" });
       showToast(`Editing "${sponsor.name}"`, "success");
 
-      // Check for inquiry conflicts (single sponsor case)
-      if (sponsor.ownerType === "inquiry") {
-        updateInquiryConflicts(sponsor);
-      }
+      // Check for conflicts with other sponsors
+      updateInquiryConflicts(sponsor);
     } catch (err) {
       console.error("[AdminApp] editSponsor error:", err);
       showToast("Failed to load sponsor: " + (err.message || err), "error");
@@ -2157,9 +2155,14 @@
       members = [singleSponsor];
       groupIdSet = new Set([singleSponsor.id]);
     } else {
-      return;
+      // Fallback: resolve from the currently-editing sponsor form
+      const editingId = sponsorForm ? sponsorForm.getEditingSponsorId() : null;
+      if (editingId) {
+        const s = SponsorStorage.getById(editingId);
+        if (s) { members = [s]; groupIdSet = new Set([s.id]); }
+      }
+      if (!members) return;
     }
-    if (!members.some(s => s.ownerType === "inquiry")) return;
 
     const allSponsors = SponsorStorage.getAll();
     const conflictTiles = [];
@@ -2196,11 +2199,18 @@
       }
     }
 
-    // Check moon conflicts
+    // Check moon conflicts (live selection for active member, stored data for others)
     for (const member of members) {
-      if (member.territoryType !== "moon" || member.inquiryData?.moonIndex == null) continue;
       const isActive = member.id === activeId;
-      const moonIndices = isActive ? liveSelectedMoons : [member.inquiryData.moonIndex];
+      let moonIndices;
+      if (isActive) {
+        moonIndices = liveSelectedMoons;
+      } else if (member.inquiryData?.moonIndex != null) {
+        moonIndices = [member.inquiryData.moonIndex];
+      } else {
+        continue;
+      }
+      if (moonIndices.length === 0) continue;
       if (moonManager) {
         const assignedMap = moonManager.getAssignedMoons();
         for (const mi of moonIndices) {
@@ -2213,11 +2223,18 @@
       }
     }
 
-    // Check billboard conflicts
+    // Check billboard conflicts (live selection for active member, stored data for others)
     for (const member of members) {
-      if (member.territoryType !== "billboard" || member.inquiryData?.billboardIndex == null) continue;
       const isActive = member.id === activeId;
-      const bbIndices = isActive ? liveSelectedBillboards : [member.inquiryData.billboardIndex];
+      let bbIndices;
+      if (isActive) {
+        bbIndices = liveSelectedBillboards;
+      } else if (member.inquiryData?.billboardIndex != null) {
+        bbIndices = [member.inquiryData.billboardIndex];
+      } else {
+        continue;
+      }
+      if (bbIndices.length === 0) continue;
       if (billboardManager) {
         const assignedMap = billboardManager.getAssignedBillboards();
         for (const bi of bbIndices) {
@@ -2284,43 +2301,66 @@
   }
 
   /**
-   * Override: accept requested territory and remove conflicting hexes/moons/billboards from other sponsors.
+   * Override: remove all conflicting hexes/moons/billboards from other sponsors.
+   * For inquiry sponsors, also activates them via the activate-inquiry endpoint.
    */
   async function handleConflictOverride() {
     if (busy) return;
 
-    let members;
-    if (editingGroup) {
-      members = editingGroup.ids.map(id => SponsorStorage.getById(id)).filter(s => s && s.ownerType === "inquiry");
-    } else {
-      // Single sponsor case
-      const singleId = sponsorForm.getEditingSponsorId();
-      if (!singleId) return;
-      const s = SponsorStorage.getById(singleId);
-      members = (s && s.ownerType === "inquiry") ? [s] : [];
-    }
-    if (members.length === 0) return;
-
-    if (!confirm("This will remove conflicting hexes/moons/billboards from other sponsors and accept this territory. Continue?")) return;
+    if (!confirm("This will remove conflicting hexes/moons/billboards from other sponsors. Continue?")) return;
 
     busy = true;
     try {
-      for (const member of members) {
-        const res = await fetch(`/api/sponsors/${encodeURIComponent(member.id)}/activate-inquiry`, {
+      // Strip all conflicting tiles from their owning sponsors
+      const tileSponsorBatches = new Map(); // sponsorId → [tileIndex, ...]
+      for (const [tileIndex, sponsorId] of _conflictTileOwners) {
+        if (!tileSponsorBatches.has(sponsorId)) tileSponsorBatches.set(sponsorId, []);
+        tileSponsorBatches.get(sponsorId).push(tileIndex);
+      }
+      for (const [sponsorId, tiles] of tileSponsorBatches) {
+        await fetch(`/api/sponsors/${encodeURIComponent(sponsorId)}/remove-tiles`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ force: true }),
+          body: JSON.stringify({ tiles }),
         });
-        const result = await res.json();
-        if (!result.success && res.status !== 200) {
-          showToast((result.errors || []).join(". ") || "Override failed", "error");
-          break;
-        }
       }
 
-      showToast(`Accepted territory for "${members[0].name}" — conflicts removed`, "success");
-      handleClearForm();
+      // Clear conflicting moon slots
+      for (const [mi] of _conflictMoonOwners) {
+        await fetch(`/api/moon-sponsors/${mi}`, { method: "DELETE" });
+      }
+
+      // Clear conflicting billboard slots
+      for (const [bi] of _conflictBillboardOwners) {
+        await fetch(`/api/billboard-sponsors/${bi}`, { method: "DELETE" });
+      }
+
+      // For inquiry sponsors, also activate them
+      let members = [];
+      if (editingGroup) {
+        members = editingGroup.ids.map(id => SponsorStorage.getById(id)).filter(s => s && s.ownerType === "inquiry");
+      } else {
+        const singleId = sponsorForm.getEditingSponsorId();
+        if (singleId) {
+          const s = SponsorStorage.getById(singleId);
+          if (s && s.ownerType === "inquiry") members = [s];
+        }
+      }
+      for (const member of members) {
+        await fetch(`/api/sponsors/${encodeURIComponent(member.id)}/activate-inquiry`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ force: false }),
+        });
+      }
+
+      if (moonManager) await moonManager.load();
+      if (billboardManager) await billboardManager.load();
       await SponsorStorage.reload();
+      updateAssignedMoons();
+      updateAssignedBillboards();
+      showToast("Conflicts removed", "success");
+      updateInquiryConflicts();
       refreshSponsorsList();
     } catch (err) {
       showToast("Override failed: " + err.message, "error");
