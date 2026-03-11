@@ -1834,6 +1834,53 @@ textarea.review-comment {
     color: var(--text-secondary);
 }
 
+/* Inquiry info displayed inline in sponsor group cards */
+.sponsor-card-inquiry-info {
+    margin-top: 2px;
+    font-family: var(--font-small);
+    font-size: var(--font-size-small);
+    line-height: 1.4;
+}
+
+.inquiry-inline-field {
+    color: var(--text-secondary);
+}
+
+.inquiry-inline-field + .inquiry-inline-field::before {
+    content: " \00b7 ";
+    color: var(--text-dim);
+}
+
+.inquiry-inline-field a {
+    color: var(--accent-cyan, #4dd0e1);
+    text-decoration: none;
+}
+
+.inquiry-inline-field a:hover {
+    text-decoration: underline;
+}
+
+.inquiry-inline-message {
+    margin-top: 2px;
+    color: var(--text-dim);
+    font-style: italic;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 220px;
+}
+
+.inquiry-inline-meta {
+    margin-top: 2px;
+    display: flex;
+    gap: var(--space-sm);
+    color: var(--text-dim);
+}
+
+.inquiry-inline-price {
+    color: #e8a317;
+}
+
 .inquiry-actions {
     display: flex;
     gap: var(--space-sm);

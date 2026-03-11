@@ -56,7 +56,7 @@ function createStripeRoutes(sponsorStore, gameRoom, { reExtractImages, reloadIfL
         }
 
         case "customer.subscription.deleted":
-          await handleSubscriptionDeleted(event.data.object, sponsorStore, gameRoom, { reloadIfLive, cleanupSponsorImages });
+          await handleSubscriptionDeleted(event.data.object, sponsorStore, gameRoom, { reloadIfLive, cleanupSponsorImages, moonSponsorStore, billboardSponsorStore });
           break;
 
         default:
@@ -210,7 +210,7 @@ async function handleInvoicePaid(invoice, sponsorStore, gameRoom, { reExtractIma
  * Handle customer.subscription.deleted — deactivate the territory.
  * This fires when all retries exhausted or subscription manually cancelled.
  */
-async function handleSubscriptionDeleted(subscription, sponsorStore, gameRoom, { reloadIfLive, cleanupSponsorImages }) {
+async function handleSubscriptionDeleted(subscription, sponsorStore, gameRoom, { reloadIfLive, cleanupSponsorImages, moonSponsorStore, billboardSponsorStore }) {
   const sponsors = findSponsorsBySubscription(sponsorStore, subscription.id);
   if (sponsors.length === 0) {
     console.warn("[Stripe] subscription.deleted — no sponsor found:", subscription.id);
@@ -231,6 +231,28 @@ async function handleSubscriptionDeleted(subscription, sponsorStore, gameRoom, {
     }
 
     await sponsorStore.delete(sponsorId);
+
+    // Clear associated moon/billboard slots
+    const sponsorName = sponsor.name || "";
+    if (sponsorName) {
+      const nameLower = sponsorName.toLowerCase();
+      if (moonSponsorStore) {
+        const moons = moonSponsorStore.getAll();
+        for (let i = 0; i < moons.length; i++) {
+          if (moons[i] && moons[i].name && moons[i].name.toLowerCase() === nameLower) {
+            await moonSponsorStore.clear(i);
+          }
+        }
+      }
+      if (billboardSponsorStore) {
+        const bbs = billboardSponsorStore.getAll();
+        for (let i = 0; i < bbs.length; i++) {
+          if (bbs[i] && bbs[i].name && bbs[i].name.toLowerCase() === nameLower) {
+            await billboardSponsorStore.clear(i);
+          }
+        }
+      }
+    }
 
     if (cleanupSponsorImages) {
       try { await cleanupSponsorImages(sponsorId); } catch (e) {

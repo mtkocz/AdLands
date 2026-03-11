@@ -477,6 +477,28 @@ function createSponsorRoutes(sponsorStore, gameRoom, { imageUrls, contentHashes,
     // Remove orphaned image files for deleted sponsor
     await cleanupSponsorImages(sponsor.id);
 
+    // Clear associated moon/billboard slots
+    const sponsorName = sponsor.name || "";
+    if (sponsorName) {
+      const nameLower = sponsorName.toLowerCase();
+      if (moonSponsorStore) {
+        const moons = moonSponsorStore.getAll();
+        for (let i = 0; i < moons.length; i++) {
+          if (moons[i] && moons[i].name && moons[i].name.toLowerCase() === nameLower) {
+            await moonSponsorStore.clear(i);
+          }
+        }
+      }
+      if (billboardSponsorStore) {
+        const bbs = billboardSponsorStore.getAll();
+        for (let i = 0; i < bbs.length; i++) {
+          if (bbs[i] && bbs[i].name && bbs[i].name.toLowerCase() === nameLower) {
+            await billboardSponsorStore.clear(i);
+          }
+        }
+      }
+    }
+
     // Delete Firestore document (already deactivated above as safety net)
     if (sponsor.ownerType === "player") {
       const territoryId = sponsor._territoryId;

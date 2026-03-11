@@ -1478,6 +1478,30 @@
           playerInfoHtml = detailLine + urlLine;
         }
 
+        // For inquiry groups, show inquiry contact details inline
+        let inquiryInfoHtml = "";
+        if (isGroupInquiry && first.inquiryData) {
+          const d = first.inquiryData;
+          const submitted = d.submittedAt ? new Date(d.submittedAt).toLocaleDateString() : "";
+          let quotedPrice = "";
+          if (d.pricing) {
+            const total = (d.pricing.total || 0) + (d.pricing.moonTotal || 0) + (d.pricing.billboardTotal || 0);
+            quotedPrice = `$${total.toFixed(2)}/mo`;
+          }
+          inquiryInfoHtml = `<div class="sponsor-card-inquiry-info">`;
+          if (d.contactName) inquiryInfoHtml += `<span class="inquiry-inline-field">${escapeHtml(d.contactName)}</span>`;
+          if (d.contactEmail) inquiryInfoHtml += `<span class="inquiry-inline-field"><a href="mailto:${escapeHtml(d.contactEmail)}">${escapeHtml(d.contactEmail)}</a></span>`;
+          if (d.company) inquiryInfoHtml += `<span class="inquiry-inline-field">${escapeHtml(d.company)}</span>`;
+          if (d.message) inquiryInfoHtml += `<div class="inquiry-inline-message">${escapeHtml(d.message)}</div>`;
+          if (quotedPrice || submitted) {
+            inquiryInfoHtml += `<div class="inquiry-inline-meta">`;
+            if (quotedPrice) inquiryInfoHtml += `<span class="inquiry-inline-price">${quotedPrice}</span>`;
+            if (submitted) inquiryInfoHtml += `<span class="inquiry-inline-date">${submitted}</span>`;
+            inquiryInfoHtml += `</div>`;
+          }
+          inquiryInfoHtml += `</div>`;
+        }
+
         htmlParts.push(`
             <div class="sponsor-group${isGroupEditing ? " editing expanded" : ""}${isGroupPaused ? " paused" : ""}${groupHighlight}" data-name="${escapeHtml(groupKey)}">
                 <div class="sponsor-group-header">
@@ -1492,6 +1516,7 @@
                     <div class="sponsor-card-info">
                         <div class="sponsor-card-name">${escapeHtml(hasPlayerTerritory ? (first.ownerEmail || first.ownerUid || "Unknown") : first.name)}${groupBadgeHtml}</div>
                         ${playerInfoHtml}
+                        ${inquiryInfoHtml}
                         <span class="sponsor-group-badge">${members.length} ${members.length === 1 ? "territory" : "territories"}</span>
                         <div class="sponsor-card-stats">
                             ${totalTiles} tiles${groupMoonCount > 0 ? ", " + groupMoonCount + " moons" : ""}${groupBbCount > 0 ? ", " + groupBbCount + " billboards" : ""}, ${totalRewards} rewards
