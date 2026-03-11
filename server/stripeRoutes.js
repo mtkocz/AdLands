@@ -22,7 +22,7 @@ const { getFirestore } = require("./firebaseAdmin");
  * @param {Function} opts.reloadIfLive - Reload world data for connected clients
  * @param {Function} opts.cleanupSponsorImages - Remove orphaned image files for a sponsor
  */
-function createStripeRoutes(sponsorStore, gameRoom, { reExtractImages, reloadIfLive, cleanupSponsorImages } = {}) {
+function createStripeRoutes(sponsorStore, gameRoom, { reExtractImages, reloadIfLive, cleanupSponsorImages, moonSponsorStore, billboardSponsorStore } = {}) {
   const router = Router();
 
   // Webhook endpoint — must use raw body for signature verification
@@ -46,12 +46,12 @@ function createStripeRoutes(sponsorStore, gameRoom, { reExtractImages, reloadIfL
       switch (event.type) {
         case "invoice.paid":
         case "invoice.payment_succeeded":
-          await handleInvoicePaid(event.data.object, sponsorStore, gameRoom, { reExtractImages, reloadIfLive });
+          await handleInvoicePaid(event.data.object, sponsorStore, gameRoom, { reExtractImages, reloadIfLive, moonSponsorStore, billboardSponsorStore });
           break;
         case "invoice_payment.paid": {
           // API v2026+: event.data.object is InvoicePayment, invoice is nested
           const inv = event.data.object.invoice || event.data.object;
-          await handleInvoicePaid(inv, sponsorStore, gameRoom, { reExtractImages, reloadIfLive });
+          await handleInvoicePaid(inv, sponsorStore, gameRoom, { reExtractImages, reloadIfLive, moonSponsorStore, billboardSponsorStore });
           break;
         }
 
@@ -79,7 +79,7 @@ function createStripeRoutes(sponsorStore, gameRoom, { reExtractImages, reloadIfL
  * Handle invoice.paid — activate the territory.
  * This fires on first payment and every subsequent monthly payment.
  */
-async function handleInvoicePaid(invoice, sponsorStore, gameRoom, { reExtractImages, reloadIfLive }) {
+async function handleInvoicePaid(invoice, sponsorStore, gameRoom, { reExtractImages, reloadIfLive, moonSponsorStore, billboardSponsorStore }) {
   // API v2026+: subscription moved from invoice.subscription to invoice.parent.subscription_details
   const subscriptionId = invoice.subscription
     || invoice.parent?.subscription_details?.subscription;
@@ -122,6 +122,28 @@ async function handleInvoicePaid(invoice, sponsorStore, gameRoom, { reExtractIma
     }
 
     await sponsorStore.update(sponsor.id, updateFields);
+
+    // Assign deferred moon/billboard slots now that payment is confirmed
+    if (sponsor._pendingMoonIndex != null && moonSponsorStore) {
+      try {
+        await moonSponsorStore.assign(sponsor._pendingMoonIndex, {
+          name: sponsor.name, tagline: sponsor.tagline || "", websiteUrl: sponsor.websiteUrl || "",
+        });
+        await sponsorStore.update(sponsor.id, { _pendingMoonIndex: null });
+      } catch (e) {
+        console.warn("[Stripe] Moon slot assignment failed:", e.message);
+      }
+    }
+    if (sponsor._pendingBillboardIndex != null && billboardSponsorStore) {
+      try {
+        await billboardSponsorStore.assign(sponsor._pendingBillboardIndex, {
+          name: sponsor.name, tagline: sponsor.tagline || "", websiteUrl: sponsor.websiteUrl || "",
+        });
+        await sponsorStore.update(sponsor.id, { _pendingBillboardIndex: null });
+      } catch (e) {
+        console.warn("[Stripe] Billboard slot assignment failed:", e.message);
+      }
+    }
 
     if (reExtractImages) {
       try { await reExtractImages(sponsor.id); } catch (e) {

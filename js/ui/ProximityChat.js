@@ -814,20 +814,20 @@ class ChatWindow {
 
         // Fallback colors with matching backgrounds (same color at 15% opacity)
         const fallbackColors = {
-            'cobalt': { color: '#4477cc', bg: 'rgba(68, 119, 204, 0.15)' },
-            'rust': { color: '#cc4444', bg: 'rgba(204, 68, 68, 0.15)' },
-            'viridian': { color: '#44aa44', bg: 'rgba(68, 170, 68, 0.15)' }
+            'cobalt': { color: '#4477cc', bg: '#1f2538' },
+            'rust': { color: '#cc4444', bg: '#2b1f1f' },
+            'viridian': { color: '#44aa44', bg: '#1f2b1f' }
         };
 
         if (typeof FACTION_COLORS !== 'undefined' && FACTION_COLORS[this.playerFaction]) {
             const fc = FACTION_COLORS[this.playerFaction];
             this.factionHeader.style.color = fc.css;
-            // Convert hex to rgba for background (same color at 15% opacity)
+            // Blend faction color at 15% over bg-panel (#1a1a1a) for opaque header
             const hex = fc.hex;
-            const r = (hex >> 16) & 255;
-            const g = (hex >> 8) & 255;
-            const b = hex & 255;
-            this.factionHeader.style.background = `rgba(${r}, ${g}, ${b}, 0.15)`;
+            const r = Math.round(0x1a + (((hex >> 16) & 255) - 0x1a) * 0.15);
+            const g = Math.round(0x1a + (((hex >> 8) & 255) - 0x1a) * 0.15);
+            const b = Math.round(0x1a + ((hex & 255) - 0x1a) * 0.15);
+            this.factionHeader.style.background = `rgb(${r}, ${g}, ${b})`;
         } else {
             const fc = fallbackColors[this.playerFaction] || fallbackColors.cobalt;
             this.factionHeader.style.color = fc.color;

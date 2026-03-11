@@ -247,7 +247,7 @@ let inquiryRouter;
     };
     const texDir = path.join(gameDir, "sponsor-textures");
     const cleanupImages = (id) => cleanupSponsorImageFiles(id, texDir);
-    stripeRouter = createStripeRoutes(sponsorStore, mainRoom, { reExtractImages, reloadIfLive, cleanupSponsorImages: cleanupImages });
+    stripeRouter = createStripeRoutes(sponsorStore, mainRoom, { reExtractImages, reloadIfLive, cleanupSponsorImages: cleanupImages, moonSponsorStore, billboardSponsorStore });
     console.log("[Stripe] Webhook route mounted at /api/stripe/webhook");
   }
 

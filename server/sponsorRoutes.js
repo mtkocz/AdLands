@@ -845,21 +845,8 @@ function createSponsorRoutes(sponsorStore, gameRoom, { imageUrls, contentHashes,
         }
       }
 
-      // Assign moon/billboard slots for all members
-      for (const sponsor of sponsors) {
-        if (sponsor.territoryType === "moon" && sponsor.inquiryData?.moonIndex != null && moonSponsorStore) {
-          await moonSponsorStore.assign(sponsor.inquiryData.moonIndex, {
-            name: sponsor.name, tagline: sponsor.tagline || "", websiteUrl: sponsor.websiteUrl || "",
-          });
-        }
-        if (sponsor.territoryType === "billboard" && sponsor.inquiryData?.billboardIndex != null && billboardSponsorStore) {
-          await billboardSponsorStore.assign(sponsor.inquiryData.billboardIndex, {
-            name: sponsor.name, tagline: sponsor.tagline || "", websiteUrl: sponsor.websiteUrl || "",
-          });
-        }
-      }
-
       // === STRIPE INVOICING: single combined subscription ===
+      // When Stripe is enabled, defer moon/billboard slot assignment until payment (webhook).
       if (stripeService.isEnabled()) {
         const contactSponsor = sponsors[0];
         const customerEmail = contactSponsor.inquiryData?.contactEmail;
@@ -885,7 +872,7 @@ function createSponsorRoutes(sponsorStore, gameRoom, { imageUrls, contentHashes,
         });
 
         for (const sponsor of sponsors) {
-          await sponsorStore.update(sponsor.id, {
+          const updateFields = {
             ownerType: "sponsor",
             active: false,
             paymentStatus: "invoiced",
@@ -894,7 +881,17 @@ function createSponsorRoutes(sponsorStore, gameRoom, { imageUrls, contentHashes,
             stripeSubscriptionId: subscription.id,
             ownerEmail: sponsor.inquiryData?.contactEmail || null,
             ownerContactName: sponsor.inquiryData?.contactName || null,
-          });
+          };
+
+          // Store pending slot index so the webhook can assign after payment
+          if (sponsor.territoryType === "moon" && sponsor.inquiryData?.moonIndex != null) {
+            updateFields._pendingMoonIndex = sponsor.inquiryData.moonIndex;
+          }
+          if (sponsor.territoryType === "billboard" && sponsor.inquiryData?.billboardIndex != null) {
+            updateFields._pendingBillboardIndex = sponsor.inquiryData.billboardIndex;
+          }
+
+          await sponsorStore.update(sponsor.id, updateFields);
           await reExtractImages(sponsor.id);
         }
 
@@ -904,8 +901,19 @@ function createSponsorRoutes(sponsorStore, gameRoom, { imageUrls, contentHashes,
         return res.json({ success: true, action: "invoiced", amountCents: totalCents, subscriptionId: subscription.id });
       }
 
-      // === LEGACY PATH (Stripe disabled) — immediate activation ===
+      // === LEGACY PATH (Stripe disabled) — assign slots and activate immediately ===
       for (const sponsor of sponsors) {
+        if (sponsor.territoryType === "moon" && sponsor.inquiryData?.moonIndex != null && moonSponsorStore) {
+          await moonSponsorStore.assign(sponsor.inquiryData.moonIndex, {
+            name: sponsor.name, tagline: sponsor.tagline || "", websiteUrl: sponsor.websiteUrl || "",
+          });
+        }
+        if (sponsor.territoryType === "billboard" && sponsor.inquiryData?.billboardIndex != null && billboardSponsorStore) {
+          await billboardSponsorStore.assign(sponsor.inquiryData.billboardIndex, {
+            name: sponsor.name, tagline: sponsor.tagline || "", websiteUrl: sponsor.websiteUrl || "",
+          });
+        }
+
         await sponsorStore.update(sponsor.id, {
           ownerType: "sponsor",
           active: true,
@@ -982,25 +990,8 @@ function createSponsorRoutes(sponsorStore, gameRoom, { imageUrls, contentHashes,
         if (slot) await billboardSponsorStore.clear(sponsor.inquiryData.billboardIndex);
       }
 
-      // Assign moon if this is a moon territory
-      if (sponsor.territoryType === "moon" && sponsor.inquiryData?.moonIndex != null && moonSponsorStore) {
-        await moonSponsorStore.assign(sponsor.inquiryData.moonIndex, {
-          name: sponsor.name,
-          tagline: sponsor.tagline || "",
-          websiteUrl: sponsor.websiteUrl || "",
-        });
-      }
-
-      // Assign billboard if this is a billboard territory
-      if (sponsor.territoryType === "billboard" && sponsor.inquiryData?.billboardIndex != null && billboardSponsorStore) {
-        await billboardSponsorStore.assign(sponsor.inquiryData.billboardIndex, {
-          name: sponsor.name,
-          tagline: sponsor.tagline || "",
-          websiteUrl: sponsor.websiteUrl || "",
-        });
-      }
-
       // === STRIPE INVOICING PATH for inquiries ===
+      // When Stripe is enabled, defer moon/billboard slot assignment until payment (webhook).
       if (stripeService.isEnabled()) {
         const customerEmail = sponsor.inquiryData?.contactEmail;
         if (!customerEmail) {
@@ -1021,7 +1012,7 @@ function createSponsorRoutes(sponsorStore, gameRoom, { imageUrls, contentHashes,
           discountPercent,
         });
 
-        await sponsorStore.update(req.params.id, {
+        const updateFields = {
           ownerType: "sponsor",
           active: false,
           paymentStatus: "invoiced",
@@ -1030,7 +1021,17 @@ function createSponsorRoutes(sponsorStore, gameRoom, { imageUrls, contentHashes,
           stripeSubscriptionId: subscription.id,
           ownerEmail: sponsor.inquiryData?.contactEmail || null,
           ownerContactName: sponsor.inquiryData?.contactName || null,
-        });
+        };
+
+        // Store pending slot index so the webhook can assign after payment
+        if (sponsor.territoryType === "moon" && sponsor.inquiryData?.moonIndex != null) {
+          updateFields._pendingMoonIndex = sponsor.inquiryData.moonIndex;
+        }
+        if (sponsor.territoryType === "billboard" && sponsor.inquiryData?.billboardIndex != null) {
+          updateFields._pendingBillboardIndex = sponsor.inquiryData.billboardIndex;
+        }
+
+        await sponsorStore.update(req.params.id, updateFields);
 
         await reExtractImages(req.params.id);
 
@@ -1040,7 +1041,18 @@ function createSponsorRoutes(sponsorStore, gameRoom, { imageUrls, contentHashes,
         return res.json({ success: true, action: "invoiced", amountCents: totalCents, subscriptionId: subscription.id });
       }
 
-      // === LEGACY PATH (Stripe disabled) — immediate activation ===
+      // === LEGACY PATH (Stripe disabled) — assign slots and activate immediately ===
+      if (sponsor.territoryType === "moon" && sponsor.inquiryData?.moonIndex != null && moonSponsorStore) {
+        await moonSponsorStore.assign(sponsor.inquiryData.moonIndex, {
+          name: sponsor.name, tagline: sponsor.tagline || "", websiteUrl: sponsor.websiteUrl || "",
+        });
+      }
+      if (sponsor.territoryType === "billboard" && sponsor.inquiryData?.billboardIndex != null && billboardSponsorStore) {
+        await billboardSponsorStore.assign(sponsor.inquiryData.billboardIndex, {
+          name: sponsor.name, tagline: sponsor.tagline || "", websiteUrl: sponsor.websiteUrl || "",
+        });
+      }
+
       await sponsorStore.update(req.params.id, {
         ownerType: "sponsor",
         active: true,

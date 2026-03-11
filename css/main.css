@@ -2037,21 +2037,23 @@ body.tip-dragging .chat-mention.tip-highlight {
     line-height: var(--font-size-header); /* 24px */
     border-bottom: var(--border-width) solid var(--border-dark);
     flex-shrink: 0;
+    position: relative;
+    z-index: 1; /* Paint above messages — Firefox scroll repaint bleeds through without this */
 }
 
 .chat-section.squad .chat-section-header {
-    background: rgba(160, 100, 220, 0.15);
+    background: #2b1f38; /* --bg-panel + purple 15% */
     color: #a064dc;
 }
 
 .chat-section.faction .chat-section-header {
-    /* Color set dynamically based on player faction */
-    background: rgba(68, 119, 204, 0.15);
+    /* Color set dynamically via JS based on player faction */
+    background: #1f2538; /* --bg-panel + cobalt 15% — overridden by ProximityChat.js */
     color: #4477cc;
 }
 
 .chat-section.lobby .chat-section-header {
-    background: rgba(170, 170, 170, 0.1);
+    background: #1f1f1f; /* --bg-panel + gray 10% */
     color: #aaaaaa;
 }
 
