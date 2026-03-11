@@ -27,7 +27,6 @@ function createStripeRoutes(sponsorStore, gameRoom, { reExtractImages, reloadIfL
 
   // Webhook endpoint — must use raw body for signature verification
   router.post("/webhook", express.raw({ type: "application/json" }), async (req, res) => {
-    console.log("[Stripe] Webhook hit — content-type:", req.headers["content-type"], "body length:", req.body?.length || 0);
     if (!stripeService.isEnabled()) {
       return res.status(503).json({ error: "Stripe not configured" });
     }
@@ -43,7 +42,6 @@ function createStripeRoutes(sponsorStore, gameRoom, { reExtractImages, reloadIfL
       return res.status(400).json({ error: "Invalid signature" });
     }
 
-    console.log("[Stripe] Webhook event received:", event.type);
     try {
       switch (event.type) {
         case "invoice.paid":
@@ -82,14 +80,10 @@ function createStripeRoutes(sponsorStore, gameRoom, { reExtractImages, reloadIfL
  * This fires on first payment and every subsequent monthly payment.
  */
 async function handleInvoicePaid(invoice, sponsorStore, gameRoom, { reExtractImages, reloadIfLive }) {
-  // API v2026+: subscription moved from invoice.subscription to invoice.parent
+  // API v2026+: subscription moved from invoice.subscription to invoice.parent.subscription_details
   const subscriptionId = invoice.subscription
     || invoice.parent?.subscription_details?.subscription;
-  console.log("[Stripe] handleInvoicePaid — subscription:", subscriptionId, "parent:", JSON.stringify(invoice.parent));
-  if (!subscriptionId) {
-    console.warn("[Stripe] invoice.paid — no subscription ID on invoice:", invoice.id);
-    return;
-  }
+  if (!subscriptionId) return;
 
   // Find the sponsor by stripeSubscriptionId
   const sponsor = findSponsorBySubscription(sponsorStore, subscriptionId);

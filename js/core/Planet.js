@@ -3276,6 +3276,7 @@ class Planet {
     // In multiplayer, applyServerWorld() updates elevation data but not
     // the 3D meshes, so they remain elevated from local generation.
     let rebuilt = 0;
+    const rebuiltSponsorIds = new Set();
     for (const tileIndex of this.sponsorTileIndices) {
       const meshIdx = this.hexGroup.children.findIndex(
         (m) => m.userData?.tileIndex === tileIndex,
@@ -3329,6 +3330,17 @@ class Planet {
       newMesh.castShadow = true;
       this.hexGroup.add(newMesh);
       rebuilt++;
+
+      if (oldUserData.sponsorId) rebuiltSponsorIds.add(oldUserData.sponsorId);
+    }
+
+    // Reapply sponsor texture UVs for any sponsors whose meshes were rebuilt,
+    // since the rebuild resets UVs to default spherical projection
+    for (const sponsorId of rebuiltSponsorIds) {
+      const entry = this.sponsorClusters.get(sponsorId);
+      if (entry) {
+        this._applySponsorTexture(entry.sponsor, entry.tileIndices);
+      }
     }
 
     // Rebuild cliff walls with updated elevation data

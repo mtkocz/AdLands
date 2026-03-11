@@ -117,9 +117,34 @@ async function applyPixelArtFilter(inputBuffer, tileCount = REFERENCE_TILE_COUNT
     }
   }
 
-  // Step 4: Save at reduced resolution (no upscale — NearestFilter handles that client-side)
-  return sharp(Buffer.from(pixels.buffer), {
-    raw: { width: w, height: h, channels: 4 },
+  // Step 4: Pad to square — UV mapping assumes ~1:1 aspect ratio for hex projection
+  const squareSize = Math.max(w, h);
+  const padLeft = Math.floor((squareSize - w) / 2);
+  const padTop = Math.floor((squareSize - h) / 2);
+  const squarePixels = new Uint8Array(squareSize * squareSize * 4);
+  // Fill with dominant palette color (background)
+  const bg = palette[0];
+  for (let i = 0; i < squarePixels.length; i += 4) {
+    squarePixels[i] = bg[0];
+    squarePixels[i + 1] = bg[1];
+    squarePixels[i + 2] = bg[2];
+    squarePixels[i + 3] = 255;
+  }
+  // Copy dithered image into center
+  for (let y = 0; y < h; y++) {
+    for (let x = 0; x < w; x++) {
+      const srcIdx = (y * w + x) * 4;
+      const dstIdx = ((y + padTop) * squareSize + (x + padLeft)) * 4;
+      squarePixels[dstIdx] = pixels[srcIdx];
+      squarePixels[dstIdx + 1] = pixels[srcIdx + 1];
+      squarePixels[dstIdx + 2] = pixels[srcIdx + 2];
+      squarePixels[dstIdx + 3] = pixels[srcIdx + 3];
+    }
+  }
+
+  // Step 5: Save at reduced resolution (no upscale — NearestFilter handles that client-side)
+  return sharp(Buffer.from(squarePixels.buffer), {
+    raw: { width: squareSize, height: squareSize, channels: 4 },
   })
     .png({ compressionLevel: 9, palette: true })
     .toBuffer();
