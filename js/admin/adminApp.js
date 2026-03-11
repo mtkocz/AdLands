@@ -1173,9 +1173,9 @@
     if (sponsorListFilter === "players") {
       sponsors = allSponsors.filter((s) => s.ownerType === "player");
     } else if (sponsorListFilter === "placeholders") {
-      sponsors = allSponsors.filter((s) => s.ownerType !== "player" && s.ownerType !== "sponsor");
+      sponsors = allSponsors.filter((s) => s.ownerType !== "player" && s.ownerType !== "sponsor" && s.ownerType !== "inquiry");
     } else if (sponsorListFilter === "sponsors") {
-      sponsors = allSponsors.filter((s) => s.ownerType === "sponsor");
+      sponsors = allSponsors.filter((s) => s.ownerType === "sponsor" || s.ownerType === "inquiry");
     } else {
       sponsors = allSponsors;
     }
@@ -1185,18 +1185,18 @@
     const pendingCount = allSponsors.filter((s) => s.ownerType === "player" && (s.submissionStatus === "pending" || s.imageStatus === "pending")).length;
     const inquiryCount = allSponsors.filter((s) => s.ownerType === "inquiry").length;
     const realSponsorCount = allSponsors.filter((s) => s.ownerType === "sponsor").length;
-    const placeholderCount = allSponsors.length - playerCount - realSponsorCount;
+    const placeholderCount = allSponsors.length - playerCount - realSponsorCount - inquiryCount;
     const tabEls = document.querySelectorAll(".sponsor-tab");
     tabEls.forEach((tab) => {
       const filter = tab.dataset.filter;
       if (filter === "placeholders") {
-        tab.innerHTML = `Placeholders (${placeholderCount})${inquiryCount > 0 ? ` <span class="inquiry-count-badge">${inquiryCount} pending</span>` : ""}`;
+        tab.textContent = `Placeholders (${placeholderCount})`;
       }
       else if (filter === "players") {
         tab.innerHTML = `Users (${playerCount})${pendingCount > 0 ? ` <span class="pending-badge">${pendingCount}</span>` : ""}`;
       }
       else if (filter === "sponsors") {
-        tab.textContent = `Sponsors (${realSponsorCount})`;
+        tab.innerHTML = `Sponsors (${realSponsorCount})${inquiryCount > 0 ? ` <span class="inquiry-count-badge">${inquiryCount} pending</span>` : ""}`;
       }
       else if (filter === "all") tab.textContent = `All (${allSponsors.length})`;
     });
