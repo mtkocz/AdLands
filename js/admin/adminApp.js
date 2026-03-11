@@ -1478,75 +1478,6 @@
           playerInfoHtml = detailLine + urlLine;
         }
 
-        // For inquiry groups, show full inquiry details inline
-        let inquiryInfoHtml = "";
-        if (isGroupInquiry && first.inquiryData) {
-          const d = first.inquiryData;
-          const submitted = d.submittedAt ? new Date(d.submittedAt).toLocaleString() : "";
-
-          inquiryInfoHtml = `<div class="sponsor-card-inquiry-info">`;
-
-          // Contact row
-          const contactParts = [];
-          if (d.contactName) contactParts.push(escapeHtml(d.contactName));
-          if (d.company) contactParts.push(escapeHtml(d.company));
-          if (contactParts.length > 0) {
-            inquiryInfoHtml += `<div class="inquiry-inline-row">${contactParts.join(" &middot; ")}</div>`;
-          }
-          if (d.contactEmail) {
-            inquiryInfoHtml += `<div class="inquiry-inline-row"><a href="mailto:${escapeHtml(d.contactEmail)}">${escapeHtml(d.contactEmail)}</a></div>`;
-          }
-
-          // Message
-          if (d.message) {
-            inquiryInfoHtml += `<div class="inquiry-inline-message">${escapeHtml(d.message)}</div>`;
-          }
-
-          // Pricing breakdown
-          if (d.pricing) {
-            const p = d.pricing;
-            inquiryInfoHtml += `<div class="inquiry-inline-pricing">`;
-
-            // Hex tier breakdown
-            if (p.byTier) {
-              const tierPrices = { HOTZONE: 15, PRIME: 7, FRONTIER: 3 };
-              for (const [tierId, count] of Object.entries(p.byTier)) {
-                const price = tierPrices[tierId] || 0;
-                inquiryInfoHtml += `<div class="inquiry-pricing-line"><span>${tierId} &times; ${count}</span><span>$${(price * count).toFixed(2)}</span></div>`;
-              }
-              if (p.discount > 0) {
-                inquiryInfoHtml += `<div class="inquiry-pricing-line inquiry-pricing-discount"><span>Cluster Discount (${p.discount}%)</span><span>-$${(p.discountAmount || 0).toFixed(2)}</span></div>`;
-              }
-            }
-
-            // Moon breakdown
-            if (p.moons && p.moons.length > 0) {
-              for (const moon of p.moons) {
-                inquiryInfoHtml += `<div class="inquiry-pricing-line"><span>${escapeHtml(moon.label)}</span><span>$${moon.price.toFixed(2)}</span></div>`;
-              }
-            }
-
-            // Billboard breakdown
-            if (p.billboards && p.billboards.length > 0) {
-              for (const bb of p.billboards) {
-                inquiryInfoHtml += `<div class="inquiry-pricing-line"><span>${escapeHtml(bb.label)}</span><span>$${bb.price.toFixed(2)}</span></div>`;
-              }
-            }
-
-            // Total
-            const grandTotal = (p.total || 0) + (p.moonTotal || 0) + (p.billboardTotal || 0);
-            inquiryInfoHtml += `<div class="inquiry-pricing-total"><span>Total</span><span>$${grandTotal.toFixed(2)}/mo</span></div>`;
-            inquiryInfoHtml += `</div>`;
-          }
-
-          // Submitted date
-          if (submitted) {
-            inquiryInfoHtml += `<div class="inquiry-inline-date">${submitted}</div>`;
-          }
-
-          inquiryInfoHtml += `</div>`;
-        }
-
         htmlParts.push(`
             <div class="sponsor-group${isGroupEditing ? " editing expanded" : ""}${isGroupPaused ? " paused" : ""}${groupHighlight}" data-name="${escapeHtml(groupKey)}">
                 <div class="sponsor-group-header">
@@ -1561,7 +1492,6 @@
                     <div class="sponsor-card-info">
                         <div class="sponsor-card-name">${escapeHtml(hasPlayerTerritory ? (first.ownerEmail || first.ownerUid || "Unknown") : first.name)}${groupBadgeHtml}</div>
                         ${playerInfoHtml}
-                        ${inquiryInfoHtml}
                         <span class="sponsor-group-badge">${members.length} ${members.length === 1 ? "territory" : "territories"}</span>
                         <div class="sponsor-card-stats">
                             ${totalTiles} tiles${groupMoonCount > 0 ? ", " + groupMoonCount + " moons" : ""}${groupBbCount > 0 ? ", " + groupBbCount + " billboards" : ""}, ${totalRewards} rewards
@@ -1723,6 +1653,9 @@
         sponsorForm.loadTerritoryInfo(startMember);
         sponsorForm.setNotes(members[0].notes || "");
       }
+
+      // Show inquiry details immediately with lite data
+      showInquiryDetails(members[0]);
 
       // Show the correct view immediately
       if (startAtId) {
@@ -2186,11 +2119,42 @@
     const d = sponsor.inquiryData;
     const submitted = d.submittedAt ? new Date(d.submittedAt).toLocaleString() : "Unknown";
 
+    // Build full pricing breakdown
     let pricingHtml = "";
     if (d.pricing) {
       const p = d.pricing;
-      const total = (p.total || 0) + (p.moonTotal || 0) + (p.billboardTotal || 0);
-      pricingHtml = `<div class="inquiry-detail-row"><span class="inquiry-detail-label">Quoted Price:</span><span class="inquiry-detail-value">$${total.toFixed(2)}/mo</span></div>`;
+      pricingHtml = `<div class="inquiry-pricing-breakdown">`;
+
+      // Hex tier breakdown
+      if (p.byTier) {
+        const tierPrices = { HOTZONE: 15, PRIME: 7, FRONTIER: 3 };
+        for (const [tierId, count] of Object.entries(p.byTier)) {
+          const price = tierPrices[tierId] || 0;
+          pricingHtml += `<div class="inquiry-pricing-line"><span>${tierId} &times; ${count}</span><span>$${(price * count).toFixed(2)}</span></div>`;
+        }
+        if (p.discount > 0) {
+          pricingHtml += `<div class="inquiry-pricing-line inquiry-pricing-discount"><span>Cluster Discount (${p.discount}%)</span><span>-$${(p.discountAmount || 0).toFixed(2)}</span></div>`;
+        }
+      }
+
+      // Moon breakdown
+      if (p.moons && p.moons.length > 0) {
+        for (const moon of p.moons) {
+          pricingHtml += `<div class="inquiry-pricing-line"><span>${escapeHtml(moon.label)}</span><span>$${moon.price.toFixed(2)}</span></div>`;
+        }
+      }
+
+      // Billboard breakdown
+      if (p.billboards && p.billboards.length > 0) {
+        for (const bb of p.billboards) {
+          pricingHtml += `<div class="inquiry-pricing-line"><span>${escapeHtml(bb.label)}</span><span>$${bb.price.toFixed(2)}</span></div>`;
+        }
+      }
+
+      // Total
+      const grandTotal = (p.total || 0) + (p.moonTotal || 0) + (p.billboardTotal || 0);
+      pricingHtml += `<div class="inquiry-pricing-total"><span>Total</span><span>$${grandTotal.toFixed(2)}/mo</span></div>`;
+      pricingHtml += `</div>`;
     }
 
     panel.innerHTML = `
