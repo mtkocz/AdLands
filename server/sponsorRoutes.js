@@ -892,6 +892,8 @@ function createSponsorRoutes(sponsorStore, gameRoom, { imageUrls, contentHashes,
             submissionStatus: "invoiced",
             stripeCustomerId: customerId,
             stripeSubscriptionId: subscription.id,
+            ownerEmail: sponsor.inquiryData?.contactEmail || null,
+            ownerContactName: sponsor.inquiryData?.contactName || null,
           });
           await reExtractImages(sponsor.id);
         }
@@ -904,7 +906,12 @@ function createSponsorRoutes(sponsorStore, gameRoom, { imageUrls, contentHashes,
 
       // === LEGACY PATH (Stripe disabled) — immediate activation ===
       for (const sponsor of sponsors) {
-        await sponsorStore.update(sponsor.id, { ownerType: "sponsor", active: true });
+        await sponsorStore.update(sponsor.id, {
+          ownerType: "sponsor",
+          active: true,
+          ownerEmail: sponsor.inquiryData?.contactEmail || null,
+          ownerContactName: sponsor.inquiryData?.contactName || null,
+        });
         await reExtractImages(sponsor.id);
       }
       reloadIfLive();
@@ -1021,6 +1028,8 @@ function createSponsorRoutes(sponsorStore, gameRoom, { imageUrls, contentHashes,
           submissionStatus: "invoiced",
           stripeCustomerId: customerId,
           stripeSubscriptionId: subscription.id,
+          ownerEmail: sponsor.inquiryData?.contactEmail || null,
+          ownerContactName: sponsor.inquiryData?.contactName || null,
         });
 
         await reExtractImages(req.params.id);
@@ -1035,6 +1044,8 @@ function createSponsorRoutes(sponsorStore, gameRoom, { imageUrls, contentHashes,
       await sponsorStore.update(req.params.id, {
         ownerType: "sponsor",
         active: true,
+        ownerEmail: sponsor.inquiryData?.contactEmail || null,
+        ownerContactName: sponsor.inquiryData?.contactName || null,
       });
 
       await reExtractImages(req.params.id);
