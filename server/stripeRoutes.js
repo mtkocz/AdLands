@@ -45,8 +45,15 @@ function createStripeRoutes(sponsorStore, gameRoom, { reExtractImages, reloadIfL
     try {
       switch (event.type) {
         case "invoice.paid":
+        case "invoice.payment_succeeded":
           await handleInvoicePaid(event.data.object, sponsorStore, gameRoom, { reExtractImages, reloadIfLive });
           break;
+        case "invoice_payment.paid": {
+          // API v2026+: event.data.object is InvoicePayment, invoice is nested
+          const inv = event.data.object.invoice || event.data.object;
+          await handleInvoicePaid(inv, sponsorStore, gameRoom, { reExtractImages, reloadIfLive });
+          break;
+        }
 
         case "customer.subscription.deleted":
           await handleSubscriptionDeleted(event.data.object, sponsorStore, gameRoom, { reloadIfLive, cleanupSponsorImages });
