@@ -35,7 +35,7 @@ function isEnabled() {
  * @param {Map} tierMap - Tile index → tier ID map (from WorldGenerator)
  * @returns {{ lineItems: Array<{name: string, unitAmountCents: number, quantity: number}>, discountPercent: number }}
  */
-function buildInvoiceLineItems(sponsor, tierMap) {
+function buildInvoiceLineItems(sponsor, tierMap, adjacencyMap) {
   // Moon territories
   if (sponsor.territoryType === "moon") {
     const moonIndex = sponsor.inquiryData?.moonIndex ?? 0;
@@ -58,11 +58,11 @@ function buildInvoiceLineItems(sponsor, tierMap) {
     };
   }
 
-  // Hex territories — per-tier line items with cluster discount
+  // Hex territories — per-tier line items with per-cluster discount
   const tiles = sponsor.cluster?.tileIndices || [];
   if (tiles.length === 0 || !tierMap) return { lineItems: [], discountPercent: 0 };
 
-  const pricing = HexTierSystem.calculatePricing(tiles, tierMap);
+  const pricing = HexTierSystem.calculatePricing(tiles, tierMap, adjacencyMap);
   const lineItems = [];
 
   for (const tierId of HexTierSystem.RENTABLE_TIERS) {
@@ -81,15 +81,16 @@ function buildInvoiceLineItems(sponsor, tierMap) {
 
 /**
  * Build combined invoice line items for a group of sponsors (single subscription).
- * Aggregates hex tiers across all clusters and applies discount based on total hex count.
+ * Aggregates hex tiers across all sponsors. Discount is calculated per connected
+ * cluster of adjacent hexes when adjacencyMap is provided.
  * @param {Object[]} sponsors - Array of sponsor records
  * @param {Map} tierMap - Tile index → tier ID map
+ * @param {Map} [adjacencyMap] - Tile adjacency map (enables per-cluster discount)
  * @returns {{ lineItems: Array<{name: string, unitAmountCents: number, quantity: number}>, discountPercent: number }}
  */
-function buildGroupInvoiceLineItems(sponsors, tierMap) {
-  const combinedByTier = {};
-  let totalHexCount = 0;
+function buildGroupInvoiceLineItems(sponsors, tierMap, adjacencyMap) {
   const nonHexItems = [];
+  const allHexTiles = [];
 
   for (const sponsor of sponsors) {
     if (sponsor.territoryType === "moon") {
@@ -109,18 +110,14 @@ function buildGroupInvoiceLineItems(sponsors, tierMap) {
     }
 
     const tiles = sponsor.cluster?.tileIndices || [];
-    if (tiles.length === 0 || !tierMap) continue;
-    for (const idx of tiles) {
-      const tier = tierMap.get(idx);
-      if (!tier || tier === "RESTRICTED") continue;
-      combinedByTier[tier] = (combinedByTier[tier] || 0) + 1;
-      totalHexCount++;
-    }
+    if (tiles.length > 0 && tierMap) allHexTiles.push(...tiles);
   }
 
+  const pricing = HexTierSystem.calculatePricing(allHexTiles, tierMap, adjacencyMap);
   const lineItems = [];
+
   for (const tierId of HexTierSystem.RENTABLE_TIERS) {
-    const count = combinedByTier[tierId];
+    const count = pricing.byTier[tierId];
     if (!count) continue;
     const tier = HexTierSystem.TIERS[tierId];
     lineItems.push({
@@ -131,8 +128,7 @@ function buildGroupInvoiceLineItems(sponsors, tierMap) {
   }
 
   lineItems.push(...nonHexItems);
-  const discountPercent = HexTierSystem.getClusterDiscount(totalHexCount);
-  return { lineItems, discountPercent };
+  return { lineItems, discountPercent: pricing.discount };
 }
 
 /**

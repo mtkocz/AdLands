@@ -2422,7 +2422,7 @@ class Dashboard {
     // Calculate pricing
     let pricing = null;
     if (tierMap && typeof HexTierSystem !== "undefined") {
-      pricing = HexTierSystem.calculatePricing(filtered, tierMap);
+      pricing = HexTierSystem.calculatePricing(filtered, tierMap, planet._adjacencyMap);
     }
 
     this._territoryPreview = {
@@ -2483,7 +2483,7 @@ class Dashboard {
       });
       filtered = filtered.filter((idx) => tierMap.get(idx) !== "RESTRICTED");
 
-      const pricing = HexTierSystem.calculatePricing(filtered, tierMap);
+      const pricing = HexTierSystem.calculatePricing(filtered, tierMap, this._territoryPlanet?._adjacencyMap);
 
       // Update hex count
       const hexesEl = document.getElementById(`territory-hexes-${tier.name}`);

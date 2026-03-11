@@ -218,12 +218,47 @@ const HexTierSystem = {
   },
 
   /**
-   * Calculate pricing breakdown for a selection of tiles
+   * Split tile indices into connected clusters using BFS on the adjacency map.
+   * @param {Array<number>} tileIndices
+   * @param {Map} adjacencyMap - tileIndex → [neighborIndices]
+   * @returns {Array<Array<number>>} Array of connected clusters
+   */
+  splitIntoClusters(tileIndices, adjacencyMap) {
+    const tileSet = new Set(tileIndices);
+    const visited = new Set();
+    const clusters = [];
+
+    for (const start of tileSet) {
+      if (visited.has(start)) continue;
+      const cluster = [];
+      const queue = [start];
+      visited.add(start);
+      while (queue.length > 0) {
+        const current = queue.shift();
+        cluster.push(current);
+        for (const neighbor of (adjacencyMap.get(current) || [])) {
+          if (tileSet.has(neighbor) && !visited.has(neighbor)) {
+            visited.add(neighbor);
+            queue.push(neighbor);
+          }
+        }
+      }
+      clusters.push(cluster);
+    }
+
+    return clusters;
+  },
+
+  /**
+   * Calculate pricing breakdown for a selection of tiles.
+   * When adjacencyMap is provided, discount is calculated per connected cluster
+   * of adjacent hexes, not across all hexes.
    * @param {Array<number>} tileIndices - Selected tile indices
    * @param {Map} tierMap - Tile index to tier ID map
+   * @param {Map} [adjacencyMap] - Tile adjacency map (optional; enables per-cluster discount)
    * @returns {Object} Pricing breakdown
    */
-  calculatePricing(tileIndices, tierMap) {
+  calculatePricing(tileIndices, tierMap, adjacencyMap) {
     // Count tiles by tier
     const byTier = {};
     this.RENTABLE_TIERS.forEach((t) => (byTier[t] = 0));
@@ -245,19 +280,43 @@ const HexTierSystem = {
       if (byTier[k] === 0) delete byTier[k];
     });
 
-    const discount = this.getClusterDiscount(totalHexes);
-    const discountAmount = subtotal * (discount / 100);
+    // Per-cluster discount: split into connected components, discount each independently
+    let discountAmount = 0;
+    let discount = 0;
+    let clusters = null;
+
+    if (adjacencyMap && totalHexes > 0) {
+      const rentable = tileIndices.filter(idx => {
+        const t = tierMap.get(idx);
+        return t && t !== "RESTRICTED";
+      });
+      clusters = this.splitIntoClusters(rentable, adjacencyMap);
+
+      for (const cluster of clusters) {
+        const clusterSubtotal = cluster.reduce((sum, idx) => sum + this.TIERS[tierMap.get(idx)].price, 0);
+        const clusterDiscount = this.getClusterDiscount(cluster.length);
+        discountAmount += clusterSubtotal * (clusterDiscount / 100);
+      }
+
+      // Effective blended discount percentage
+      discount = subtotal > 0 ? Math.round((discountAmount / subtotal) * 1000) / 10 : 0;
+    } else {
+      discount = this.getClusterDiscount(totalHexes);
+      discountAmount = subtotal * (discount / 100);
+    }
+
     const total = subtotal - discountAmount;
     const label = this.getDiscountLabel(discount);
 
     return {
-      byTier, // { HOTZONE: 3, PRIME: 4, ... }
+      byTier,
       totalHexes,
-      subtotal, // Before discount
-      discount, // Percentage
-      discountAmount, // Dollar amount saved
-      total, // After discount
-      label, // Discount label
+      subtotal,
+      discount,
+      discountAmount,
+      total,
+      label,
+      clusters: clusters ? clusters.length : 1,
     };
   },
 

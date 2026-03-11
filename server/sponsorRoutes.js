@@ -186,7 +186,7 @@ async function cleanupSponsorImageFiles(sponsorId, texDir) {
   }
 }
 
-function createSponsorRoutes(sponsorStore, gameRoom, { imageUrls, contentHashes, gameDir, moonSponsorStore, billboardSponsorStore, tierMap } = {}) {
+function createSponsorRoutes(sponsorStore, gameRoom, { imageUrls, contentHashes, gameDir, moonSponsorStore, billboardSponsorStore, tierMap, adjacencyMap } = {}) {
   const router = Router();
 
   // Resend email config (reuses SMTP_PASS as API key)
@@ -603,7 +603,7 @@ function createSponsorRoutes(sponsorStore, gameRoom, { imageUrls, contentHashes,
           if (sponsor.ownerType === "player") updateFields.logoImage = null;
 
           // Calculate price breakdown and create Stripe subscription
-          const { lineItems, discountPercent } = stripeService.buildInvoiceLineItems(sponsor, tierMap);
+          const { lineItems, discountPercent } = stripeService.buildInvoiceLineItems(sponsor, tierMap, adjacencyMap);
           const description = approvedTitle || sponsor.name || `Territory ${territoryId}`;
           const customerName = sponsor.inquiryData?.contactName || sponsor.playerName || null;
 
@@ -876,7 +876,7 @@ function createSponsorRoutes(sponsorStore, gameRoom, { imageUrls, contentHashes,
           return res.status(400).json({ errors: ["No contact email found — cannot send invoice"] });
         }
 
-        const { lineItems, discountPercent } = stripeService.buildGroupInvoiceLineItems(sponsors, tierMap);
+        const { lineItems, discountPercent } = stripeService.buildGroupInvoiceLineItems(sponsors, tierMap, adjacencyMap);
         if (lineItems.length === 0) {
           return res.status(400).json({ errors: ["No billable items found"] });
         }
@@ -1018,7 +1018,7 @@ function createSponsorRoutes(sponsorStore, gameRoom, { imageUrls, contentHashes,
           return res.status(400).json({ errors: ["No contact email found for this inquiry — cannot send invoice"] });
         }
 
-        const { lineItems, discountPercent } = stripeService.buildInvoiceLineItems(sponsor, tierMap);
+        const { lineItems, discountPercent } = stripeService.buildInvoiceLineItems(sponsor, tierMap, adjacencyMap);
         const description = sponsor.name || `Territory ${req.params.id}`;
         const customerName = sponsor.inquiryData?.contactName || null;
 

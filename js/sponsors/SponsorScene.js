@@ -1160,7 +1160,7 @@ class SponsorScene {
   getPricing() {
     if (typeof HexTierSystem === "undefined" || !this.tierMap) return null;
 
-    const pricing = HexTierSystem.calculatePricing(this.getSelectedTiles(), this.tierMap);
+    const pricing = HexTierSystem.calculatePricing(this.getSelectedTiles(), this.tierMap, this.adjacencyMap);
     const moonPricing = HexTierSystem.calculateMoonPricing(this.getSelectedMoons());
     pricing.moons = moonPricing.moons;
     pricing.moonTotal = moonPricing.moonTotal;

@@ -214,6 +214,7 @@ let inquiryRouter;
     moonSponsorStore,
     billboardSponsorStore,
     tierMap,
+    adjacencyMap: wr ? wr.adjacencyMap : new Map(),
   }));
 
   // Mount moon sponsor API routes

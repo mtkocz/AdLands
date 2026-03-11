@@ -556,6 +556,7 @@
 
   function _updateLiveRevenueImpl(liveSelectedTiles) {
     const tierMap = hexSelector ? hexSelector.getTierMap() : null;
+    const adjMap = hexSelector ? hexSelector.getAdjacencyMap() : null;
     if (!tierMap || typeof HexTierSystem === "undefined") return;
 
     const editingId = sponsorForm ? sponsorForm.getEditingSponsorId() : null;
@@ -576,7 +577,7 @@
       } else {
         tiles = s.cluster?.tileIndices;
       }
-      const rev = calcRevenueForTiles(tiles, tierMap);
+      const rev = calcRevenueForTiles(tiles, tierMap, adjMap);
       totalMonthly += rev.total;
 
       // Add moon + billboard revenue once per sponsor name
@@ -650,7 +651,7 @@
             ? liveSelectedTiles
             : (SponsorStorage.getById(id)?.cluster?.tileIndices || []);
           groupTiles += tiles?.length || 0;
-          groupRev += calcRevenueForTiles(tiles, tierMap).total;
+          groupRev += calcRevenueForTiles(tiles, tierMap, adjMap).total;
         }
         // Add moon + billboard revenue for the group (live selection if editing)
         // For inquiry sponsors whose slots aren't assigned yet, fall back to inquiryData indices
@@ -1131,11 +1132,11 @@
    * Calculate revenue HTML for a set of tile indices
    * @returns {{ html: string, total: number }}
    */
-  function calcRevenueForTiles(tiles, tierMap) {
+  function calcRevenueForTiles(tiles, tierMap, adjacencyMap) {
     if (!tiles?.length || !tierMap || typeof HexTierSystem === "undefined") {
       return { html: "", total: 0 };
     }
-    const pricing = HexTierSystem.calculatePricing(tiles, tierMap);
+    const pricing = HexTierSystem.calculatePricing(tiles, tierMap, adjacencyMap);
     if (!pricing || pricing.totalHexes === 0) return { html: "", total: 0 };
 
     let html;
@@ -1331,6 +1332,7 @@
     }
 
     const tierMap = hexSelector ? hexSelector.getTierMap() : null;
+    const adjMap2 = hexSelector ? hexSelector.getAdjacencyMap() : null;
     let totalMonthly = 0;
     const htmlParts = [];
     const currentEditingId = sponsorForm ? sponsorForm.getEditingSponsorId() : null;
@@ -1376,7 +1378,7 @@
         const activeEditId = editingGroup ? editingGroup.ids[editingGroup.activeIndex] : null;
         const clusterRows = members.map((s, i) => {
           const tileCount = s.cluster?.tileIndices?.length || 0;
-          const rev = calcRevenueForTiles(s.cluster?.tileIndices, tierMap);
+          const rev = calcRevenueForTiles(s.cluster?.tileIndices, tierMap, adjMap2);
 
           // Detect territory type from stored field, with fallback inference
           let tt = s.territoryType;

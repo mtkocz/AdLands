@@ -2073,6 +2073,10 @@ class HexSelector {
     return this.tierMap || null;
   }
 
+  getAdjacencyMap() {
+    return this.adjacencyMap || null;
+  }
+
   /**
    * Get pricing breakdown for currently selected tiles
    * @returns {Object|null} Pricing breakdown or null if tier system not available
@@ -2084,6 +2088,7 @@ class HexSelector {
     const pricing = HexTierSystem.calculatePricing(
       this.getSelectedTiles(),
       this.tierMap,
+      this.adjacencyMap,
     );
     // Attach moon pricing
     const moonPricing = HexTierSystem.calculateMoonPricing(this.getSelectedMoons());
