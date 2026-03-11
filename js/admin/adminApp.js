@@ -653,20 +653,41 @@
           groupRev += calcRevenueForTiles(tiles, tierMap).total;
         }
         // Add moon + billboard revenue for the group (live selection if editing)
-        const groupMoonRev = editingSponsorName
-          ? calcMoonRevenue(null, liveSelectedMoons)
-          : calcMoonRevenue(editingGroup.name);
-        const groupBbRev = editingSponsorName
-          ? calcBillboardRevenue(null, liveSelectedBillboards)
-          : calcBillboardRevenue(editingGroup.name);
+        // For inquiry sponsors whose slots aren't assigned yet, fall back to inquiryData indices
+        let effectiveMoons = liveSelectedMoons;
+        let effectiveBbs = liveSelectedBillboards;
+        if (effectiveMoons.length === 0 && editingGroup.name) {
+          const storeMoons = moonManager ? moonManager.getMoonsForSponsor(editingGroup.name) : [];
+          if (storeMoons.length > 0) {
+            effectiveMoons = storeMoons;
+          } else {
+            for (const mid of editingGroup.ids) {
+              const ms = SponsorStorage.getById(mid);
+              if (ms?.inquiryData?.moonIndex != null) effectiveMoons.push(ms.inquiryData.moonIndex);
+            }
+          }
+        }
+        if (effectiveBbs.length === 0 && editingGroup.name) {
+          const storeBbs = billboardManager ? billboardManager.getBillboardsForSponsor(editingGroup.name) : [];
+          if (storeBbs.length > 0) {
+            effectiveBbs = storeBbs;
+          } else {
+            for (const mid of editingGroup.ids) {
+              const ms = SponsorStorage.getById(mid);
+              if (ms?.inquiryData?.billboardIndex != null) effectiveBbs.push(ms.inquiryData.billboardIndex);
+            }
+          }
+        }
+        const groupMoonRev = calcMoonRevenue(null, effectiveMoons);
+        const groupBbRev = calcBillboardRevenue(null, effectiveBbs);
         groupRev += groupMoonRev + groupBbRev;
 
         const statsEl = groupEl.querySelector(".sponsor-group-header .sponsor-card-stats");
         if (statsEl) {
           const totalRewards = editingGroup.ids.reduce((sum, id) =>
             sum + (SponsorStorage.getById(id)?.rewards?.length || 0), 0);
-          const groupMoonCount = liveSelectedMoons.length;
-          const groupBbCount = liveSelectedBillboards.length;
+          const groupMoonCount = effectiveMoons.length;
+          const groupBbCount = effectiveBbs.length;
           statsEl.textContent = `${groupTiles} tiles${groupMoonCount > 0 ? ", " + groupMoonCount + " moons" : ""}${groupBbCount > 0 ? ", " + groupBbCount + " billboards" : ""}, ${totalRewards} rewards`;
         }
         const revEl = groupEl.querySelector(".sponsor-group-header .sponsor-card-revenue");
@@ -1328,8 +1349,25 @@
         );
 
         // Pre-calculate moon/billboard revenue (shared per sponsor name)
-        const groupMoonRev = calcMoonRevenue(first.name);
-        const groupBbRev = calcBillboardRevenue(first.name);
+        // For inquiry sponsors whose slots aren't assigned yet, fall back to inquiryData indices
+        let inquiryMoonIndices = [];
+        let inquiryBbIndices = [];
+        if (moonManager && moonManager.getMoonsForSponsor(first.name).length === 0) {
+          for (const m of members) {
+            if (m.inquiryData?.moonIndex != null) inquiryMoonIndices.push(m.inquiryData.moonIndex);
+          }
+        }
+        if (billboardManager && billboardManager.getBillboardsForSponsor(first.name).length === 0) {
+          for (const m of members) {
+            if (m.inquiryData?.billboardIndex != null) inquiryBbIndices.push(m.inquiryData.billboardIndex);
+          }
+        }
+        const groupMoonRev = inquiryMoonIndices.length > 0
+          ? calcMoonRevenue(null, inquiryMoonIndices)
+          : calcMoonRevenue(first.name);
+        const groupBbRev = inquiryBbIndices.length > 0
+          ? calcBillboardRevenue(null, inquiryBbIndices)
+          : calcBillboardRevenue(first.name);
         let moonRevClaimed = false;
         let bbRevClaimed = false;
 
@@ -1446,8 +1484,8 @@
         if (!moonRevClaimed) { groupRevenue += groupMoonRev; totalMonthly += groupMoonRev; }
         if (!bbRevClaimed) { groupRevenue += groupBbRev; totalMonthly += groupBbRev; }
 
-        const groupMoonCount = moonManager ? moonManager.getMoonsForSponsor(first.name).length : 0;
-        const groupBbCount = billboardManager ? billboardManager.getBillboardsForSponsor(first.name).length : 0;
+        const groupMoonCount = inquiryMoonIndices.length || (moonManager ? moonManager.getMoonsForSponsor(first.name).length : 0);
+        const groupBbCount = inquiryBbIndices.length || (billboardManager ? billboardManager.getBillboardsForSponsor(first.name).length : 0);
 
         const groupRevHtml = groupRevenue > 0
           ? `<div class="sponsor-card-revenue"><span class="sponsor-card-revenue-total">$${fmtUSD(groupRevenue)}/mo</span></div>`
