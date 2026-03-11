@@ -617,7 +617,9 @@ function createSponsorRoutes(sponsorStore, gameRoom, { imageUrls, contentHashes,
             }
           }
 
-          reloadIfLive();
+          // Silent reload: update server-side game state without broadcasting to clients.
+          // The territory is still a placeholder until payment — no visual change needed.
+          if (gameRoom) gameRoom.reloadSponsors({ silent: true });
 
           const subtotalCents = lineItems.reduce((sum, li) => sum + li.unitAmountCents * li.quantity, 0);
           const totalCents = Math.round(subtotalCents * (1 - (discountPercent || 0) / 100));
