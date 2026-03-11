@@ -27,6 +27,7 @@ function createStripeRoutes(sponsorStore, gameRoom, { reExtractImages, reloadIfL
 
   // Webhook endpoint — must use raw body for signature verification
   router.post("/webhook", express.raw({ type: "application/json" }), async (req, res) => {
+    console.log("[Stripe] Webhook hit — content-type:", req.headers["content-type"], "body length:", req.body?.length || 0);
     if (!stripeService.isEnabled()) {
       return res.status(503).json({ error: "Stripe not configured" });
     }
@@ -42,6 +43,7 @@ function createStripeRoutes(sponsorStore, gameRoom, { reExtractImages, reloadIfL
       return res.status(400).json({ error: "Invalid signature" });
     }
 
+    console.log("[Stripe] Webhook event received:", event.type);
     try {
       switch (event.type) {
         case "invoice.paid":

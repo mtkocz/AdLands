@@ -735,6 +735,89 @@ class GameRoom {
     DEBUG_LOG && console.log(`[Room ${this.roomId}] Sponsors reloaded: ${this.sponsors.length} active${silent ? " (silent)" : ""}, broadcast to clients`);
   }
 
+  /**
+   * Add a single new sponsor cluster without rebuilding existing ones.
+   * Used when a player claims a territory — avoids shifting all cluster IDs.
+   */
+  addSponsorCluster(sponsorId) {
+    if (!this.sponsorStore) return;
+    const sponsor = this.sponsorStore.getById(sponsorId);
+    if (!sponsor || !sponsor.cluster?.tileIndices?.length) return;
+
+    const wr = this._worldResult;
+
+    // Filter out neutral tiles
+    const tileIndices = sponsor.cluster.tileIndices.filter(t =>
+      !wr.portalTileIndices.has(t) && !wr.polarTileIndices.has(t)
+    );
+    if (tileIndices.length === 0) return;
+
+    // Add to active sponsors list
+    this.sponsors.push(sponsor);
+
+    // Append new cluster (ID = next index in clusterData array)
+    const clusterId = wr.clusterData.length;
+
+    // Remove tiles from their original procedural clusters
+    for (const tileIndex of tileIndices) {
+      const originalClusterId = wr.tileClusterMap.get(tileIndex);
+      if (originalClusterId !== undefined) {
+        const originalCluster = wr.clusterData[originalClusterId];
+        if (originalCluster) {
+          originalCluster.tiles = originalCluster.tiles.filter(t => t !== tileIndex);
+        }
+        // Update procedural cluster capacity
+        const state = this.clusterCaptureState.get(originalClusterId);
+        if (state && !this.clusterSponsorMap.has(originalClusterId)) {
+          state.capacity = (originalCluster ? originalCluster.tiles.length : 0) * 5;
+        }
+      }
+      wr.tileClusterMap.set(tileIndex, clusterId);
+    }
+
+    wr.clusterData.push({
+      id: clusterId,
+      tiles: tileIndices,
+      isSponsorCluster: true,
+      sponsorId: sponsor.id,
+    });
+
+    wr.clusterColors.set(clusterId, 0x1a4a4a);
+    wr.clusterPatterns.set(clusterId, 0);
+
+    // De-elevate sponsor tiles
+    for (const tileIndex of tileIndices) {
+      this.terrain.tileElevation.delete(tileIndex);
+      this.terrain.elevatedTileSet.delete(tileIndex);
+    }
+
+    // Track mappings
+    this.sponsorClusterMap.set(sponsor.id, clusterId);
+    this.clusterSponsorMap.set(clusterId, sponsor.id);
+    if (sponsor.ownerUid) this.clusterRenterUidMap.set(clusterId, sponsor.ownerUid);
+
+    // Fresh capture state
+    this.sponsorHoldTimers.set(sponsor.id, {
+      owner: null,
+      capturedAt: null,
+      holdDuration: 0,
+    });
+    const capacity = tileIndices.length * 5;
+    this.clusterCaptureState.set(clusterId, {
+      tics: { rust: 0, cobalt: 0, viridian: 0 },
+      owner: null,
+      capacity,
+      momentum: { rust: 0, cobalt: 0, viridian: 0 },
+    });
+
+    // Rebuild blocked grid and sync to bot worker
+    this.worldGen.buildBlockedGrid(this.terrain);
+    this.botBridge.sendClusterData(this.worldGen, wr.clusterData);
+
+    // Rebuild world payload (no broadcast — player-territory-claimed handles visuals)
+    this._worldPayload = this._buildWorldPayload(wr);
+  }
+
   // ========================
   // LIVE MOON SPONSOR RELOAD
   // ========================

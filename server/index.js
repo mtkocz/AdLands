@@ -757,8 +757,8 @@ io.on("connection", (socket) => {
         console.warn(`[Territory] SponsorStore create failed for ${territoryId}:`, createResult.errors);
       } else {
         console.log(`[Territory] SponsorStore entry created: ${createResult.sponsor.id}`);
-        // Reload server-side sponsor state (silent — player-territory-claimed handles the client visual)
-        mainRoom.reloadSponsors({ silent: true });
+        // Add just this sponsor's cluster (avoids rebuilding all cluster IDs)
+        mainRoom.addSponsorCluster(createResult.sponsor.id);
       }
 
       // Broadcast placeholder territory to all players (no player-submitted info yet)
