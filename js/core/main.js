@@ -3113,7 +3113,6 @@
     fastTravel.onAbortClick();
   });
   document.getElementById("travel-btn").addEventListener("click", (e) => {
-    console.log('[main.js] travel-btn clicked! fastTravel.state:', fastTravel.state, 'active:', fastTravel.active, 'previewPortalIndex:', fastTravel.previewPortalIndex);
     fastTravel.onTravelClick();
   });
   document.getElementById("go-back-btn").addEventListener("click", () => {

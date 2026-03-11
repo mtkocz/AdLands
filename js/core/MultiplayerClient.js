@@ -1214,7 +1214,6 @@
 
     // Portal rejected: server denied our portal choice — re-show preview UI
     net.onPortalRejected = () => {
-      console.warn('[MP] portal-rejected received — re-showing preview UI');
       if (mp.fastTravel?._portalTimeout) {
         clearTimeout(mp.fastTravel._portalTimeout);
         mp.fastTravel._portalTimeout = null;
@@ -1229,7 +1228,6 @@
 
     // Portal confirmed: server accepted our portal choice — teleport and exit fast travel
     net.onPortalConfirmed = (data) => {
-      console.log('[MP] portal-confirmed received:', data);
       if (mp.fastTravel?._portalTimeout) {
         clearTimeout(mp.fastTravel._portalTimeout);
         mp.fastTravel._portalTimeout = null;
@@ -2024,7 +2022,7 @@
 
       // If fast travel was denied, exit portal UI if it was entered optimistically
       if (data.action === 'fast-travel' && mp.fastTravel && mp.fastTravel.active) {
-        mp.fastTravel.exitFastTravel?.();
+        mp.fastTravel._exitFastTravel();
       }
     };
 
@@ -2281,18 +2279,13 @@
         }
       };
       mp.fastTravel.onPortalChosen = (portalTileIndex) => {
-        console.log('[MP] onPortalChosen — portalTileIndex:', portalTileIndex, 'isMultiplayer:', net.isMultiplayer, 'connected:', net.connected, 'playerId:', net.playerId);
         if (net.isMultiplayer) {
           if (!net.connected) {
-            // Socket disconnected — re-show UI immediately instead of waiting for timeout
-            console.warn('[MP] Cannot send choose-portal — not connected');
             mp.fastTravel._awaitingConfirmation = false;
             mp.fastTravel._showPreviewUI();
             return;
           }
           net.sendChoosePortal(portalTileIndex);
-        } else {
-          console.warn('[MP] NOT sending choose-portal — isMultiplayer is false');
         }
       };
       mp.fastTravel.onPreviewPortal = (portalTileIndex) => {

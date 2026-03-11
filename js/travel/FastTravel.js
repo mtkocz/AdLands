@@ -150,6 +150,8 @@ class FastTravel {
     enterFastTravel(portalIndex) {
         if (this.active) return;
 
+        this._awaitingConfirmation = false;
+
         // Economy: client-side pre-check for fast travel cost
         const ftCost = 500;
         if (window.cryptoSystem) {
@@ -204,6 +206,7 @@ class FastTravel {
     enterFastTravelAtStart() {
         if (this.active) return;
 
+        this._awaitingConfirmation = false;
         this.active = true;
         this.state = 'fastTravel';
         this.isRespawning = false;
@@ -235,6 +238,7 @@ class FastTravel {
     startRespawn() {
         if (this.active) return;
 
+        this._awaitingConfirmation = false;
         this.active = true;
         this.state = 'fastTravel';
         this.isRespawning = true;
@@ -327,15 +331,13 @@ class FastTravel {
     }
 
     _executeTravel() {
-        console.log('[FastTravel] _executeTravel — previewPortalIndex:', this.previewPortalIndex, 'onPortalChosen:', !!this.onPortalChosen);
-        if (this.previewPortalIndex === null) { console.warn('[FastTravel] previewPortalIndex is null, aborting'); return; }
+        if (this.previewPortalIndex === null) return;
 
         // Multiplayer: send portal choice to server, wait for confirmation
         if (this.onPortalChosen) {
             if (this._awaitingConfirmation) return; // Already waiting for server
             this._awaitingConfirmation = true;
 
-            console.log('[FastTravel] Sending portal choice to server:', this.previewPortalIndex);
             this.onPortalChosen(this.previewPortalIndex);
             // Hide UI while waiting for server confirmation
             this._hideAllUI();
@@ -344,7 +346,6 @@ class FastTravel {
             this._portalTimeout = setTimeout(() => {
                 this._awaitingConfirmation = false;
                 if (this.state === 'preview') {
-                    console.warn('[FastTravel] Portal confirmation timed out — re-showing UI');
                     this._showPreviewUI();
                 }
             }, 3000);
@@ -697,7 +698,6 @@ class FastTravel {
     }
 
     onTravelClick() {
-        console.log('[FastTravel] onTravelClick — state:', this.state, 'previewPortalIndex:', this.previewPortalIndex, 'onPortalChosen:', !!this.onPortalChosen);
         if (this.state === 'preview') {
             this._executeTravel();
         }
