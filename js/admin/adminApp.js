@@ -890,27 +890,31 @@
           return;
         }
 
-        // Save moon assignments (only when this territory involves moons,
-        // or was previously a moon territory that is changing type)
-        if (territoryType === 'moon' || prevGroupType === 'moon') {
-          try {
-            if (moonManager) {
-              await moonManager.saveMoonsForSponsor(selectedMoonsForGroupSave, formData);
-            }
-          } catch (e) {
-            console.warn("[AdminApp] Moon save failed:", e);
-          }
-        }
+        // Assign moon/billboard slots only for active, paid sponsors (not inquiry/awaiting payment)
+        const groupSponsorActive = editingGroup.ids.every(id => {
+          const s = SponsorStorage.getById(id);
+          return s && s.active !== false && s.ownerType !== "inquiry";
+        });
 
-        // Save billboard assignments (only when this territory involves billboards,
-        // or was previously a billboard territory that is changing type)
-        if (territoryType === 'billboard' || prevGroupType === 'billboard') {
-          try {
-            if (billboardManager) {
-              await billboardManager.saveBillboardsForSponsor(selectedBillboardsForGroupSave, formData);
+        if (groupSponsorActive) {
+          if (territoryType === 'moon' || prevGroupType === 'moon') {
+            try {
+              if (moonManager) {
+                await moonManager.saveMoonsForSponsor(selectedMoonsForGroupSave, formData);
+              }
+            } catch (e) {
+              console.warn("[AdminApp] Moon save failed:", e);
             }
-          } catch (e) {
-            console.warn("[AdminApp] Billboard save failed:", e);
+          }
+
+          if (territoryType === 'billboard' || prevGroupType === 'billboard') {
+            try {
+              if (billboardManager) {
+                await billboardManager.saveBillboardsForSponsor(selectedBillboardsForGroupSave, formData);
+              }
+            } catch (e) {
+              console.warn("[AdminApp] Billboard save failed:", e);
+            }
           }
         }
 
@@ -969,27 +973,28 @@
           return;
         }
 
-        // Save moon assignments (only when this territory involves moons,
-        // or was previously a moon territory that is changing type)
-        if (singleTerritoryType === 'moon' || prevType === 'moon') {
-          try {
-            if (moonManager) {
-              await moonManager.saveMoonsForSponsor(selectedMoonsForSave, formData);
-            }
-          } catch (e) {
-            console.warn("[AdminApp] Moon save failed:", e);
-          }
-        }
+        // Assign moon/billboard slots only for active, paid sponsors (not inquiry/awaiting payment)
+        const singleSponsorActive = prevSponsor ? (prevSponsor.active !== false && prevSponsor.ownerType !== "inquiry") : true;
 
-        // Save billboard assignments (only when this territory involves billboards,
-        // or was previously a billboard territory that is changing type)
-        if (singleTerritoryType === 'billboard' || prevType === 'billboard') {
-          try {
-            if (billboardManager) {
-              await billboardManager.saveBillboardsForSponsor(selectedBillboardsForSave, formData);
+        if (singleSponsorActive) {
+          if (singleTerritoryType === 'moon' || prevType === 'moon') {
+            try {
+              if (moonManager) {
+                await moonManager.saveMoonsForSponsor(selectedMoonsForSave, formData);
+              }
+            } catch (e) {
+              console.warn("[AdminApp] Moon save failed:", e);
             }
-          } catch (e) {
-            console.warn("[AdminApp] Billboard save failed:", e);
+          }
+
+          if (singleTerritoryType === 'billboard' || prevType === 'billboard') {
+            try {
+              if (billboardManager) {
+                await billboardManager.saveBillboardsForSponsor(selectedBillboardsForSave, formData);
+              }
+            } catch (e) {
+              console.warn("[AdminApp] Billboard save failed:", e);
+            }
           }
         }
 
@@ -1838,12 +1843,16 @@
 
     await SponsorStorage.update(id, updateData);
 
-    // Also persist moon/billboard assignments
-    if (moonManager && csType === 'moon') {
-      await moonManager.saveMoonsForSponsor(selectedMoonsCS, formData);
-    }
-    if (billboardManager && csType === 'billboard') {
-      await billboardManager.saveBillboardsForSponsor(selectedBillboardsCS, formData);
+    // Persist moon/billboard slot assignments only for active, paid sponsors
+    const csSponsor = SponsorStorage.getById(id);
+    const csSlotActive = csSponsor && csSponsor.active !== false && csSponsor.ownerType !== "inquiry";
+    if (csSlotActive) {
+      if (moonManager && csType === 'moon') {
+        await moonManager.saveMoonsForSponsor(selectedMoonsCS, formData);
+      }
+      if (billboardManager && csType === 'billboard') {
+        await billboardManager.saveBillboardsForSponsor(selectedBillboardsCS, formData);
+      }
     }
   }
 
@@ -1916,12 +1925,17 @@
       if (isPlayer) {
         createData.title = "";
       }
-      // Preserve player territory ownership so new entry stays in the same group
+      // Preserve ownership so new entry stays in the same group
       if (isPlayer) {
         createData.ownerType = "player";
         if (first.ownerUid) createData.ownerUid = first.ownerUid;
         if (first.ownerEmail) createData.ownerEmail = first.ownerEmail;
         if (first.notes) createData.notes = first.notes;
+      }
+      if (first.ownerType === "inquiry") {
+        createData.ownerType = "inquiry";
+        createData.active = false;
+        if (first.inquiryData) createData.inquiryData = first.inquiryData;
       }
       const newSponsor = await SponsorStorage.create(createData);
 
