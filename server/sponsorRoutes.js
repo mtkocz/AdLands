@@ -616,6 +616,8 @@ function createSponsorRoutes(sponsorStore, gameRoom, { imageUrls, contentHashes,
             }
           }
 
+          reloadIfLive();
+
           const subtotalCents = lineItems.reduce((sum, li) => sum + li.unitAmountCents * li.quantity, 0);
           const totalCents = Math.round(subtotalCents * (1 - (discountPercent || 0) / 100));
           console.log(`[Territory] Approved & invoiced for ${territoryId} ($${(totalCents / 100).toFixed(2)}/mo)`);

@@ -3074,8 +3074,8 @@ class Dashboard {
     canvas.height = 512;
     const ctx = canvas.getContext("2d");
 
-    // Grayscale placeholder (neutral, non-faction)
-    const colors = { bg: "#2a2a2a", accent: "#555555", text: "#cccccc" };
+    // Charcoal placeholder (neutral, non-faction — bright enough to survive levels adjustment)
+    const colors = { bg: "#3d3d3d", accent: "#666666", text: "#cccccc" };
 
     // Base fill
     ctx.fillStyle = colors.bg;

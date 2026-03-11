@@ -596,8 +596,9 @@ class GameRoom {
   /**
    * Reload sponsors from disk, re-process clusters, and broadcast to all clients.
    * Called by the REST API after sponsor create/update/delete/import.
+   * @param {{ silent?: boolean }} options - If silent, skip client broadcast
    */
-  reloadSponsors() {
+  reloadSponsors({ silent = false } = {}) {
     if (!this.sponsorStore) return;
 
     const wr = this._worldResult;
@@ -722,14 +723,16 @@ class GameRoom {
       }
     }
 
-    // 6. Broadcast full reload to all connected clients
-    this.io.to(this.roomId).emit("sponsors-reloaded", {
-      world: this._worldPayload,
-      captureState: this._buildCaptureSnapshot(),
-      presenceData: this._getPresencePayload(),
-    });
+    // 6. Broadcast full reload to all connected clients (unless silent)
+    if (!silent) {
+      this.io.to(this.roomId).emit("sponsors-reloaded", {
+        world: this._worldPayload,
+        captureState: this._buildCaptureSnapshot(),
+        presenceData: this._getPresencePayload(),
+      });
+    }
 
-    DEBUG_LOG && console.log(`[Room ${this.roomId}] Sponsors reloaded: ${this.sponsors.length} active, broadcast to clients`);
+    DEBUG_LOG && console.log(`[Room ${this.roomId}] Sponsors reloaded: ${this.sponsors.length} active${silent ? " (silent)" : ""}, broadcast to clients`);
   }
 
   // ========================
@@ -5440,13 +5443,14 @@ class GameRoom {
     // URLs already include ?v=<mtime> cache busters from extractSponsorImage()
     const sponsors = this.sponsors.map(s => {
       const urls = this.sponsorImageUrls[s.id] || {};
+      const isPlayer = s.ownerType === "player" || s.isPlayerTerritory;
       const entry = {
         id: s.id,
         name: s.name,
-        tagline: s.tagline,
-        websiteUrl: s.websiteUrl,
+        tagline: s._approvedTagline || s.tagline || "",
+        websiteUrl: s._approvedUrl || s.websiteUrl || "",
         patternImage: urls.patternUrl || null,
-        logoImage: (s.ownerType === "player") ? null : (urls.logoUrl || null),
+        logoImage: isPlayer ? null : (urls.logoUrl || null),
         patternAdjustment: s.patternAdjustment,
         cluster: { tileIndices: s.cluster.tileIndices },
         rewards: s.rewards,
@@ -5455,14 +5459,14 @@ class GameRoom {
         clusterId: this.sponsorClusterMap.get(s.id),
       };
       // Include player territory metadata so clients can reconcile local state
-      if (s.ownerType === "player" || s.isPlayerTerritory) {
+      if (isPlayer) {
         entry.ownerType = "player";
         entry.isPlayerTerritory = true; // backward compat for cached clients
         entry.ownerUid = s.ownerUid || null;
         entry.imageStatus = s.imageStatus || null;
         entry.tierName = s.tierName || null;
         entry._territoryId = s._territoryId || null;
-        if (s.title) entry.title = s.title;
+        entry.title = s._approvedTitle || s.title || "";
       }
       return entry;
     });
