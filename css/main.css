@@ -2056,8 +2056,8 @@ body.tip-dragging .chat-mention.tip-highlight {
 }
 
 .chat-section-messages {
-    flex: 1;
-    min-height: 0; /* Allow shrinking within flex parent so overflow-y scrolls */
+    flex: 1 1 0;
+    height: 0; /* Firefox: force intrinsic height to 0 so overflow-y scrolls */
     overflow-y: auto;
     overscroll-behavior: contain;
     padding: var(--space-xs); /* 4px */
