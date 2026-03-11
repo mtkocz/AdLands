@@ -80,6 +80,62 @@ function buildInvoiceLineItems(sponsor, tierMap) {
 }
 
 /**
+ * Build combined invoice line items for a group of sponsors (single subscription).
+ * Aggregates hex tiers across all clusters and applies discount based on total hex count.
+ * @param {Object[]} sponsors - Array of sponsor records
+ * @param {Map} tierMap - Tile index → tier ID map
+ * @returns {{ lineItems: Array<{name: string, unitAmountCents: number, quantity: number}>, discountPercent: number }}
+ */
+function buildGroupInvoiceLineItems(sponsors, tierMap) {
+  const combinedByTier = {};
+  let totalHexCount = 0;
+  const nonHexItems = [];
+
+  for (const sponsor of sponsors) {
+    if (sponsor.territoryType === "moon") {
+      const moonIndex = sponsor.inquiryData?.moonIndex ?? 0;
+      const price = HexTierSystem.MOON_PRICES[moonIndex] || HexTierSystem.MOON_PRICES[0];
+      const label = HexTierSystem.MOON_LABELS[moonIndex] || `Moon ${moonIndex + 1}`;
+      nonHexItems.push({ name: label, unitAmountCents: Math.round(price * 100), quantity: 1 });
+      continue;
+    }
+
+    if (sponsor.territoryType === "billboard") {
+      const bbIndex = sponsor.inquiryData?.billboardIndex ?? 0;
+      const price = HexTierSystem.getBillboardPrice(bbIndex);
+      const label = HexTierSystem.getBillboardLabel(bbIndex);
+      nonHexItems.push({ name: label, unitAmountCents: Math.round(price * 100), quantity: 1 });
+      continue;
+    }
+
+    const tiles = sponsor.cluster?.tileIndices || [];
+    if (tiles.length === 0 || !tierMap) continue;
+    for (const idx of tiles) {
+      const tier = tierMap.get(idx);
+      if (!tier || tier === "RESTRICTED") continue;
+      combinedByTier[tier] = (combinedByTier[tier] || 0) + 1;
+      totalHexCount++;
+    }
+  }
+
+  const lineItems = [];
+  for (const tierId of HexTierSystem.RENTABLE_TIERS) {
+    const count = combinedByTier[tierId];
+    if (!count) continue;
+    const tier = HexTierSystem.TIERS[tierId];
+    lineItems.push({
+      name: `${tier.name} Hex`,
+      unitAmountCents: Math.round(tier.price * 100),
+      quantity: count,
+    });
+  }
+
+  lineItems.push(...nonHexItems);
+  const discountPercent = HexTierSystem.getClusterDiscount(totalHexCount);
+  return { lineItems, discountPercent };
+}
+
+/**
  * Find or create a Stripe customer for the given email.
  * @param {string} email
  * @param {string} [name]
@@ -208,6 +264,7 @@ module.exports = {
   getStripe,
   isEnabled,
   buildInvoiceLineItems,
+  buildGroupInvoiceLineItems,
   findOrCreateCustomer,
   createSubscription,
   cancelSubscription,

@@ -778,6 +778,144 @@ function createSponsorRoutes(sponsorStore, gameRoom, { imageUrls, contentHashes,
     }
   });
 
+  // POST /api/sponsors/activate-inquiry-group — activate a group of inquiry territories with one combined invoice
+  router.post("/activate-inquiry-group", async (req, res) => {
+    const { ids, force } = req.body || {};
+    if (!Array.isArray(ids) || ids.length === 0) {
+      return res.status(400).json({ errors: ["ids array required"] });
+    }
+
+    const sponsors = ids.map(id => sponsorStore.getById(id)).filter(Boolean);
+    if (sponsors.length === 0) {
+      return res.status(404).json({ errors: ["No sponsors found"] });
+    }
+    if (sponsors.some(s => s.ownerType !== "inquiry")) {
+      return res.status(400).json({ errors: ["All sponsors must be pending inquiries"] });
+    }
+
+    try {
+      // Check tile conflicts across all members
+      for (const sponsor of sponsors) {
+        const tiles = sponsor.cluster?.tileIndices || [];
+        if (tiles.length > 0 && !force) {
+          const conflict = sponsorStore.areTilesUsed(tiles, sponsor.id);
+          if (conflict.isUsed) {
+            const idSet = new Set(ids);
+            const conflicts = [];
+            const tileSet = new Set(tiles);
+            for (const s of sponsorStore.getAll()) {
+              if (idSet.has(s.id)) continue;
+              if (!s.cluster?.tileIndices) continue;
+              const overlapping = s.cluster.tileIndices.filter(t => tileSet.has(t));
+              if (overlapping.length > 0) {
+                conflicts.push({ sponsorId: s.id, sponsorName: s.name, overlappingTiles: overlapping });
+              }
+            }
+            if (conflicts.length > 0) {
+              return res.status(409).json({ conflicts });
+            }
+          }
+        }
+      }
+
+      // Force mode: strip overlapping tiles and clear conflicting moon/billboard slots
+      if (force) {
+        const idSet = new Set(ids);
+        for (const sponsor of sponsors) {
+          const tiles = sponsor.cluster?.tileIndices || [];
+          if (tiles.length > 0) {
+            const tileSet = new Set(tiles);
+            for (const s of sponsorStore.getAll()) {
+              if (idSet.has(s.id)) continue;
+              if (!s.cluster?.tileIndices) continue;
+              const remaining = s.cluster.tileIndices.filter(t => !tileSet.has(t));
+              if (remaining.length < s.cluster.tileIndices.length) {
+                await sponsorStore.update(s.id, { cluster: { ...s.cluster, tileIndices: remaining } });
+              }
+            }
+          }
+          if (sponsor.territoryType === "moon" && sponsor.inquiryData?.moonIndex != null && moonSponsorStore) {
+            const slot = moonSponsorStore.getAll()[sponsor.inquiryData.moonIndex];
+            if (slot) await moonSponsorStore.clear(sponsor.inquiryData.moonIndex);
+          }
+          if (sponsor.territoryType === "billboard" && sponsor.inquiryData?.billboardIndex != null && billboardSponsorStore) {
+            const slot = billboardSponsorStore.getAll()[sponsor.inquiryData.billboardIndex];
+            if (slot) await billboardSponsorStore.clear(sponsor.inquiryData.billboardIndex);
+          }
+        }
+      }
+
+      // Assign moon/billboard slots for all members
+      for (const sponsor of sponsors) {
+        if (sponsor.territoryType === "moon" && sponsor.inquiryData?.moonIndex != null && moonSponsorStore) {
+          await moonSponsorStore.assign(sponsor.inquiryData.moonIndex, {
+            name: sponsor.name, tagline: sponsor.tagline || "", websiteUrl: sponsor.websiteUrl || "",
+          });
+        }
+        if (sponsor.territoryType === "billboard" && sponsor.inquiryData?.billboardIndex != null && billboardSponsorStore) {
+          await billboardSponsorStore.assign(sponsor.inquiryData.billboardIndex, {
+            name: sponsor.name, tagline: sponsor.tagline || "", websiteUrl: sponsor.websiteUrl || "",
+          });
+        }
+      }
+
+      // === STRIPE INVOICING: single combined subscription ===
+      if (stripeService.isEnabled()) {
+        const contactSponsor = sponsors[0];
+        const customerEmail = contactSponsor.inquiryData?.contactEmail;
+        if (!customerEmail) {
+          return res.status(400).json({ errors: ["No contact email found — cannot send invoice"] });
+        }
+
+        const { lineItems, discountPercent } = stripeService.buildGroupInvoiceLineItems(sponsors, tierMap);
+        if (lineItems.length === 0) {
+          return res.status(400).json({ errors: ["No billable items found"] });
+        }
+
+        const customerName = contactSponsor.inquiryData?.contactName || null;
+        const description = contactSponsor.name || "Territory Group";
+        const customerId = await stripeService.findOrCreateCustomer(customerEmail, customerName);
+        const subscription = await stripeService.createSubscription({
+          customerId,
+          sponsorId: ids.join(","),
+          territoryId: ids[0],
+          description,
+          lineItems,
+          discountPercent,
+        });
+
+        for (const sponsor of sponsors) {
+          await sponsorStore.update(sponsor.id, {
+            ownerType: "admin",
+            active: false,
+            paymentStatus: "invoiced",
+            submissionStatus: "invoiced",
+            stripeCustomerId: customerId,
+            stripeSubscriptionId: subscription.id,
+          });
+          await reExtractImages(sponsor.id);
+        }
+
+        const subtotalCents = lineItems.reduce((sum, li) => sum + li.unitAmountCents * li.quantity, 0);
+        const totalCents = Math.round(subtotalCents * (1 - (discountPercent || 0) / 100));
+        console.log(`[Inquiry] Group approved & invoiced (${sponsors.length} territories, ${contactSponsor.name}) — $${(totalCents / 100).toFixed(2)}/mo`);
+        return res.json({ success: true, action: "invoiced", amountCents: totalCents, subscriptionId: subscription.id });
+      }
+
+      // === LEGACY PATH (Stripe disabled) — immediate activation ===
+      for (const sponsor of sponsors) {
+        await sponsorStore.update(sponsor.id, { ownerType: "admin", active: true });
+        await reExtractImages(sponsor.id);
+      }
+      reloadIfLive();
+      console.log(`[Inquiry] Group activated (${sponsors.length} territories, ${sponsors[0].name})`);
+      res.json({ success: true });
+    } catch (err) {
+      console.error("[Inquiry] Group activation failed:", err);
+      res.status(500).json({ errors: ["Activation failed: " + err.message] });
+    }
+  });
+
   // POST /api/sponsors/:id/activate-inquiry — activate a pending inquiry territory
   router.post("/:id/activate-inquiry", async (req, res) => {
     const { force } = req.body || {};

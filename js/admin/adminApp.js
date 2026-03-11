@@ -2338,55 +2338,47 @@
 
     busy = true;
     try {
-      let hadConflicts = false;
-      for (const member of members) {
-        const res = await fetch(`/api/sponsors/${encodeURIComponent(member.id)}/activate-inquiry`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({}),
-        });
+      const memberIds = members.map(m => m.id);
 
-        if (res.status === 409) {
-          // Conflicts detected — ask user to override
-          const data = await res.json();
-          const conflictNames = (data.conflicts || []).map(c => c.sponsorName).filter(Boolean);
-          const uniqueNames = [...new Set(conflictNames)];
-          const msg = `Conflicts with: ${uniqueNames.map(n => `"${n}"`).join(", ")}.\nOverride and replace conflicting territories?`;
-          if (confirm(msg)) {
-            const forceRes = await fetch(`/api/sponsors/${encodeURIComponent(member.id)}/activate-inquiry`, {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ force: true }),
-            });
-            const forceResult = await forceRes.json();
-            if (!forceResult.success) {
-              showToast((forceResult.errors || []).join(". ") || "Activation failed", "error");
-              return;
-            }
-          } else {
-            hadConflicts = true;
-            break;
-          }
-        } else {
-          const result = await res.json();
-          if (!result.success) {
-            showToast((result.errors || []).join(". ") || "Activation failed", "error");
+      // Single grouped request — all territories in one invoice
+      const res = await fetch("/api/sponsors/activate-inquiry-group", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ids: memberIds }),
+      });
+
+      if (res.status === 409) {
+        const data = await res.json();
+        const conflictNames = (data.conflicts || []).map(c => c.sponsorName).filter(Boolean);
+        const uniqueNames = [...new Set(conflictNames)];
+        const msg = `Conflicts with: ${uniqueNames.map(n => `"${n}"`).join(", ")}.\nOverride and strip conflicting territories?`;
+        if (confirm(msg)) {
+          const forceRes = await fetch("/api/sponsors/activate-inquiry-group", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ ids: memberIds, force: true }),
+          });
+          const forceResult = await forceRes.json();
+          if (!forceResult.success) {
+            showToast((forceResult.errors || []).join(". ") || "Activation failed", "error");
             return;
           }
+        } else {
+          return;
+        }
+      } else {
+        const result = await res.json();
+        if (!result.success) {
+          showToast((result.errors || []).join(". ") || "Activation failed", "error");
+          return;
         }
       }
 
-      if (!hadConflicts) {
-        // Check if the last activation result was an invoice (Stripe enabled)
-        const lastRes = await fetch(`/api/sponsors/${encodeURIComponent(members[members.length - 1].id)}`, { method: "GET" });
-        const lastSponsor = await lastRes.json();
-        const wasInvoiced = lastSponsor?.paymentStatus === "invoiced";
-        const actionWord = wasInvoiced ? "invoiced" : "activated";
-        showToast(`Accepted inquiry "${members[0].name}" — ${members.length} ${members.length === 1 ? "territory" : "territories"} ${actionWord}`, "success");
-        handleClearForm();
-        await SponsorStorage.reload();
-        refreshSponsorsList();
-      }
+      const actionWord = members.length > 1 ? "territories" : "territory";
+      showToast(`Accepted "${members[0].name}" — ${members.length} ${actionWord} on 1 invoice`, "success");
+      handleClearForm();
+      await SponsorStorage.reload();
+      refreshSponsorsList();
     } catch (err) {
       showToast("Accept failed: " + err.message, "error");
     } finally {

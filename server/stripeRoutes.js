@@ -85,105 +85,103 @@ async function handleInvoicePaid(invoice, sponsorStore, gameRoom, { reExtractIma
     || invoice.parent?.subscription_details?.subscription;
   if (!subscriptionId) return;
 
-  // Find the sponsor by stripeSubscriptionId
-  const sponsor = findSponsorBySubscription(sponsorStore, subscriptionId);
-  if (!sponsor) {
+  // Find all sponsors sharing this subscription (group invoicing stores the same ID on all members)
+  const sponsors = findSponsorsBySubscription(sponsorStore, subscriptionId);
+  if (sponsors.length === 0) {
     console.warn("[Stripe] invoice.paid — no sponsor found for subscription:", subscriptionId);
     return;
   }
 
   // Skip if already active (idempotency for recurring payments)
-  if (sponsor.submissionStatus === "active" || sponsor.paymentStatus === "active") {
-    console.log("[Stripe] Territory already active, skipping:", sponsor.id);
+  const pending = sponsors.filter(s => s.submissionStatus !== "active" && s.paymentStatus !== "active");
+  if (pending.length === 0) {
+    console.log("[Stripe] All territories already active, skipping:", subscriptionId);
     return;
   }
 
-  const territoryId = sponsor._territoryId || sponsor.id;
+  for (const sponsor of pending) {
+    const territoryId = sponsor._territoryId || sponsor.id;
 
-  // Activate territory — move pending fields to active
-  const updateFields = {
-    active: true,
-    submissionStatus: "active",
-    paymentStatus: "active",
-    activatedAt: new Date().toISOString(),
-  };
-
-  // For player territories with pending content, promote to active
-  if (sponsor.ownerType === "player") {
-    if (sponsor._approvedTitle != null) updateFields.title = sponsor._approvedTitle;
-    if (sponsor._approvedTagline != null) updateFields.tagline = sponsor._approvedTagline;
-    if (sponsor._approvedUrl != null) updateFields.websiteUrl = sponsor._approvedUrl;
-    if (sponsor._approvedImage != null) updateFields.patternImage = sponsor._approvedImage;
-
-    // Clear staging fields
-    updateFields._approvedTitle = null;
-    updateFields._approvedTagline = null;
-    updateFields._approvedUrl = null;
-    updateFields._approvedImage = null;
-  }
-
-  await sponsorStore.update(sponsor.id, updateFields);
-
-  // Re-extract images
-  if (reExtractImages) {
-    try { await reExtractImages(sponsor.id); } catch (e) {
-      console.warn("[Stripe] Image re-extraction failed:", e.message);
-    }
-  }
-
-  // Update Firestore
-  try {
-    const db = getFirestore();
-    const firestoreUpdate = {
+    const updateFields = {
+      active: true,
+      submissionStatus: "active",
       paymentStatus: "active",
-      activatedAt: require("firebase-admin").firestore.FieldValue.serverTimestamp(),
+      activatedAt: new Date().toISOString(),
     };
-    if (updateFields.title != null) firestoreUpdate.title = updateFields.title;
-    if (updateFields.tagline != null) firestoreUpdate.tagline = updateFields.tagline;
-    if (updateFields.websiteUrl != null) firestoreUpdate.websiteUrl = updateFields.websiteUrl;
-    if (updateFields.patternImage != null) firestoreUpdate.patternImage = updateFields.patternImage;
 
-    await db.collection("territories").doc(territoryId).update(firestoreUpdate);
-  } catch (e) {
-    console.warn("[Stripe] Firestore update failed:", e.message);
-  }
+    // For player territories with pending content, promote to active
+    if (sponsor.ownerType === "player") {
+      if (sponsor._approvedTitle != null) updateFields.title = sponsor._approvedTitle;
+      if (sponsor._approvedTagline != null) updateFields.tagline = sponsor._approvedTagline;
+      if (sponsor._approvedUrl != null) updateFields.websiteUrl = sponsor._approvedUrl;
+      if (sponsor._approvedImage != null) updateFields.patternImage = sponsor._approvedImage;
+      updateFields._approvedTitle = null;
+      updateFields._approvedTagline = null;
+      updateFields._approvedUrl = null;
+      updateFields._approvedImage = null;
+    }
 
-  // Broadcast to game clients
-  if (gameRoom) {
-    gameRoom.io.to(gameRoom.roomId).emit("territory-submission-approved", {
-      territoryId,
-      title: updateFields.title || sponsor.title,
-      tagline: updateFields.tagline || sponsor.tagline,
-      websiteUrl: updateFields.websiteUrl || sponsor.websiteUrl,
-      patternImage: sponsor.patternImage,
-      patternAdjustment: sponsor.patternAdjustment || {},
-      tileIndices: sponsor.cluster?.tileIndices || [],
-    });
+    await sponsorStore.update(sponsor.id, updateFields);
 
-    // Notify the owning player
-    if (sponsor.ownerUid) {
-      const sockets = await gameRoom.io.in(gameRoom.roomId).fetchSockets();
-      for (const s of sockets) {
-        if (s.uid === sponsor.ownerUid) {
-          s.emit("territory-review-result", {
-            territoryId,
-            status: "active",
-            message: "Payment received! Your territory is now live.",
-          });
-        }
+    if (reExtractImages) {
+      try { await reExtractImages(sponsor.id); } catch (e) {
+        console.warn("[Stripe] Image re-extraction failed:", e.message);
       }
     }
 
-    // Notify admin sockets
+    try {
+      const db = getFirestore();
+      const firestoreUpdate = {
+        paymentStatus: "active",
+        activatedAt: require("firebase-admin").firestore.FieldValue.serverTimestamp(),
+      };
+      if (updateFields.title != null) firestoreUpdate.title = updateFields.title;
+      if (updateFields.tagline != null) firestoreUpdate.tagline = updateFields.tagline;
+      if (updateFields.websiteUrl != null) firestoreUpdate.websiteUrl = updateFields.websiteUrl;
+      if (updateFields.patternImage != null) firestoreUpdate.patternImage = updateFields.patternImage;
+      await db.collection("territories").doc(territoryId).update(firestoreUpdate);
+    } catch (e) {
+      console.warn("[Stripe] Firestore update failed:", e.message);
+    }
+
+    if (gameRoom) {
+      gameRoom.io.to(gameRoom.roomId).emit("territory-submission-approved", {
+        territoryId,
+        title: updateFields.title || sponsor.title,
+        tagline: updateFields.tagline || sponsor.tagline,
+        websiteUrl: updateFields.websiteUrl || sponsor.websiteUrl,
+        patternImage: sponsor.patternImage,
+        patternAdjustment: sponsor.patternAdjustment || {},
+        tileIndices: sponsor.cluster?.tileIndices || [],
+      });
+
+      if (sponsor.ownerUid) {
+        const sockets = await gameRoom.io.in(gameRoom.roomId).fetchSockets();
+        for (const s of sockets) {
+          if (s.uid === sponsor.ownerUid) {
+            s.emit("territory-review-result", {
+              territoryId,
+              status: "active",
+              message: "Payment received! Your territory is now live.",
+            });
+          }
+        }
+      }
+    }
+  }
+
+  // Broadcast payment received and reload once (after all members activated)
+  if (gameRoom) {
     gameRoom.io.to(gameRoom.roomId).emit("territory-payment-received", {
-      sponsorId: sponsor.id,
-      territoryId,
-      sponsorName: sponsor.name || sponsor.title,
+      sponsorId: pending.map(s => s.id).join(","),
+      territoryId: pending[0]._territoryId || pending[0].id,
+      sponsorName: pending[0].name || pending[0].title,
+      count: pending.length,
     });
   }
 
   if (reloadIfLive) reloadIfLive();
-  console.log(`[Stripe] Territory activated after payment: ${territoryId}`);
+  console.log(`[Stripe] ${pending.length} territor${pending.length === 1 ? "y" : "ies"} activated after payment (subscription: ${subscriptionId})`);
 }
 
 /**
@@ -191,70 +189,65 @@ async function handleInvoicePaid(invoice, sponsorStore, gameRoom, { reExtractIma
  * This fires when all retries exhausted or subscription manually cancelled.
  */
 async function handleSubscriptionDeleted(subscription, sponsorStore, gameRoom, { reloadIfLive, cleanupSponsorImages }) {
-  const sponsor = findSponsorBySubscription(sponsorStore, subscription.id);
-  if (!sponsor) {
+  const sponsors = findSponsorsBySubscription(sponsorStore, subscription.id);
+  if (sponsors.length === 0) {
     console.warn("[Stripe] subscription.deleted — no sponsor found:", subscription.id);
     return;
   }
 
-  const territoryId = sponsor._territoryId || sponsor.id;
-  const sponsorId = sponsor.id;
+  for (const sponsor of sponsors) {
+    const territoryId = sponsor._territoryId || sponsor.id;
+    const sponsorId = sponsor.id;
 
-  // Delete from Firestore
-  if (sponsor.ownerType === "player" && territoryId) {
-    try {
-      const db = getFirestore();
-      await db.collection("territories").doc(territoryId).delete();
-    } catch (e) {
-      console.warn("[Stripe] Firestore territory delete failed:", e.message);
+    if (sponsor.ownerType === "player" && territoryId) {
+      try {
+        const db = getFirestore();
+        await db.collection("territories").doc(territoryId).delete();
+      } catch (e) {
+        console.warn("[Stripe] Firestore territory delete failed:", e.message);
+      }
     }
-  }
 
-  // Delete from SponsorStore
-  await sponsorStore.delete(sponsorId);
+    await sponsorStore.delete(sponsorId);
 
-  // Clean up image files
-  if (cleanupSponsorImages) {
-    try { await cleanupSponsorImages(sponsorId); } catch (e) {
-      console.warn("[Stripe] Image cleanup failed:", e.message);
+    if (cleanupSponsorImages) {
+      try { await cleanupSponsorImages(sponsorId); } catch (e) {
+        console.warn("[Stripe] Image cleanup failed:", e.message);
+      }
     }
-  }
 
-  // Notify the owning player
-  if (gameRoom && sponsor.ownerUid) {
-    const sockets = await gameRoom.io.in(gameRoom.roomId).fetchSockets();
-    for (const s of sockets) {
-      if (s.uid === sponsor.ownerUid) {
-        s.emit("territory-deleted", {
-          territoryId,
-          sponsorStorageId: sponsorId,
-          reason: "Subscription cancelled",
-        });
+    if (gameRoom && sponsor.ownerUid) {
+      const sockets = await gameRoom.io.in(gameRoom.roomId).fetchSockets();
+      for (const s of sockets) {
+        if (s.uid === sponsor.ownerUid) {
+          s.emit("territory-deleted", {
+            territoryId,
+            sponsorStorageId: sponsorId,
+            reason: "Subscription cancelled",
+          });
+        }
       }
     }
   }
 
-  // Notify admin
   if (gameRoom) {
     gameRoom.io.to(gameRoom.roomId).emit("territory-payment-expired", {
-      sponsorId,
-      territoryId,
-      sponsorName: sponsor.name || sponsor.title,
+      sponsorId: sponsors.map(s => s.id).join(","),
+      territoryId: sponsors[0]._territoryId || sponsors[0].id,
+      sponsorName: sponsors[0].name || sponsors[0].title,
+      count: sponsors.length,
     });
   }
 
   if (reloadIfLive) reloadIfLive();
-  console.log(`[Stripe] Territory removed — subscription ended: ${territoryId}`);
+  console.log(`[Stripe] ${sponsors.length} territor${sponsors.length === 1 ? "y" : "ies"} removed — subscription ended: ${subscription.id}`);
 }
 
 /**
- * Find a sponsor by its Stripe subscription ID.
+ * Find all sponsors sharing a Stripe subscription ID.
  */
-function findSponsorBySubscription(sponsorStore, subscriptionId) {
-  for (const s of sponsorStore.getAll()) {
-    if (s.stripeSubscriptionId === subscriptionId) return s;
-  }
-  return null;
+function findSponsorsBySubscription(sponsorStore, subscriptionId) {
+  return sponsorStore.getAll().filter(s => s.stripeSubscriptionId === subscriptionId);
 }
 
 module.exports = { createStripeRoutes };
