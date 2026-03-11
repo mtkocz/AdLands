@@ -402,8 +402,8 @@ class SponsorStore {
     const { valid, errors } = this.validate(merged);
     if (!valid) return { errors };
 
-    // Skip tile conflict check for player territories
-    if (merged.cluster && merged.cluster.tileIndices && merged.ownerType !== "player") {
+    // Skip tile conflict check for player and inquiry territories
+    if (merged.cluster && merged.cluster.tileIndices && merged.ownerType !== "player" && merged.ownerType !== "inquiry") {
       const tileCheck = this.areTilesUsed(merged.cluster.tileIndices, id);
       if (tileCheck.isUsed) {
         return { errors: [`Tiles conflict with sponsor "${tileCheck.sponsorName}"`] };

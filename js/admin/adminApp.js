@@ -809,21 +809,24 @@
           return;
         }
 
-        // Tile conflict check (exclude all group members)
-        for (const id of editingGroup.ids) {
-          const tiles = id === activeId
-            ? selectedTiles
-            : (SponsorStorage.getById(id)?.cluster?.tileIndices || []);
-          if (tiles.length === 0) continue;
-          const check = SponsorStorage.areTilesUsed(tiles, id);
-          if (check.isUsed) {
-            const groupIdSet = new Set(editingGroup.ids);
-            const conflictSponsor = SponsorStorage.getAll().find(
-              (s) => !groupIdSet.has(s.id) && s.cluster?.tileIndices?.some((t) => tiles.includes(t))
-            );
-            if (conflictSponsor) {
-              showToast(`Tiles conflict with "${conflictSponsor.name}"`, "error");
-              return;
+        // Tile conflict check (exclude all group members; skip for inquiry territories — conflicts resolved at activation)
+        const isInquiryGroup = editingGroup.ids.some(id => SponsorStorage.getById(id)?.ownerType === "inquiry");
+        if (!isInquiryGroup) {
+          for (const id of editingGroup.ids) {
+            const tiles = id === activeId
+              ? selectedTiles
+              : (SponsorStorage.getById(id)?.cluster?.tileIndices || []);
+            if (tiles.length === 0) continue;
+            const check = SponsorStorage.areTilesUsed(tiles, id);
+            if (check.isUsed) {
+              const groupIdSet = new Set(editingGroup.ids);
+              const conflictSponsor = SponsorStorage.getAll().find(
+                (s) => !groupIdSet.has(s.id) && s.cluster?.tileIndices?.some((t) => tiles.includes(t))
+              );
+              if (conflictSponsor) {
+                showToast(`Tiles conflict with "${conflictSponsor.name}"`, "error");
+                return;
+              }
             }
           }
         }
@@ -934,8 +937,9 @@
         const prevSponsor = editingId ? SponsorStorage.getById(editingId) : null;
         const prevType = prevSponsor?.territoryType || null;
 
-        // Tile conflict check
-        if (selectedTiles.length > 0) {
+        // Tile conflict check (skip for inquiry territories — conflicts resolved at activation)
+        const isInquirySingle = prevSponsor?.ownerType === "inquiry";
+        if (selectedTiles.length > 0 && !isInquirySingle) {
           const tileCheck = SponsorStorage.areTilesUsed(selectedTiles, editingId);
           if (tileCheck.isUsed) {
             showToast(
