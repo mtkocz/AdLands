@@ -923,30 +923,28 @@ function createSponsorRoutes(sponsorStore, gameRoom, { imageUrls, contentHashes,
         return res.json({ success: true, action: "invoiced", amountCents: totalCents, subscriptionId: subscription.id });
       }
 
-      // === LEGACY PATH (Stripe disabled) — assign slots and activate immediately ===
+      // === LEGACY PATH (Stripe disabled) — accept but defer activation until payment ===
       for (const sponsor of sponsors) {
-        if (sponsor.territoryType === "moon" && sponsor.inquiryData?.moonIndex != null && moonSponsorStore) {
-          await moonSponsorStore.assign(sponsor.inquiryData.moonIndex, {
-            name: sponsor.name, tagline: sponsor.tagline || "", websiteUrl: sponsor.websiteUrl || "",
-          });
-        }
-        if (sponsor.territoryType === "billboard" && sponsor.inquiryData?.billboardIndex != null && billboardSponsorStore) {
-          await billboardSponsorStore.assign(sponsor.inquiryData.billboardIndex, {
-            name: sponsor.name, tagline: sponsor.tagline || "", websiteUrl: sponsor.websiteUrl || "",
-          });
-        }
-
-        await sponsorStore.update(sponsor.id, {
+        const updateFields = {
           ownerType: "sponsor",
-          active: true,
+          active: false,
+          paymentStatus: "awaiting_payment",
           ownerEmail: sponsor.inquiryData?.contactEmail || null,
           ownerContactName: sponsor.inquiryData?.contactName || null,
-        });
+        };
+
+        if (sponsor.territoryType === "moon" && sponsor.inquiryData?.moonIndex != null) {
+          updateFields._pendingMoonIndex = sponsor.inquiryData.moonIndex;
+        }
+        if (sponsor.territoryType === "billboard" && sponsor.inquiryData?.billboardIndex != null) {
+          updateFields._pendingBillboardIndex = sponsor.inquiryData.billboardIndex;
+        }
+
+        await sponsorStore.update(sponsor.id, updateFields);
         await reExtractImages(sponsor.id);
       }
-      reloadIfLive();
-      console.log(`[Inquiry] Group activated (${sponsors.length} territories, ${sponsors[0].name})`);
-      res.json({ success: true });
+      console.log(`[Inquiry] Group accepted (${sponsors.length} territories, ${sponsors[0].name}) — awaiting payment`);
+      res.json({ success: true, action: "awaiting_payment" });
     } catch (err) {
       console.error("[Inquiry] Group activation failed:", err);
       res.status(500).json({ errors: ["Activation failed: " + err.message] });
@@ -1063,30 +1061,27 @@ function createSponsorRoutes(sponsorStore, gameRoom, { imageUrls, contentHashes,
         return res.json({ success: true, action: "invoiced", amountCents: totalCents, subscriptionId: subscription.id });
       }
 
-      // === LEGACY PATH (Stripe disabled) — assign slots and activate immediately ===
-      if (sponsor.territoryType === "moon" && sponsor.inquiryData?.moonIndex != null && moonSponsorStore) {
-        await moonSponsorStore.assign(sponsor.inquiryData.moonIndex, {
-          name: sponsor.name, tagline: sponsor.tagline || "", websiteUrl: sponsor.websiteUrl || "",
-        });
-      }
-      if (sponsor.territoryType === "billboard" && sponsor.inquiryData?.billboardIndex != null && billboardSponsorStore) {
-        await billboardSponsorStore.assign(sponsor.inquiryData.billboardIndex, {
-          name: sponsor.name, tagline: sponsor.tagline || "", websiteUrl: sponsor.websiteUrl || "",
-        });
-      }
-
-      await sponsorStore.update(req.params.id, {
+      // === LEGACY PATH (Stripe disabled) — accept but defer activation until payment ===
+      const updateFields = {
         ownerType: "sponsor",
-        active: true,
+        active: false,
+        paymentStatus: "awaiting_payment",
         ownerEmail: sponsor.inquiryData?.contactEmail || null,
         ownerContactName: sponsor.inquiryData?.contactName || null,
-      });
+      };
 
+      if (sponsor.territoryType === "moon" && sponsor.inquiryData?.moonIndex != null) {
+        updateFields._pendingMoonIndex = sponsor.inquiryData.moonIndex;
+      }
+      if (sponsor.territoryType === "billboard" && sponsor.inquiryData?.billboardIndex != null) {
+        updateFields._pendingBillboardIndex = sponsor.inquiryData.billboardIndex;
+      }
+
+      await sponsorStore.update(req.params.id, updateFields);
       await reExtractImages(req.params.id);
-      reloadIfLive();
 
-      console.log(`[Inquiry] Activated inquiry territory ${req.params.id} (${sponsor.name})`);
-      res.json({ success: true });
+      console.log(`[Inquiry] Accepted inquiry ${req.params.id} (${sponsor.name}) — awaiting payment`);
+      res.json({ success: true, action: "awaiting_payment" });
     } catch (err) {
       console.error("[Inquiry] Activation failed:", err);
       res.status(500).json({ errors: ["Activation failed: " + err.message] });
