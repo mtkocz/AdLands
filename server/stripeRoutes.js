@@ -82,8 +82,10 @@ function createStripeRoutes(sponsorStore, gameRoom, { reExtractImages, reloadIfL
  * This fires on first payment and every subsequent monthly payment.
  */
 async function handleInvoicePaid(invoice, sponsorStore, gameRoom, { reExtractImages, reloadIfLive }) {
-  const subscriptionId = invoice.subscription;
-  console.log("[Stripe] handleInvoicePaid — subscription:", subscriptionId, "keys:", Object.keys(invoice).join(","));
+  // API v2026+: subscription moved from invoice.subscription to invoice.parent
+  const subscriptionId = invoice.subscription
+    || invoice.parent?.subscription_details?.subscription;
+  console.log("[Stripe] handleInvoicePaid — subscription:", subscriptionId, "parent:", JSON.stringify(invoice.parent));
   if (!subscriptionId) {
     console.warn("[Stripe] invoice.paid — no subscription ID on invoice:", invoice.id);
     return;

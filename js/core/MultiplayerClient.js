@@ -1809,6 +1809,9 @@
         cluster: { tileIndices: data.tileIndices },
         patternImage: data.patternImage,
         patternAdjustment: data.patternAdjustment || {},
+        ownerType: "player",
+        submissionStatus: data.submissionStatus || "placeholder",
+        paymentStatus: data.paymentStatus || null,
       };
 
       planet.applySponsorCluster(virtualSponsor);

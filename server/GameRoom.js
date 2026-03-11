@@ -2561,6 +2561,8 @@ class GameRoom {
             }
 
             this._markRanksDirty();
+            hitPlayer.waitingForPortal = true;
+            hitPlayer._portalReason = 'respawn';
             setTimeout(() => this._respawnPlayer(tgtId), 10300);
           }
         }
@@ -2749,13 +2751,22 @@ class GameRoom {
 
   handleChoosePortal(socketId, portalTileIndex) {
     const player = this.players.get(socketId);
-    if (!player || player.isDead || !player.waitingForPortal) {
-      console.log(`[Room ${this.roomId}] choosePortal REJECTED — player:${!!player}, isDead:${player?.isDead}, waitingForPortal:${player?.waitingForPortal}`);
+    if (!player || !player.waitingForPortal) {
       const socket = this.io.sockets.sockets.get(socketId);
       if (socket) socket.emit("portal-rejected");
       return;
     }
     player.lastActivityAt = Date.now();
+
+    // Clear death state (player may choose portal before _respawnPlayer fires)
+    if (player.isDead) {
+      player.hp = player.maxHp;
+      player.isDead = false;
+      player.shieldActive = false;
+      player.shieldEnergy = SHIELD.MAX_ENERGY;
+      player.shieldArcAngle = SHIELD.ARC_START;
+      player.shieldRechargeTimer = 0;
+    }
 
     // Validate portal tile index
     if (!this.portalPositionsByTile.has(portalTileIndex)) {
@@ -3049,6 +3060,8 @@ class GameRoom {
           this._markRanksDirty();
           player.killStreak = 0;
           player.deathCount = (player.deathCount || 0) + 1;
+          player.waitingForPortal = true;
+          player._portalReason = 'respawn';
 
           // Shorter delay — client skips terminal sequence for idle kills
           setTimeout(() => this._respawnPlayer(socketId), 2000);
@@ -3610,6 +3623,8 @@ class GameRoom {
 
             // Recompute ranks and commander
             this._markRanksDirty();
+            player.waitingForPortal = true;
+            player._portalReason = 'respawn';
 
             // Respawn after death terminal animation completes (+1s buffer)
             // Animation: 900ms flicker + 2000ms text + 3500ms progress bar
@@ -3722,6 +3737,9 @@ class GameRoom {
     const player = this.players.get(socketId);
     if (!player) return;
 
+    // Player may have already deployed via early choose-portal
+    if (!player.isDead && !player.waitingForPortal) return;
+
     // Reset health but mark as waiting for portal selection
     player.hp = player.maxHp;
     player.isDead = false;
@@ -3787,6 +3805,8 @@ class GameRoom {
 
       player.killStreak = 0;
       player.deathCount = (player.deathCount || 0) + 1;
+      player.waitingForPortal = true;
+      player._portalReason = 'respawn';
       // Respawn after death terminal animation completes (+1s buffer)
       setTimeout(() => this._respawnPlayer(socketId), 10300);
     }

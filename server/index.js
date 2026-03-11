@@ -771,6 +771,8 @@ io.on("connection", (socket) => {
         title: "",
         tagline: "",
         websiteUrl: "",
+        submissionStatus: hasPendingContent ? "pending" : "placeholder",
+        paymentStatus: null,
       });
 
       // Elon Tusk commentary on territory rent

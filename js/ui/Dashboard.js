@@ -2738,6 +2738,10 @@ class Dashboard {
     // Placeholder texture always used on planet until admin approves
     const placeholderImage = this._generateTerritoryTexture(playerName);
 
+    // Determine submission status
+    const hasPendingContent = pendingTitle || pendingTagline || pendingWebsiteUrl || pendingImage;
+    const submissionStatus = hasPendingContent ? "pending" : "placeholder";
+
     // Create virtual sponsor object with placeholder (matches applySponsorCluster interface)
     const virtualSponsor = {
       id: territoryId,
@@ -2753,6 +2757,9 @@ class Dashboard {
         saturation: 0.7, inputBlack: 30, inputGamma: 1.0,
         inputWhite: 225, outputBlack: 40, outputWhite: 215,
       },
+      ownerType: "player",
+      submissionStatus,
+      paymentStatus: null,
     };
 
     // Clear highlight before applying textures
@@ -2761,10 +2768,6 @@ class Dashboard {
     // Apply placeholder through sponsor pipeline
     planet.applySponsorCluster(virtualSponsor);
     planet.deElevateSponsorTiles();
-
-    // Determine submission status
-    const hasPendingContent = pendingTitle || pendingTagline || pendingWebsiteUrl || pendingImage;
-    const submissionStatus = hasPendingContent ? "pending" : "placeholder";
 
     // Track territory locally with pending fields
     const tierName = this._selectedTerritoryTier;
@@ -3675,6 +3678,9 @@ class Dashboard {
         cluster: { tileIndices: validTiles },
         patternImage: displayImage,
         patternAdjustment: adj,
+        ownerType: "player",
+        submissionStatus: territory.submissionStatus || "placeholder",
+        paymentStatus: territory.paymentStatus || null,
       };
 
       planet.applySponsorCluster(virtualSponsor);
