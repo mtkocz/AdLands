@@ -617,9 +617,9 @@ function createSponsorRoutes(sponsorStore, gameRoom, { imageUrls, contentHashes,
             }
           }
 
-          // Silent reload: update server-side game state without broadcasting to clients.
-          // The territory is still a placeholder until payment — no visual change needed.
-          if (gameRoom) gameRoom.reloadSponsors({ silent: true });
+          // No reloadSponsors here — approval only updates metadata (status, staged fields),
+          // not cluster geometry. Reloading would shift cluster IDs and break client mappings.
+          // The visual update happens later when the Stripe webhook confirms payment.
 
           const subtotalCents = lineItems.reduce((sum, li) => sum + li.unitAmountCents * li.quantity, 0);
           const totalCents = Math.round(subtotalCents * (1 - (discountPercent || 0) / 100));

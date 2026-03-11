@@ -149,7 +149,16 @@ async function createSubscription({ customerId, sponsorId, territoryId, descript
     subscriptionParams.discounts = [{ coupon: coupon.id }];
   }
 
-  return stripe.subscriptions.create(subscriptionParams);
+  const subscription = await stripe.subscriptions.create(subscriptionParams);
+
+  // Finalize and send the first invoice (Stripe creates it as a draft for send_invoice subscriptions)
+  const invoices = await stripe.invoices.list({ subscription: subscription.id, status: "draft", limit: 1 });
+  if (invoices.data.length > 0) {
+    await stripe.invoices.finalizeInvoice(invoices.data[0].id);
+    await stripe.invoices.sendInvoice(invoices.data[0].id);
+  }
+
+  return subscription;
 }
 
 /**
