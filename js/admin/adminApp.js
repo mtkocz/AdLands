@@ -96,7 +96,6 @@
       width: hexContainer.clientWidth,
       height: hexContainer.clientHeight,
       onSelectionChange: handleSelectionChange,
-      onConflictRemove: handleConflictRemove,
     });
 
     // Initialize sponsor form
@@ -2192,69 +2191,40 @@
     const liveSelectedMoons = hexSelector ? hexSelector.getSelectedMoons() : [];
     const liveSelectedBillboards = hexSelector ? hexSelector.getSelectedBillboards() : [];
 
-    // Check hex tile conflicts
-    for (const member of members) {
-      const isActive = member.id === activeId;
-      const tiles = isActive ? liveSelectedTiles : (member.cluster?.tileIndices || []);
-      if (tiles.length === 0) continue;
-      const tileSet = new Set(tiles);
-      for (const s of allSponsors) {
-        if (groupIdSet.has(s.id)) continue;
-        if (!s.cluster?.tileIndices) continue;
-        for (const t of s.cluster.tileIndices) {
-          if (tileSet.has(t)) {
-            conflictTiles.push(t);
-            conflictNames.add(s.name);
-            _conflictTileOwners.set(t, s.id);
-          }
+    // Only check conflicts for the active cluster (not siblings)
+    const activeTiles = new Set(liveSelectedTiles);
+    for (const s of allSponsors) {
+      if (groupIdSet.has(s.id)) continue;
+      if (!s.cluster?.tileIndices) continue;
+      for (const t of s.cluster.tileIndices) {
+        if (activeTiles.has(t)) {
+          conflictTiles.push(t);
+          conflictNames.add(s.name);
+          _conflictTileOwners.set(t, s.id);
         }
       }
     }
 
-    // Check moon conflicts (live selection for active member, stored data for others)
-    for (const member of members) {
-      const isActive = member.id === activeId;
-      let moonIndices;
-      if (isActive) {
-        moonIndices = liveSelectedMoons;
-      } else if (member.inquiryData?.moonIndex != null) {
-        moonIndices = [member.inquiryData.moonIndex];
-      } else {
-        continue;
-      }
-      if (moonIndices.length === 0) continue;
-      if (moonManager) {
-        const assignedMap = moonManager.getAssignedMoons();
-        for (const mi of moonIndices) {
-          if (assignedMap.has(mi)) {
-            conflictMoons.push(mi);
-            conflictNames.add(assignedMap.get(mi));
-            _conflictMoonOwners.set(mi, mi);
-          }
+    // Check moon conflicts for active selection only
+    if (liveSelectedMoons.length > 0 && moonManager) {
+      const assignedMap = moonManager.getAssignedMoons();
+      for (const mi of liveSelectedMoons) {
+        if (assignedMap.has(mi)) {
+          conflictMoons.push(mi);
+          conflictNames.add(assignedMap.get(mi));
+          _conflictMoonOwners.set(mi, mi);
         }
       }
     }
 
-    // Check billboard conflicts (live selection for active member, stored data for others)
-    for (const member of members) {
-      const isActive = member.id === activeId;
-      let bbIndices;
-      if (isActive) {
-        bbIndices = liveSelectedBillboards;
-      } else if (member.inquiryData?.billboardIndex != null) {
-        bbIndices = [member.inquiryData.billboardIndex];
-      } else {
-        continue;
-      }
-      if (bbIndices.length === 0) continue;
-      if (billboardManager) {
-        const assignedMap = billboardManager.getAssignedBillboards();
-        for (const bi of bbIndices) {
-          if (assignedMap.has(bi)) {
-            conflictBillboards.push(bi);
-            conflictNames.add(assignedMap.get(bi));
-            _conflictBillboardOwners.set(bi, bi);
-          }
+    // Check billboard conflicts for active selection only
+    if (liveSelectedBillboards.length > 0 && billboardManager) {
+      const assignedMap = billboardManager.getAssignedBillboards();
+      for (const bi of liveSelectedBillboards) {
+        if (assignedMap.has(bi)) {
+          conflictBillboards.push(bi);
+          conflictNames.add(assignedMap.get(bi));
+          _conflictBillboardOwners.set(bi, bi);
         }
       }
     }
@@ -2274,41 +2244,8 @@
       if (conflictMoons.length > 0) parts.push(`${conflictMoons.length} moon${conflictMoons.length !== 1 ? "s" : ""}`);
       if (conflictBillboards.length > 0) parts.push(`${conflictBillboards.length} billboard${conflictBillboards.length !== 1 ? "s" : ""}`);
       const nameList = [...conflictNames].map(n => `"${n}"`).join(", ");
-      conflictOverrideInfo.textContent = `${parts.join(", ")} conflict with ${nameList} — click to remove`;
+      conflictOverrideInfo.textContent = `${parts.join(", ")} conflict with ${nameList}`;
       conflictOverrideSection.style.display = "";
-    }
-  }
-
-  async function handleConflictRemove(type, index) {
-    if (busy) return;
-    busy = true;
-    try {
-      if (type === 'tile') {
-        const sponsorId = _conflictTileOwners.get(index);
-        if (!sponsorId) return;
-        const res = await fetch(`/api/sponsors/${encodeURIComponent(sponsorId)}/remove-tiles`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ tiles: [index] }),
-        });
-        if (!res.ok) { showToast("Failed to remove tile", "error"); return; }
-      } else if (type === 'moon') {
-        const res = await fetch(`/api/moon-sponsors/${index}`, { method: "DELETE" });
-        if (!res.ok) { showToast("Failed to clear moon slot", "error"); return; }
-        if (moonManager) await moonManager.load();
-        updateAssignedMoons();
-      } else if (type === 'billboard') {
-        const res = await fetch(`/api/billboard-sponsors/${index}`, { method: "DELETE" });
-        if (!res.ok) { showToast("Failed to clear billboard slot", "error"); return; }
-        if (billboardManager) await billboardManager.load();
-        updateAssignedBillboards();
-      }
-      await SponsorStorage.reload();
-      updateInquiryConflicts();
-    } catch (err) {
-      showToast("Conflict remove failed: " + err.message, "error");
-    } finally {
-      busy = false;
     }
   }
 

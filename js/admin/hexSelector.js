@@ -119,7 +119,6 @@ class HexSelector {
 
     // Callbacks
     this.onSelectionChange = options.onSelectionChange || null;
-    this.onConflictRemove = options.onConflictRemove || null;
 
     // Render-on-demand flag (set true when visual state changes)
     this._needsRender = true;
@@ -1124,12 +1123,6 @@ class HexSelector {
         // Reject if type-locked to something else
         if (this.selectionTypeLock && this.selectionTypeLock !== 'billboards') return;
         const bbIndex = bbIntersects[0].object.userData.billboardIndex;
-        // Clicking a conflict billboard removes it from the conflicting sponsor
-        if (this._conflictBillboards && this._conflictBillboards.has(bbIndex)) {
-          if (this.onConflictRemove) this.onConflictRemove('billboard', bbIndex);
-          return;
-        }
-        // Allow deselecting assigned billboards if currently selected (conflict resolution)
         if (this.assignedBillboards.has(bbIndex) && !this.selectedBillboards.has(bbIndex)) return;
         this._toggleBillboardSelection(bbIndex);
         this._checkAndUpdateTypeLock();
@@ -1145,12 +1138,6 @@ class HexSelector {
         if (this.selectionTypeLock && this.selectionTypeLock !== 'moons') return;
         const moonMesh = moonIntersects[0].object;
         const moonIndex = moonMesh.userData.moonIndex;
-        // Clicking a conflict moon removes it from the conflicting sponsor
-        if (this._conflictMoons && this._conflictMoons.has(moonIndex)) {
-          if (this.onConflictRemove) this.onConflictRemove('moon', moonIndex);
-          return;
-        }
-        // Allow deselecting assigned moons if currently selected (conflict resolution)
         if (this.assignedMoons.has(moonIndex) && !this.selectedMoons.has(moonIndex)) return;
         this._toggleMoonSelection(moonIndex);
         this._checkAndUpdateTypeLock();
@@ -1167,13 +1154,8 @@ class HexSelector {
       const mesh = intersects[0].object;
       const tileIndex = mesh.userData.tileIndex;
 
-      // Skip excluded tiles; allow deselecting assigned tiles if currently selected (conflict resolution)
       if (mesh.userData.isExcluded) return;
-      // Clicking a conflict tile removes it from the conflicting sponsor
-      if (this._conflictTiles && this._conflictTiles.has(tileIndex)) {
-        if (this.onConflictRemove) this.onConflictRemove('tile', tileIndex);
-        return;
-      }
+      // Block clicking unselected assigned tiles (unless they're conflict tiles — those are selected)
       if (this.assignedTiles.has(tileIndex) && !this.selectedTiles.has(tileIndex)) return;
 
       this._toggleSelection(tileIndex);
