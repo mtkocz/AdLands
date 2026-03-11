@@ -2187,6 +2187,8 @@
 
     // Use live selection from hex selector for the active territory (unsaved edits)
     const activeId = editingGroup ? editingGroup.ids[editingGroup.activeIndex] : (singleSponsor ? singleSponsor.id : null);
+    const activeSponsor = activeId ? SponsorStorage.getById(activeId) : (members[0] || null);
+    const excludeName = activeSponsor ? activeSponsor.name : null;
     const liveSelectedTiles = hexSelector ? hexSelector.getSelectedTiles() : [];
     const liveSelectedMoons = hexSelector ? hexSelector.getSelectedMoons() : [];
     const liveSelectedBillboards = hexSelector ? hexSelector.getSelectedBillboards() : [];
@@ -2207,7 +2209,7 @@
 
     // Check moon conflicts for active selection only
     if (liveSelectedMoons.length > 0 && moonManager) {
-      const assignedMap = moonManager.getAssignedMoons();
+      const assignedMap = moonManager.getAssignedMoons(excludeName);
       for (const mi of liveSelectedMoons) {
         if (assignedMap.has(mi)) {
           conflictMoons.push(mi);
@@ -2219,7 +2221,7 @@
 
     // Check billboard conflicts for active selection only
     if (liveSelectedBillboards.length > 0 && billboardManager) {
-      const assignedMap = billboardManager.getAssignedBillboards();
+      const assignedMap = billboardManager.getAssignedBillboards(excludeName);
       for (const bi of liveSelectedBillboards) {
         if (assignedMap.has(bi)) {
           conflictBillboards.push(bi);
