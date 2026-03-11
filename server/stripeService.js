@@ -168,42 +168,41 @@ async function findOrCreateCustomer(email, name) {
 async function createSubscription({ customerId, sponsorId, territoryId, description, lineItems, discountPercent }) {
   if (!stripe) throw new Error("Stripe not initialized");
 
-  // Create a product per line item
+  // Apply cluster discount by reducing unit prices (avoids Stripe coupon API issues)
+  const discountMultiplier = discountPercent > 0 ? (100 - discountPercent) / 100 : 1;
+
   const items = [];
   for (const item of lineItems) {
     const product = await stripe.products.create({
       name: `AdLands: ${item.name}`,
       metadata: { sponsorId, territoryId: territoryId || "" },
     });
+    const unitAmount = discountPercent > 0
+      ? Math.round(item.unitAmountCents * discountMultiplier)
+      : item.unitAmountCents;
     items.push({
       price_data: {
         currency: "usd",
         product: product.id,
-        unit_amount: item.unitAmountCents,
+        unit_amount: unitAmount,
         recurring: { interval: "month" },
       },
       quantity: item.quantity,
     });
   }
 
-  // Create a coupon for cluster discount if applicable
+  const discountLabel = discountPercent > 0
+    ? ` (${HexTierSystem.getDiscountLabel(discountPercent) || discountPercent + "% discount"} applied)`
+    : "";
+
   const subscriptionParams = {
     customer: customerId,
     collection_method: "send_invoice",
     days_until_due: 7,
     items,
-    description: `AdLands Territory: ${description}`,
+    description: `AdLands Territory: ${description}${discountLabel}`,
     metadata: { sponsorId, territoryId: territoryId || "" },
   };
-
-  if (discountPercent > 0) {
-    const coupon = await stripe.coupons.create({
-      percent_off: discountPercent,
-      duration: "forever",
-      name: HexTierSystem.getDiscountLabel(discountPercent) || "Cluster Discount",
-    });
-    subscriptionParams.discounts = [{ coupon: coupon.id }];
-  }
 
   const subscription = await stripe.subscriptions.create(subscriptionParams);
 
