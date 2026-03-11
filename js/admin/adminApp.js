@@ -1219,7 +1219,7 @@
       );
       if (pendingSponsors.length > 0) {
         const pendingCards = pendingSponsors.map(s => {
-          const logoSrc = s.logoUrl || s.logoImage;
+          const logoSrc = s.logoUrl || s.logoImage || s.ownerProfilePicture || null;
           const tileCount = s.cluster?.tileIndices?.length || 0;
           const adj = s.patternAdjustment || {};
           const pTitle = escapeHtml(s.pendingTitle || s.name || "");

@@ -1800,6 +1800,9 @@
     net.onPlayerTerritoryClaimed = (data) => {
       if (!planet || !data || !data.tileIndices) return;
 
+      // Skip if we already applied this territory locally (own claim)
+      if (planet.sponsorClusters.has(data.id)) return;
+
       const virtualSponsor = {
         id: data.id,
         name: data.title || data.playerName || "Player",

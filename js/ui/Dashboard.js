@@ -3361,7 +3361,7 @@ class Dashboard {
 
     listEl.innerHTML = this._playerTerritories
       .map((t) => {
-        const label = tierLabels[t.tierName] || "Territory";
+        const label = t.pendingTitle || t.title || tierLabels[t.tierName] || "Territory";
         const status = t.submissionStatus || t.imageStatus || "placeholder";
 
         // Rejected: show rejection reason with dismiss button
