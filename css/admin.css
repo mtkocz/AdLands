@@ -1836,49 +1836,65 @@ textarea.review-comment {
 
 /* Inquiry info displayed inline in sponsor group cards */
 .sponsor-card-inquiry-info {
-    margin-top: 2px;
+    margin-top: 4px;
     font-family: var(--font-small);
     font-size: var(--font-size-small);
     line-height: 1.4;
+    border-top: 1px solid rgba(232, 163, 23, 0.2);
+    padding-top: 4px;
 }
 
-.inquiry-inline-field {
+.inquiry-inline-row {
     color: var(--text-secondary);
 }
 
-.inquiry-inline-field + .inquiry-inline-field::before {
-    content: " \00b7 ";
-    color: var(--text-dim);
-}
-
-.inquiry-inline-field a {
+.inquiry-inline-row a {
     color: var(--accent-cyan, #4dd0e1);
     text-decoration: none;
 }
 
-.inquiry-inline-field a:hover {
+.inquiry-inline-row a:hover {
     text-decoration: underline;
 }
 
 .inquiry-inline-message {
-    margin-top: 2px;
+    margin-top: 3px;
     color: var(--text-dim);
     font-style: italic;
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    max-width: 220px;
+    white-space: pre-wrap;
+    word-break: break-word;
 }
 
-.inquiry-inline-meta {
-    margin-top: 2px;
+.inquiry-inline-pricing {
+    margin-top: 4px;
+    padding-top: 4px;
+    border-top: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.inquiry-pricing-line {
     display: flex;
-    gap: var(--space-sm);
+    justify-content: space-between;
     color: var(--text-dim);
+    padding: 1px 0;
 }
 
-.inquiry-inline-price {
+.inquiry-pricing-discount {
+    color: #16a34a;
+}
+
+.inquiry-pricing-total {
+    display: flex;
+    justify-content: space-between;
     color: #e8a317;
+    border-top: 1px solid rgba(232, 163, 23, 0.25);
+    margin-top: 2px;
+    padding-top: 2px;
+}
+
+.inquiry-inline-date {
+    margin-top: 3px;
+    color: var(--text-dim);
+    opacity: 0.6;
 }
 
 .inquiry-actions {

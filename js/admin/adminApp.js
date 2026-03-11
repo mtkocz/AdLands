@@ -1478,27 +1478,72 @@
           playerInfoHtml = detailLine + urlLine;
         }
 
-        // For inquiry groups, show inquiry contact details inline
+        // For inquiry groups, show full inquiry details inline
         let inquiryInfoHtml = "";
         if (isGroupInquiry && first.inquiryData) {
           const d = first.inquiryData;
-          const submitted = d.submittedAt ? new Date(d.submittedAt).toLocaleDateString() : "";
-          let quotedPrice = "";
-          if (d.pricing) {
-            const total = (d.pricing.total || 0) + (d.pricing.moonTotal || 0) + (d.pricing.billboardTotal || 0);
-            quotedPrice = `$${total.toFixed(2)}/mo`;
-          }
+          const submitted = d.submittedAt ? new Date(d.submittedAt).toLocaleString() : "";
+
           inquiryInfoHtml = `<div class="sponsor-card-inquiry-info">`;
-          if (d.contactName) inquiryInfoHtml += `<span class="inquiry-inline-field">${escapeHtml(d.contactName)}</span>`;
-          if (d.contactEmail) inquiryInfoHtml += `<span class="inquiry-inline-field"><a href="mailto:${escapeHtml(d.contactEmail)}">${escapeHtml(d.contactEmail)}</a></span>`;
-          if (d.company) inquiryInfoHtml += `<span class="inquiry-inline-field">${escapeHtml(d.company)}</span>`;
-          if (d.message) inquiryInfoHtml += `<div class="inquiry-inline-message">${escapeHtml(d.message)}</div>`;
-          if (quotedPrice || submitted) {
-            inquiryInfoHtml += `<div class="inquiry-inline-meta">`;
-            if (quotedPrice) inquiryInfoHtml += `<span class="inquiry-inline-price">${quotedPrice}</span>`;
-            if (submitted) inquiryInfoHtml += `<span class="inquiry-inline-date">${submitted}</span>`;
+
+          // Contact row
+          const contactParts = [];
+          if (d.contactName) contactParts.push(escapeHtml(d.contactName));
+          if (d.company) contactParts.push(escapeHtml(d.company));
+          if (contactParts.length > 0) {
+            inquiryInfoHtml += `<div class="inquiry-inline-row">${contactParts.join(" &middot; ")}</div>`;
+          }
+          if (d.contactEmail) {
+            inquiryInfoHtml += `<div class="inquiry-inline-row"><a href="mailto:${escapeHtml(d.contactEmail)}">${escapeHtml(d.contactEmail)}</a></div>`;
+          }
+
+          // Message
+          if (d.message) {
+            inquiryInfoHtml += `<div class="inquiry-inline-message">${escapeHtml(d.message)}</div>`;
+          }
+
+          // Pricing breakdown
+          if (d.pricing) {
+            const p = d.pricing;
+            inquiryInfoHtml += `<div class="inquiry-inline-pricing">`;
+
+            // Hex tier breakdown
+            if (p.byTier) {
+              const tierPrices = { HOTZONE: 15, PRIME: 7, FRONTIER: 3 };
+              for (const [tierId, count] of Object.entries(p.byTier)) {
+                const price = tierPrices[tierId] || 0;
+                inquiryInfoHtml += `<div class="inquiry-pricing-line"><span>${tierId} &times; ${count}</span><span>$${(price * count).toFixed(2)}</span></div>`;
+              }
+              if (p.discount > 0) {
+                inquiryInfoHtml += `<div class="inquiry-pricing-line inquiry-pricing-discount"><span>Cluster Discount (${p.discount}%)</span><span>-$${(p.discountAmount || 0).toFixed(2)}</span></div>`;
+              }
+            }
+
+            // Moon breakdown
+            if (p.moons && p.moons.length > 0) {
+              for (const moon of p.moons) {
+                inquiryInfoHtml += `<div class="inquiry-pricing-line"><span>${escapeHtml(moon.label)}</span><span>$${moon.price.toFixed(2)}</span></div>`;
+              }
+            }
+
+            // Billboard breakdown
+            if (p.billboards && p.billboards.length > 0) {
+              for (const bb of p.billboards) {
+                inquiryInfoHtml += `<div class="inquiry-pricing-line"><span>${escapeHtml(bb.label)}</span><span>$${bb.price.toFixed(2)}</span></div>`;
+              }
+            }
+
+            // Total
+            const grandTotal = (p.total || 0) + (p.moonTotal || 0) + (p.billboardTotal || 0);
+            inquiryInfoHtml += `<div class="inquiry-pricing-total"><span>Total</span><span>$${grandTotal.toFixed(2)}/mo</span></div>`;
             inquiryInfoHtml += `</div>`;
           }
+
+          // Submitted date
+          if (submitted) {
+            inquiryInfoHtml += `<div class="inquiry-inline-date">${submitted}</div>`;
+          }
+
           inquiryInfoHtml += `</div>`;
         }
 
@@ -2278,7 +2323,6 @@
 
   /**
    * Override: remove all conflicting hexes/moons/billboards from other sponsors.
-   * For inquiry sponsors, also activates them via the activate-inquiry endpoint.
    */
   async function handleConflictOverride() {
     if (busy) return;
@@ -2309,25 +2353,6 @@
       // Clear conflicting billboard slots
       for (const [bi] of _conflictBillboardOwners) {
         await fetch(`/api/billboard-sponsors/${bi}`, { method: "DELETE" });
-      }
-
-      // For inquiry sponsors, also activate them
-      let members = [];
-      if (editingGroup) {
-        members = editingGroup.ids.map(id => SponsorStorage.getById(id)).filter(s => s && s.ownerType === "inquiry");
-      } else {
-        const singleId = sponsorForm.getEditingSponsorId();
-        if (singleId) {
-          const s = SponsorStorage.getById(singleId);
-          if (s && s.ownerType === "inquiry") members = [s];
-        }
-      }
-      for (const member of members) {
-        await fetch(`/api/sponsors/${encodeURIComponent(member.id)}/activate-inquiry`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ force: false }),
-        });
       }
 
       if (moonManager) await moonManager.load();
