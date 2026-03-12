@@ -42,6 +42,8 @@
   const saveTerritoryBtn = document.getElementById("save-territory-btn");
   const clearFormBtnInfo = document.getElementById("clear-form-btn-info");
   const clearFormBtnTerritory = document.getElementById("clear-form-btn-territory");
+  const discardBtnInfo = document.getElementById("discard-btn-info");
+  const discardBtnTerritory = document.getElementById("discard-btn-territory");
   const conflictOverrideSection = document.getElementById("conflict-override-section");
   const conflictOverrideInfo = document.getElementById("conflict-override-info");
   const conflictOverrideBtn = document.getElementById("conflict-override-btn");
@@ -179,6 +181,10 @@
     // Clear buttons (both views)
     clearFormBtnInfo.addEventListener("click", handleClearForm);
     clearFormBtnTerritory.addEventListener("click", handleClearForm);
+
+    // Discard buttons (both views)
+    discardBtnInfo.addEventListener("click", handleDiscardChanges);
+    discardBtnTerritory.addEventListener("click", handleDiscardChanges);
 
     // Clear selection
     clearSelectionBtn.addEventListener("click", () => {
@@ -1123,7 +1129,23 @@
       hexSelector.setConflictBillboards([]);
     }
     if (conflictOverrideSection) conflictOverrideSection.style.display = "none";
+    updateDiscardButtons();
     showSponsorInfoView();
+  }
+
+  function handleDiscardChanges() {
+    if (editingGroup) {
+      editGroup(editingGroup.groupKey, editingGroup.ids[editingGroup.activeIndex]);
+    } else if (sponsorForm.isEditing()) {
+      editSponsor(sponsorForm.getEditingId());
+    }
+  }
+
+  function updateDiscardButtons() {
+    const show = sponsorForm.isEditing() || editingGroup;
+    const display = show ? "" : "none";
+    discardBtnInfo.style.display = display;
+    discardBtnTerritory.style.display = display;
   }
 
   function handleNewSponsor() {
@@ -1677,6 +1699,7 @@
       // Detect active Stripe subscription
       _editingSubscriptionId = sponsor.stripeSubscriptionId || null;
       updateSaveButtonLabel();
+      updateDiscardButtons();
 
       // Update assigned tiles to exclude current sponsor's tiles
       updateAssignedTiles(id);
@@ -1781,6 +1804,7 @@
       // Detect active Stripe subscription from any group member
       _editingSubscriptionId = members.find(s => s.stripeSubscriptionId)?.stripeSubscriptionId || null;
       updateSaveButtonLabel();
+      updateDiscardButtons();
 
       // Immediately load form from lite-cached data so the user sees it right away
       const isPlayer = members[0].ownerType === "player";

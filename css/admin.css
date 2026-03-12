@@ -824,6 +824,22 @@ body {
         drop-shadow(0 0 8px rgba(100, 200, 255, 0.3));
 }
 
+.btn-discard {
+    background: var(--danger);
+    border-color: var(--danger);
+    filter: drop-shadow(2px 0 0 var(--danger))
+        drop-shadow(-2px 0 0 var(--danger))
+        drop-shadow(0 2px 0 var(--danger))
+        drop-shadow(0 -2px 0 var(--danger));
+}
+
+.btn-discard:hover {
+    background: #f66;
+    filter: drop-shadow(2px 0 0 #f66) drop-shadow(-2px 0 0 #f66)
+        drop-shadow(0 2px 0 #f66) drop-shadow(0 -2px 0 #f66)
+        drop-shadow(0 0 8px rgba(255, 100, 100, 0.3));
+}
+
 .btn-secondary {
     background: var(--bg-highlight);
     border-color: var(--border-dark);
