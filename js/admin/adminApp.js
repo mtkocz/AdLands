@@ -54,6 +54,9 @@
   let _conflictMoonOwners = new Map();
   let _conflictBillboardOwners = new Map();
 
+  // Stripe subscription ID when editing an active sponsor with billing
+  let _editingSubscriptionId = null;
+
   // ========================
   // INITIALIZATION
   // ========================
@@ -484,6 +487,54 @@
     viewTerritories.classList.add("active");
     updateFieldVisibility();
     formPanelTitle.textContent = "Territory Settings";
+  }
+
+  function updateSaveButtonLabel() {
+    const label = _editingSubscriptionId ? "Save & Update Subscription" : "Save Territory";
+    if (saveTerritoryBtn) saveTerritoryBtn.textContent = label;
+  }
+
+  async function updateStripeSubscription(anchorId) {
+    if (!_editingSubscriptionId) return true;
+
+    // Build territories payload from all group members (or single sponsor)
+    const ids = editingGroup ? editingGroup.ids : [anchorId];
+    const territories = {};
+    for (const id of ids) {
+      const s = SponsorStorage.getById(id);
+      if (!s) continue;
+      const entry = { territoryType: s.territoryType || "hex" };
+      if (entry.territoryType === "hex") {
+        entry.tileIndices = s.cluster?.tileIndices || [];
+      } else if (entry.territoryType === "moon") {
+        entry.moonIndex = s.inquiryData?.moonIndex ?? 0;
+      } else if (entry.territoryType === "billboard") {
+        entry.billboardIndex = s.inquiryData?.billboardIndex ?? 0;
+      }
+      territories[id] = entry;
+    }
+
+    try {
+      const resp = await fetch(`/api/sponsors/${anchorId}/update-territories`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ territories }),
+      });
+      const data = await resp.json();
+      if (!resp.ok) {
+        showToast(data.errors?.[0] || "Failed to update subscription", "error");
+        return false;
+      }
+      if (data.cancelled) {
+        showToast("Subscription cancelled (all territories removed)", "info");
+      } else {
+        showToast(`Subscription updated — $${data.newMonthlyTotal.toFixed(2)}/mo next cycle`, "success");
+      }
+      return true;
+    } catch (e) {
+      showToast("Failed to update subscription: " + e.message, "error");
+      return false;
+    }
   }
 
   // ========================
@@ -940,6 +991,11 @@
           }
         }
 
+        // Update Stripe subscription if editing a billed sponsor
+        if (_editingSubscriptionId) {
+          await updateStripeSubscription(activeId);
+        }
+
         handleClearForm();
         refreshSponsorsList();
       } else {
@@ -1020,6 +1076,11 @@
           }
         }
 
+        // Update Stripe subscription if editing a billed sponsor
+        if (_editingSubscriptionId && editingId) {
+          await updateStripeSubscription(editingId);
+        }
+
         if (createdSponsor) {
           // New sponsor — enter group edit mode and show territory view
           refreshSponsorsList();
@@ -1047,6 +1108,8 @@
     updateAssignedBillboards();
     selectedTilesListEl.textContent = "";
     showInquiryDetails(null);
+    _editingSubscriptionId = null;
+    updateSaveButtonLabel();
     // Clear conflict highlights
     if (hexSelector) {
       hexSelector.setConflictTiles([]);
@@ -1601,6 +1664,10 @@
       // Clear any active group editing
       editingGroup = null;
 
+      // Detect active Stripe subscription
+      _editingSubscriptionId = sponsor.stripeSubscriptionId || null;
+      updateSaveButtonLabel();
+
       // Update assigned tiles to exclude current sponsor's tiles
       updateAssignedTiles(id);
 
@@ -1700,6 +1767,10 @@
         activeIndex: activeIndex,
         clusterStates: new Map(),
       };
+
+      // Detect active Stripe subscription from any group member
+      _editingSubscriptionId = members.find(s => s.stripeSubscriptionId)?.stripeSubscriptionId || null;
+      updateSaveButtonLabel();
 
       // Immediately load form from lite-cached data so the user sees it right away
       const isPlayer = members[0].ownerType === "player";

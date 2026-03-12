@@ -213,6 +213,59 @@ async function createSubscription({ customerId, sponsorId, territoryId, descript
 }
 
 /**
+ * Update an existing Stripe subscription's line items (no proration).
+ * Replaces all current items with new ones. Preserves existing coupons/discounts.
+ * @param {Object} params
+ * @param {string} params.subscriptionId - Stripe subscription ID
+ * @param {string} params.sponsorId - SponsorStore ID (for product metadata)
+ * @param {string} params.description - Human-readable territory description
+ * @param {Array<{name: string, unitAmountCents: number, quantity: number}>} params.lineItems
+ * @param {string} [params.discountDescription]
+ * @returns {Promise<import('stripe').Stripe.Subscription>}
+ */
+async function updateSubscription({ subscriptionId, sponsorId, description, lineItems, discountDescription }) {
+  if (!stripe) throw new Error("Stripe not initialized");
+
+  const sub = await stripe.subscriptions.retrieve(subscriptionId);
+
+  const items = [];
+  for (const existing of sub.items.data) {
+    items.push({ id: existing.id, deleted: true });
+  }
+  for (const item of lineItems) {
+    const product = await stripe.products.create({
+      name: `AdLands: ${item.name}`,
+      metadata: { sponsorId },
+    });
+    items.push({
+      price_data: {
+        currency: "usd",
+        product: product.id,
+        unit_amount: item.unitAmountCents,
+        recurring: { interval: "month" },
+      },
+      quantity: item.quantity,
+    });
+  }
+
+  const desc = discountDescription
+    ? `AdLands Territory: ${description} (${discountDescription})`
+    : `AdLands Territory: ${description}`;
+
+  const updated = await stripe.subscriptions.update(subscriptionId, {
+    items,
+    description: desc,
+    proration_behavior: "none",
+  });
+
+  for (const old of sub.items.data) {
+    stripe.products.update(old.price.product, { active: false }).catch(() => {});
+  }
+
+  return updated;
+}
+
+/**
  * Cancel a Stripe subscription (e.g. when admin deactivates territory).
  * @param {string} subscriptionId
  */
@@ -262,6 +315,7 @@ module.exports = {
   buildGroupInvoiceLineItems,
   findOrCreateCustomer,
   createSubscription,
+  updateSubscription,
   cancelSubscription,
   constructWebhookEvent,
   saveStripeIds,

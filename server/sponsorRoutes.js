@@ -469,6 +469,92 @@ function createSponsorRoutes(sponsorStore, gameRoom, { imageUrls, contentHashes,
     res.json({ success: true, remaining: remaining.length });
   });
 
+  // POST /api/sponsors/:id/update-territories — save territory changes + update Stripe subscription
+  router.post("/:id/update-territories", async (req, res) => {
+    const { territories } = req.body || {};
+    if (!territories || typeof territories !== "object") {
+      return res.status(400).json({ errors: ["Missing territories object"] });
+    }
+
+    const anchor = sponsorStore.getById(req.params.id);
+    if (!anchor) return res.status(404).json({ errors: ["Sponsor not found"] });
+
+    const subId = anchor.stripeSubscriptionId;
+    if (!subId) return res.status(400).json({ errors: ["No active subscription to update"] });
+
+    // Find all sponsors sharing this subscription (the group)
+    const allSponsors = sponsorStore.getAll();
+    const group = allSponsors.filter(s => s.stripeSubscriptionId === subId);
+    const groupIdSet = new Set(group.map(s => s.id));
+
+    // Validate: all territory keys must belong to this group
+    for (const id of Object.keys(territories)) {
+      if (!groupIdSet.has(id)) {
+        return res.status(400).json({ errors: [`Sponsor ${id} is not part of this subscription group`] });
+      }
+    }
+
+    try {
+      // Update each sponsor's territory data
+      for (const [id, data] of Object.entries(territories)) {
+        const update = { territoryType: data.territoryType };
+        if (data.territoryType === "hex") {
+          update.cluster = { tileIndices: data.tileIndices || [] };
+        } else if (data.territoryType === "moon") {
+          update.inquiryData = { ...(sponsorStore.getById(id)?.inquiryData || {}), moonIndex: data.moonIndex };
+          update.cluster = { tileIndices: [] };
+        } else if (data.territoryType === "billboard") {
+          update.inquiryData = { ...(sponsorStore.getById(id)?.inquiryData || {}), billboardIndex: data.billboardIndex };
+          update.cluster = { tileIndices: [] };
+        }
+        await sponsorStore.update(id, update);
+      }
+
+      // Rebuild line items from updated sponsor data
+      const updatedGroup = group.map(s => sponsorStore.getById(s.id)).filter(Boolean);
+      const { lineItems, discountDescription } = updatedGroup.length === 1
+        ? stripeService.buildInvoiceLineItems(updatedGroup[0], tierMap, adjacencyMap)
+        : stripeService.buildGroupInvoiceLineItems(updatedGroup, tierMap, adjacencyMap);
+
+      if (lineItems.length === 0) {
+        // All territories removed — cancel subscription
+        await stripeService.cancelSubscription(subId);
+        for (const s of updatedGroup) {
+          await sponsorStore.update(s.id, { stripeSubscriptionId: null, stripeCustomerId: null });
+        }
+        reloadIfLive();
+        return res.json({ success: true, cancelled: true });
+      }
+
+      // Update Stripe subscription
+      if (stripeService.isEnabled()) {
+        const desc = anchor.name || anchor.ownerEmail || "Territory";
+        await stripeService.updateSubscription({
+          subscriptionId: subId,
+          sponsorId: anchor.id,
+          description: desc,
+          lineItems,
+          discountDescription,
+        });
+      }
+
+      // Re-extract images and reload
+      if (gameDir) {
+        const { urlMap: newUrls, contentHashes: newHashes } = await extractSponsorImages(sponsorStore, gameDir);
+        _imageUrls = newUrls || _imageUrls;
+        _contentHashes = newHashes || _contentHashes;
+      }
+      reloadIfLive();
+
+      // Compute new monthly total for response
+      const newMonthlyTotal = lineItems.reduce((sum, item) => sum + (item.unitAmountCents * item.quantity), 0) / 100;
+      res.json({ success: true, newMonthlyTotal });
+    } catch (e) {
+      console.error("[sponsorRoutes] update-territories error:", e);
+      res.status(500).json({ errors: [e.message || "Failed to update territories"] });
+    }
+  });
+
   // DELETE /api/sponsors/:id — delete sponsor
   router.delete("/:id", async (req, res) => {
     const deletedId = req.params.id;
