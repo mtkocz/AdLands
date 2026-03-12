@@ -335,18 +335,18 @@ function createSponsorRoutes(sponsorStore, gameRoom, { imageUrls, contentHashes,
         const stripe = stripeService.getStripe();
         await Promise.all(needsStripe.map(async (s) => {
           try {
-            const sub = await stripe.subscriptions.retrieve(s.stripeSubscriptionId, { expand: ["latest_invoice", "latest_invoice.total_discount_amounts.discount"] });
-            const amt = sub.latest_invoice?.amount_due;
-            const discAmts = sub.latest_invoice?.total_discount_amounts || [];
-            console.log(`[Stripe Enrich] ${s.id}: amount_due=${amt}, discAmts=${discAmts.length}${discAmts.length > 0 ? ", discount_keys=" + JSON.stringify(Object.keys(discAmts[0].discount || {})) + ", coupon=" + JSON.stringify(discAmts[0].discount?.coupon) : ""}`);
-            if (amt != null) {
-              s.stripeInvoiceAmountCents = amt;
+            const sub = await stripe.subscriptions.retrieve(s.stripeSubscriptionId, { expand: ["latest_invoice"] });
+            if (sub.latest_invoice?.amount_due != null) {
+              s.stripeInvoiceAmountCents = sub.latest_invoice.amount_due;
             }
-            for (const da of discAmts) {
-              const disc = da.discount;
-              if (disc && typeof disc === "object" && disc.coupon?.id) {
-                s.stripeCouponId = disc.coupon.id;
-                break;
+            // Get coupon ID: retrieve the invoice with discount expansion
+            if (sub.latest_invoice?.id && (sub.discounts?.length > 0)) {
+              const inv = await stripe.invoices.retrieve(sub.latest_invoice.id, { expand: ["total_discount_amounts.discount.coupon"] });
+              for (const da of (inv.total_discount_amounts || [])) {
+                if (da.discount?.coupon?.id) {
+                  s.stripeCouponId = da.discount.coupon.id;
+                  break;
+                }
               }
             }
             const persist = {};
