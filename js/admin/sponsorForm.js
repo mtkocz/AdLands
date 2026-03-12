@@ -3,6 +3,12 @@
  * Handles sponsor information form inputs and image uploads
  */
 
+function normalizeUrl(url) {
+    if (!url) return url;
+    if (!/^https?:\/\//i.test(url)) return "https://" + url;
+    return url;
+}
+
 class SponsorForm {
     constructor(options = {}) {
         // Form elements
@@ -423,7 +429,7 @@ class SponsorForm {
         return {
             name: this.nameInput.value.trim(),
             tagline: this.taglineInput.value.trim(),
-            websiteUrl: this.websiteInput.value.trim(),
+            websiteUrl: normalizeUrl(this.websiteInput.value.trim()),
             logoImage: this.logoImageData,
             patternImage: this.patternImageData,
             patternAdjustment: {
@@ -451,7 +457,7 @@ class SponsorForm {
         return {
             name: this.nameInput.value.trim(),
             tagline: this.taglineInput.value.trim(),
-            websiteUrl: this.websiteInput.value.trim(),
+            websiteUrl: normalizeUrl(this.websiteInput.value.trim()),
             logoImage: this.logoImageData,
         };
     }
@@ -464,7 +470,7 @@ class SponsorForm {
         return {
             title: this.territoryNameInput.value.trim(),
             tagline: this.territoryTaglineInput.value.trim(),
-            websiteUrl: this.territoryWebsiteInput.value.trim(),
+            websiteUrl: normalizeUrl(this.territoryWebsiteInput.value.trim()),
         };
     }
 

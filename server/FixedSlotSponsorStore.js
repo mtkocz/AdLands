@@ -234,8 +234,9 @@ class FixedSlotSponsorStore {
     }
 
     if (sponsor.websiteUrl && sponsor.websiteUrl.trim().length > 0) {
+      const url = /^https?:\/\//i.test(sponsor.websiteUrl) ? sponsor.websiteUrl : "https://" + sponsor.websiteUrl;
       try {
-        new URL(sponsor.websiteUrl);
+        new URL(url);
       } catch (e) {
         errors.push("Invalid website URL");
       }
