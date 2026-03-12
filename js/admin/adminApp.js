@@ -1294,6 +1294,7 @@
                 <div class="adj-row"><label>Offset Y</label><input type="range" class="adj-offsetY" min="-1" max="1" step="0.05" value="${adj.offsetY ?? 0}"><span class="adj-val">${adj.offsetY ?? 0}</span></div>
                 <div class="adj-row"><label>Saturation</label><input type="range" class="adj-saturation" min="0" max="1.5" step="0.05" value="${adj.saturation ?? 0.7}"><span class="adj-val">${adj.saturation ?? 0.7}</span></div>
               </div>` : '<div class="pending-review-no-image">No image uploaded</div>'}
+              <div class="review-field"><label>Coupon Code</label><input type="text" class="review-input review-coupon" placeholder="Stripe coupon ID (optional)" maxlength="100"></div>
               <div class="review-field review-comment-field"><label>Rejection Comment</label><textarea class="review-input review-comment" placeholder="Reason for rejection (sent to player)" rows="2"></textarea></div>
               <div class="territory-review-actions">
                 <button class="btn-approve approve-submission-btn" data-id="${s.id}">Approve</button>
@@ -2220,6 +2221,7 @@
       ${pricingHtml}
       <div class="inquiry-detail-row"><span class="inquiry-detail-label">Submitted:</span><span class="inquiry-detail-value">${submitted}</span></div>
       ${sponsor.ownerType === "inquiry" ? `
+      <div class="inquiry-detail-row"><span class="inquiry-detail-label">Coupon:</span><span class="inquiry-detail-value"><input type="text" class="review-input inquiry-coupon" placeholder="Stripe coupon ID (optional)" maxlength="100"></span></div>
       <div class="inquiry-actions">
         <button type="button" class="btn btn-accept-inquiry">Accept Inquiry</button>
         <button type="button" class="btn btn-reject-inquiry">Reject</button>
@@ -2411,12 +2413,13 @@
     busy = true;
     try {
       const memberIds = members.map(m => m.id);
+      const couponId = document.querySelector(".inquiry-coupon")?.value?.trim() || "";
 
       // Single grouped request — all territories in one invoice
       const res = await fetch("/api/sponsors/activate-inquiry-group", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ ids: memberIds }),
+        body: JSON.stringify({ ids: memberIds, couponId: couponId || undefined }),
       });
 
       if (res.status === 409) {
@@ -2428,7 +2431,7 @@
           const forceRes = await fetch("/api/sponsors/activate-inquiry-group", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ ids: memberIds, force: true }),
+            body: JSON.stringify({ ids: memberIds, force: true, couponId: couponId || undefined }),
           });
           const forceResult = await forceRes.json();
           if (!forceResult.success) {
@@ -2525,6 +2528,9 @@
       if (urlInput) overrides.websiteUrl = urlInput.value.trim();
     }
 
+    // Read coupon code from the card
+    const couponId = card?.querySelector(".review-coupon")?.value?.trim() || "";
+
     // Read rejection comment from the card
     let rejectionReason = "";
     if (action === "reject") {
@@ -2540,7 +2546,7 @@
       const res = await fetch(`/api/sponsors/${encodeURIComponent(id)}/review`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action, rejectionReason, overrides: action === "approve" ? overrides : undefined }),
+        body: JSON.stringify({ action, rejectionReason, overrides: action === "approve" ? overrides : undefined, couponId: couponId || undefined }),
       });
       const result = await res.json();
       if (result.success) {

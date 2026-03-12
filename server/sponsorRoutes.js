@@ -615,6 +615,7 @@ function createSponsorRoutes(sponsorStore, gameRoom, { imageUrls, contentHashes,
             description,
             lineItems,
             discountDescription,
+            couponId: req.body.couponId || undefined,
           });
 
           updateFields.stripeCustomerId = customerId;
@@ -890,6 +891,7 @@ function createSponsorRoutes(sponsorStore, gameRoom, { imageUrls, contentHashes,
           description,
           lineItems,
           discountDescription,
+          couponId: req.body.couponId || undefined,
         });
 
         for (const sponsor of sponsors) {
@@ -1028,6 +1030,7 @@ function createSponsorRoutes(sponsorStore, gameRoom, { imageUrls, contentHashes,
           description,
           lineItems,
           discountDescription,
+          couponId: req.body.couponId || undefined,
         });
 
         const updateFields = {

@@ -161,9 +161,10 @@ async function findOrCreateCustomer(email, name) {
  * @param {string} params.description - Human-readable territory description
  * @param {Array<{name: string, unitAmountCents: number, quantity: number}>} params.lineItems - Pre-discounted line items
  * @param {string} [params.discountDescription] - Discount info for the invoice description
+ * @param {string} [params.couponId] - Stripe coupon ID to apply to the subscription
  * @returns {Promise<import('stripe').Stripe.Subscription>}
  */
-async function createSubscription({ customerId, sponsorId, territoryId, description, lineItems, discountDescription }) {
+async function createSubscription({ customerId, sponsorId, territoryId, description, lineItems, discountDescription, couponId }) {
   if (!stripe) throw new Error("Stripe not initialized");
 
   const items = [];
@@ -187,14 +188,17 @@ async function createSubscription({ customerId, sponsorId, territoryId, descript
     ? `AdLands Territory: ${description} (${discountDescription})`
     : `AdLands Territory: ${description}`;
 
-  const subscription = await stripe.subscriptions.create({
+  const subParams = {
     customer: customerId,
     collection_method: "send_invoice",
     days_until_due: 7,
     items,
     description: desc,
     metadata: { sponsorId, territoryId: territoryId || "" },
-  });
+  };
+  if (couponId) subParams.coupon = couponId;
+
+  const subscription = await stripe.subscriptions.create(subParams);
 
   // Finalize and send the first invoice (Stripe creates it as a draft for send_invoice subscriptions)
   const invoices = await stripe.invoices.list({ subscription: subscription.id, status: "draft", limit: 1 });
