@@ -2352,6 +2352,8 @@ class Dashboard {
       if (server.patternAdjustment) local.patternAdjustment = server.patternAdjustment;
       if (server.imageStatus) local.imageStatus = server.imageStatus;
       if (server.cluster?.tileIndices) local.tileIndices = server.cluster.tileIndices;
+      if (server.name) local.name = server.name;
+      if (server.title) local.title = server.title;
       local._sponsorStorageId = server.id;
       changed = true;
     }
@@ -3364,7 +3366,7 @@ class Dashboard {
 
     listEl.innerHTML = this._playerTerritories
       .map((t) => {
-        const label = t.pendingTitle || t.title || tierLabels[t.tierName] || "Territory";
+        const label = t.pendingTitle || t.title || t.name || tierLabels[t.tierName] || "Territory";
         const status = t.submissionStatus || t.imageStatus || "placeholder";
 
         // Rejected: show rejection reason with dismiss button
@@ -3389,7 +3391,7 @@ class Dashboard {
           <div class="territory-owned-item" data-territory-id="${t.id}">
               <div class="territory-item-header">
                   <span class="territory-item-name">${label}</span>
-                  <span class="territory-item-detail">${age}</span>
+                  <span class="territory-item-detail">${t.tileIndices.length} hex${t.tileIndices.length !== 1 ? "es" : ""} · ${age}</span>
                   ${status === "pending" ? '<span class="territory-status-badge pending">Pending Review</span>' : ""}
                   ${status === "approved" ? '<span class="territory-status-badge approved">Approved</span>' : ""}
               </div>
@@ -3665,6 +3667,7 @@ class Dashboard {
         patternImage: displayImage,
         patternAdjustment: adj,
         imageStatus: territory.imageStatus || "placeholder",
+        name: territory.name || "",
         title: loadedTitle,
         tagline: loadedTagline,
         websiteUrl: loadedUrl,
