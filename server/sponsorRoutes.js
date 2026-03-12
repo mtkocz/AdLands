@@ -356,7 +356,7 @@ function createSponsorRoutes(sponsorStore, gameRoom, { imageUrls, contentHashes,
               sponsorStore.update(s.id, persist).catch(() => {});
             }
           } catch (e) {
-            console.warn(`[Stripe Enrich] Failed for ${s.id}:`, e.message);
+            console.log(`[Stripe Enrich] ERROR ${s.id}: ${e.message}`);
           }
         }));
       }
