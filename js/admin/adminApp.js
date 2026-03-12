@@ -1773,8 +1773,8 @@
         name: currentFormData.name,
         tagline: currentFormData.tagline,
         websiteUrl: currentFormData.websiteUrl,
-        logoImage: currentFormData.logoImage || sponsor.logoImage || null,
-        patternImage: sponsor.patternImage || null,
+        logoImage: currentFormData.logoImage || sponsor.logoImage || sponsor.logoUrl || null,
+        patternImage: sponsor.patternImage || sponsor.patternUrl || null,
         patternAdjustment: sponsor.patternAdjustment || null,
       };
       sponsorForm.loadSponsor(patternData);
@@ -1958,7 +1958,7 @@
         // Copy shared tagline/URL from group for both sponsors and players
         tagline: firstFull.tagline || first.tagline || "",
         websiteUrl: firstFull.websiteUrl || first.websiteUrl || "",
-        logoImage: firstFull.logoImage || first.logoImage || null,
+        logoImage: firstFull.logoImage || first.logoImage || first.logoUrl || null,
         cluster: { tileIndices: [] },
         rewards: [],
       };
@@ -2033,7 +2033,7 @@
       updates.name = target.name;
       updates.tagline = target.tagline || "";
       updates.websiteUrl = target.websiteUrl || "";
-      updates.logoImage = target.logoImage || null;
+      updates.logoImage = target.logoImage || target.logoUrl || null;
     }
 
     try {

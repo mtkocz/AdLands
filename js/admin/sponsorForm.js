@@ -521,8 +521,8 @@ class SponsorForm {
         this.taglineInput.value = sponsor.tagline || '';
         this.websiteInput.value = sponsor.websiteUrl || '';
 
-        this.logoImageData = sponsor.logoImage || null;
-        this.patternImageData = sponsor.patternImage || null;
+        this.logoImageData = sponsor.logoImage || sponsor.logoUrl || null;
+        this.patternImageData = sponsor.patternImage || sponsor.patternUrl || null;
 
         // Load pattern adjustment values
         if (sponsor.patternAdjustment) {
