@@ -329,31 +329,30 @@ function createSponsorRoutes(sponsorStore, gameRoom, { imageUrls, contentHashes,
 
     // Enrich sponsors with Stripe invoice amount + coupon info
     if (stripeService.isEnabled()) {
-      const needsStripe = out.filter(s => s.stripeSubscriptionId && s.stripeInvoiceAmountCents == null);
+      const needsStripe = out.filter(s => s.stripeSubscriptionId && !s._stripeEnriched);
       if (needsStripe.length > 0) {
         const stripe = stripeService.getStripe();
         await Promise.all(needsStripe.map(async (s) => {
           try {
-            const sub = await stripe.subscriptions.retrieve(s.stripeSubscriptionId, { expand: ["latest_invoice"] });
-            console.log(`[Stripe Enrich] ${s.id}: latest_invoice type=${typeof sub.latest_invoice}, amount_due=${sub.latest_invoice?.amount_due}, discounts=${JSON.stringify(sub.discounts)}`);
+            const sub = await stripe.subscriptions.retrieve(s.stripeSubscriptionId, { expand: ["latest_invoice", "latest_invoice.total_discount_amounts.discount"] });
             if (sub.latest_invoice?.amount_due != null) {
               s.stripeInvoiceAmountCents = sub.latest_invoice.amount_due;
             }
-            // discounts may be an array of IDs or objects depending on expansion
-            const discounts = sub.discounts || [];
-            for (const d of discounts) {
-              if (typeof d === "object" && d.coupon?.id) {
-                s.stripeCouponId = d.coupon.id;
+            // Extract coupon ID from expanded invoice discount amounts
+            const discountAmounts = sub.latest_invoice?.total_discount_amounts || [];
+            for (const da of discountAmounts) {
+              const disc = da.discount;
+              if (disc && typeof disc === "object" && disc.coupon?.id) {
+                s.stripeCouponId = disc.coupon.id;
                 break;
               }
             }
             // Cache on sponsor record
-            const persist = {};
+            const persist = { _stripeEnriched: true };
             if (s.stripeInvoiceAmountCents != null) persist.stripeInvoiceAmountCents = s.stripeInvoiceAmountCents;
             if (s.stripeCouponId) persist.stripeCouponId = s.stripeCouponId;
-            if (Object.keys(persist).length > 0) {
-              sponsorStore.update(s.id, persist).catch(() => {});
-            }
+            s._stripeEnriched = true;
+            sponsorStore.update(s.id, persist).catch(() => {});
           } catch (e) {
             console.warn(`[Stripe Enrich] Failed for ${s.id}:`, e.message);
           }
