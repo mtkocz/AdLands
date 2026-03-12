@@ -1433,8 +1433,13 @@
               ? `<strong>${escapeHtml(infoTitle)}</strong>`
               : `<em style="color:#555">Untitled</em>`;
             const taglinePart = infoTagline ? ` &middot; ${escapeHtml(infoTagline)}` : "";
-            const revPart = rowRev > 0 ? ` &middot; <span class="territory-row-rev">$${fmtUSD(rowRev)}/mo</span>` : "";
-            const couponPart = s.stripeCouponId ? ` <span class="coupon-badge">${escapeHtml(s.stripeCouponId)}</span>` : "";
+            let revPart = "";
+            if (rowRev > 0 && s.stripeCouponId && s.stripeInvoiceAmountCents != null) {
+              revPart = ` &middot; <span class="territory-row-rev"><s>$${fmtUSD(rowRev)}</s> $${fmtUSD(s.stripeInvoiceAmountCents / 100)}/mo</span> <span class="coupon-badge">${escapeHtml(s.stripeCouponId)}</span>`;
+            } else if (rowRev > 0) {
+              revPart = ` &middot; <span class="territory-row-rev">$${fmtUSD(rowRev)}/mo</span>`;
+            }
+            const couponPart = "";
             const metaLine = `${tileCount} tiles &middot; <span class="sponsor-cluster-row-type ${typeClass}">${typeLabel}</span>${revPart}${couponPart}`;
             const urlLine = infoUrl
               ? `<div class="territory-row-url"><a href="${escapeHtml(infoUrl)}" target="_blank" rel="noopener">${escapeHtml(infoUrl)}</a></div>`
@@ -1473,13 +1478,18 @@
           }
 
           // Sponsor territories: simple row
-          const sponsorCouponBadge = s.stripeCouponId ? ` <span class="coupon-badge">${escapeHtml(s.stripeCouponId)}</span>` : "";
+          let sponsorRevHtml = "";
+          if (rowRev > 0 && s.stripeCouponId && s.stripeInvoiceAmountCents != null) {
+            sponsorRevHtml = `<span class="sponsor-cluster-row-revenue"><s>$${fmtUSD(rowRev)}</s> $${fmtUSD(s.stripeInvoiceAmountCents / 100)}/mo</span> <span class="coupon-badge">${escapeHtml(s.stripeCouponId)}</span>`;
+          } else if (rowRev > 0) {
+            sponsorRevHtml = `<span class="sponsor-cluster-row-revenue">$${fmtUSD(rowRev)}/mo</span>`;
+          }
           return `
             <div class="sponsor-cluster-row${isActive ? " active-territory" : ""}" data-id="${s.id}" draggable="true">
                 <span class="sponsor-cluster-row-label">${escapeHtml(s.name || ("Territory " + (i + 1)))}</span>
                 <span class="sponsor-cluster-row-type ${typeClass}">${typeLabel}</span>
                 <span class="sponsor-cluster-row-stats">${tileCount} tiles, ${s.rewards?.length || 0} rewards</span>
-                ${rowRev > 0 ? `<span class="sponsor-cluster-row-revenue">$${fmtUSD(rowRev)}/mo</span>` : ""}${sponsorCouponBadge}
+                ${sponsorRevHtml}
                 <button class="icon-btn delete-sponsor-btn" title="Delete territory">&times;</button>
             </div>
           `;

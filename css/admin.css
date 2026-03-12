@@ -1400,6 +1400,12 @@ body {
     vertical-align: middle;
 }
 
+.sponsor-cluster-row-revenue s,
+.territory-row-rev s {
+    color: var(--text-muted);
+    margin-right: 4px;
+}
+
 /* Delete sponsor button — red on hover */
 .delete-entire-sponsor-btn:hover {
     color: #ef4444 !important;

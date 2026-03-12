@@ -201,13 +201,15 @@ async function createSubscription({ customerId, sponsorId, territoryId, descript
   const subscription = await stripe.subscriptions.create(subParams);
 
   // Finalize and send the first invoice (Stripe creates it as a draft for send_invoice subscriptions)
+  let invoiceAmountCents = null;
   const invoices = await stripe.invoices.list({ subscription: subscription.id, status: "draft", limit: 1 });
   if (invoices.data.length > 0) {
-    await stripe.invoices.finalizeInvoice(invoices.data[0].id);
+    const finalized = await stripe.invoices.finalizeInvoice(invoices.data[0].id);
+    invoiceAmountCents = finalized.amount_due;
     await stripe.invoices.sendInvoice(invoices.data[0].id);
   }
 
-  return subscription;
+  return { subscription, invoiceAmountCents };
 }
 
 /**

@@ -608,7 +608,7 @@ function createSponsorRoutes(sponsorStore, gameRoom, { imageUrls, contentHashes,
           const customerName = sponsor.inquiryData?.contactName || sponsor.playerName || null;
 
           const customerId = await stripeService.findOrCreateCustomer(customerEmail, customerName);
-          const subscription = await stripeService.createSubscription({
+          const { subscription, invoiceAmountCents } = await stripeService.createSubscription({
             customerId,
             sponsorId: req.params.id,
             territoryId,
@@ -622,6 +622,7 @@ function createSponsorRoutes(sponsorStore, gameRoom, { imageUrls, contentHashes,
           updateFields.stripeSubscriptionId = subscription.id;
           updateFields.paymentStatus = "invoiced";
           if (req.body.couponId) updateFields.stripeCouponId = req.body.couponId;
+          if (invoiceAmountCents != null) updateFields.stripeInvoiceAmountCents = invoiceAmountCents;
 
           await sponsorStore.update(req.params.id, updateFields);
 
@@ -665,7 +666,7 @@ function createSponsorRoutes(sponsorStore, gameRoom, { imageUrls, contentHashes,
           // not cluster geometry. Reloading would shift cluster IDs and break client mappings.
           // The visual update happens later when the Stripe webhook confirms payment.
 
-          const totalCents = lineItems.reduce((sum, li) => sum + li.unitAmountCents * li.quantity, 0);
+          const totalCents = invoiceAmountCents ?? lineItems.reduce((sum, li) => sum + li.unitAmountCents * li.quantity, 0);
           console.log(`[Territory] Approved & invoiced for ${territoryId} ($${(totalCents / 100).toFixed(2)}/mo)`);
           return res.json({ success: true, action: "invoiced", amountCents: totalCents, subscriptionId: subscription.id });
         }
@@ -885,7 +886,7 @@ function createSponsorRoutes(sponsorStore, gameRoom, { imageUrls, contentHashes,
         const customerName = contactSponsor.inquiryData?.contactName || null;
         const description = contactSponsor.name || "Territory Group";
         const customerId = await stripeService.findOrCreateCustomer(customerEmail, customerName);
-        const subscription = await stripeService.createSubscription({
+        const { subscription, invoiceAmountCents } = await stripeService.createSubscription({
           customerId,
           sponsorId: ids.join(","),
           territoryId: ids[0],
@@ -907,6 +908,7 @@ function createSponsorRoutes(sponsorStore, gameRoom, { imageUrls, contentHashes,
             ownerContactName: sponsor.inquiryData?.contactName || null,
           };
           if (req.body.couponId) updateFields.stripeCouponId = req.body.couponId;
+          if (invoiceAmountCents != null) updateFields.stripeInvoiceAmountCents = invoiceAmountCents;
 
           // Store pending slot index so the webhook can assign after payment
           if (sponsor.territoryType === "moon" && sponsor.inquiryData?.moonIndex != null) {
@@ -920,7 +922,7 @@ function createSponsorRoutes(sponsorStore, gameRoom, { imageUrls, contentHashes,
           await reExtractImages(sponsor.id);
         }
 
-        const totalCents = lineItems.reduce((sum, li) => sum + li.unitAmountCents * li.quantity, 0);
+        const totalCents = invoiceAmountCents ?? lineItems.reduce((sum, li) => sum + li.unitAmountCents * li.quantity, 0);
         console.log(`[Inquiry] Group approved & invoiced (${sponsors.length} territories, ${contactSponsor.name}) — $${(totalCents / 100).toFixed(2)}/mo`);
         return res.json({ success: true, action: "invoiced", amountCents: totalCents, subscriptionId: subscription.id });
       }
@@ -1025,7 +1027,7 @@ function createSponsorRoutes(sponsorStore, gameRoom, { imageUrls, contentHashes,
         const customerName = sponsor.inquiryData?.contactName || null;
 
         const customerId = await stripeService.findOrCreateCustomer(customerEmail, customerName);
-        const subscription = await stripeService.createSubscription({
+        const { subscription, invoiceAmountCents } = await stripeService.createSubscription({
           customerId,
           sponsorId: req.params.id,
           territoryId: req.params.id,
@@ -1046,6 +1048,7 @@ function createSponsorRoutes(sponsorStore, gameRoom, { imageUrls, contentHashes,
           ownerContactName: sponsor.inquiryData?.contactName || null,
         };
         if (req.body.couponId) updateFields.stripeCouponId = req.body.couponId;
+        if (invoiceAmountCents != null) updateFields.stripeInvoiceAmountCents = invoiceAmountCents;
 
         // Store pending slot index so the webhook can assign after payment
         if (sponsor.territoryType === "moon" && sponsor.inquiryData?.moonIndex != null) {
@@ -1059,7 +1062,7 @@ function createSponsorRoutes(sponsorStore, gameRoom, { imageUrls, contentHashes,
 
         await reExtractImages(req.params.id);
 
-        const totalCents = lineItems.reduce((sum, li) => sum + li.unitAmountCents * li.quantity, 0);
+        const totalCents = invoiceAmountCents ?? lineItems.reduce((sum, li) => sum + li.unitAmountCents * li.quantity, 0);
         console.log(`[Inquiry] Approved & invoiced ${req.params.id} (${sponsor.name}) — $${(totalCents / 100).toFixed(2)}/mo`);
         return res.json({ success: true, action: "invoiced", amountCents: totalCents, subscriptionId: subscription.id });
       }
