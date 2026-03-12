@@ -338,7 +338,7 @@ function createSponsorRoutes(sponsorStore, gameRoom, { imageUrls, contentHashes,
             const sub = await stripe.subscriptions.retrieve(s.stripeSubscriptionId, { expand: ["latest_invoice", "latest_invoice.total_discount_amounts.discount"] });
             const amt = sub.latest_invoice?.amount_due;
             const discAmts = sub.latest_invoice?.total_discount_amounts || [];
-            console.log(`[Stripe Enrich] ${s.id}: amount_due=${amt}, discount_amounts=${JSON.stringify(discAmts.map(d => ({ amount: d.amount, discount_type: typeof d.discount, coupon: d.discount?.coupon?.id })))}`);
+            console.log(`[Stripe Enrich] ${s.id}: amount_due=${amt}, discAmts=${discAmts.length}${discAmts.length > 0 ? ", discount_keys=" + JSON.stringify(Object.keys(discAmts[0].discount || {})) + ", coupon=" + JSON.stringify(discAmts[0].discount?.coupon) : ""}`);
             if (amt != null) {
               s.stripeInvoiceAmountCents = amt;
             }
