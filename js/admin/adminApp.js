@@ -230,8 +230,8 @@
                 t.classList.toggle("active", t.dataset.filter === "players");
               });
             }
-            // Auto-switch to User Territories when an image is submitted for review
-            if (action === "update") {
+            // Auto-switch to User Territories when a player image is submitted for review
+            if (action === "update" && e.data.sponsor?.ownerType === "player") {
               sponsorListFilter = "players";
               document.querySelectorAll(".sponsor-tab").forEach((t) => {
                 t.classList.toggle("active", t.dataset.filter === "players");
@@ -1272,7 +1272,11 @@
     _refreshScheduled = true;
     queueMicrotask(() => {
       _refreshScheduled = false;
-      _refreshSponsorsListImpl();
+      try {
+        _refreshSponsorsListImpl();
+      } catch (e) {
+        console.error("[AdminApp] refreshSponsorsList error:", e);
+      }
     });
   }
 
