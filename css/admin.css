@@ -1390,6 +1390,16 @@ body {
     vertical-align: middle;
 }
 
+.coupon-badge {
+    font-family: var(--font-small);
+    font-size: var(--font-size-small);
+    color: #34d399;
+    background: rgba(52, 211, 153, 0.15);
+    padding: 1px 5px;
+    margin-left: var(--space-xs);
+    vertical-align: middle;
+}
+
 /* Delete sponsor button — red on hover */
 .delete-entire-sponsor-btn:hover {
     color: #ef4444 !important;

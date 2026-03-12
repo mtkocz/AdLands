@@ -621,6 +621,7 @@ function createSponsorRoutes(sponsorStore, gameRoom, { imageUrls, contentHashes,
           updateFields.stripeCustomerId = customerId;
           updateFields.stripeSubscriptionId = subscription.id;
           updateFields.paymentStatus = "invoiced";
+          if (req.body.couponId) updateFields.stripeCouponId = req.body.couponId;
 
           await sponsorStore.update(req.params.id, updateFields);
 
@@ -905,6 +906,7 @@ function createSponsorRoutes(sponsorStore, gameRoom, { imageUrls, contentHashes,
             ownerEmail: sponsor.inquiryData?.contactEmail || null,
             ownerContactName: sponsor.inquiryData?.contactName || null,
           };
+          if (req.body.couponId) updateFields.stripeCouponId = req.body.couponId;
 
           // Store pending slot index so the webhook can assign after payment
           if (sponsor.territoryType === "moon" && sponsor.inquiryData?.moonIndex != null) {
@@ -1043,6 +1045,7 @@ function createSponsorRoutes(sponsorStore, gameRoom, { imageUrls, contentHashes,
           ownerEmail: sponsor.inquiryData?.contactEmail || null,
           ownerContactName: sponsor.inquiryData?.contactName || null,
         };
+        if (req.body.couponId) updateFields.stripeCouponId = req.body.couponId;
 
         // Store pending slot index so the webhook can assign after payment
         if (sponsor.territoryType === "moon" && sponsor.inquiryData?.moonIndex != null) {

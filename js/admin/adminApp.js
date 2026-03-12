@@ -624,7 +624,7 @@
           if (statsEl) statsEl.textContent = `${(tiles?.length || 0)} tiles, ${s.rewards?.length || 0} rewards`;
           // Include live moon/billboard revenue for this row
           const rowTotal = rev.total + liveMoonRev + liveBbRev;
-          const revEl = row.querySelector(".sponsor-cluster-row-revenue");
+          const revEl = row.querySelector(".sponsor-cluster-row-revenue") || row.querySelector(".territory-row-rev");
           const newRevSpan = rowTotal > 0
             ? `$${fmtUSD(rowTotal)}/mo`
             : "";
@@ -1434,7 +1434,8 @@
               : `<em style="color:#555">Untitled</em>`;
             const taglinePart = infoTagline ? ` &middot; ${escapeHtml(infoTagline)}` : "";
             const revPart = rowRev > 0 ? ` &middot; <span class="territory-row-rev">$${fmtUSD(rowRev)}/mo</span>` : "";
-            const metaLine = `${tileCount} tiles &middot; <span class="sponsor-cluster-row-type ${typeClass}">${typeLabel}</span>${revPart}`;
+            const couponPart = s.stripeCouponId ? ` <span class="coupon-badge">${escapeHtml(s.stripeCouponId)}</span>` : "";
+            const metaLine = `${tileCount} tiles &middot; <span class="sponsor-cluster-row-type ${typeClass}">${typeLabel}</span>${revPart}${couponPart}`;
             const urlLine = infoUrl
               ? `<div class="territory-row-url"><a href="${escapeHtml(infoUrl)}" target="_blank" rel="noopener">${escapeHtml(infoUrl)}</a></div>`
               : "";
@@ -1472,12 +1473,13 @@
           }
 
           // Sponsor territories: simple row
+          const sponsorCouponBadge = s.stripeCouponId ? ` <span class="coupon-badge">${escapeHtml(s.stripeCouponId)}</span>` : "";
           return `
             <div class="sponsor-cluster-row${isActive ? " active-territory" : ""}" data-id="${s.id}" draggable="true">
                 <span class="sponsor-cluster-row-label">${escapeHtml(s.name || ("Territory " + (i + 1)))}</span>
                 <span class="sponsor-cluster-row-type ${typeClass}">${typeLabel}</span>
                 <span class="sponsor-cluster-row-stats">${tileCount} tiles, ${s.rewards?.length || 0} rewards</span>
-                ${rowRev > 0 ? `<span class="sponsor-cluster-row-revenue">$${fmtUSD(rowRev)}/mo</span>` : ""}
+                ${rowRev > 0 ? `<span class="sponsor-cluster-row-revenue">$${fmtUSD(rowRev)}/mo</span>` : ""}${sponsorCouponBadge}
                 <button class="icon-btn delete-sponsor-btn" title="Delete territory">&times;</button>
             </div>
           `;
