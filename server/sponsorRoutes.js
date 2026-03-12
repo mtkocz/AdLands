@@ -340,15 +340,17 @@ function createSponsorRoutes(sponsorStore, gameRoom, { imageUrls, contentHashes,
               s.stripeInvoiceAmountCents = sub.latest_invoice.amount_due;
             }
             // Get coupon ID from expanded discount's source
+            let activeCoupon = null;
             for (const d of (sub.discounts || [])) {
               if (d.source?.coupon) {
-                s.stripeCouponId = d.source.coupon;
+                activeCoupon = d.source.coupon;
                 break;
               }
             }
+            s.stripeCouponId = activeCoupon;
             const persist = {};
             if (s.stripeInvoiceAmountCents != null) persist.stripeInvoiceAmountCents = s.stripeInvoiceAmountCents;
-            if (s.stripeCouponId) persist.stripeCouponId = s.stripeCouponId;
+            persist.stripeCouponId = activeCoupon;
             if (Object.keys(persist).length > 0) {
               sponsorStore.update(s.id, persist).catch(() => {});
             }
