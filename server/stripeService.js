@@ -196,7 +196,7 @@ async function createSubscription({ customerId, sponsorId, territoryId, descript
     description: desc,
     metadata: { sponsorId, territoryId: territoryId || "" },
   };
-  if (couponId) subParams.coupon = couponId;
+  if (couponId) subParams.discounts = [{ coupon: couponId }];
 
   const subscription = await stripe.subscriptions.create(subParams);
 
