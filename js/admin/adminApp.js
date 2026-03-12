@@ -490,8 +490,14 @@
   }
 
   function updateSaveButtonLabel() {
-    const label = _editingSubscriptionId ? "Save & Update Subscription" : "Save Territory";
-    if (saveTerritoryBtn) saveTerritoryBtn.textContent = label;
+    if (!saveTerritoryBtn) return;
+    if (_editingSubscriptionId) {
+      saveTerritoryBtn.textContent = "Save & Update Subscription";
+      saveTerritoryBtn.classList.add("btn-subscription");
+    } else {
+      saveTerritoryBtn.textContent = "Save Territory";
+      saveTerritoryBtn.classList.remove("btn-subscription");
+    }
   }
 
   async function updateStripeSubscription(anchorId) {
@@ -1295,13 +1301,13 @@
     tabEls.forEach((tab) => {
       const filter = tab.dataset.filter;
       if (filter === "placeholders") {
-        tab.textContent = `Placeholders (${placeholderCount})`;
+        tab.textContent = `Admin (${placeholderCount})`;
       }
       else if (filter === "players") {
         tab.innerHTML = `Users (${playerCount})${pendingCount > 0 ? ` <span class="pending-badge">${pendingCount}</span>` : ""}`;
       }
       else if (filter === "sponsors") {
-        tab.innerHTML = `Sponsors (${realSponsorCount})${inquiryCount > 0 ? ` <span class="inquiry-count-badge">${inquiryCount} pending</span>` : ""}`;
+        tab.innerHTML = `Corporate (${realSponsorCount})${inquiryCount > 0 ? ` <span class="inquiry-count-badge">${inquiryCount} pending</span>` : ""}`;
       }
       else if (filter === "all") tab.textContent = `All (${allSponsors.length})`;
     });
@@ -1310,8 +1316,8 @@
       const emptyMsg = sponsorListFilter === "players"
         ? "No user territories yet"
         : sponsorListFilter === "sponsors"
-        ? "No sponsors yet"
-        : "No placeholders created yet";
+        ? "No corporate sponsors yet"
+        : "No admin territories created yet";
       sponsorsListEl.innerHTML = `<div class="empty-state">${emptyMsg}</div>`;
       return;
     }
@@ -2060,6 +2066,14 @@
         createData.ownerType = "inquiry";
         createData.active = false;
         if (first.inquiryData) createData.inquiryData = first.inquiryData;
+      }
+      if (first.ownerType === "sponsor") {
+        createData.ownerType = "sponsor";
+      }
+      // Link new territory to existing subscription group
+      if (first.stripeSubscriptionId) {
+        createData.stripeSubscriptionId = first.stripeSubscriptionId;
+        createData.stripeCustomerId = first.stripeCustomerId;
       }
       const newSponsor = await SponsorStorage.create(createData);
 

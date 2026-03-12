@@ -808,6 +808,22 @@ body {
         drop-shadow(0 0 8px rgba(255, 255, 255, 0.3));
 }
 
+.btn-subscription {
+    background: var(--accent-cyan);
+    border-color: var(--accent-cyan);
+    filter: drop-shadow(2px 0 0 var(--accent-cyan))
+        drop-shadow(-2px 0 0 var(--accent-cyan))
+        drop-shadow(0 2px 0 var(--accent-cyan))
+        drop-shadow(0 -2px 0 var(--accent-cyan));
+}
+
+.btn-subscription:hover {
+    background: #5af;
+    filter: drop-shadow(2px 0 0 #5af) drop-shadow(-2px 0 0 #5af)
+        drop-shadow(0 2px 0 #5af) drop-shadow(0 -2px 0 #5af)
+        drop-shadow(0 0 8px rgba(100, 200, 255, 0.3));
+}
+
 .btn-secondary {
     background: var(--bg-highlight);
     border-color: var(--border-dark);
