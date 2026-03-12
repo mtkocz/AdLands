@@ -329,7 +329,7 @@ function createSponsorRoutes(sponsorStore, gameRoom, { imageUrls, contentHashes,
 
     // Enrich sponsors with Stripe invoice amount + coupon info
     if (stripeService.isEnabled()) {
-      const needsStripe = out.filter(s => s.stripeSubscriptionId && !s._stripeEnriched);
+      const needsStripe = out.filter(s => s.stripeSubscriptionId);
       if (needsStripe.length > 0) {
         const stripe = stripeService.getStripe();
         await Promise.all(needsStripe.map(async (s) => {
