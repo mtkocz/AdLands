@@ -334,21 +334,16 @@ function createSponsorRoutes(sponsorStore, gameRoom, { imageUrls, contentHashes,
       if (needsStripe.length > 0) {
         const stripe = stripeService.getStripe();
         await Promise.all(needsStripe.map(async (s) => {
-          console.log(`[Stripe Enrich] Fetching ${s.id} sub=${s.stripeSubscriptionId}`);
           try {
-            const sub = await stripe.subscriptions.retrieve(s.stripeSubscriptionId, { expand: ["latest_invoice"] });
-            console.log(`[Stripe Enrich] Got ${s.id}: amount=${sub.latest_invoice?.amount_due} discounts=${sub.discounts?.length || 0}`);
+            const sub = await stripe.subscriptions.retrieve(s.stripeSubscriptionId, { expand: ["latest_invoice", "discounts"] });
             if (sub.latest_invoice?.amount_due != null) {
               s.stripeInvoiceAmountCents = sub.latest_invoice.amount_due;
             }
-            // Get coupon ID: retrieve the invoice with discount expansion
-            if (sub.latest_invoice?.id && (sub.discounts?.length > 0)) {
-              const inv = await stripe.invoices.retrieve(sub.latest_invoice.id, { expand: ["total_discount_amounts.discount.coupon"] });
-              for (const da of (inv.total_discount_amounts || [])) {
-                if (da.discount?.coupon?.id) {
-                  s.stripeCouponId = da.discount.coupon.id;
-                  break;
-                }
+            // Get coupon ID from expanded discount's source
+            for (const d of (sub.discounts || [])) {
+              if (d.source?.coupon) {
+                s.stripeCouponId = d.source.coupon;
+                break;
               }
             }
             const persist = {};
