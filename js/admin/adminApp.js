@@ -1793,8 +1793,8 @@
         sponsorForm.setNotes(members[0].notes || "");
       }
 
-      // Show inquiry details immediately with lite data
-      showInquiryDetails(members[0]);
+      // Show inquiry details — find the inquiry member (may differ from members[0] in mixed groups)
+      showInquiryDetails(members.find(s => s.inquiryData) || members[0]);
 
       // Show the correct view immediately
       if (startAtId) {
@@ -1818,8 +1818,9 @@
           sponsorForm.loadTerritoryInfo(activeMember);
           sponsorForm.setNotes(first.notes || "");
         }
-        // Show inquiry details if this is an inquiry group
-        showInquiryDetails(first);
+        // Show inquiry details — find the inquiry member with inquiryData
+        const inquiryMember = editingGroup.ids.map(id => SponsorStorage.getById(id)).find(s => s?.inquiryData);
+        showInquiryDetails(inquiryMember || first);
       }
 
       // Load active cluster's data into hex selector
