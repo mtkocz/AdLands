@@ -334,8 +334,10 @@ function createSponsorRoutes(sponsorStore, gameRoom, { imageUrls, contentHashes,
       if (needsStripe.length > 0) {
         const stripe = stripeService.getStripe();
         await Promise.all(needsStripe.map(async (s) => {
+          console.log(`[Stripe Enrich] Fetching ${s.id} sub=${s.stripeSubscriptionId}`);
           try {
             const sub = await stripe.subscriptions.retrieve(s.stripeSubscriptionId, { expand: ["latest_invoice"] });
+            console.log(`[Stripe Enrich] Got ${s.id}: amount=${sub.latest_invoice?.amount_due} discounts=${sub.discounts?.length || 0}`);
             if (sub.latest_invoice?.amount_due != null) {
               s.stripeInvoiceAmountCents = sub.latest_invoice.amount_due;
             }
