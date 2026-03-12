@@ -334,13 +334,18 @@ function createSponsorRoutes(sponsorStore, gameRoom, { imageUrls, contentHashes,
         const stripe = stripeService.getStripe();
         await Promise.all(needsStripe.map(async (s) => {
           try {
-            const sub = await stripe.subscriptions.retrieve(s.stripeSubscriptionId, { expand: ["latest_invoice", "discounts.data.coupon"] });
+            const sub = await stripe.subscriptions.retrieve(s.stripeSubscriptionId, { expand: ["latest_invoice"] });
+            console.log(`[Stripe Enrich] ${s.id}: latest_invoice type=${typeof sub.latest_invoice}, amount_due=${sub.latest_invoice?.amount_due}, discounts=${JSON.stringify(sub.discounts)}`);
             if (sub.latest_invoice?.amount_due != null) {
               s.stripeInvoiceAmountCents = sub.latest_invoice.amount_due;
             }
-            const firstDiscount = sub.discounts?.data?.[0] || sub.discounts?.[0];
-            if (firstDiscount?.coupon?.id) {
-              s.stripeCouponId = firstDiscount.coupon.id;
+            // discounts may be an array of IDs or objects depending on expansion
+            const discounts = sub.discounts || [];
+            for (const d of discounts) {
+              if (typeof d === "object" && d.coupon?.id) {
+                s.stripeCouponId = d.coupon.id;
+                break;
+              }
             }
             // Cache on sponsor record
             const persist = {};
@@ -350,7 +355,7 @@ function createSponsorRoutes(sponsorStore, gameRoom, { imageUrls, contentHashes,
               sponsorStore.update(s.id, persist).catch(() => {});
             }
           } catch (e) {
-            // Subscription may have been deleted
+            console.warn(`[Stripe Enrich] Failed for ${s.id}:`, e.message);
           }
         }));
       }
