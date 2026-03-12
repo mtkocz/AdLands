@@ -3364,9 +3364,22 @@ class Dashboard {
 
     const tierLabels = { outpost: "Outpost", compound: "Compound", stronghold: "Stronghold" };
 
+    // Build lookup of server-authoritative sponsor data for territory names
+    const sponsorMap = new Map();
+    if (typeof SponsorStorage !== "undefined" && SponsorStorage._cache) {
+      for (const s of SponsorStorage.getAll()) {
+        if (s.ownerType === "player" || s.isPlayerTerritory) {
+          const tid = s._territoryId || s.id;
+          sponsorMap.set(tid, s);
+        }
+      }
+    }
+
     listEl.innerHTML = this._playerTerritories
       .map((t) => {
-        const label = t.pendingTitle || t.title || t.name || tierLabels[t.tierName] || "Territory";
+        const server = sponsorMap.get(t.id);
+        const serverTitle = server ? (server._approvedTitle || server.title || "") : "";
+        const label = t.pendingTitle || serverTitle || t.title || t.name || tierLabels[t.tierName] || "Territory";
         const status = t.submissionStatus || t.imageStatus || "placeholder";
 
         // Rejected: show rejection reason with dismiss button
