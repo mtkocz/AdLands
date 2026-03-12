@@ -725,7 +725,8 @@ function createSponsorRoutes(sponsorStore, gameRoom, { imageUrls, contentHashes,
           // Calculate price breakdown and create Stripe subscription
           const { lineItems, discountDescription } = stripeService.buildInvoiceLineItems(sponsor, tierMap, adjacencyMap);
           const description = approvedTitle || sponsor.name || `Territory ${territoryId}`;
-          const customerName = sponsor.inquiryData?.contactName || sponsor.playerName || null;
+          const contactName = sponsor.inquiryData?.contactName || sponsor.playerName || null;
+          const customerName = contactName && sponsor.name ? `${contactName} (${sponsor.name})` : sponsor.name || contactName;
 
           const customerId = await stripeService.findOrCreateCustomer(customerEmail, customerName);
           const { subscription, invoiceAmountCents } = await stripeService.createSubscription({
@@ -1003,7 +1004,8 @@ function createSponsorRoutes(sponsorStore, gameRoom, { imageUrls, contentHashes,
           return res.status(400).json({ errors: ["No billable items found"] });
         }
 
-        const customerName = contactSponsor.inquiryData?.contactName || null;
+        const contactName = contactSponsor.inquiryData?.contactName || null;
+        const customerName = contactName && contactSponsor.name ? `${contactName} (${contactSponsor.name})` : contactSponsor.name || contactName;
         const description = contactSponsor.name || "Territory Group";
         const customerId = await stripeService.findOrCreateCustomer(customerEmail, customerName);
         const { subscription, invoiceAmountCents } = await stripeService.createSubscription({
@@ -1144,7 +1146,8 @@ function createSponsorRoutes(sponsorStore, gameRoom, { imageUrls, contentHashes,
 
         const { lineItems, discountDescription } = stripeService.buildInvoiceLineItems(sponsor, tierMap, adjacencyMap);
         const description = sponsor.name || `Territory ${req.params.id}`;
-        const customerName = sponsor.inquiryData?.contactName || null;
+        const contactName = sponsor.inquiryData?.contactName || null;
+        const customerName = contactName && sponsor.name ? `${contactName} (${sponsor.name})` : sponsor.name || contactName;
 
         const customerId = await stripeService.findOrCreateCustomer(customerEmail, customerName);
         const { subscription, invoiceAmountCents } = await stripeService.createSubscription({

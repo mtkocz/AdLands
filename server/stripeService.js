@@ -143,7 +143,13 @@ async function findOrCreateCustomer(email, name) {
   if (!stripe) throw new Error("Stripe not initialized");
 
   const existing = await stripe.customers.list({ email, limit: 1 });
-  if (existing.data.length > 0) return existing.data[0].id;
+  if (existing.data.length > 0) {
+    const cust = existing.data[0];
+    if (name && cust.name !== name) {
+      await stripe.customers.update(cust.id, { name });
+    }
+    return cust.id;
+  }
 
   const customer = await stripe.customers.create({
     email,
