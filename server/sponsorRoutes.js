@@ -327,6 +327,35 @@ function createSponsorRoutes(sponsorStore, gameRoom, { imageUrls, contentHashes,
       }
     }
 
+    // Enrich sponsors with Stripe invoice amount + coupon info
+    if (stripeService.isEnabled()) {
+      const needsStripe = out.filter(s => s.stripeSubscriptionId && s.stripeInvoiceAmountCents == null);
+      if (needsStripe.length > 0) {
+        const stripe = stripeService.getStripe();
+        await Promise.all(needsStripe.map(async (s) => {
+          try {
+            const sub = await stripe.subscriptions.retrieve(s.stripeSubscriptionId, { expand: ["latest_invoice", "discounts.data.coupon"] });
+            if (sub.latest_invoice?.amount_due != null) {
+              s.stripeInvoiceAmountCents = sub.latest_invoice.amount_due;
+            }
+            const firstDiscount = sub.discounts?.data?.[0] || sub.discounts?.[0];
+            if (firstDiscount?.coupon?.id) {
+              s.stripeCouponId = firstDiscount.coupon.id;
+            }
+            // Cache on sponsor record
+            const persist = {};
+            if (s.stripeInvoiceAmountCents != null) persist.stripeInvoiceAmountCents = s.stripeInvoiceAmountCents;
+            if (s.stripeCouponId) persist.stripeCouponId = s.stripeCouponId;
+            if (Object.keys(persist).length > 0) {
+              sponsorStore.update(s.id, persist).catch(() => {});
+            }
+          } catch (e) {
+            // Subscription may have been deleted
+          }
+        }));
+      }
+    }
+
     const data = {
       version: 1,
       sponsors: out,
