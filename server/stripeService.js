@@ -30,39 +30,33 @@ function isEnabled() {
 }
 
 /**
- * Build detailed invoice line items for a territory.
+ * Build pre-discounted line items for a single territory.
+ * Discount is baked into unit prices so Stripe total matches portal exactly.
  * @param {Object} sponsor - Sponsor record from SponsorStore
- * @param {Map} tierMap - Tile index → tier ID map (from WorldGenerator)
- * @returns {{ lineItems: Array<{name: string, unitAmountCents: number, quantity: number}>, discountPercent: number }}
+ * @param {Map} tierMap - Tile index → tier ID map
+ * @param {Map} [adjacencyMap] - Tile adjacency map
+ * @returns {{ lineItems: Array<{name: string, unitAmountCents: number, quantity: number}>, discountDescription: string }}
  */
 function buildInvoiceLineItems(sponsor, tierMap, adjacencyMap) {
-  // Moon territories
   if (sponsor.territoryType === "moon") {
     const moonIndex = sponsor.inquiryData?.moonIndex ?? 0;
     const price = HexTierSystem.MOON_PRICES[moonIndex] || HexTierSystem.MOON_PRICES[0];
     const label = HexTierSystem.MOON_LABELS[moonIndex] || `Moon ${moonIndex + 1}`;
-    return {
-      lineItems: [{ name: label, unitAmountCents: Math.round(price * 100), quantity: 1 }],
-      discountPercent: 0,
-    };
+    return { lineItems: [{ name: label, unitAmountCents: Math.round(price * 100), quantity: 1 }], discountDescription: "" };
   }
 
-  // Billboard territories
   if (sponsor.territoryType === "billboard") {
     const bbIndex = sponsor.inquiryData?.billboardIndex ?? 0;
     const price = HexTierSystem.getBillboardPrice(bbIndex);
     const label = HexTierSystem.getBillboardLabel(bbIndex);
-    return {
-      lineItems: [{ name: label, unitAmountCents: Math.round(price * 100), quantity: 1 }],
-      discountPercent: 0,
-    };
+    return { lineItems: [{ name: label, unitAmountCents: Math.round(price * 100), quantity: 1 }], discountDescription: "" };
   }
 
-  // Hex territories — per-tier line items with per-cluster discount
   const tiles = sponsor.cluster?.tileIndices || [];
-  if (tiles.length === 0 || !tierMap) return { lineItems: [], discountPercent: 0 };
+  if (tiles.length === 0 || !tierMap) return { lineItems: [], discountDescription: "" };
 
   const pricing = HexTierSystem.calculatePricing(tiles, tierMap, adjacencyMap);
+  const multiplier = pricing.discount > 0 ? (100 - pricing.discount) / 100 : 1;
   const lineItems = [];
 
   for (const tierId of HexTierSystem.RENTABLE_TIERS) {
@@ -70,34 +64,38 @@ function buildInvoiceLineItems(sponsor, tierMap, adjacencyMap) {
     if (!count) continue;
     const tier = HexTierSystem.TIERS[tierId];
     lineItems.push({
-      name: `${tier.name} Hex`,
-      unitAmountCents: Math.round(tier.price * 100),
+      name: `Territory (${pricing.totalHexes} hexes): ${tier.name}`,
+      unitAmountCents: Math.round(tier.price * 100 * multiplier),
       quantity: count,
     });
   }
 
-  return { lineItems, discountPercent: pricing.discount };
+  const discountDescription = pricing.discount > 0
+    ? `${pricing.totalHexes}-hex cluster: ${pricing.discount}% ${pricing.label || "discount"}`
+    : "";
+
+  return { lineItems, discountDescription };
 }
 
 /**
- * Build combined invoice line items for a group of sponsors (single subscription).
- * Aggregates hex tiers across all sponsors. Discount is calculated per connected
- * cluster of adjacent hexes when adjacencyMap is provided.
+ * Build per-cluster line items for a group of sponsors (single subscription).
+ * Each sponsor's territory is a separate cluster with its own discount.
  * @param {Object[]} sponsors - Array of sponsor records
  * @param {Map} tierMap - Tile index → tier ID map
- * @param {Map} [adjacencyMap] - Tile adjacency map (enables per-cluster discount)
- * @returns {{ lineItems: Array<{name: string, unitAmountCents: number, quantity: number}>, discountPercent: number }}
+ * @param {Map} [adjacencyMap] - Tile adjacency map
+ * @returns {{ lineItems: Array<{name: string, unitAmountCents: number, quantity: number}>, discountDescription: string }}
  */
 function buildGroupInvoiceLineItems(sponsors, tierMap, adjacencyMap) {
-  const nonHexItems = [];
-  const allHexTiles = [];
+  const lineItems = [];
+  const discountParts = [];
+  let clusterNum = 0;
 
   for (const sponsor of sponsors) {
     if (sponsor.territoryType === "moon") {
       const moonIndex = sponsor.inquiryData?.moonIndex ?? 0;
       const price = HexTierSystem.MOON_PRICES[moonIndex] || HexTierSystem.MOON_PRICES[0];
       const label = HexTierSystem.MOON_LABELS[moonIndex] || `Moon ${moonIndex + 1}`;
-      nonHexItems.push({ name: label, unitAmountCents: Math.round(price * 100), quantity: 1 });
+      lineItems.push({ name: label, unitAmountCents: Math.round(price * 100), quantity: 1 });
       continue;
     }
 
@@ -105,30 +103,34 @@ function buildGroupInvoiceLineItems(sponsors, tierMap, adjacencyMap) {
       const bbIndex = sponsor.inquiryData?.billboardIndex ?? 0;
       const price = HexTierSystem.getBillboardPrice(bbIndex);
       const label = HexTierSystem.getBillboardLabel(bbIndex);
-      nonHexItems.push({ name: label, unitAmountCents: Math.round(price * 100), quantity: 1 });
+      lineItems.push({ name: label, unitAmountCents: Math.round(price * 100), quantity: 1 });
       continue;
     }
 
     const tiles = sponsor.cluster?.tileIndices || [];
-    if (tiles.length > 0 && tierMap) allHexTiles.push(...tiles);
+    if (tiles.length === 0 || !tierMap) continue;
+
+    clusterNum++;
+    const pricing = HexTierSystem.calculatePricing(tiles, tierMap, adjacencyMap);
+    const multiplier = pricing.discount > 0 ? (100 - pricing.discount) / 100 : 1;
+
+    for (const tierId of HexTierSystem.RENTABLE_TIERS) {
+      const count = pricing.byTier[tierId];
+      if (!count) continue;
+      const tier = HexTierSystem.TIERS[tierId];
+      lineItems.push({
+        name: `Cluster ${clusterNum} (${pricing.totalHexes} hexes): ${tier.name}`,
+        unitAmountCents: Math.round(tier.price * 100 * multiplier),
+        quantity: count,
+      });
+    }
+
+    if (pricing.discount > 0) {
+      discountParts.push(`Cluster ${clusterNum}: ${pricing.discount}% ${pricing.label || "discount"} (${pricing.totalHexes} hexes)`);
+    }
   }
 
-  const pricing = HexTierSystem.calculatePricing(allHexTiles, tierMap, adjacencyMap);
-  const lineItems = [];
-
-  for (const tierId of HexTierSystem.RENTABLE_TIERS) {
-    const count = pricing.byTier[tierId];
-    if (!count) continue;
-    const tier = HexTierSystem.TIERS[tierId];
-    lineItems.push({
-      name: `${tier.name} Hex`,
-      unitAmountCents: Math.round(tier.price * 100),
-      quantity: count,
-    });
-  }
-
-  lineItems.push(...nonHexItems);
-  return { lineItems, discountPercent: pricing.discount };
+  return { lineItems, discountDescription: discountParts.join("; ") };
 }
 
 /**
@@ -151,21 +153,18 @@ async function findOrCreateCustomer(email, name) {
 }
 
 /**
- * Create a Stripe subscription for a territory with itemized line items.
+ * Create a Stripe subscription with pre-discounted line items.
  * @param {Object} params
  * @param {string} params.customerId - Stripe customer ID
  * @param {string} params.sponsorId - SponsorStore ID
  * @param {string} params.territoryId - Firestore territory ID (for player territories)
  * @param {string} params.description - Human-readable territory description
- * @param {Array<{name: string, unitAmountCents: number, quantity: number}>} params.lineItems
- * @param {number} [params.discountPercent] - Cluster discount percentage (0-30)
+ * @param {Array<{name: string, unitAmountCents: number, quantity: number}>} params.lineItems - Pre-discounted line items
+ * @param {string} [params.discountDescription] - Discount info for the invoice description
  * @returns {Promise<import('stripe').Stripe.Subscription>}
  */
-async function createSubscription({ customerId, sponsorId, territoryId, description, lineItems, discountPercent }) {
+async function createSubscription({ customerId, sponsorId, territoryId, description, lineItems, discountDescription }) {
   if (!stripe) throw new Error("Stripe not initialized");
-
-  // Apply cluster discount by reducing unit prices (avoids Stripe coupon API issues)
-  const discountMultiplier = discountPercent > 0 ? (100 - discountPercent) / 100 : 1;
 
   const items = [];
   for (const item of lineItems) {
@@ -173,34 +172,29 @@ async function createSubscription({ customerId, sponsorId, territoryId, descript
       name: `AdLands: ${item.name}`,
       metadata: { sponsorId, territoryId: territoryId || "" },
     });
-    const unitAmount = discountPercent > 0
-      ? Math.round(item.unitAmountCents * discountMultiplier)
-      : item.unitAmountCents;
     items.push({
       price_data: {
         currency: "usd",
         product: product.id,
-        unit_amount: unitAmount,
+        unit_amount: item.unitAmountCents,
         recurring: { interval: "month" },
       },
       quantity: item.quantity,
     });
   }
 
-  const discountLabel = discountPercent > 0
-    ? ` (${HexTierSystem.getDiscountLabel(discountPercent) || discountPercent + "% discount"} applied)`
-    : "";
+  const desc = discountDescription
+    ? `AdLands Territory: ${description} (${discountDescription})`
+    : `AdLands Territory: ${description}`;
 
-  const subscriptionParams = {
+  const subscription = await stripe.subscriptions.create({
     customer: customerId,
     collection_method: "send_invoice",
     days_until_due: 7,
     items,
-    description: `AdLands Territory: ${description}${discountLabel}`,
+    description: desc,
     metadata: { sponsorId, territoryId: territoryId || "" },
-  };
-
-  const subscription = await stripe.subscriptions.create(subscriptionParams);
+  });
 
   // Finalize and send the first invoice (Stripe creates it as a draft for send_invoice subscriptions)
   const invoices = await stripe.invoices.list({ subscription: subscription.id, status: "draft", limit: 1 });

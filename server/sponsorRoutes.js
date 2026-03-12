@@ -603,7 +603,7 @@ function createSponsorRoutes(sponsorStore, gameRoom, { imageUrls, contentHashes,
           if (sponsor.ownerType === "player") updateFields.logoImage = null;
 
           // Calculate price breakdown and create Stripe subscription
-          const { lineItems, discountPercent } = stripeService.buildInvoiceLineItems(sponsor, tierMap, adjacencyMap);
+          const { lineItems, discountDescription } = stripeService.buildInvoiceLineItems(sponsor, tierMap, adjacencyMap);
           const description = approvedTitle || sponsor.name || `Territory ${territoryId}`;
           const customerName = sponsor.inquiryData?.contactName || sponsor.playerName || null;
 
@@ -614,7 +614,7 @@ function createSponsorRoutes(sponsorStore, gameRoom, { imageUrls, contentHashes,
             territoryId,
             description,
             lineItems,
-            discountPercent,
+            discountDescription,
           });
 
           updateFields.stripeCustomerId = customerId;
@@ -663,8 +663,7 @@ function createSponsorRoutes(sponsorStore, gameRoom, { imageUrls, contentHashes,
           // not cluster geometry. Reloading would shift cluster IDs and break client mappings.
           // The visual update happens later when the Stripe webhook confirms payment.
 
-          const subtotalCents = lineItems.reduce((sum, li) => sum + li.unitAmountCents * li.quantity, 0);
-          const totalCents = Math.round(subtotalCents * (1 - (discountPercent || 0) / 100));
+          const totalCents = lineItems.reduce((sum, li) => sum + li.unitAmountCents * li.quantity, 0);
           console.log(`[Territory] Approved & invoiced for ${territoryId} ($${(totalCents / 100).toFixed(2)}/mo)`);
           return res.json({ success: true, action: "invoiced", amountCents: totalCents, subscriptionId: subscription.id });
         }
@@ -876,7 +875,7 @@ function createSponsorRoutes(sponsorStore, gameRoom, { imageUrls, contentHashes,
           return res.status(400).json({ errors: ["No contact email found — cannot send invoice"] });
         }
 
-        const { lineItems, discountPercent } = stripeService.buildGroupInvoiceLineItems(sponsors, tierMap, adjacencyMap);
+        const { lineItems, discountDescription } = stripeService.buildGroupInvoiceLineItems(sponsors, tierMap, adjacencyMap);
         if (lineItems.length === 0) {
           return res.status(400).json({ errors: ["No billable items found"] });
         }
@@ -890,7 +889,7 @@ function createSponsorRoutes(sponsorStore, gameRoom, { imageUrls, contentHashes,
           territoryId: ids[0],
           description,
           lineItems,
-          discountPercent,
+          discountDescription,
         });
 
         for (const sponsor of sponsors) {
@@ -917,8 +916,7 @@ function createSponsorRoutes(sponsorStore, gameRoom, { imageUrls, contentHashes,
           await reExtractImages(sponsor.id);
         }
 
-        const subtotalCents = lineItems.reduce((sum, li) => sum + li.unitAmountCents * li.quantity, 0);
-        const totalCents = Math.round(subtotalCents * (1 - (discountPercent || 0) / 100));
+        const totalCents = lineItems.reduce((sum, li) => sum + li.unitAmountCents * li.quantity, 0);
         console.log(`[Inquiry] Group approved & invoiced (${sponsors.length} territories, ${contactSponsor.name}) — $${(totalCents / 100).toFixed(2)}/mo`);
         return res.json({ success: true, action: "invoiced", amountCents: totalCents, subscriptionId: subscription.id });
       }
@@ -1018,7 +1016,7 @@ function createSponsorRoutes(sponsorStore, gameRoom, { imageUrls, contentHashes,
           return res.status(400).json({ errors: ["No contact email found for this inquiry — cannot send invoice"] });
         }
 
-        const { lineItems, discountPercent } = stripeService.buildInvoiceLineItems(sponsor, tierMap, adjacencyMap);
+        const { lineItems, discountDescription } = stripeService.buildInvoiceLineItems(sponsor, tierMap, adjacencyMap);
         const description = sponsor.name || `Territory ${req.params.id}`;
         const customerName = sponsor.inquiryData?.contactName || null;
 
@@ -1029,7 +1027,7 @@ function createSponsorRoutes(sponsorStore, gameRoom, { imageUrls, contentHashes,
           territoryId: req.params.id,
           description,
           lineItems,
-          discountPercent,
+          discountDescription,
         });
 
         const updateFields = {
@@ -1055,8 +1053,7 @@ function createSponsorRoutes(sponsorStore, gameRoom, { imageUrls, contentHashes,
 
         await reExtractImages(req.params.id);
 
-        const subtotalCents = lineItems.reduce((sum, li) => sum + li.unitAmountCents * li.quantity, 0);
-        const totalCents = Math.round(subtotalCents * (1 - (discountPercent || 0) / 100));
+        const totalCents = lineItems.reduce((sum, li) => sum + li.unitAmountCents * li.quantity, 0);
         console.log(`[Inquiry] Approved & invoiced ${req.params.id} (${sponsor.name}) — $${(totalCents / 100).toFixed(2)}/mo`);
         return res.json({ success: true, action: "invoiced", amountCents: totalCents, subscriptionId: subscription.id });
       }
