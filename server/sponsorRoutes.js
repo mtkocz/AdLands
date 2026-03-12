@@ -489,10 +489,19 @@ function createSponsorRoutes(sponsorStore, gameRoom, { imageUrls, contentHashes,
     const group = allSponsors.filter(s => s.stripeSubscriptionId === subId);
     const groupIdSet = new Set(group.map(s => s.id));
 
-    // Validate: all territory keys must belong to this group
+    // Adopt new sponsors from the territories payload into the subscription group
     for (const id of Object.keys(territories)) {
       if (!groupIdSet.has(id)) {
-        return res.status(400).json({ errors: [`Sponsor ${id} is not part of this subscription group`] });
+        const newMember = sponsorStore.getById(id);
+        if (!newMember) {
+          return res.status(400).json({ errors: [`Sponsor ${id} not found`] });
+        }
+        await sponsorStore.update(id, {
+          stripeSubscriptionId: subId,
+          stripeCustomerId: anchor.stripeCustomerId,
+        });
+        group.push(sponsorStore.getById(id));
+        groupIdSet.add(id);
       }
     }
 
