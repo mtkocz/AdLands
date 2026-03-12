@@ -3389,7 +3389,7 @@ class Dashboard {
           <div class="territory-owned-item" data-territory-id="${t.id}">
               <div class="territory-item-header">
                   <span class="territory-item-name">${label}</span>
-                  <span class="territory-item-detail">${t.tileIndices.length} hex${t.tileIndices.length !== 1 ? "es" : ""} · ${age}</span>
+                  <span class="territory-item-detail">${age}</span>
                   ${status === "pending" ? '<span class="territory-status-badge pending">Pending Review</span>' : ""}
                   ${status === "approved" ? '<span class="territory-status-badge approved">Approved</span>' : ""}
               </div>
