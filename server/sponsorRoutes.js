@@ -531,12 +531,19 @@ function createSponsorRoutes(sponsorStore, gameRoom, { imageUrls, contentHashes,
       // Update Stripe subscription
       if (stripeService.isEnabled()) {
         const desc = anchor.name || anchor.ownerEmail || "Territory";
+        const contactName = anchor.ownerContactName || anchor.inquiryData?.contactName || anchor.playerName || null;
+        const customerMeta = {};
+        if (contactName) customerMeta.contactName = contactName;
         await stripeService.updateSubscription({
           subscriptionId: subId,
           sponsorId: anchor.id,
           description: desc,
           lineItems,
           discountDescription,
+          category: anchor.ownerType === "player" ? "player" : "corporate",
+          customerId: anchor.stripeCustomerId,
+          customerName: anchor.name || contactName,
+          customerMeta,
         });
       }
 
@@ -726,9 +733,10 @@ function createSponsorRoutes(sponsorStore, gameRoom, { imageUrls, contentHashes,
           const { lineItems, discountDescription } = stripeService.buildInvoiceLineItems(sponsor, tierMap, adjacencyMap);
           const description = approvedTitle || sponsor.name || `Territory ${territoryId}`;
           const contactName = sponsor.inquiryData?.contactName || sponsor.playerName || null;
-          const customerName = contactName && sponsor.name ? `${contactName} (${sponsor.name})` : sponsor.name || contactName;
+          const customerMeta = {};
+          if (contactName) customerMeta.contactName = contactName;
 
-          const customerId = await stripeService.findOrCreateCustomer(customerEmail, customerName);
+          const customerId = await stripeService.findOrCreateCustomer(customerEmail, sponsor.name || contactName, customerMeta);
           const { subscription, invoiceAmountCents } = await stripeService.createSubscription({
             customerId,
             sponsorId: req.params.id,
@@ -737,6 +745,7 @@ function createSponsorRoutes(sponsorStore, gameRoom, { imageUrls, contentHashes,
             lineItems,
             discountDescription,
             couponId: req.body.couponId || undefined,
+            category: sponsor.ownerType === "player" ? "player" : "corporate",
           });
 
           updateFields.stripeCustomerId = customerId;
@@ -1005,9 +1014,10 @@ function createSponsorRoutes(sponsorStore, gameRoom, { imageUrls, contentHashes,
         }
 
         const contactName = contactSponsor.inquiryData?.contactName || null;
-        const customerName = contactName && contactSponsor.name ? `${contactName} (${contactSponsor.name})` : contactSponsor.name || contactName;
+        const customerMeta = {};
+        if (contactName) customerMeta.contactName = contactName;
         const description = contactSponsor.name || "Territory Group";
-        const customerId = await stripeService.findOrCreateCustomer(customerEmail, customerName);
+        const customerId = await stripeService.findOrCreateCustomer(customerEmail, contactSponsor.name || contactName, customerMeta);
         const { subscription, invoiceAmountCents } = await stripeService.createSubscription({
           customerId,
           sponsorId: ids.join(","),
@@ -1016,6 +1026,7 @@ function createSponsorRoutes(sponsorStore, gameRoom, { imageUrls, contentHashes,
           lineItems,
           discountDescription,
           couponId: req.body.couponId || undefined,
+          category: "corporate",
         });
 
         for (const sponsor of sponsors) {
@@ -1147,9 +1158,10 @@ function createSponsorRoutes(sponsorStore, gameRoom, { imageUrls, contentHashes,
         const { lineItems, discountDescription } = stripeService.buildInvoiceLineItems(sponsor, tierMap, adjacencyMap);
         const description = sponsor.name || `Territory ${req.params.id}`;
         const contactName = sponsor.inquiryData?.contactName || null;
-        const customerName = contactName && sponsor.name ? `${contactName} (${sponsor.name})` : sponsor.name || contactName;
+        const customerMeta = {};
+        if (contactName) customerMeta.contactName = contactName;
 
-        const customerId = await stripeService.findOrCreateCustomer(customerEmail, customerName);
+        const customerId = await stripeService.findOrCreateCustomer(customerEmail, sponsor.name || contactName, customerMeta);
         const { subscription, invoiceAmountCents } = await stripeService.createSubscription({
           customerId,
           sponsorId: req.params.id,
@@ -1158,6 +1170,7 @@ function createSponsorRoutes(sponsorStore, gameRoom, { imageUrls, contentHashes,
           lineItems,
           discountDescription,
           couponId: req.body.couponId || undefined,
+          category: "corporate",
         });
 
         const updateFields = {

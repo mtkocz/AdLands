@@ -139,21 +139,24 @@ function buildGroupInvoiceLineItems(sponsors, tierMap, adjacencyMap) {
  * @param {string} [name]
  * @returns {Promise<string>} Stripe customer ID
  */
-async function findOrCreateCustomer(email, name) {
+async function findOrCreateCustomer(email, name, metadata) {
   if (!stripe) throw new Error("Stripe not initialized");
+
+  const updateFields = {};
+  if (name) updateFields.name = name;
+  if (metadata) updateFields.metadata = metadata;
 
   const existing = await stripe.customers.list({ email, limit: 1 });
   if (existing.data.length > 0) {
-    const cust = existing.data[0];
-    if (name && cust.name !== name) {
-      await stripe.customers.update(cust.id, { name });
+    if (Object.keys(updateFields).length > 0) {
+      await stripe.customers.update(existing.data[0].id, updateFields);
     }
-    return cust.id;
+    return existing.data[0].id;
   }
 
   const customer = await stripe.customers.create({
     email,
-    name: name || undefined,
+    ...updateFields,
   });
   return customer.id;
 }
@@ -170,7 +173,7 @@ async function findOrCreateCustomer(email, name) {
  * @param {string} [params.couponId] - Stripe coupon ID to apply to the subscription
  * @returns {Promise<import('stripe').Stripe.Subscription>}
  */
-async function createSubscription({ customerId, sponsorId, territoryId, description, lineItems, discountDescription, couponId }) {
+async function createSubscription({ customerId, sponsorId, territoryId, description, lineItems, discountDescription, couponId, category }) {
   if (!stripe) throw new Error("Stripe not initialized");
 
   const items = [];
@@ -190,9 +193,10 @@ async function createSubscription({ customerId, sponsorId, territoryId, descript
     });
   }
 
+  const catLabel = category === "player" ? "User" : "Corporate";
   const desc = discountDescription
-    ? `AdLands Territory: ${description} (${discountDescription})`
-    : `AdLands Territory: ${description}`;
+    ? `AdLands ${catLabel}: ${description} (${discountDescription})`
+    : `AdLands ${catLabel}: ${description}`;
 
   const subParams = {
     customer: customerId,
@@ -200,7 +204,7 @@ async function createSubscription({ customerId, sponsorId, territoryId, descript
     days_until_due: 7,
     items,
     description: desc,
-    metadata: { sponsorId, territoryId: territoryId || "" },
+    metadata: { sponsorId, territoryId: territoryId || "", category: catLabel },
   };
   if (couponId) subParams.discounts = [{ coupon: couponId }];
 
@@ -229,8 +233,18 @@ async function createSubscription({ customerId, sponsorId, territoryId, descript
  * @param {string} [params.discountDescription]
  * @returns {Promise<import('stripe').Stripe.Subscription>}
  */
-async function updateSubscription({ subscriptionId, sponsorId, description, lineItems, discountDescription }) {
+async function updateSubscription({ subscriptionId, sponsorId, description, lineItems, discountDescription, category, customerId, customerName, customerMeta }) {
   if (!stripe) throw new Error("Stripe not initialized");
+
+  // Sync customer name and metadata if provided
+  if (customerId) {
+    const custUpdate = {};
+    if (customerName) custUpdate.name = customerName;
+    if (customerMeta) custUpdate.metadata = customerMeta;
+    if (Object.keys(custUpdate).length > 0) {
+      stripe.customers.update(customerId, custUpdate).catch(() => {});
+    }
+  }
 
   const sub = await stripe.subscriptions.retrieve(subscriptionId);
 
@@ -254,13 +268,15 @@ async function updateSubscription({ subscriptionId, sponsorId, description, line
     });
   }
 
+  const catLabel = category === "player" ? "User" : "Corporate";
   const desc = discountDescription
-    ? `AdLands Territory: ${description} (${discountDescription})`
-    : `AdLands Territory: ${description}`;
+    ? `AdLands ${catLabel}: ${description} (${discountDescription})`
+    : `AdLands ${catLabel}: ${description}`;
 
   const updated = await stripe.subscriptions.update(subscriptionId, {
     items,
     description: desc,
+    metadata: { ...sub.metadata, category: catLabel },
     proration_behavior: "none",
   });
 
