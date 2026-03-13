@@ -1689,7 +1689,10 @@ class GameRoom {
       for (const [clusterId, state] of this.clusterCaptureState) {
         const total = state.tics.rust + state.tics.cobalt + state.tics.viridian;
         if (total > 0 || state.owner) {
-          clusters[clusterId] = {
+          // Key by sponsorId (stable) instead of clusterId (index-based, shifts when sponsors change)
+          const sponsorId = this.clusterSponsorMap.get(clusterId);
+          const key = sponsorId || String(clusterId);
+          clusters[key] = {
             tics: { ...state.tics },
             owner: state.owner,
           };
@@ -1747,8 +1750,16 @@ class GameRoom {
       const data = doc.data();
       if (!data.clusters) return false;
       let restored = 0;
-      for (const [clusterId, saved] of Object.entries(data.clusters)) {
-        const current = this.clusterCaptureState.get(Number(clusterId));
+      for (const [key, saved] of Object.entries(data.clusters)) {
+        // Key is sponsorId (stable) — look up current clusterId via sponsorClusterMap
+        // Fall back to numeric clusterId for backward compatibility with old saves
+        let current;
+        const clusterId = this.sponsorClusterMap.get(key);
+        if (clusterId !== undefined) {
+          current = this.clusterCaptureState.get(clusterId);
+        } else {
+          current = this.clusterCaptureState.get(Number(key));
+        }
         if (current && saved.tics) {
           current.tics.rust = saved.tics.rust || 0;
           current.tics.cobalt = saved.tics.cobalt || 0;

@@ -101,10 +101,15 @@ class TankLODInteraction {
         return;
       }
 
-      const { playerId } = dot.userData;
-      if (window.profileCard) {
-        window.profileCard.show(playerId, clickX, clickY);
-      }
+      // Defer to next microtask so main.js mouseup handler runs first
+      // and can set _rightClickConsumed when a billboard/moon was clicked
+      const pid = dot.userData.playerId;
+      setTimeout(() => {
+        if (window._rightClickConsumed) return;
+        if (window.profileCard) {
+          window.profileCard.show(pid, clickX, clickY);
+        }
+      }, 0);
     });
   }
 

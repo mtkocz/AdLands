@@ -3557,6 +3557,7 @@
 
   window.addEventListener("mouseup", (e) => {
     if (e.button !== 2) return; // Only right-click
+    window._rightClickConsumed = false;
     if (window._authScreenInstance?.isVisible) { rightClickStart = null; return; }
     if (!rightClickStart) return;
 
@@ -3609,6 +3610,7 @@
       if (sponsor) {
         showSpaceSponsorPopup(clickX, clickY, sponsor, "Billboard");
       }
+      window._rightClickConsumed = true;
       return; // Block click from reaching planet surface
     }
 
@@ -3634,6 +3636,7 @@
       if (sponsor) {
         showSpaceSponsorPopup(clickX, clickY, sponsor, "Moon");
       }
+      window._rightClickConsumed = true;
       return; // Block click from reaching planet surface
     }
 
