@@ -712,6 +712,16 @@ class MissileSystem {
     }
   }
 
+  assignServerIdToLocal(serverId) {
+    for (let i = this.missiles.length - 1; i >= 0; i--) {
+      const m = this.missiles[i];
+      if (!m.isRemote && m.serverId == null) {
+        m.serverId = serverId;
+        return;
+      }
+    }
+  }
+
   // Remove a missile by server projectile ID, exploding at impactPos if provided
   removeByServerId(projectileId, impactPos) {
     for (let i = this.missiles.length - 1; i >= 0; i--) {

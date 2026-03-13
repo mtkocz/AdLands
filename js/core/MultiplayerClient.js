@@ -854,7 +854,16 @@
         window.missileSystem.showIncomingWarning();
       }
 
-      if (data.id === net.playerId) return; // We already played our own effects
+      if (data.id === net.playerId) {
+        // Assign server projectile ID to our local projectile so it can be
+        // removed by removeProjectileByServerId on server-confirmed hits
+        if (data.type === "missile") {
+          window.missileSystem?.assignServerIdToLocal?.(data.projectileId);
+        } else if (data.projectileId != null) {
+          cannonSystem.assignServerIdToLocal?.(data.projectileId);
+        }
+        return;
+      }
 
       const remoteTank = remoteTanks.get(data.id);
 

@@ -2172,6 +2172,16 @@ void main() {
    * rendering a projectile that the server already destroyed.
    * @param {number} serverId - The projectile ID from the server
    */
+  assignServerIdToLocal(serverId) {
+    for (let i = this.projectiles.length - 1; i >= 0; i--) {
+      const p = this.projectiles[i];
+      if (!p.isRemote && p.serverId == null) {
+        p.serverId = serverId;
+        return;
+      }
+    }
+  }
+
   removeProjectileByServerId(serverId, impactPos) {
     if (serverId == null) return;
     for (let i = this.projectiles.length - 1; i >= 0; i--) {
