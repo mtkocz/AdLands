@@ -356,10 +356,10 @@ function createSponsorRoutes(sponsorStore, gameRoom, { imageUrls, contentHashes,
             if (Object.keys(persist).length > 0) {
               sponsorStore.update(s.id, persist).catch(() => {});
             }
-            // Sync customer name to Stripe (company name for corporate, territory title for players)
+            // Sync customer name to Stripe (company name for corporate, playerName for players)
             if (s.stripeCustomerId && !syncedCustomers.has(s.stripeCustomerId)) {
               const custName = s.ownerType === "player"
-                ? (s._approvedTitle || s.title || s.name)
+                ? (s.playerName || s.ownerEmail || s.name)
                 : s.name;
               if (custName) {
                 syncedCustomers.add(s.stripeCustomerId);
@@ -554,7 +554,7 @@ function createSponsorRoutes(sponsorStore, gameRoom, { imageUrls, contentHashes,
         const desc = anchor._approvedTitle || anchor.title || anchor.name || anchor.ownerEmail || "Territory";
         const contactName = anchor.ownerContactName || anchor.inquiryData?.contactName || anchor.playerName || null;
         const custName = anchor.ownerType === "player"
-          ? (anchor._approvedTitle || anchor.title || anchor.name)
+          ? (anchor.playerName || anchor.ownerEmail || anchor.name)
           : (anchor.name || contactName);
         const customerMeta = {};
         if (contactName) customerMeta.contactName = contactName;
@@ -761,7 +761,7 @@ function createSponsorRoutes(sponsorStore, gameRoom, { imageUrls, contentHashes,
           if (contactName) customerMeta.contactName = contactName;
 
           const custName = sponsor.ownerType === "player"
-            ? (approvedTitle || sponsor._approvedTitle || sponsor.title || sponsor.name)
+            ? (sponsor.playerName || sponsor.ownerEmail || sponsor.name)
             : (sponsor.name || contactName);
           const customerId = await stripeService.findOrCreateCustomer(customerEmail, custName, customerMeta);
           const { subscription, invoiceAmountCents } = await stripeService.createSubscription({
