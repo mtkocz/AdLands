@@ -2172,17 +2172,24 @@ void main() {
    * rendering a projectile that the server already destroyed.
    * @param {number} serverId - The projectile ID from the server
    */
-  removeProjectileByServerId(serverId) {
+  removeProjectileByServerId(serverId, impactPos) {
     if (serverId == null) return;
     for (let i = this.projectiles.length - 1; i >= 0; i--) {
       const p = this.projectiles[i];
       if (p.serverId === serverId) {
-        // Clean up point light
+        const explosionPos = impactPos || p.position;
+        const sizeScale = p.sizeScale || 1;
+
+        this._spawnExplosion(explosionPos, p.faction, sizeScale);
+        this._spawnImpactDecal(explosionPos, sizeScale);
+        if (this.dustShockwave) {
+          this.dustShockwave.emit(explosionPos, sizeScale);
+        }
+
         if (p.light) {
           p.mesh.remove(p.light);
           p.light.dispose();
         }
-        // Return to pool and remove
         this.objectPools.releaseProjectile(p.poolItem);
         this.projectiles.splice(i, 1);
         return;

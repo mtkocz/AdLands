@@ -1141,7 +1141,17 @@
               window.missileSystem.removeByServerId(data.projectileId, impactPos);
             }
           } else {
-            cannonSystem.removeProjectileByServerId?.(data.projectileId);
+            let impactPos = null;
+            if (data.targetId === net.playerId && tank.group) {
+              impactPos = tank.group.position.clone();
+            } else {
+              const victim = remoteTanks.get(data.targetId);
+              if (victim?.group) {
+                impactPos = new THREE.Vector3();
+                victim.group.getWorldPosition(impactPos);
+              }
+            }
+            cannonSystem.removeProjectileByServerId?.(data.projectileId, impactPos);
           }
         }
       }
