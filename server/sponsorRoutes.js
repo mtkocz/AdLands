@@ -333,8 +333,7 @@ function createSponsorRoutes(sponsorStore, gameRoom, { imageUrls, contentHashes,
       console.log(`[Stripe Enrich] ${needsStripe.length} sponsors with subscriptions`);
       if (needsStripe.length > 0) {
         const stripe = stripeService.getStripe();
-        // Collect customer name data per Stripe customer ID
-        const customerNames = new Map(); // stripeCustomerId -> { names: Set, ownerType }
+        const syncedCustomers = new Set();
         await Promise.all(needsStripe.map(async (s) => {
           try {
             const sub = await stripe.subscriptions.retrieve(s.stripeSubscriptionId, { expand: ["latest_invoice", "discounts"] });
@@ -356,28 +355,19 @@ function createSponsorRoutes(sponsorStore, gameRoom, { imageUrls, contentHashes,
             if (Object.keys(persist).length > 0) {
               sponsorStore.update(s.id, persist).catch(() => {});
             }
-            // Collect territory names for customer name sync
-            if (s.stripeCustomerId) {
-              const custName = s.ownerType === "player"
-                ? (s._approvedTitle || s.title || s.name)
-                : s.name;
-              if (custName) {
-                if (!customerNames.has(s.stripeCustomerId)) {
-                  customerNames.set(s.stripeCustomerId, { names: new Set(), ownerType: s.ownerType });
-                }
-                customerNames.get(s.stripeCustomerId).names.add(custName);
+            // Sync customer name: corporate = company name, player = blank (use description)
+            if (s.stripeCustomerId && !syncedCustomers.has(s.stripeCustomerId)) {
+              syncedCustomers.add(s.stripeCustomerId);
+              if (s.ownerType === "player") {
+                stripe.customers.update(s.stripeCustomerId, { name: "" }).catch(() => {});
+              } else if (s.name) {
+                stripe.customers.update(s.stripeCustomerId, { name: s.name }).catch(() => {});
               }
             }
           } catch (e) {
             console.log(`[Stripe Enrich] ERROR ${s.id}: ${e.message}`);
           }
         }));
-        // Sync customer names to Stripe
-        for (const [custId, { names }] of customerNames) {
-          const uniqueNames = [...names];
-          const displayName = uniqueNames.join(" / ");
-          stripe.customers.update(custId, { name: displayName }).catch(() => {});
-        }
       }
     }
 
@@ -561,9 +551,7 @@ function createSponsorRoutes(sponsorStore, gameRoom, { imageUrls, contentHashes,
       if (stripeService.isEnabled()) {
         const desc = anchor._approvedTitle || anchor.title || anchor.name || anchor.ownerEmail || "Territory";
         const contactName = anchor.ownerContactName || anchor.inquiryData?.contactName || anchor.playerName || null;
-        const custName = anchor.ownerType === "player"
-          ? (anchor._approvedTitle || anchor.title || anchor.name)
-          : (anchor.name || contactName);
+        const custName = anchor.ownerType === "player" ? null : (anchor.name || contactName);
         const customerMeta = {};
         if (contactName) customerMeta.contactName = contactName;
         await stripeService.updateSubscription({
@@ -769,9 +757,7 @@ function createSponsorRoutes(sponsorStore, gameRoom, { imageUrls, contentHashes,
           if (contactName) customerMeta.contactName = contactName;
 
           const isPlayer = sponsor.ownerType === "player";
-          const custName = isPlayer
-            ? (approvedTitle || sponsor._approvedTitle || sponsor.title || sponsor.name)
-            : (sponsor.name || contactName);
+          const custName = isPlayer ? null : (sponsor.name || contactName);
           const customerId = await stripeService.findOrCreateCustomer(customerEmail, custName, customerMeta, isPlayer);
           const { subscription, invoiceAmountCents } = await stripeService.createSubscription({
             customerId,
