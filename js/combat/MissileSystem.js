@@ -750,6 +750,21 @@ class MissileSystem {
     }
   }
 
+  // Force a remote missile into dive phase (phase 2) by server projectile ID
+  diveByServerId(projectileId, targetId) {
+    for (let i = this.missiles.length - 1; i >= 0; i--) {
+      const m = this.missiles[i];
+      if (m.serverId === projectileId && m.isRemote && m.phase < 2) {
+        const target = this._resolveServerTarget(targetId);
+        if (target) {
+          m.phase = 2;
+          m.diveTarget = target.worldPos.clone();
+        }
+        return;
+      }
+    }
+  }
+
   // Force a missile into wobble phase (phase 3) by server projectile ID
   wobbleByServerId(projectileId) {
     for (let i = this.missiles.length - 1; i >= 0; i--) {

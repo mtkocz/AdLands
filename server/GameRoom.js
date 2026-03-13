@@ -2406,14 +2406,18 @@ class GameRoom {
     if (p.isLost) {
       p.isLost = false;
       p.lostAge = 0;
+      p._diving = false; // Reset dive for new approach
     }
 
     const prevTarget = p.targetId;
     p.targetId = p._tgtId;
 
-    // Notify new target when missile retargets to a different player
-    if (p.targetId !== prevTarget && !p._tgtIsFlare && this.players.has(p.targetId)) {
-      this._emitToSocket(p.targetId, "missile-incoming", { missileId: p.id });
+    // Reset dive when retargeting to a different tank (must dive again for new target)
+    if (p.targetId !== prevTarget) {
+      p._diving = false;
+      if (!p._tgtIsFlare && this.players.has(p.targetId)) {
+        this._emitToSocket(p.targetId, "missile-incoming", { missileId: p.id });
+      }
     }
 
     // Compute heading toward target on sphere
@@ -2430,45 +2434,57 @@ class GameRoom {
     // Move missile on sphere
     moveOnSphere(p, dt);
 
-    // Check arrival — distance in world units (~2.4 world units = 0.005 rad on R=480)
+    // Check distance to target
     const arrivalDist = sphericalDistance(p.theta, p.phi, p._tgtTheta, p._tgtPhi);
+    const DIVE_START_DIST = 0.021; // ~10 world units on R=480 — matches client diveDistance
     const ARRIVAL_THRESHOLD = 0.005; // ~2.4 world units on R=480
+    const DIVE_DURATION = 0.7; // Seconds for dive animation to complete
 
-    if (arrivalDist < ARRIVAL_THRESHOLD) {
-      if (p._tgtIsFlare) {
-        // Missile hit flare — explode harmlessly, destroy both
-        const fl = this.flares[p._tgtFlareIndex];
-        if (fl) {
-          // Award flare intercept bonus to flare owner
-          const flareOwner = this.players.get(fl.ownerId);
-          if (flareOwner) {
-            flareOwner.crypto += this.costs.flareIntercept;
-          }
-
-          this._queueRoomEvent("flare-hit", {
-            flareId: fl.id,
-            flareOwnerId: fl.ownerId,
-            missileId: p.id,
-            theta: fl.theta,
-            phi: fl.phi,
-            faction: p.faction,
-          });
-          // Remove flare (swap-remove)
-          this.flares[p._tgtFlareIndex] = this.flares[this.flares.length - 1];
-          this.flares.pop();
+    // Flares can be hit during any phase (countermeasure — no dive needed)
+    if (arrivalDist < ARRIVAL_THRESHOLD && p._tgtIsFlare) {
+      const fl = this.flares[p._tgtFlareIndex];
+      if (fl) {
+        const flareOwner = this.players.get(fl.ownerId);
+        if (flareOwner) {
+          flareOwner.crypto += this.costs.flareIntercept;
         }
-        // Remove missile
-        projs[i] = projs[projs.length - 1]; projs.pop();
-        return;
-      }
 
-      // Impact! Apply damage — bypass shields entirely
+        this._queueRoomEvent("flare-hit", {
+          flareId: fl.id,
+          flareOwnerId: fl.ownerId,
+          missileId: p.id,
+          theta: fl.theta,
+          phi: fl.phi,
+          faction: p.faction,
+        });
+        this.flares[p._tgtFlareIndex] = this.flares[this.flares.length - 1];
+        this.flares.pop();
+      }
+      projs[i] = projs[projs.length - 1]; projs.pop();
+      return;
+    }
+
+    // Enter dive phase when close enough to target (damage only after dive completes)
+    if (!p._diving && arrivalDist < DIVE_START_DIST) {
+      p._diving = true;
+      p._diveAge = 0;
+      this._queueRoomEvent("missile-dive", {
+        missileId: p.id,
+        targetId: p._tgtId,
+      });
+    }
+
+    if (p._diving) {
+      p._diveAge += dt;
+    }
+
+    // Impact: only after dive animation completes AND missile reaches target
+    if (p._diving && p._diveAge >= DIVE_DURATION && arrivalDist < ARRIVAL_THRESHOLD) {
       const damage = p.damage || 38;
 
       const tgtId = p._tgtId;
       const isBot = typeof tgtId === "string" && tgtId.startsWith("bot-");
       if (isBot) {
-        // Bot hit
         const botState = this.botBridge.getBot(tgtId);
         const botHp = botState ? botState.hp : 100;
         const botFaction = botState ? botState.f : "rust";
@@ -2509,7 +2525,6 @@ class GameRoom {
           }
         }
       } else {
-        // Player hit
         const hitPlayer = this.players.get(tgtId);
         if (hitPlayer && !hitPlayer.isDead) {
           hitPlayer.hp -= damage;
@@ -2568,7 +2583,6 @@ class GameRoom {
         }
       }
 
-      // Remove missile after impact
       projs[i] = projs[projs.length - 1]; projs.pop();
     }
   }

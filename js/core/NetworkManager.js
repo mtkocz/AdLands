@@ -55,6 +55,7 @@ class NetworkManager {
     this.onFlareHit = null;         // (flareHitData) => {}
     this.onMissileIncoming = null;  // (incomingData) => {}
     this.onMissileLost = null;      // (lostData) => {}
+    this.onMissileDive = null;      // (diveData) => {}
     this.onMissileCrash = null;     // (crashData) => {}
     this.onPlayerKilled = null;     // (killData) => {}
     this.onPlayerRespawned = null;  // (respawnData) => {}
@@ -323,6 +324,7 @@ class NetworkManager {
           case "chat": if (this.onChatMessage) this.onChatMessage(evt.data); break;
           case "missile-crash": if (this.onMissileCrash) this.onMissileCrash(evt.data); break;
           case "missile-lost": if (this.onMissileLost) this.onMissileLost(evt.data); break;
+          case "missile-dive": if (this.onMissileDive) this.onMissileDive(evt.data); break;
           case "flare-hit": if (this.onFlareHit) this.onFlareHit(evt.data); break;
           case "bodyguard-killed": if (this.onPlayerKilled) this.onPlayerKilled(evt.data); break;
           case "territory-update": if (this.onTerritoryUpdate) this.onTerritoryUpdate(evt.data); break;

@@ -131,6 +131,13 @@
         remoteTank.update(deltaTime);
         remoteTank.updateFade();
 
+        // Animate spawn scale-in for lazy-spawned bots
+        if (remoteTank._spawnScale !== undefined && remoteTank._spawnScale < 1) {
+          remoteTank._spawnScale = Math.min(1, remoteTank._spawnScale + deltaTime * 4);
+          remoteTank.group.scale.setScalar(remoteTank._spawnScale);
+          if (remoteTank._spawnScale >= 1) delete remoteTank._spawnScale;
+        }
+
         // Player-distance culling: hide tanks far from player (skip in orbital view)
         if (!isOrbital && remoteTank.group) {
           remoteTank.group.getWorldPosition(_remoteWorldPos);
@@ -493,6 +500,10 @@
             isBot: true,
           });
           remoteTank = remoteTanks.get(id);
+          if (remoteTank) {
+            remoteTank._spawnScale = 0;
+            remoteTank.group.scale.setScalar(0);
+          }
         }
         if (remoteTank) {
           // Handle death/alive state transitions from server ticks
@@ -847,10 +858,9 @@
 
       const remoteTank = remoteTanks.get(data.id);
 
-      // Skip projectiles/missiles from tanks not visible on screen (no remoteTank mesh).
-      // Without this, server bots outside the spatial filter or not yet lazy-spawned
-      // produce projectiles that appear to fire from nowhere.
-      if (!remoteTank) return;
+      // Skip fire effects from tanks not visible on screen: no remoteTank, hidden
+      // by LOD/backface/frustum culling, dead, or still fading in from spawn.
+      if (!remoteTank || !remoteTank.group?.visible || remoteTank.isDead) return;
 
       // Route to missile system before distance cull — missiles travel far
       if (data.type === "missile") {
@@ -861,12 +871,10 @@
       }
 
       // Skip projectile visuals for tanks far from the player (not worth spawning)
-      if (remoteTank.group) {
-        remoteTank.group.getWorldPosition(_remoteWorldPos);
-        tank.group.getWorldPosition(_playerWorldPos);
-        if (_remoteWorldPos.distanceToSquared(_playerWorldPos) > PLAYER_RENDER_DIST_SQ) {
-          return;
-        }
+      remoteTank.group.getWorldPosition(_remoteWorldPos);
+      tank.group.getWorldPosition(_playerWorldPos);
+      if (_remoteWorldPos.distanceToSquared(_playerWorldPos) > PLAYER_RENDER_DIST_SQ) {
+        return;
       }
 
       // Barrel recoil effect (only if we have the remote tank mesh)
@@ -933,6 +941,12 @@
       if (window.missileSystem) {
         window.missileSystem.wobbleByServerId(data.missileId);
         window.missileSystem.hideIncomingWarning();
+      }
+    };
+
+    net.onMissileDive = (data) => {
+      if (window.missileSystem) {
+        window.missileSystem.diveByServerId(data.missileId, data.targetId);
       }
     };
 
