@@ -824,21 +824,22 @@ class ServerBotManager {
             while (targetDiff < -Math.PI) targetDiff += Math.PI * 2;
             const blendRate = 0.08 + bot.personality * 0.12;
             bot.wanderDirection += targetDiff * blendRate;
-            bot.wanderDirection += bot.driftOffset * 0.06;
+            bot.wanderDirection += bot.driftOffset * 0.02;
           }
         }
       } else if (bot.aiState === BOT_STATES.CAPTURING) {
         // Wander randomly within cluster instead of drifting to center
-        if (Math.random() < 0.03) {
-          bot.wanderDirection += (Math.random() - 0.5) * 1.5;
+        if (Math.random() < 0.01) {
+          bot.wanderDirection += (Math.random() - 0.5) * 0.8;
         }
       }
     }
 
-    // Apply separation AFTER target-seeking so it wins when bots are bunched
+    // Apply separation AFTER target-seeking, clamped to avoid fighting pathfinding
     const separation = bot._cachedSeparation || 0;
     if (separation !== 0) {
-      bot.wanderDirection += separation;
+      const sepClamp = 0.3;
+      bot.wanderDirection += Math.max(-sepClamp, Math.min(sepClamp, separation));
     }
 
     // Use cached collision avoidance
@@ -848,7 +849,7 @@ class ServerBotManager {
     while (headingDiff > Math.PI) headingDiff -= Math.PI * 2;
     while (headingDiff < -Math.PI) headingDiff += Math.PI * 2;
 
-    const steerDeadZone = 0.05;
+    const steerDeadZone = 0.15;
     const driveAngleLimit = 0.4;
 
     if (avoidance.threat > 0.1) {
@@ -903,8 +904,8 @@ class ServerBotManager {
       }
     }
 
-    if (Math.random() < 0.015) {
-      bot.wanderDirection += (Math.random() - 0.5) * 1.2;
+    if (Math.random() < 0.005) {
+      bot.wanderDirection += (Math.random() - 0.5) * 0.6;
     }
   }
 
