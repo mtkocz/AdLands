@@ -57,7 +57,7 @@ class MissileSystem {
 
     // Missile mesh pool
     this._pool = [];
-    this._poolMax = 30;
+    this._poolMax = 60;
     this._sharedGeometry = null;
     this._materials = {};
     this._createMissileAssets();
@@ -177,15 +177,18 @@ class MissileSystem {
         item = this._createPoolItem();
         this._pool.push(item);
       } else {
-        // Recycle oldest — find the in-use item and invalidate any missile referencing it
-        item = this._pool.find((p) => p.inUse);
-        if (item) {
-          // Invalidate any missile still referencing this pool item
-          for (const m of this.missiles) {
-            if (m.poolItem === item) {
-              m.poolItem = null; // Mark as orphaned
-            }
+        // Recycle the farthest missile from camera (least visible)
+        let bestDist = -1;
+        let bestMissile = null;
+        for (const m of this.missiles) {
+          if (m.poolItem && (m._camDist || 0) > bestDist) {
+            bestDist = m._camDist || 0;
+            bestMissile = m;
           }
+        }
+        if (bestMissile) {
+          item = bestMissile.poolItem;
+          bestMissile.poolItem = null; // Mark as orphaned
           this._releasePoolItem(item);
         }
       }
@@ -773,9 +776,10 @@ class MissileSystem {
         m.targetTank = null;
         m.diveTarget = impactPos.clone();
         m._forcedDive = true;
-        return;
+        return true;
       }
     }
+    return false;
   }
 
   // Retarget a remote missile to the local player (called on missile-incoming)
@@ -870,6 +874,7 @@ class MissileSystem {
 
       // Remove orphaned missiles (pool item recycled)
       if (!m.poolItem) {
+        if (m.serverId != null) this._flushPendingHit(m.serverId);
         if (m.shadowBB && this.flareSystem) {
           m.shadowBB.age = m.age;
           this.flareSystem._orphanedShadows.push(m.shadowBB);
@@ -1136,10 +1141,13 @@ class MissileSystem {
         m.direction.lerp(desired, Math.min(maxSteer, 1.0)).normalize();
 
         // Check if close enough to dive (distance to SURFACE target)
-        const groundDist = m.position.distanceTo(targetSurface);
-        if (groundDist < this.config.diveDistance) {
-          m.phase = 2;
-          m.diveTarget = targetSurface.clone();
+        // Remote missiles only dive on server command (missile-dive event)
+        if (!m.isRemote) {
+          const groundDist = m.position.distanceTo(targetSurface);
+          if (groundDist < this.config.diveDistance) {
+            m.phase = 2;
+            m.diveTarget = targetSurface.clone();
+          }
         }
       } else if (!m.isRemote && !m.isLost) {
         // Local missile lost target — enter wobble phase
@@ -1341,34 +1349,49 @@ class MissileSystem {
     const m = this.missiles[index];
 
     // Flush deferred damage effects (HP updates, flashes, floating numbers)
+    const hadPendingHit = m.serverId != null && this._pendingHits.has(m.serverId);
     if (m.serverId != null) this._flushPendingHit(m.serverId);
 
-    // Visual effects at impact point
-    if (this.cannonSystem) {
-      this.cannonSystem._spawnExplosion?.(impactPos, m.faction, 1.2);
-      this.cannonSystem._spawnImpactDecal?.(impactPos, 1.0);
-    }
-    if (this.dustShockwave) {
-      this.dustShockwave.emit(impactPos, 1.0);
-    }
-    if (this.gameCamera) {
-      const playerPos = this.playerTank?.group?._cachedWorldPos || this.playerTank?.group?.position;
-      if (playerPos) {
-        this.gameCamera.triggerShake(impactPos, playerPos, 0.8, 100);
-      }
-    }
+    // Scale explosion based on context:
+    // - Forced dive (server-confirmed hit) or pending hit: full explosion
+    // - Phase 4 (crash dive) or safety timeout (age > 15): small puff
+    // - Terrain collision with no target: small puff
+    const isHit = m._forcedDive || hadPendingHit;
+    const isCrash = m.phase >= 3 || m.age > 14;
 
-    // Nearby explosion visual effects
-    if (this.cannonSystem?.onNearbyExplosion) {
-      const playerPos = this.playerTank?.group?._cachedWorldPos;
-      if (playerPos) {
-        const dist = impactPos.distanceTo(playerPos);
-        if (dist < 80) {
-          const intensity = (1 - dist / 80) * 1.2;
-          this.cannonSystem.onNearbyExplosion(intensity);
+    if (isHit) {
+      if (this.cannonSystem) {
+        this.cannonSystem._spawnExplosion?.(impactPos, m.faction, 1.2);
+        this.cannonSystem._spawnImpactDecal?.(impactPos, 1.0);
+      }
+      if (this.dustShockwave) {
+        this.dustShockwave.emit(impactPos, 1.0);
+      }
+      if (this.gameCamera) {
+        const playerPos = this.playerTank?.group?._cachedWorldPos || this.playerTank?.group?.position;
+        if (playerPos) {
+          this.gameCamera.triggerShake(impactPos, playerPos, 0.8, 100);
         }
       }
+      if (this.cannonSystem?.onNearbyExplosion) {
+        const playerPos = this.playerTank?.group?._cachedWorldPos;
+        if (playerPos) {
+          const dist = impactPos.distanceTo(playerPos);
+          if (dist < 80) {
+            this.cannonSystem.onNearbyExplosion((1 - dist / 80) * 1.2);
+          }
+        }
+      }
+    } else if (!isCrash) {
+      // Terrain collision — small explosion
+      if (this.cannonSystem) {
+        this.cannonSystem._spawnExplosion?.(impactPos, m.faction, 0.4);
+      }
+      if (this.dustShockwave) {
+        this.dustShockwave.emit(impactPos, 0.3);
+      }
     }
+    // Crash dives and timeouts: no explosion (silent removal)
 
     // Orphan shadow billboard to finish its animation
     if (m.shadowBB && this.flareSystem) {

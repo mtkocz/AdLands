@@ -1050,6 +1050,8 @@
           // All effects — deferred for missiles until visual detonation
           const weAreAttacker = data.attackerId === net.playerId;
           const applyRemoteHitVisuals = () => {
+            // Skip visual effects if victim disconnected or is already dead
+            if (!remoteTanks.has(data.targetId)) return;
             remoteTank.hp = data.hp;
             playerTags.updateHP?.(data.targetId, remoteTank.hp, remoteTank.maxHp);
             const newState = computeDamageState(remoteTank.hp, remoteTank.maxHp);
@@ -1159,8 +1161,12 @@
                 }
               }
             }
-            if (missileImpactPos) {
+            const diveStarted = missileImpactPos &&
               window.missileSystem.forceDiveToPoint(data.projectileId, missileImpactPos);
+            if (!diveStarted) {
+              // Missile visual gone (pool recycled or already destroyed) —
+              // flush deferred hit immediately so damage applies without delay
+              window.missileSystem._flushPendingHit(data.projectileId);
             }
           } else {
             let impactPos = null;
