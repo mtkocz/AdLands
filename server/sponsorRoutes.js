@@ -356,14 +356,30 @@ function createSponsorRoutes(sponsorStore, gameRoom, { imageUrls, contentHashes,
             if (Object.keys(persist).length > 0) {
               sponsorStore.update(s.id, persist).catch(() => {});
             }
-            // Sync customer name to Stripe (territory title for players, company name for corporate)
+            // Sync customer name to Stripe
             if (s.stripeCustomerId) {
               if (s.ownerType === "player") {
-                // Player territories have separate Stripe customers per subscription — always sync
                 const custName = s._approvedTitle || s.title || s.name;
-                if (custName) stripe.customers.update(s.stripeCustomerId, { name: custName }).catch(() => {});
+                // Migrate: if another player territory already claimed this customer, create a new one
+                if (syncedCustomers.has(s.stripeCustomerId)) {
+                  try {
+                    const oldCust = await stripe.customers.retrieve(s.stripeCustomerId);
+                    const newCust = await stripe.customers.create({
+                      email: oldCust.email,
+                      name: custName || oldCust.name,
+                      metadata: oldCust.metadata,
+                    });
+                    await stripe.subscriptions.update(s.stripeSubscriptionId, { customer: newCust.id });
+                    s.stripeCustomerId = newCust.id;
+                    sponsorStore.update(s.id, { stripeCustomerId: newCust.id }).catch(() => {});
+                  } catch (migErr) {
+                    console.log(`[Stripe Enrich] Customer migration failed for ${s.id}: ${migErr.message}`);
+                  }
+                } else {
+                  syncedCustomers.add(s.stripeCustomerId);
+                  if (custName) stripe.customers.update(s.stripeCustomerId, { name: custName }).catch(() => {});
+                }
               } else if (!syncedCustomers.has(s.stripeCustomerId) && s.name) {
-                // Corporate sponsors share one customer — dedup
                 syncedCustomers.add(s.stripeCustomerId);
                 stripe.customers.update(s.stripeCustomerId, { name: s.name }).catch(() => {});
               }
