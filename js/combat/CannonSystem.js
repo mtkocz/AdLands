@@ -220,16 +220,15 @@ class CannonSystem {
     loader.load(
       "assets/sprites/explosion1.png",
       (texture) => {
-        // Success callback
         texture.minFilter = THREE.NearestFilter;
         texture.magFilter = THREE.NearestFilter;
+        texture.generateMipmaps = false;
+        texture.wrapS = THREE.ClampToEdgeWrapping;
+        texture.wrapT = THREE.ClampToEdgeWrapping;
         this.explosionTexture = texture;
       },
-      (progress) => {
-        // Progress callback
-      },
+      undefined,
       (error) => {
-        // Error callback
         console.error("[CANNON] Failed to load explosion texture:", error);
       },
     );
