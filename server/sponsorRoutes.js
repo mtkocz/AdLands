@@ -356,10 +356,15 @@ function createSponsorRoutes(sponsorStore, gameRoom, { imageUrls, contentHashes,
             if (Object.keys(persist).length > 0) {
               sponsorStore.update(s.id, persist).catch(() => {});
             }
-            // Sync customer name to Stripe (company name for corporate, territory name for players)
-            if (s.stripeCustomerId && s.name && !syncedCustomers.has(s.stripeCustomerId)) {
-              syncedCustomers.add(s.stripeCustomerId);
-              stripe.customers.update(s.stripeCustomerId, { name: s.name }).catch(() => {});
+            // Sync customer name to Stripe (company name for corporate, territory title for players)
+            if (s.stripeCustomerId && !syncedCustomers.has(s.stripeCustomerId)) {
+              const custName = s.ownerType === "player"
+                ? (s._approvedTitle || s.title || s.name)
+                : s.name;
+              if (custName) {
+                syncedCustomers.add(s.stripeCustomerId);
+                stripe.customers.update(s.stripeCustomerId, { name: custName }).catch(() => {});
+              }
             }
           } catch (e) {
             console.log(`[Stripe Enrich] ERROR ${s.id}: ${e.message}`);
@@ -546,8 +551,11 @@ function createSponsorRoutes(sponsorStore, gameRoom, { imageUrls, contentHashes,
 
       // Update Stripe subscription
       if (stripeService.isEnabled()) {
-        const desc = anchor.name || anchor.ownerEmail || "Territory";
+        const desc = anchor._approvedTitle || anchor.title || anchor.name || anchor.ownerEmail || "Territory";
         const contactName = anchor.ownerContactName || anchor.inquiryData?.contactName || anchor.playerName || null;
+        const custName = anchor.ownerType === "player"
+          ? (anchor._approvedTitle || anchor.title || anchor.name)
+          : (anchor.name || contactName);
         const customerMeta = {};
         if (contactName) customerMeta.contactName = contactName;
         await stripeService.updateSubscription({
@@ -558,7 +566,7 @@ function createSponsorRoutes(sponsorStore, gameRoom, { imageUrls, contentHashes,
           discountDescription,
           category: anchor.ownerType === "player" ? "player" : "corporate",
           customerId: anchor.stripeCustomerId,
-          customerName: anchor.name || contactName,
+          customerName: custName,
           customerMeta,
         });
       }
@@ -752,7 +760,10 @@ function createSponsorRoutes(sponsorStore, gameRoom, { imageUrls, contentHashes,
           const customerMeta = {};
           if (contactName) customerMeta.contactName = contactName;
 
-          const customerId = await stripeService.findOrCreateCustomer(customerEmail, sponsor.name || contactName, customerMeta);
+          const custName = sponsor.ownerType === "player"
+            ? (approvedTitle || sponsor._approvedTitle || sponsor.title || sponsor.name)
+            : (sponsor.name || contactName);
+          const customerId = await stripeService.findOrCreateCustomer(customerEmail, custName, customerMeta);
           const { subscription, invoiceAmountCents } = await stripeService.createSubscription({
             customerId,
             sponsorId: req.params.id,
