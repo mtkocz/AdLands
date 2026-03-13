@@ -356,8 +356,8 @@ function createSponsorRoutes(sponsorStore, gameRoom, { imageUrls, contentHashes,
             if (Object.keys(persist).length > 0) {
               sponsorStore.update(s.id, persist).catch(() => {});
             }
-            // Sync customer name for corporate sponsors
-            if (s.stripeCustomerId && s.name && s.ownerType !== "player" && !syncedCustomers.has(s.stripeCustomerId)) {
+            // Sync customer name to Stripe (company name for corporate, territory name for players)
+            if (s.stripeCustomerId && s.name && !syncedCustomers.has(s.stripeCustomerId)) {
               syncedCustomers.add(s.stripeCustomerId);
               stripe.customers.update(s.stripeCustomerId, { name: s.name }).catch(() => {});
             }
