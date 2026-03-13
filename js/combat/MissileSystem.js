@@ -450,6 +450,12 @@ class MissileSystem {
     } else if (window._mpState?.remoteTanks) {
       tank = window._mpState.remoteTanks.get(serverTargetId);
     }
+    if (!tank && this.botTanks?.bots) {
+      for (let i = 0; i < this.botTanks.bots.length; i++) {
+        const bot = this.botTanks.bots[i];
+        if (bot && bot.id === serverTargetId) { tank = bot; break; }
+      }
+    }
     if (!tank || tank.isDead) return null;
     const pos = this._getTargetWorldPos(tank);
     if (!pos) return null;

@@ -1023,11 +1023,9 @@
       }
 
       if (data.targetId === net.playerId) {
-        // WE got hit — update HP immediately (server authoritative)
-        tank.hp = data.hp;
-
-        // Visual damage effects — defer for missiles until visual detonation
+        // Damage effects — defer everything for missiles until visual detonation
         const applyLocalHitVisuals = () => {
+          tank.hp = data.hp;
           if (tank.onDamage) {
             tank.onDamage(tank.hp, tank.maxHp, data.damage);
           }
@@ -1049,12 +1047,10 @@
         // Someone else got hit — update their HP display and damage effects
         const remoteTank = remoteTanks.get(data.targetId);
         if (remoteTank) {
-          // HP update is immediate (server authoritative)
-          remoteTank.hp = data.hp;
-
-          // All visible effects — deferred for missiles until visual detonation
+          // All effects — deferred for missiles until visual detonation
           const weAreAttacker = data.attackerId === net.playerId;
           const applyRemoteHitVisuals = () => {
+            remoteTank.hp = data.hp;
             playerTags.updateHP?.(data.targetId, remoteTank.hp, remoteTank.maxHp);
             const newState = computeDamageState(remoteTank.hp, remoteTank.maxHp);
             if (newState !== remoteTank.damageState) {
@@ -1100,13 +1096,6 @@
               remoteTank.group.getWorldPosition(_hitWorldPos);
               const hitLen = _hitWorldPos.length();
               if (hitLen > 0) _hitWorldPos.multiplyScalar((hitLen + 1.0) / hitLen);
-              const isSelfDamage = data.attackerId === data.targetId;
-              if (!isSelfDamage) {
-                const explosionFaction = weAreAttacker ? tank.faction : remoteTank.faction;
-                cannonSystem._spawnExplosion?.(_hitWorldPos, explosionFaction, 0.6);
-                dustShockwave?.emit(_hitWorldPos, 0.4);
-              }
-
               const meshesToFlash = [];
               remoteTank.group.traverse((child) => {
                 if (child.isMesh && child.material && child.material.color && child !== remoteTank.hitbox) {
