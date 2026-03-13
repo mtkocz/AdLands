@@ -1120,11 +1120,11 @@ class MissileSystem {
         );
       }
 
-      // Flares override any target (including remote missile server targets)
+      // Flares always override targets within range (countermeasure)
       if (window.flareSystem) {
         const flares = window.flareSystem.getActiveFlares();
         let flareClosest = null;
-        let flareDist = target ? target.distance || target.worldPos.distanceTo(m.position) : Infinity;
+        let flareDist = Infinity;
         for (let i = 0; i < flares.length; i++) {
           const pos = flares[i].position;
           const dist = pos.distanceTo(m.position);
@@ -1228,10 +1228,10 @@ class MissileSystem {
           target = this._findClosestEnemyFromPos(m.position, ownerFaction, null);
         }
 
-        // Flares override dive target too
+        // Flares always override dive target (countermeasure)
         if (window.flareSystem) {
           const flares = window.flareSystem.getActiveFlares();
-          let flareDist = target ? target.worldPos.distanceTo(m.position) : Infinity;
+          let flareDist = Infinity;
           for (let i = 0; i < flares.length; i++) {
             const pos = flares[i].position;
             const dist = pos.distanceTo(m.position);
