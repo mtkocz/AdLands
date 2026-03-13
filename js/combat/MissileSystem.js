@@ -146,12 +146,15 @@ class MissileSystem {
 
     // Will be assigned faction material on acquire
     const bodyMesh = new THREE.Mesh(this._bodyGeo, this._materials.rust);
+    bodyMesh.frustumCulled = false;
     const noseMesh = new THREE.Mesh(this._noseGeo, this._materials.rust);
+    noseMesh.frustumCulled = false;
     group.add(bodyMesh);
     group.add(noseMesh);
 
     for (let i = 0; i < 4; i++) {
       const fin = new THREE.Mesh(this._finGeo, this._materials.rust);
+      fin.frustumCulled = false;
       const angle = (i * Math.PI) / 2;
       fin.position.set(Math.cos(angle) * 0.15, -0.5, Math.sin(angle) * 0.15);
       fin.rotation.y = angle;
@@ -190,6 +193,7 @@ class MissileSystem {
     if (!item) return null;
 
     item.inUse = true;
+    item.group.visible = true;
     const mat = this._materials[faction] || this._materials.rust;
     // Update all child mesh materials
     item.group.traverse((child) => {
