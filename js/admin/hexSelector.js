@@ -1409,8 +1409,10 @@ class HexSelector {
     if (intersects.length > 0) {
       const mesh = intersects[0].object;
       if (mesh.userData.isExcluded) return null;
-      if (this.assignedTiles.has(mesh.userData.tileIndex)) return null;
-      return mesh.userData.tileIndex;
+      const ti = mesh.userData.tileIndex;
+      // Block unselected assigned tiles, but allow selected ones (conflict tiles being deselected)
+      if (this.assignedTiles.has(ti) && !this.selectedTiles.has(ti)) return null;
+      return ti;
     }
     return null;
   }

@@ -333,6 +333,8 @@ function createSponsorRoutes(sponsorStore, gameRoom, { imageUrls, contentHashes,
       console.log(`[Stripe Enrich] ${needsStripe.length} sponsors with subscriptions`);
       if (needsStripe.length > 0) {
         const stripe = stripeService.getStripe();
+        // Sync corporate customer names (deduplicated by customer ID)
+        const syncedCustomers = new Set();
         await Promise.all(needsStripe.map(async (s) => {
           try {
             const sub = await stripe.subscriptions.retrieve(s.stripeSubscriptionId, { expand: ["latest_invoice", "discounts"] });
@@ -353,6 +355,11 @@ function createSponsorRoutes(sponsorStore, gameRoom, { imageUrls, contentHashes,
             persist.stripeCouponId = activeCoupon;
             if (Object.keys(persist).length > 0) {
               sponsorStore.update(s.id, persist).catch(() => {});
+            }
+            // Sync customer name for corporate sponsors
+            if (s.stripeCustomerId && s.name && s.ownerType !== "player" && !syncedCustomers.has(s.stripeCustomerId)) {
+              syncedCustomers.add(s.stripeCustomerId);
+              stripe.customers.update(s.stripeCustomerId, { name: s.name }).catch(() => {});
             }
           } catch (e) {
             console.log(`[Stripe Enrich] ERROR ${s.id}: ${e.message}`);
