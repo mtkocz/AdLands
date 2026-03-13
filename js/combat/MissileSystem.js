@@ -442,7 +442,7 @@ class MissileSystem {
   // Resolve server-assigned target ID to a { tank, worldPos } result
   _resolveServerTarget(serverTargetId) {
     let tank = null;
-    if (serverTargetId === "local") {
+    if (serverTargetId === "local" || serverTargetId === window._mpState?.net?.playerId) {
       tank = this.playerTank;
     } else if (window._mpState?.remoteTanks) {
       tank = window._mpState.remoteTanks.get(serverTargetId);
