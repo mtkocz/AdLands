@@ -333,8 +333,8 @@ function createSponsorRoutes(sponsorStore, gameRoom, { imageUrls, contentHashes,
       console.log(`[Stripe Enrich] ${needsStripe.length} sponsors with subscriptions`);
       if (needsStripe.length > 0) {
         const stripe = stripeService.getStripe();
-        // Sync corporate customer names (deduplicated by customer ID)
-        const syncedCustomers = new Set();
+        // Collect customer name data per Stripe customer ID
+        const customerNames = new Map(); // stripeCustomerId -> { names: Set, ownerType }
         await Promise.all(needsStripe.map(async (s) => {
           try {
             const sub = await stripe.subscriptions.retrieve(s.stripeSubscriptionId, { expand: ["latest_invoice", "discounts"] });
@@ -356,38 +356,28 @@ function createSponsorRoutes(sponsorStore, gameRoom, { imageUrls, contentHashes,
             if (Object.keys(persist).length > 0) {
               sponsorStore.update(s.id, persist).catch(() => {});
             }
-            // Sync customer name to Stripe
+            // Collect territory names for customer name sync
             if (s.stripeCustomerId) {
-              if (s.ownerType === "player") {
-                const custName = s._approvedTitle || s.title || s.name;
-                // Migrate: if another player territory already claimed this customer, create a new one
-                if (syncedCustomers.has(s.stripeCustomerId)) {
-                  try {
-                    const oldCust = await stripe.customers.retrieve(s.stripeCustomerId);
-                    const newCust = await stripe.customers.create({
-                      email: oldCust.email,
-                      name: custName || oldCust.name,
-                      metadata: oldCust.metadata,
-                    });
-                    await stripe.subscriptions.update(s.stripeSubscriptionId, { customer: newCust.id });
-                    s.stripeCustomerId = newCust.id;
-                    sponsorStore.update(s.id, { stripeCustomerId: newCust.id }).catch(() => {});
-                  } catch (migErr) {
-                    console.log(`[Stripe Enrich] Customer migration failed for ${s.id}: ${migErr.message}`);
-                  }
-                } else {
-                  syncedCustomers.add(s.stripeCustomerId);
-                  if (custName) stripe.customers.update(s.stripeCustomerId, { name: custName }).catch(() => {});
+              const custName = s.ownerType === "player"
+                ? (s._approvedTitle || s.title || s.name)
+                : s.name;
+              if (custName) {
+                if (!customerNames.has(s.stripeCustomerId)) {
+                  customerNames.set(s.stripeCustomerId, { names: new Set(), ownerType: s.ownerType });
                 }
-              } else if (!syncedCustomers.has(s.stripeCustomerId) && s.name) {
-                syncedCustomers.add(s.stripeCustomerId);
-                stripe.customers.update(s.stripeCustomerId, { name: s.name }).catch(() => {});
+                customerNames.get(s.stripeCustomerId).names.add(custName);
               }
             }
           } catch (e) {
             console.log(`[Stripe Enrich] ERROR ${s.id}: ${e.message}`);
           }
         }));
+        // Sync customer names to Stripe
+        for (const [custId, { names }] of customerNames) {
+          const uniqueNames = [...names];
+          const displayName = uniqueNames.join(" / ");
+          stripe.customers.update(custId, { name: displayName }).catch(() => {});
+        }
       }
     }
 
