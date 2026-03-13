@@ -1219,7 +1219,12 @@ class MissileSystem {
         let target = null;
         if (m.isRemote) {
           if (m.serverTargetId) target = this._resolveServerTarget(m.serverTargetId);
-        } else {
+        } else if (m.targetTank && !m.targetTank.isDead) {
+          // Track the specific tank locked during cruise — not just the closest enemy
+          const pos = this._getTargetWorldPos(m.targetTank);
+          if (pos) target = { tank: m.targetTank, worldPos: pos, distance: pos.distanceTo(m.position) };
+        }
+        if (!target && !m.isRemote) {
           target = this._findClosestEnemyFromPos(m.position, ownerFaction, null);
         }
 
@@ -1246,10 +1251,12 @@ class MissileSystem {
         .sub(m.position)
         .normalize();
 
-      const maxSteer = this.config.turnRate * 2 * dt;
+      const dist = this._tempVec.copy(diveTarget).sub(m.position).length();
+      // Ramp up turn rate at close range so missile snaps to target on final approach
+      const closeFactor = dist < 5 ? 4 : 2;
+      const maxSteer = this.config.turnRate * closeFactor * dt;
       m.direction.lerp(desired, Math.min(maxSteer, 1.0)).normalize();
 
-      const dist = this._tempVec.copy(diveTarget).sub(m.position).length();
       const moveSpeed = this.config.missileSpeed * 1.2 * dt60;
       m.position.addScaledVector(m.direction, Math.min(moveSpeed, dist));
 
