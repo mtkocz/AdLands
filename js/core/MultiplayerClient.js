@@ -847,6 +847,11 @@
 
       const remoteTank = remoteTanks.get(data.id);
 
+      // Skip projectiles/missiles from tanks not visible on screen (no remoteTank mesh).
+      // Without this, server bots outside the spatial filter or not yet lazy-spawned
+      // produce projectiles that appear to fire from nowhere.
+      if (!remoteTank) return;
+
       // Route to missile system before distance cull — missiles travel far
       if (data.type === "missile") {
         if (window.missileSystem) {
@@ -856,7 +861,7 @@
       }
 
       // Skip projectile visuals for tanks far from the player (not worth spawning)
-      if (remoteTank?.group) {
+      if (remoteTank.group) {
         remoteTank.group.getWorldPosition(_remoteWorldPos);
         tank.group.getWorldPosition(_playerWorldPos);
         if (_remoteWorldPos.distanceToSquared(_playerWorldPos) > PLAYER_RENDER_DIST_SQ) {
@@ -865,7 +870,7 @@
       }
 
       // Barrel recoil effect (only if we have the remote tank mesh)
-      if (remoteTank?.barrelMesh) {
+      if (remoteTank.barrelMesh) {
         const baseZ = remoteTank.barrelBaseZ || 0;
         remoteTank.barrelMesh.position.z = baseZ + 0.8;
         setTimeout(() => {
@@ -875,16 +880,10 @@
         }, 150);
       }
 
-      // Spawn projectile visual — prefer remoteTank (has full effects),
-      // fall back to server world-space data for bots not yet in remoteTanks
-      if (remoteTank) {
-        cannonSystem.spawnRemoteProjectile?.(
-          { theta: data.theta, phi: data.phi, turretAngle: data.turretAngle, power: data.power, projectileId: data.projectileId },
-          remoteTank
-        );
-      } else if (data.wx !== undefined) {
-        cannonSystem.spawnProjectileFromServer?.(data, 'cobalt');
-      }
+      cannonSystem.spawnRemoteProjectile?.(
+        { theta: data.theta, phi: data.phi, turretAngle: data.turretAngle, power: data.power, projectileId: data.projectileId },
+        remoteTank
+      );
     };
 
     // ---- Flare events ----
