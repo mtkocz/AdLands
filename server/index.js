@@ -246,9 +246,17 @@ let inquiryRouter;
     const reExtractImages = async (onlyId) => {
       await extractSponsorImages(sponsorStore, gameDir, onlyId);
     };
+    const reExtractMoonImages = async () => {
+      const urls = await extractMoonSponsorImages(moonSponsorStore, gameDir);
+      if (mainRoom) mainRoom.moonSponsorImageUrls = urls;
+    };
+    const reExtractBillboardImages = async () => {
+      const urls = await extractBillboardSponsorImages(billboardSponsorStore, gameDir);
+      if (mainRoom) mainRoom.billboardSponsorImageUrls = urls;
+    };
     const texDir = path.join(gameDir, "sponsor-textures");
     const cleanupImages = (id) => cleanupSponsorImageFiles(id, texDir);
-    stripeRouter = createStripeRoutes(sponsorStore, mainRoom, { reExtractImages, reloadIfLive, cleanupSponsorImages: cleanupImages, moonSponsorStore, billboardSponsorStore });
+    stripeRouter = createStripeRoutes(sponsorStore, mainRoom, { reExtractImages, reExtractMoonImages, reExtractBillboardImages, reloadIfLive, cleanupSponsorImages: cleanupImages, moonSponsorStore, billboardSponsorStore });
     console.log("[Stripe] Webhook route mounted at /api/stripe/webhook");
   }
 
