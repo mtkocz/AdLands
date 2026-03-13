@@ -2301,7 +2301,6 @@ class GameRoom {
       heading: 0,
       speed: 0.00032, // 80% of tank top speed (0.0004 * 0.8)
       age: 0,
-      maxAge: 60,
       phase: 0, // 0=launch, 1=cruise
       launchDuration: 0.5,
       damage: Math.round(25 * 1.5), // 38 damage (missile multiplier)
@@ -2353,13 +2352,6 @@ class GameRoom {
     }
 
     // Phase 1: Cruise/Homing
-    const owner = this.players.get(p.ownerId) || this.botBridge.getBot(p.ownerId);
-    if (!owner) {
-      // Owner disconnected/despawned, remove missile
-      projs[i] = projs[projs.length - 1]; projs.pop();
-      return;
-    }
-
     // Retarget every 3rd tick (still ~3.3×/sec at 10 ticks/sec) via spatial hash.
     // Between retargets, keep flying toward last cached position.
     const maxRetargetRad = 0.25;
@@ -3424,14 +3416,14 @@ class GameRoom {
       const p = projs[i];
       p.age += dt;
 
-      if (p.age >= p.maxAge) {
-        projs[i] = projs[projs.length - 1]; projs.pop();
+      // Missiles have their own lifetime management (wobble → crash dive)
+      if (p.type === "missile") {
+        this._updateMissileProjectile(p, dt, i, projs);
         continue;
       }
 
-      // Missiles have their own update logic (homing, no shield collision)
-      if (p.type === "missile") {
-        this._updateMissileProjectile(p, dt, i, projs);
+      if (p.age >= p.maxAge) {
+        projs[i] = projs[projs.length - 1]; projs.pop();
         continue;
       }
 
