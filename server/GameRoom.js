@@ -2406,7 +2406,8 @@ class GameRoom {
     if (p.isLost) {
       p.isLost = false;
       p.lostAge = 0;
-      p._diving = false; // Reset dive for new approach
+      p._diving = false;
+      p._impactLocked = false;
     }
 
     const prevTarget = p.targetId;
@@ -2415,6 +2416,7 @@ class GameRoom {
     // Reset dive when retargeting to a different tank (must dive again for new target)
     if (p.targetId !== prevTarget) {
       p._diving = false;
+      p._impactLocked = false;
       if (!p._tgtIsFlare && this.players.has(p.targetId)) {
         this._emitToSocket(p.targetId, "missile-incoming", { missileId: p.id });
       }
@@ -2436,9 +2438,9 @@ class GameRoom {
 
     // Check distance to target
     const arrivalDist = sphericalDistance(p.theta, p.phi, p._tgtTheta, p._tgtPhi);
-    const DIVE_START_DIST = 0.021; // ~10 world units on R=480 — matches client diveDistance
-    const ARRIVAL_THRESHOLD = 0.005; // ~2.4 world units on R=480
-    const DIVE_DURATION = 0.7; // Seconds for dive animation to complete
+    const DIVE_START_DIST = 0.021; // ~10 world units on R=480 — tells client to start visual dive
+    const ARRIVAL_THRESHOLD = 0.005; // ~2.4 world units on R=480 — missile is "over" the target
+    const DESCENT_DELAY = 0.75; // Seconds for client's visual descent from cruise altitude to surface
 
     // Flares can be hit during any phase (countermeasure — no dive needed)
     if (arrivalDist < ARRIVAL_THRESHOLD && p._tgtIsFlare) {
@@ -2464,126 +2466,132 @@ class GameRoom {
       return;
     }
 
-    // Enter dive phase when close enough to target (damage only after dive completes)
+    // Tell client to start visual dive when entering dive range
     if (!p._diving && arrivalDist < DIVE_START_DIST) {
       p._diving = true;
-      p._diveAge = 0;
       this._queueRoomEvent("missile-dive", {
         missileId: p.id,
         targetId: p._tgtId,
       });
     }
 
-    if (p._diving) {
-      p._diveAge += dt;
+    // Lock impact when missile is directly over target — start descent timer
+    if (!p._impactLocked && arrivalDist < ARRIVAL_THRESHOLD) {
+      p._impactLocked = true;
+      p._descentAge = 0;
     }
 
-    // Impact: only after dive animation completes AND missile reaches target
-    if (p._diving && p._diveAge >= DIVE_DURATION && arrivalDist < ARRIVAL_THRESHOLD) {
-      const damage = p.damage || 38;
+    // Count descent timer (missile descending from cruise altitude to surface)
+    if (p._impactLocked) {
+      p._descentAge += dt;
 
-      const tgtId = p._tgtId;
-      const isBot = typeof tgtId === "string" && tgtId.startsWith("bot-");
-      if (isBot) {
-        const botState = this.botBridge.getBot(tgtId);
-        const botHp = botState ? botState.hp : 100;
-        const botFaction = botState ? botState.f : "rust";
-        const botName = this.botBridge.getBotName(tgtId) || "Bot";
+      if (p._descentAge >= DESCENT_DELAY) {
+        // Descent complete — detonate and deal damage
+        const damage = p.damage || 38;
+        const tgtId = p._tgtId;
+        const isBot = typeof tgtId === "string" && tgtId.startsWith("bot-");
 
-        const attacker = this.players.get(p.ownerId);
-        const attackerName = attacker ? attacker.name : "Unknown";
-        this.botBridge.applyDamage(tgtId, damage, p.ownerId, attackerName);
-
-        if (attacker) {
-          attacker.crypto += Math.floor(damage);
-        }
-
-        this._queueRoomEvent("player-hit", {
-          targetId: tgtId,
-          attackerId: p.ownerId,
-          damage,
-          hp: Math.max(0, botHp - damage),
-          theta: p.theta,
-          phi: p.phi,
-          projectileId: p.id,
-          isMissile: true,
-        });
-
-        if (botHp - damage <= 0) {
-          this._queueRoomEvent("player-killed", {
-            victimId: tgtId,
-            killerId: p.ownerId,
-            victimFaction: botFaction,
-            killerFaction: p.ownerFaction,
-            victimName: botName,
-            killerName: attackerName,
-          });
-          if (attacker) {
-            attacker.crypto += 500;
-            attacker.killStreak = (attacker.killStreak || 0) + 1;
-            attacker.totalKills = (attacker.totalKills || 0) + 1;
-          }
-        }
-      } else {
-        const hitPlayer = this.players.get(tgtId);
-        if (hitPlayer && !hitPlayer.isDead) {
-          hitPlayer.hp -= damage;
+        if (isBot) {
+          const botState = this.botBridge.getBot(tgtId);
+          const botHp = botState ? botState.hp : 100;
+          const botFaction = botState ? botState.f : "rust";
+          const botName = this.botBridge.getBotName(tgtId) || "Bot";
 
           const attacker = this.players.get(p.ownerId);
+          const attackerName = attacker ? attacker.name : "Unknown";
+          this.botBridge.applyDamage(tgtId, damage, p.ownerId, attackerName);
+
           if (attacker) {
-            const isTargetCommander = this.commanders[hitPlayer.faction]?.id === tgtId;
-            attacker.crypto += Math.floor(damage * (isTargetCommander ? 10 : 1));
+            attacker.crypto += Math.floor(damage);
           }
 
           this._queueRoomEvent("player-hit", {
             targetId: tgtId,
             attackerId: p.ownerId,
             damage,
-            hp: hitPlayer.hp,
+            hp: Math.max(0, botHp - damage),
             theta: p.theta,
             phi: p.phi,
             projectileId: p.id,
             isMissile: true,
           });
 
-          if (hitPlayer.hp <= 0) {
-            hitPlayer.hp = 0;
-            hitPlayer.isDead = true;
-            hitPlayer.speed = 0;
-            hitPlayer._lastTicCluster = undefined;
-            hitPlayer._lastTicCryptoTics = undefined;
-
-            const killer = this.players.get(p.ownerId);
-            const killerName = killer ? killer.name : "Unknown";
-            const victimName = hitPlayer.name;
-
+          if (botHp - damage <= 0) {
             this._queueRoomEvent("player-killed", {
               victimId: tgtId,
               killerId: p.ownerId,
-              victimFaction: hitPlayer.faction,
+              victimFaction: botFaction,
               killerFaction: p.ownerFaction,
-              victimName,
-              killerName,
+              victimName: botName,
+              killerName: attackerName,
             });
+            if (attacker) {
+              attacker.crypto += 500;
+              attacker.killStreak = (attacker.killStreak || 0) + 1;
+              attacker.totalKills = (attacker.totalKills || 0) + 1;
+            }
+          }
+        } else {
+          const hitPlayer = this.players.get(tgtId);
+          if (hitPlayer && !hitPlayer.isDead) {
+            hitPlayer.hp -= damage;
 
-            this._processKillStreaks(killer, killerName, hitPlayer, victimName, p.ownerFaction, p.ownerId, tgtId);
-
-            for (const faction of FACTIONS) {
-              if (this.commanders[faction]?.id === tgtId) {
-                this.bodyguardManager.killAllForFaction(faction);
-                break;
-              }
+            const attacker = this.players.get(p.ownerId);
+            if (attacker) {
+              const isTargetCommander = this.commanders[hitPlayer.faction]?.id === tgtId;
+              attacker.crypto += Math.floor(damage * (isTargetCommander ? 10 : 1));
             }
 
-            this._markRanksDirty();
-            hitPlayer.waitingForPortal = true;
-            hitPlayer._portalReason = 'respawn';
-            setTimeout(() => this._respawnPlayer(tgtId), 10300);
+            this._queueRoomEvent("player-hit", {
+              targetId: tgtId,
+              attackerId: p.ownerId,
+              damage,
+              hp: hitPlayer.hp,
+              theta: p.theta,
+              phi: p.phi,
+              projectileId: p.id,
+              isMissile: true,
+            });
+
+            if (hitPlayer.hp <= 0) {
+              hitPlayer.hp = 0;
+              hitPlayer.isDead = true;
+              hitPlayer.speed = 0;
+              hitPlayer._lastTicCluster = undefined;
+              hitPlayer._lastTicCryptoTics = undefined;
+
+              const killer = this.players.get(p.ownerId);
+              const killerName = killer ? killer.name : "Unknown";
+              const victimName = hitPlayer.name;
+
+              this._queueRoomEvent("player-killed", {
+                victimId: tgtId,
+                killerId: p.ownerId,
+                victimFaction: hitPlayer.faction,
+                killerFaction: p.ownerFaction,
+                victimName,
+                killerName,
+              });
+
+              this._processKillStreaks(killer, killerName, hitPlayer, victimName, p.ownerFaction, p.ownerId, tgtId);
+
+              for (const faction of FACTIONS) {
+                if (this.commanders[faction]?.id === tgtId) {
+                  this.bodyguardManager.killAllForFaction(faction);
+                  break;
+                }
+              }
+
+              this._markRanksDirty();
+              hitPlayer.waitingForPortal = true;
+              hitPlayer._portalReason = 'respawn';
+              setTimeout(() => this._respawnPlayer(tgtId), 10300);
+            }
           }
         }
-      }
 
-      projs[i] = projs[projs.length - 1]; projs.pop();
+        projs[i] = projs[projs.length - 1]; projs.pop();
+      }
     }
   }
 
