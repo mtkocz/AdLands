@@ -415,16 +415,22 @@ class WeldingGunSystem {
 
     // Update HP bar cyan flicker via PlayerTags
     if (typeof playerTags !== 'undefined' && playerTags.setHealing) {
-      // Enable/update flicker for all healed tanks (cyan brightness tracks HP)
       for (const id of this._healedTankIds) {
         playerTags.setHealing(id, true);
       }
-      // Disable flicker for tanks no longer healed
       for (const id of this._prevHealedTankIds) {
         if (!this._healedTankIds.has(id)) {
           playerTags.setHealing(id, false);
         }
       }
+    }
+
+    // Toggle post-processing heal effects when local player enters/leaves healed set
+    if (typeof visualEffects !== 'undefined') {
+      const playerHealed = this._healedTankIds.has("player");
+      const wasPlayerHealed = this._prevHealedTankIds.has("player");
+      if (playerHealed && !wasPlayerHealed) visualEffects.startHealing();
+      else if (!playerHealed && wasPlayerHealed) visualEffects.stopHealing();
     }
   }
 

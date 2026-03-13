@@ -465,6 +465,8 @@
           if (state.hp !== undefined && state.hp !== tank.hp) {
             tank.hp = state.hp;
             playerTags.updateHP?.("player", state.hp, tank.maxHp);
+            // Update post-processing effects (reverses damage effects when healed)
+            if (visualEffects) visualEffects.setHealth(state.hp, tank.maxHp);
             // Sync damage state (smoke/fire)
             const newDmgState = computeDamageState(state.hp, tank.maxHp);
             if (newDmgState !== tank.damageState) {
@@ -867,17 +869,18 @@
 
       const remoteTank = remoteTanks.get(data.id);
 
-      // Skip fire effects from tanks not visible on screen: no remoteTank, hidden
-      // by LOD/backface/frustum culling, dead, or still fading in from spawn.
-      if (!remoteTank || !remoteTank.group?.visible || remoteTank.isDead) return;
-
-      // Route to missile system before distance cull — missiles travel far
+      // Route to missile system before visibility cull — missiles travel far
+      // and must be visible even when the firing tank is off-screen/culled
       if (data.type === "missile") {
         if (window.missileSystem) {
           window.missileSystem.spawnRemoteMissile(data, remoteTank);
         }
         return;
       }
+
+      // Skip fire effects from tanks not visible on screen: no remoteTank, hidden
+      // by LOD/backface/frustum culling, dead, or still fading in from spawn.
+      if (!remoteTank || !remoteTank.group?.visible || remoteTank.isDead) return;
 
       // Skip projectile visuals for tanks far from the player (not worth spawning)
       remoteTank.group.getWorldPosition(_remoteWorldPos);

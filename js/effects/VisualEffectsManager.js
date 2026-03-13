@@ -800,19 +800,20 @@ class VisualEffectsManager {
 
     let total = this.config.chromatic.baseIntensity;
 
-    // Damage spike (decays per frame)
+    // Damage spike (decays faster while healing)
     if (
       this.config.chromatic.damageEnabled &&
       this.damageChromaticIntensity > 0.0001
     ) {
       total += this.damageChromaticIntensity;
-      this.damageChromaticIntensity *= 0.95;
+      this.damageChromaticIntensity *= this.isBeingHealed ? 0.85 : 0.95;
     }
 
     // Low HP sustain: keep minimum chromatic aberration at low health
     if (
       this.config.chromatic.damageEnabled &&
-      this.currentHealthPercent < 0.3
+      this.currentHealthPercent < 0.3 &&
+      !this.isBeingHealed
     ) {
       const severity = (0.3 - this.currentHealthPercent) / 0.3;
       total = Math.max(
@@ -833,25 +834,29 @@ class VisualEffectsManager {
 
     const u = this.damageEffectsPass.uniforms;
 
-    // Always decay glitch and noise (never sustain constant full-screen effects)
-    u.glitchIntensity.value *= 0.88;
-    u.noiseIntensity.value *= 0.9;
+    // Decay glitch and noise (faster while healing)
+    if (this.isBeingHealed) {
+      u.glitchIntensity.value *= 0.75;
+      u.noiseIntensity.value *= 0.8;
+      u.scanlineIntensity.value *= 0.9;
+    } else {
+      u.glitchIntensity.value *= 0.88;
+      u.noiseIntensity.value *= 0.9;
 
-    // Scanlines decay when healthy, sustain at low HP
-    if (this.currentHealthPercent > 0.4) {
-      u.scanlineIntensity.value *= 0.95;
-    }
-
-    // Low HP: sporadic random glitch bursts instead of constant effect
-    if (this.currentHealthPercent < 0.4 && this.config.damageEffects.glitch) {
-      const severity = (0.4 - this.currentHealthPercent) / 0.4; // 0-1
-      // Random chance to spike each frame — more frequent at lower HP
-      if (Math.random() < severity * 0.03) {
-        u.glitchIntensity.value = 0.2 + severity * 0.4;
+      // Scanlines decay when healthy, sustain at low HP
+      if (this.currentHealthPercent > 0.4) {
+        u.scanlineIntensity.value *= 0.95;
       }
-      // Occasional noise crackle
-      if (this.config.damageEffects.noise && Math.random() < severity * 0.02) {
-        u.noiseIntensity.value = 0.1 + severity * 0.15;
+
+      // Low HP: sporadic random glitch bursts instead of constant effect
+      if (this.currentHealthPercent < 0.4 && this.config.damageEffects.glitch) {
+        const severity = (0.4 - this.currentHealthPercent) / 0.4;
+        if (Math.random() < severity * 0.03) {
+          u.glitchIntensity.value = 0.2 + severity * 0.4;
+        }
+        if (this.config.damageEffects.noise && Math.random() < severity * 0.02) {
+          u.noiseIntensity.value = 0.1 + severity * 0.15;
+        }
       }
     }
   }
