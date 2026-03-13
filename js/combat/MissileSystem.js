@@ -1012,12 +1012,15 @@ class MissileSystem {
       m.phase1Age = (m.phase1Age || 0) + dt;
       const ownerFaction = m.faction || m.ownerFaction;
 
-      // For remote missiles, resolve server's target instead of finding closest
+      // For remote missiles, resolve server's target; for local, find closest enemy
       let target = null;
-      if (m.isRemote && m.serverTargetId) {
-        target = this._resolveServerTarget(m.serverTargetId);
-      }
-      if (!target) {
+      if (m.isRemote) {
+        if (m.serverTargetId) {
+          target = this._resolveServerTarget(m.serverTargetId);
+        }
+        // Remote missiles never pick their own targets or enter wobble locally —
+        // fly straight until the server sends missile-lost/missile-crash events
+      } else {
         const useHemisphere = m.phase1Age > 1.0;
         target = this._findClosestEnemyFromPos(
           m.position, ownerFaction, useHemisphere ? m.direction : null
@@ -1051,8 +1054,8 @@ class MissileSystem {
           m.phase = 2;
           m.diveTarget = targetSurface.clone();
         }
-      } else if (!m.isLost) {
-        // No target in range — enter wobble phase
+      } else if (!m.isRemote && !m.isLost) {
+        // Local missile lost target — enter wobble phase
         m.phase = 3;
         m.isLost = true;
         m.lostAge = 0;
@@ -1092,10 +1095,9 @@ class MissileSystem {
       // TERMINAL DIVE: Steer downward toward ground target (no forward filter — committed to dive)
       const ownerFaction = m.faction || m.ownerFaction;
       let target = null;
-      if (m.isRemote && m.serverTargetId) {
-        target = this._resolveServerTarget(m.serverTargetId);
-      }
-      if (!target) {
+      if (m.isRemote) {
+        if (m.serverTargetId) target = this._resolveServerTarget(m.serverTargetId);
+      } else {
         target = this._findClosestEnemyFromPos(m.position, ownerFaction, null);
       }
       const diveTarget = target ? target.worldPos : m.diveTarget;
@@ -1129,24 +1131,26 @@ class MissileSystem {
     } else if (m.phase === 3) {
       // STRAIGHT FLIGHT: No target — fly straight, scan for re-lock, then crash
       m.lostAge = (m.lostAge || 0) + dt;
-      const ownerFaction = m.faction || m.ownerFaction;
 
-      // Scan for nearby targets to re-lock (max 2 re-locks)
-      const reLocks = m.reLockCount || 0;
-      const target = reLocks < 2
-        ? this._findClosestEnemyFromPos(m.position, ownerFaction, null, 30)
-        : null;
-      if (target) {
-        m.phase = 1;
-        m.phase1Age = 0;
-        m.isLost = false;
-        m.lostAge = 0;
-        m.targetTank = target.tank;
-        m.reLockCount = reLocks + 1;
-      } else if (m.lostAge >= 5) {
-        m.phase = 4;
-        const crashNormal = this._tempVec.copy(m.position).normalize();
-        m.diveTarget = crashNormal.multiplyScalar(this.sphereRadius).clone();
+      // Remote missiles wait for server crash event; local missiles scan for re-lock
+      if (!m.isRemote) {
+        const ownerFaction = m.faction || m.ownerFaction;
+        const reLocks = m.reLockCount || 0;
+        const target = reLocks < 2
+          ? this._findClosestEnemyFromPos(m.position, ownerFaction, null, 30)
+          : null;
+        if (target) {
+          m.phase = 1;
+          m.phase1Age = 0;
+          m.isLost = false;
+          m.lostAge = 0;
+          m.targetTank = target.tank;
+          m.reLockCount = reLocks + 1;
+        } else if (m.lostAge >= 5) {
+          m.phase = 4;
+          const crashNormal = this._tempVec.copy(m.position).normalize();
+          m.diveTarget = crashNormal.multiplyScalar(this.sphereRadius).clone();
+        }
       }
 
       // Fly straight at full speed
