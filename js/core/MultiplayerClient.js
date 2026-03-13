@@ -1096,6 +1096,13 @@
               remoteTank.group.getWorldPosition(_hitWorldPos);
               const hitLen = _hitWorldPos.length();
               if (hitLen > 0) _hitWorldPos.multiplyScalar((hitLen + 1.0) / hitLen);
+              const isSelfDamage = data.attackerId === data.targetId;
+              if (!isSelfDamage) {
+                const explosionFaction = weAreAttacker ? tank.faction : remoteTank.faction;
+                cannonSystem._spawnExplosion?.(_hitWorldPos, explosionFaction, 0.6);
+                dustShockwave?.emit(_hitWorldPos, 0.4);
+              }
+
               const meshesToFlash = [];
               remoteTank.group.traverse((child) => {
                 if (child.isMesh && child.material && child.material.color && child !== remoteTank.hitbox) {
@@ -1130,9 +1137,31 @@
         // flying past the target after the server already destroyed it
         if (data.projectileId != null) {
           if (data.isMissile && window.missileSystem) {
-            // Both local and remote missiles: let the visual dive finish naturally.
+            // Server confirmed hit — force missile into dive toward impact point.
             // _destroyMissile fires when the missile reaches ground level,
             // which flushes the deferred hit effects queued above.
+            let missileImpactPos = null;
+            if (data.targetId === net.playerId && tank.group) {
+              missileImpactPos = tank.group.position.clone();
+            } else {
+              const victim = remoteTanks.get(data.targetId);
+              if (victim?.group) {
+                missileImpactPos = new THREE.Vector3();
+                victim.group.getWorldPosition(missileImpactPos);
+              }
+            }
+            if (!missileImpactPos && window.botTanks?.bots) {
+              for (const bot of window.botTanks.bots) {
+                if (bot && bot.id === data.targetId && bot.hitbox) {
+                  missileImpactPos = new THREE.Vector3();
+                  bot.hitbox.getWorldPosition(missileImpactPos);
+                  break;
+                }
+              }
+            }
+            if (missileImpactPos) {
+              window.missileSystem.forceDiveToPoint(data.projectileId, missileImpactPos);
+            }
           } else {
             let impactPos = null;
             if (data.targetId === net.playerId && tank.group) {
