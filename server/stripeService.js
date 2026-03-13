@@ -137,27 +137,28 @@ function buildGroupInvoiceLineItems(sponsors, tierMap, adjacencyMap) {
  * Find or create a Stripe customer for the given email.
  * @param {string} email
  * @param {string} [name]
+ * @param {Object} [metadata]
+ * @param {boolean} [forceNew] - Always create a new customer (for player territories with separate subscriptions)
  * @returns {Promise<string>} Stripe customer ID
  */
-async function findOrCreateCustomer(email, name, metadata) {
+async function findOrCreateCustomer(email, name, metadata, forceNew) {
   if (!stripe) throw new Error("Stripe not initialized");
 
-  const updateFields = {};
-  if (name) updateFields.name = name;
-  if (metadata) updateFields.metadata = metadata;
+  const fields = {};
+  if (name) fields.name = name;
+  if (metadata) fields.metadata = metadata;
 
-  const existing = await stripe.customers.list({ email, limit: 1 });
-  if (existing.data.length > 0) {
-    if (Object.keys(updateFields).length > 0) {
-      await stripe.customers.update(existing.data[0].id, updateFields);
+  if (!forceNew) {
+    const existing = await stripe.customers.list({ email, limit: 1 });
+    if (existing.data.length > 0) {
+      if (Object.keys(fields).length > 0) {
+        await stripe.customers.update(existing.data[0].id, fields);
+      }
+      return existing.data[0].id;
     }
-    return existing.data[0].id;
   }
 
-  const customer = await stripe.customers.create({
-    email,
-    ...updateFields,
-  });
+  const customer = await stripe.customers.create({ email, ...fields });
   return customer.id;
 }
 
