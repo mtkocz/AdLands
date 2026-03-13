@@ -1349,49 +1349,25 @@ class MissileSystem {
     const m = this.missiles[index];
 
     // Flush deferred damage effects (HP updates, flashes, floating numbers)
+    // Flush deferred hit callback — this handles the explosion + damage visuals
+    // for server-confirmed hits. Do NOT spawn a separate explosion here for hits.
     const hadPendingHit = m.serverId != null && this._pendingHits.has(m.serverId);
     if (m.serverId != null) this._flushPendingHit(m.serverId);
 
-    // Scale explosion based on context:
-    // - Forced dive (server-confirmed hit) or pending hit: full explosion
-    // - Phase 4 (crash dive) or safety timeout (age > 15): small puff
-    // - Terrain collision with no target: small puff
-    const isHit = m._forcedDive || hadPendingHit;
+    // Only spawn local explosion for non-hit destructions (terrain clips, crashes)
     const isCrash = m.phase >= 3 || m.age > 14;
-
-    if (isHit) {
-      if (this.cannonSystem) {
-        this.cannonSystem._spawnExplosion?.(impactPos, m.faction, 1.2);
-        this.cannonSystem._spawnImpactDecal?.(impactPos, 1.0);
-      }
-      if (this.dustShockwave) {
-        this.dustShockwave.emit(impactPos, 1.0);
-      }
-      if (this.gameCamera) {
-        const playerPos = this.playerTank?.group?._cachedWorldPos || this.playerTank?.group?.position;
-        if (playerPos) {
-          this.gameCamera.triggerShake(impactPos, playerPos, 0.8, 100);
+    if (!hadPendingHit && !m._forcedDive) {
+      if (!isCrash) {
+        // Terrain collision — small puff
+        if (this.cannonSystem) {
+          this.cannonSystem._spawnExplosion?.(impactPos, m.faction, 0.4);
+        }
+        if (this.dustShockwave) {
+          this.dustShockwave.emit(impactPos, 0.3);
         }
       }
-      if (this.cannonSystem?.onNearbyExplosion) {
-        const playerPos = this.playerTank?.group?._cachedWorldPos;
-        if (playerPos) {
-          const dist = impactPos.distanceTo(playerPos);
-          if (dist < 80) {
-            this.cannonSystem.onNearbyExplosion((1 - dist / 80) * 1.2);
-          }
-        }
-      }
-    } else if (!isCrash) {
-      // Terrain collision — small explosion
-      if (this.cannonSystem) {
-        this.cannonSystem._spawnExplosion?.(impactPos, m.faction, 0.4);
-      }
-      if (this.dustShockwave) {
-        this.dustShockwave.emit(impactPos, 0.3);
-      }
+      // Crash dives and timeouts: no explosion (silent removal)
     }
-    // Crash dives and timeouts: no explosion (silent removal)
 
     // Orphan shadow billboard to finish its animation
     if (m.shadowBB && this.flareSystem) {

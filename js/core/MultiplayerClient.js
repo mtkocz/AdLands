@@ -1036,6 +1036,17 @@
               tank.onDamageStateChange(newState);
             }
           }
+          // Missile hit explosion at player position (deferred until visual detonation)
+          if (data.isMissile && tank.group) {
+            const pos = tank.group._cachedWorldPos || tank.group.position;
+            const attacker = remoteTanks.get(data.attackerId);
+            const aFaction = attacker?.faction || "rust";
+            cannonSystem._spawnExplosion?.(pos, aFaction, 1.2);
+            cannonSystem._spawnImpactDecal?.(pos, 1.0);
+            dustShockwave?.emit(pos, 1.0);
+            if (gameCamera) gameCamera.triggerShake(pos, pos, 0.8, 100);
+            if (cannonSystem.onNearbyExplosion) cannonSystem.onNearbyExplosion(1.2);
+          }
         };
 
         if (data.isMissile && window.missileSystem) {
@@ -1101,8 +1112,24 @@
               const isSelfDamage = data.attackerId === data.targetId;
               if (!isSelfDamage) {
                 const explosionFaction = weAreAttacker ? tank.faction : remoteTank.faction;
-                cannonSystem._spawnExplosion?.(_hitWorldPos, explosionFaction, 0.6);
-                dustShockwave?.emit(_hitWorldPos, 0.4);
+                // Missiles get a bigger explosion + decal + shake
+                const isMissileHit = !!data.isMissile;
+                const explodeScale = isMissileHit ? 1.2 : 0.6;
+                const dustScale = isMissileHit ? 1.0 : 0.4;
+                cannonSystem._spawnExplosion?.(_hitWorldPos, explosionFaction, explodeScale);
+                if (isMissileHit) cannonSystem._spawnImpactDecal?.(_hitWorldPos, 1.0);
+                dustShockwave?.emit(_hitWorldPos, dustScale);
+                if (isMissileHit && gameCamera) {
+                  const pPos = tank.group?._cachedWorldPos || tank.group?.position;
+                  if (pPos) gameCamera.triggerShake(_hitWorldPos, pPos, 0.8, 100);
+                }
+                if (isMissileHit && cannonSystem.onNearbyExplosion) {
+                  const pPos = tank.group?._cachedWorldPos;
+                  if (pPos) {
+                    const d = _hitWorldPos.distanceTo(pPos);
+                    if (d < 80) cannonSystem.onNearbyExplosion((1 - d / 80) * 1.2);
+                  }
+                }
               }
 
               const meshesToFlash = [];
