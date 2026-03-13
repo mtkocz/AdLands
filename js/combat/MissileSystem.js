@@ -37,6 +37,9 @@ class MissileSystem {
       searchExpandTime: 3,     // Seconds to reach max range
     };
 
+    // Deferred hit effects — wait for missile to visually detonate before showing damage
+    this._pendingHits = new Map(); // serverId -> { callback, timeout }
+
     // Lock-on state
     this._missileEquipped = false;
     this._locking = false;
@@ -722,6 +725,25 @@ class MissileSystem {
     }
   }
 
+  queueHitEffect(projectileId, callback) {
+    const existing = this._pendingHits.get(projectileId);
+    if (existing) clearTimeout(existing.timeout);
+    const timeout = setTimeout(() => {
+      this._pendingHits.delete(projectileId);
+      callback();
+    }, 2000);
+    this._pendingHits.set(projectileId, { callback, timeout });
+  }
+
+  _flushPendingHit(serverId) {
+    const pending = this._pendingHits.get(serverId);
+    if (pending) {
+      clearTimeout(pending.timeout);
+      this._pendingHits.delete(serverId);
+      pending.callback();
+    }
+  }
+
   // Remove a missile by server projectile ID, exploding at impactPos if provided
   removeByServerId(projectileId, impactPos) {
     for (let i = this.missiles.length - 1; i >= 0; i--) {
@@ -1259,6 +1281,9 @@ class MissileSystem {
 
   _destroyMissile(index, impactPos) {
     const m = this.missiles[index];
+
+    // Flush deferred damage effects (HP updates, flashes, floating numbers)
+    if (m.serverId != null) this._flushPendingHit(m.serverId);
 
     // Visual effects at impact point
     if (this.cannonSystem) {

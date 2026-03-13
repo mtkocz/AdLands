@@ -1020,111 +1020,117 @@
       }
 
       if (data.targetId === net.playerId) {
-        // WE got hit — update local HP and play damage effects
+        // WE got hit — update HP immediately (server authoritative)
         tank.hp = data.hp;
-        if (tank.onDamage) {
-          tank.onDamage(data.hp, tank.maxHp, data.damage);
-        }
-        // Sync damage state (smoke/fire particle effects)
-        const newState = computeDamageState(data.hp, tank.maxHp);
-        if (newState !== tank.damageState) {
-          tank.damageState = newState;
-          if (tank.onDamageStateChange) {
-            tank.onDamageStateChange(newState);
+
+        // Visual damage effects — defer for missiles until visual detonation
+        const applyLocalHitVisuals = () => {
+          if (tank.onDamage) {
+            tank.onDamage(tank.hp, tank.maxHp, data.damage);
           }
+          const newState = computeDamageState(tank.hp, tank.maxHp);
+          if (newState !== tank.damageState) {
+            tank.damageState = newState;
+            if (tank.onDamageStateChange) {
+              tank.onDamageStateChange(newState);
+            }
+          }
+        };
+
+        if (data.isMissile && window.missileSystem) {
+          window.missileSystem.queueHitEffect(data.projectileId, applyLocalHitVisuals);
+        } else {
+          applyLocalHitVisuals();
         }
       } else {
         // Someone else got hit — update their HP display and damage effects
         const remoteTank = remoteTanks.get(data.targetId);
         if (remoteTank) {
+          // HP update is immediate (server authoritative)
           remoteTank.hp = data.hp;
-          playerTags.updateHP?.(data.targetId, data.hp, remoteTank.maxHp);
-          // Sync damage state (smoke/fire particle effects)
-          const newState = computeDamageState(data.hp, remoteTank.maxHp);
-          if (newState !== remoteTank.damageState) {
-            remoteTank.damageState = newState;
-            tankDamageEffects.setDamageState(data.targetId, remoteTank.group, newState);
-          }
 
-          // Server-confirmed hit: award damage crypto and track stats when we're the attacker
+          // All visible effects — deferred for missiles until visual detonation
           const weAreAttacker = data.attackerId === net.playerId;
-          if (weAreAttacker) {
-            const damage = data.damage || 25;
+          const applyRemoteHitVisuals = () => {
+            playerTags.updateHP?.(data.targetId, remoteTank.hp, remoteTank.maxHp);
+            const newState = computeDamageState(remoteTank.hp, remoteTank.maxHp);
+            if (newState !== remoteTank.damageState) {
+              remoteTank.damageState = newState;
+              tankDamageEffects.setDamageState(data.targetId, remoteTank.group, newState);
+            }
 
-            // Award damage crypto (check commander bonus)
-            if (cannonSystem.cryptoSystem) {
-              let isCommander = false;
-              if (window.commanderSystem) {
-                const commanders = window.commanderSystem.getAllCommanders();
-                for (const faction in commanders) {
-                  if (commanders[faction]?.tankRef === remoteTank) {
-                    isCommander = true;
-                    break;
+            if (weAreAttacker) {
+              const damage = data.damage || 25;
+              if (cannonSystem.cryptoSystem) {
+                let isCommander = false;
+                if (window.commanderSystem) {
+                  const commanders = window.commanderSystem.getAllCommanders();
+                  for (const faction in commanders) {
+                    if (commanders[faction]?.tankRef === remoteTank) {
+                      isCommander = true;
+                      break;
+                    }
                   }
                 }
-              }
-              const cryptoMultiplier = isCommander ? 10 : 1;
-              cannonSystem.cryptoSystem.stats.damageDealt += damage;
-              const damageCrypto = Math.floor(
-                damage * cannonSystem.cryptoSystem.cryptoValues.damageDealt * cryptoMultiplier,
-              );
-              // Show floating crypto at the damaged tank's position
-              const victimPos = new THREE.Vector3();
-              if (remoteTank.group) {
-                remoteTank.group.getWorldPosition(victimPos);
-              }
-              cannonSystem.cryptoSystem.awardCrypto(
-                damageCrypto,
-                isCommander ? "commander damage" : "damage",
-                victimPos,
-              );
-            }
-
-            // Track hit for title system (accuracy tracking)
-            if (cannonSystem.titleSystem) {
-              cannonSystem.titleSystem.trackDamage(damage);
-              cannonSystem.titleSystem.trackShots(0, 1); // 0 fired, 1 hit
-            }
-          }
-
-          // Visual hit confirmation: explosion + flash at target position
-          if (remoteTank.group) {
-            remoteTank.group.getWorldPosition(_hitWorldPos);
-            // Push outward to tank center height so explosion doesn't appear under the tank
-            const hitLen = _hitWorldPos.length();
-            if (hitLen > 0) _hitWorldPos.multiplyScalar((hitLen + 1.0) / hitLen);
-            // Skip explosion for self-damage (no projectile was fired)
-            const isSelfDamage = data.attackerId === data.targetId;
-            if (!isSelfDamage) {
-              // Use attacker's faction color for explosion when we fired the shot
-              const explosionFaction = weAreAttacker ? tank.faction : remoteTank.faction;
-              cannonSystem._spawnExplosion?.(_hitWorldPos, explosionFaction, 0.6);
-              dustShockwave?.emit(_hitWorldPos, 0.4);
-            }
-
-            // Brief white flash on the hit tank (150ms)
-            // Two-pass approach: save all original colors BEFORE mutating any,
-            // because multiple meshes can share the same material instance.
-            const meshesToFlash = [];
-            remoteTank.group.traverse((child) => {
-              if (child.isMesh && child.material && child.material.color && child !== remoteTank.hitbox) {
-                if (child.userData._hitFlashOrigColor === undefined) {
-                  child.userData._hitFlashOrigColor = child.material.color.getHex();
+                const cryptoMultiplier = isCommander ? 10 : 1;
+                cannonSystem.cryptoSystem.stats.damageDealt += damage;
+                const damageCrypto = Math.floor(
+                  damage * cannonSystem.cryptoSystem.cryptoValues.damageDealt * cryptoMultiplier,
+                );
+                const victimPos = new THREE.Vector3();
+                if (remoteTank.group) {
+                  remoteTank.group.getWorldPosition(victimPos);
                 }
-                meshesToFlash.push(child);
+                cannonSystem.cryptoSystem.awardCrypto(
+                  damageCrypto,
+                  isCommander ? "commander damage" : "damage",
+                  victimPos,
+                );
               }
-            });
-            for (const child of meshesToFlash) {
-              child.material.color.setHex(0xffffff);
-              clearTimeout(child.userData._hitFlashTimer);
-              child.userData._hitFlashTimer = setTimeout(() => {
-                if (child.material && child.userData._hitFlashOrigColor !== undefined) {
-                  child.material.color.setHex(child.userData._hitFlashOrigColor);
-                  delete child.userData._hitFlashOrigColor;
-                  delete child.userData._hitFlashTimer;
-                }
-              }, 150);
+              if (cannonSystem.titleSystem) {
+                cannonSystem.titleSystem.trackDamage(data.damage || 25);
+                cannonSystem.titleSystem.trackShots(0, 1);
+              }
             }
+
+            if (remoteTank.group) {
+              remoteTank.group.getWorldPosition(_hitWorldPos);
+              const hitLen = _hitWorldPos.length();
+              if (hitLen > 0) _hitWorldPos.multiplyScalar((hitLen + 1.0) / hitLen);
+              const isSelfDamage = data.attackerId === data.targetId;
+              if (!isSelfDamage) {
+                const explosionFaction = weAreAttacker ? tank.faction : remoteTank.faction;
+                cannonSystem._spawnExplosion?.(_hitWorldPos, explosionFaction, 0.6);
+                dustShockwave?.emit(_hitWorldPos, 0.4);
+              }
+
+              const meshesToFlash = [];
+              remoteTank.group.traverse((child) => {
+                if (child.isMesh && child.material && child.material.color && child !== remoteTank.hitbox) {
+                  if (child.userData._hitFlashOrigColor === undefined) {
+                    child.userData._hitFlashOrigColor = child.material.color.getHex();
+                  }
+                  meshesToFlash.push(child);
+                }
+              });
+              for (const child of meshesToFlash) {
+                child.material.color.setHex(0xffffff);
+                clearTimeout(child.userData._hitFlashTimer);
+                child.userData._hitFlashTimer = setTimeout(() => {
+                  if (child.material && child.userData._hitFlashOrigColor !== undefined) {
+                    child.material.color.setHex(child.userData._hitFlashOrigColor);
+                    delete child.userData._hitFlashOrigColor;
+                    delete child.userData._hitFlashTimer;
+                  }
+                }, 150);
+              }
+            }
+          };
+
+          if (data.isMissile && window.missileSystem) {
+            window.missileSystem.queueHitEffect(data.projectileId, applyRemoteHitVisuals);
+          } else {
+            applyRemoteHitVisuals();
           }
         }
 
@@ -1132,23 +1138,9 @@
         // flying past the target after the server already destroyed it
         if (data.projectileId != null) {
           if (data.isMissile && window.missileSystem) {
-            if (data.attackerId === net.playerId) {
-              // Local missile — let it finish its visual dive naturally;
-              // client-side phase 2 impact check will destroy it
-            } else {
-              // Compute victim's world position for the explosion
-              let impactPos = null;
-              if (data.targetId === net.playerId && tank.group) {
-                impactPos = tank.group.position.clone();
-              } else {
-                const victim = remoteTanks.get(data.targetId);
-                if (victim?.group) {
-                  impactPos = new THREE.Vector3();
-                  victim.group.getWorldPosition(impactPos);
-                }
-              }
-              window.missileSystem.removeByServerId(data.projectileId, impactPos);
-            }
+            // Both local and remote missiles: let the visual dive finish naturally.
+            // _destroyMissile fires when the missile reaches ground level,
+            // which flushes the deferred hit effects queued above.
           } else {
             let impactPos = null;
             if (data.targetId === net.playerId && tank.group) {
