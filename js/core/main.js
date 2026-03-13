@@ -1309,6 +1309,9 @@
   }
 
   // Settings Manager (handles settings persistence and application)
+  const soundManager = new SoundManager();
+  window.soundManager = soundManager;
+
   const settingsManager = new SettingsManager();
   settingsManager.renderer = renderer;
   settingsManager.tuskCommentary = tuskCommentary;

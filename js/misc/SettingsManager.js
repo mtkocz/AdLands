@@ -263,12 +263,13 @@ class SettingsManager {
         }
         break;
 
-      // Audio (placeholder - no audio system yet)
       case "audio.master":
       case "audio.sfx":
       case "audio.music":
       case "audio.uiSounds":
-        // TODO: Implement when audio system is added
+        if (window.soundManager) {
+          window.soundManager.applySettings(this.settings.audio);
+        }
         break;
 
       // Controls
