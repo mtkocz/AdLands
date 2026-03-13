@@ -85,6 +85,11 @@ class RemoteTank {
       hp: 0, maxHp: 0, isDead: false, lean: this.state.lean,
     };
 
+    // Spawn scale-in animation (prevents "appearing out of thin air")
+    this._spawnProgress = 0;
+    this._isSpawning = true;
+    this.group.scale.set(0, 0, 0);
+
     // Set faction colors
     this._setFactionColors();
   }
@@ -240,6 +245,15 @@ class RemoteTank {
    */
   update(deltaTime) {
     if (!this.group) return;
+
+    // Spawn scale-in animation (~0.3s ease-out)
+    if (this._isSpawning) {
+      this._spawnProgress = Math.min(1, this._spawnProgress + deltaTime * 3.3);
+      // Ease-out: fast start, gentle landing
+      const t = 1 - (1 - this._spawnProgress) * (1 - this._spawnProgress);
+      this.group.scale.set(t, t, t);
+      if (this._spawnProgress >= 1) this._isSpawning = false;
+    }
 
     const dt60 = deltaTime * 60;
 
@@ -564,6 +578,10 @@ class RemoteTank {
     });
     this._restoreMaterials();
     this.group.visible = true;
+    // Re-trigger spawn scale-in on respawn
+    this._spawnProgress = 0;
+    this._isSpawning = true;
+    this.group.scale.set(0, 0, 0);
   }
 
   /**

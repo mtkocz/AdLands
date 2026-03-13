@@ -757,6 +757,14 @@ class MissileSystem {
     }
   }
 
+  _cancelPendingHit(serverId) {
+    const pending = this._pendingHits.get(serverId);
+    if (pending) {
+      clearTimeout(pending.timeout);
+      this._pendingHits.delete(serverId);
+    }
+  }
+
   // Remove a missile by server projectile ID, exploding at impactPos if provided
   removeByServerId(projectileId, impactPos) {
     for (let i = this.missiles.length - 1; i >= 0; i--) {
@@ -816,9 +824,13 @@ class MissileSystem {
       const m = this.missiles[i];
       if (m.serverId === projectileId && m.isRemote && m.phase < 2) {
         const target = this._resolveServerTarget(targetId);
+        m.phase = 2;
         if (target) {
-          m.phase = 2;
           m.diveTarget = target.worldPos.clone();
+        } else {
+          // Target already gone — dive toward ground below missile
+          const normal = this._tempVec.copy(m.position).normalize();
+          m.diveTarget = normal.multiplyScalar(this._getSurfaceRadius(m.position)).clone();
         }
         return;
       }
@@ -874,7 +886,8 @@ class MissileSystem {
 
       // Remove orphaned missiles (pool item recycled)
       if (!m.poolItem) {
-        if (m.serverId != null) this._flushPendingHit(m.serverId);
+        // Cancel (don't flush) — the missile was invisible so explosion shouldn't appear
+        if (m.serverId != null) this._cancelPendingHit(m.serverId);
         if (m.shadowBB && this.flareSystem) {
           m.shadowBB.age = m.age;
           this.flareSystem._orphanedShadows.push(m.shadowBB);
@@ -1056,8 +1069,12 @@ class MissileSystem {
 
     // Skip if missile was forced to a post-launch phase before direction was initialized
     if (m.phase > 0 && !m.direction) {
-      m.direction = m.surfaceNormal ? m.surfaceNormal.clone() : null;
-      if (!m.direction) return;
+      if (!m.surfaceNormal) return;
+      // Use tangent direction (not straight up) so missile flies level
+      const normal = m.surfaceNormal;
+      m.direction = new THREE.Vector3().crossVectors(normal, this._upVec);
+      if (m.direction.lengthSq() < 0.001) m.direction.crossVectors(normal, this._tempVec.set(1, 0, 0));
+      m.direction.normalize();
     }
 
     // Hide mesh when camera is far (orbital view) — simulation still runs
@@ -1155,6 +1172,14 @@ class MissileSystem {
         m.isLost = true;
         m.lostAge = 0;
         m.targetTank = null;
+      } else if (m.isRemote) {
+        // Remote missile has no target — project direction tangent to surface
+        // so it flies level instead of straight up along surfaceNormal
+        const normal = this._tempVec.copy(m.position).normalize();
+        const dot = m.direction.dot(normal);
+        if (dot > 0.1) {
+          m.direction.addScaledVector(normal, -dot).normalize();
+        }
       }
 
       // Move along current direction
