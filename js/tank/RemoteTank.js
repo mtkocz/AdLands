@@ -331,7 +331,7 @@ class RemoteTank {
             this._correctionAlpha = 0;
           }
           if (this._correctionAlpha < 1) {
-            this._correctionAlpha = Math.min(1, this._correctionAlpha + deltaTime * 10); // ~100ms blend
+            this._correctionAlpha = Math.min(1, this._correctionAlpha + deltaTime * 20); // ~50ms blend
             const a = this._correctionAlpha;
             this.state.phi = this.state.phi + (newPhi - this.state.phi) * a;
             this.state.theta = MathUtils.lerpAngle2Pi(this.state.theta, newTheta, a);
@@ -372,21 +372,23 @@ class RemoteTank {
 
     if (!interpolated) {
       // Not enough snapshots or renderTime is ahead — fall back to
-      // dead-reckoning: extrapolate position forward using current speed/heading,
-      // then smoothly blend state toward the latest server target.
+      // dead-reckoning: extrapolate this.state forward using current speed/heading,
+      // then smoothly blend toward the latest server target.
+      // IMPORTANT: extrapolate this.state, NOT targetState — mutating targetState
+      // causes position jumps when the next snapshot arrives.
       if (this.targetState.speed !== 0) {
-        const heading = this.targetState.heading;
-        const phi = this.targetState.phi;
+        const heading = this.state.heading;
+        const phi = this.state.phi;
         const velocityNorth = Math.cos(heading) * this.targetState.speed * dt60;
         const velocityEast = -Math.sin(heading) * this.targetState.speed * dt60;
         const sinPhi = Math.sin(phi);
         const safeSinPhi = Math.abs(sinPhi) < 0.01 ? 0.01 : sinPhi;
-        this.targetState.phi -= velocityNorth;
-        this.targetState.theta += velocityEast / safeSinPhi;
+        this.state.phi -= velocityNorth;
+        this.state.theta += velocityEast / safeSinPhi;
       }
       // No counter-rotation needed — remote tanks are hexGroup children
-      while (this.targetState.theta < 0) this.targetState.theta += Math.PI * 2;
-      while (this.targetState.theta >= Math.PI * 2) this.targetState.theta -= Math.PI * 2;
+      while (this.state.theta < 0) this.state.theta += Math.PI * 2;
+      while (this.state.theta >= Math.PI * 2) this.state.theta -= Math.PI * 2;
 
       // Fresh spawn with <=1 snapshot: snap directly to target to avoid
       // lerp-chase jitter (the state hasn't diverged yet, so snapping is seamless)
@@ -399,8 +401,6 @@ class RemoteTank {
       } else {
         const lerpSpeed = 10;
         const t = Math.min(1, lerpSpeed * deltaTime);
-        this.state.theta = MathUtils.lerpAngle2Pi(this.state.theta, this.targetState.theta, t);
-        this.state.phi = this.state.phi + (this.targetState.phi - this.state.phi) * t;
         this.state.heading = MathUtils.lerpAngle(this.state.heading, this.targetState.heading, t);
         this.state.speed = this.state.speed + (this.targetState.speed - this.state.speed) * t;
         this.state.turretAngle = MathUtils.lerpAngle(this.state.turretAngle, this.targetState.turretAngle, t);
