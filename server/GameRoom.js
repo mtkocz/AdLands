@@ -170,10 +170,12 @@ class TargetSpatialHash {
    * Skips same faction, skips excludeId (missile owner).
    * Returns { id, theta, phi, isFlare, flareIndex } or null.
    */
-  findNearest(theta, phi, ownerFaction, excludeId, maxDist) {
+  findNearest(theta, phi, ownerFaction, excludeId, maxDist, preferFlares) {
     const keys = this.getNeighborKeys(theta, phi, maxDist);
     let best = null;
     let bestDist = maxDist;
+    let bestFlare = null;
+    let bestFlareDist = maxDist;
 
     for (let k = 0; k < this._neighborCount; k++) {
       const cellKey = keys[k];
@@ -186,17 +188,24 @@ class TargetSpatialHash {
         if (e.isFlare) {
           // Flares attract all missiles except their owner's
           if (e.ownerId === excludeId) continue;
+          const dist = sphericalDistance(theta, phi, e.theta, e.phi);
+          if (dist < bestFlareDist) {
+            bestFlareDist = dist;
+            bestFlare = e;
+          }
         } else {
           if (e.faction === ownerFaction) continue;
-        }
-        const dist = sphericalDistance(theta, phi, e.theta, e.phi);
-        if (dist < bestDist) {
-          bestDist = dist;
-          best = e;
+          const dist = sphericalDistance(theta, phi, e.theta, e.phi);
+          if (dist < bestDist) {
+            bestDist = dist;
+            best = e;
+          }
         }
       }
     }
-    return best;
+    // In-flight retargeting: flares always take priority (countermeasure)
+    if (preferFlares && bestFlare) return bestFlare;
+    return bestFlare && bestFlareDist < bestDist ? bestFlare : best;
   }
 }
 
@@ -2360,7 +2369,7 @@ class GameRoom {
     if (++p._retargetPhase >= 3) {
       p._retargetPhase = 0;
       const found = this._targetHash.findNearest(
-        p.theta, p.phi, p.ownerFaction, p.ownerId, maxRetargetRad
+        p.theta, p.phi, p.ownerFaction, p.ownerId, maxRetargetRad, true
       );
       if (found) {
         // Copy fields onto missile — pool entries get overwritten on next rebuild()

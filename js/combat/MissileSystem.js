@@ -685,7 +685,7 @@ class MissileSystem {
   spawnRemoteMissile(data, remoteTank) {
     const faction = data.faction || remoteTank?.faction || "rust";
     const poolItem = this._acquirePoolItem(faction);
-    if (!poolItem) return;
+    if (!poolItem) return false;
 
     // Compute start position from server data
     const startPos = new THREE.Vector3(data.wx, data.wy, data.wz);
@@ -726,6 +726,7 @@ class MissileSystem {
     if (this.dustShockwave) {
       this.dustShockwave.emit(startPos, 0.4);
     }
+    return true;
   }
 
   assignServerIdToLocal(serverId) {
@@ -796,9 +797,10 @@ class MissileSystem {
       const m = this.missiles[i];
       if (m.serverId === missileId && m.isRemote) {
         m.serverTargetId = "local";
-        return;
+        return true;
       }
     }
+    return false;
   }
 
   // Force a missile into crash-dive (phase 4) by server projectile ID

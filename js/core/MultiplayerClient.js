@@ -851,16 +851,12 @@
     };
 
     net.onPlayerFired = (data) => {
-      // Incoming missile warning — check before self-skip
-      if (data.type === "missile" && data.targetId === net.playerId && window.missileSystem) {
-        window.missileSystem.showIncomingWarning();
-      }
-
       if (data.id === net.playerId) {
         // Assign server projectile ID to our local projectile so it can be
         // removed by removeProjectileByServerId on server-confirmed hits
         if (data.type === "missile") {
           window.missileSystem?.assignServerIdToLocal?.(data.projectileId);
+          // Show warning for our own missile targeting us (edge case: reflected)
         } else if (data.projectileId != null) {
           cannonSystem.assignServerIdToLocal?.(data.projectileId);
         }
@@ -873,7 +869,11 @@
       // and must be visible even when the firing tank is off-screen/culled
       if (data.type === "missile") {
         if (window.missileSystem) {
-          window.missileSystem.spawnRemoteMissile(data, remoteTank);
+          const spawned = window.missileSystem.spawnRemoteMissile(data, remoteTank);
+          // Only show incoming warning if missile visual was actually created
+          if (spawned && data.targetId === net.playerId) {
+            window.missileSystem.showIncomingWarning();
+          }
         }
         return;
       }
@@ -944,8 +944,8 @@
 
     net.onMissileIncoming = (data) => {
       if (window.missileSystem) {
-        window.missileSystem.showIncomingWarning();
-        window.missileSystem.retargetToPlayerByServerId(data.missileId);
+        const found = window.missileSystem.retargetToPlayerByServerId(data.missileId);
+        if (found) window.missileSystem.showIncomingWarning();
       }
     };
 
