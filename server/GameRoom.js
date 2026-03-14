@@ -3026,11 +3026,11 @@ class GameRoom {
     }
     this._flushTickEvents();
 
-    // 5. Recompute faction ranks (every 1 second, or immediately when dirty)
+    // 5. Recompute faction ranks (every 5 seconds, or immediately when dirty)
     // Runs BEFORE commander-sync so the snapshot is always up-to-date
     // (e.g. after resign, the resigned player is excluded before broadcast)
     this.rankRecomputeCounter++;
-    if (this.rankRecomputeCounter >= this.tickRate || this._ranksDirty) {
+    if (this.rankRecomputeCounter >= this.tickRate * 5 || this._ranksDirty) {
       this.rankRecomputeCounter = 0;
       this._ranksDirty = false;
       this._recomputeRanks();
@@ -5177,7 +5177,7 @@ class GameRoom {
       // Guest players (uid=null) are unique per socket, no dedup needed.
       {
         const bestByUid = new Map(); // uid → index in allMembers
-        const toRemove = [];
+        const removeSet = new Set();
 
         for (let i = 0; i < allMembers.length; i++) {
           const m = allMembers[i];
@@ -5197,19 +5197,20 @@ class GameRoom {
             (m.isOnline === prev.isOnline && (m.level || 1) === (prev.level || 1) && (m.totalCrypto || 0) > (prev.totalCrypto || 0));
 
           if (mBetter) {
-            toRemove.push(prevIdx);
+            removeSet.add(prevIdx);
             bestByUid.set(m.uid, i);
           } else {
-            toRemove.push(i);
+            removeSet.add(i);
           }
         }
 
-        // Remove duplicates (reverse order to preserve indices)
-        if (toRemove.length > 0) {
-          toRemove.sort((a, b) => b - a);
-          for (const idx of toRemove) {
-            allMembers.splice(idx, 1);
+        // Filter out duplicates in one pass (no splice reindexing)
+        if (removeSet.size > 0) {
+          let writeIdx = 0;
+          for (let i = 0; i < allMembers.length; i++) {
+            if (!removeSet.has(i)) allMembers[writeIdx++] = allMembers[i];
           }
+          allMembers.length = writeIdx;
         }
       }
 

@@ -50,7 +50,7 @@ class RemoteTank {
     // Instead of lerping toward one jittery target, we buffer 2-3 snapshots
     // and interpolate between them at a fixed rate for smooth motion.
     // Fixed-size ring buffer avoids Array.shift() reindexing (600 calls/sec with 60 tanks at 10Hz).
-    this._snapCap = 8;
+    this._snapCap = 16;
     this._snapBuf = new Array(this._snapCap);
     // Pre-allocate snapshot objects to avoid per-tick GC pressure
     for (let i = 0; i < this._snapCap; i++) {

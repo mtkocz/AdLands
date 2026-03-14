@@ -151,8 +151,8 @@ const io = new Server(server, {
   },
   // Performance tuning
   transports: ["websocket"],       // Skip HTTP long-polling, go straight to WebSocket
-  perMessageDeflate: {              // Enable WebSocket compression for state broadcasts
-    threshold: 1024,               // Only compress messages > 1KB (skip small events like chat/fire)
+  perMessageDeflate: {              // Enable WebSocket compression for large payloads
+    threshold: 8192,               // Only compress messages > 8KB (skip per-tick state broadcasts to reduce jitter)
   },
   pingInterval: 10000,             // How often to check if client is alive
   pingTimeout: 5000,               // How long to wait for pong before disconnect
