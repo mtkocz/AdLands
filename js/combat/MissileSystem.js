@@ -178,10 +178,14 @@ class MissileSystem {
         this._pool.push(item);
       } else {
         // Recycle the farthest missile from camera (least visible)
+        // Never recycle missiles targeting the local player (incoming warnings)
+        const localId = window._mpState?.net?.playerId;
         let bestDist = -1;
         let bestMissile = null;
         for (const m of this.missiles) {
-          if (m.poolItem && (m._camDist || 0) > bestDist) {
+          if (!m.poolItem) continue;
+          if (m.serverTargetId === "local" || (localId && m.serverTargetId === localId)) continue;
+          if ((m._camDist || 0) > bestDist) {
             bestDist = m._camDist || 0;
             bestMissile = m;
           }
