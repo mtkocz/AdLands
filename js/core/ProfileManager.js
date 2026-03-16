@@ -49,6 +49,11 @@ class ProfileManager {
       this.sync.activate(window.authManager.uid, profileIndex);
     }
 
+    // Re-load player territories now that Firestore is active
+    if (this.dashboard && this.dashboard._territoryPlanet) {
+      this.dashboard._loadPlayerTerritories();
+    }
+
     // Load into CryptoSystem
     if (this.cryptoSystem && profileData) {
       this.cryptoSystem.stats.totalCrypto = profileData.totalCrypto || 0;
