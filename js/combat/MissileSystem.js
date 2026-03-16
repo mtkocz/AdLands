@@ -726,8 +726,8 @@ class MissileSystem {
     this.missiles.push(missile);
     poolItem.group.position.copy(startPos);
 
-    // Dust wave
-    if (this.dustShockwave) {
+    // Dust wave — only if firing tank is visible (avoid effects from empty space)
+    if (this.dustShockwave && remoteTank?.group?.visible) {
       this.dustShockwave.emit(startPos, 0.4);
     }
     return true;

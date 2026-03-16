@@ -865,12 +865,10 @@
 
       const remoteTank = remoteTanks.get(data.id);
 
-      // Route to missile system before visibility cull — missiles travel far
-      // and must be visible even when the firing tank is off-screen/culled
+      // Route to missile system — always spawn visual (flight visibility handled by farAway check)
       if (data.type === "missile") {
         if (window.missileSystem) {
           const spawned = window.missileSystem.spawnRemoteMissile(data, remoteTank);
-          // Only show incoming warning if missile visual was actually created
           if (spawned && data.targetId === net.playerId) {
             window.missileSystem.showIncomingWarning();
           }
