@@ -348,7 +348,7 @@ class FastTravel {
                 if (this.state === 'preview') {
                     this._showPreviewUI();
                 }
-            }, 3000);
+            }, 15000);
             return;
         }
 
