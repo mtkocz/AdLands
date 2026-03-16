@@ -580,6 +580,9 @@ class ServerBotManager {
         continue;
       }
 
+      // Passive crypto income (~5/sec, same order as player territory holding)
+      bot.crypto += 5 * dt;
+
       const isStagger = (j >= startIdx && j < endIdx);
       this._updateInput(bot, dt, isStagger);
       this._updatePhysics(bot, dt);
