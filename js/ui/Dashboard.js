@@ -3643,17 +3643,42 @@ class Dashboard {
       // Normalize tile indices from sponsor format if needed
       const tileIndices = territory.tileIndices ||
         (territory.cluster && territory.cluster.tileIndices) || [];
+
+      // Rejected territories have no tiles — record them for display only
+      if (tileIndices.length === 0 && territory.submissionStatus === "rejected") {
+        this._playerTerritories.push({
+          id: territory._territoryId || territory.id,
+          tierName: territory.tierName || "outpost",
+          tileIndices: [],
+          timestamp: territory.timestamp || Date.parse(territory.createdAt) || Date.now(),
+          submissionStatus: "rejected",
+          rejectionReason: territory.rejectionReason,
+          name: territory.name || "",
+          title: territory.title || territory.name || "",
+        });
+        continue;
+      }
+
       if (tileIndices.length === 0) continue;
 
-      // Check that tiles are still available (not taken by sponsors since last session)
       const planet = this._territoryPlanet;
-      const validTiles = tileIndices.filter(
-        (idx) =>
-          !planet.sponsorTileIndices.has(idx) &&
-          !planet.portalTileIndices.has(idx),
-      );
 
-      if (validTiles.length === 0) continue;
+      // Check if this territory is already on the planet (server applied it as a sponsor).
+      // If so, skip tile validation and visual application — just record it for the dashboard.
+      const alreadyOnPlanet = tileIndices.every(idx => planet.sponsorTileIndices.has(idx));
+
+      let validTiles;
+      if (alreadyOnPlanet) {
+        validTiles = tileIndices;
+      } else {
+        // Filter tiles taken by OTHER sponsors since last session
+        validTiles = tileIndices.filter(
+          (idx) =>
+            !planet.sponsorTileIndices.has(idx) &&
+            !planet.portalTileIndices.has(idx),
+        );
+        if (validTiles.length === 0) continue;
+      }
 
       const adj = territory.patternAdjustment || {
         scale: 1.0, offsetX: 0, offsetY: 0,
@@ -3680,26 +3705,31 @@ class Dashboard {
         patternImage: displayImage,
         patternAdjustment: adj,
         imageStatus: territory.imageStatus || "placeholder",
+        submissionStatus: territory.submissionStatus || null,
+        paymentStatus: territory.paymentStatus || null,
         name: territory.name || "",
         title: loadedTitle,
         tagline: loadedTagline,
         websiteUrl: loadedUrl,
       };
 
-      const virtualSponsor = {
-        id: record.id,
-        name: loadedTitle || this.playerName || "Player",
-        tagline: loadedTagline,
-        websiteUrl: loadedUrl,
-        cluster: { tileIndices: validTiles },
-        patternImage: displayImage,
-        patternAdjustment: adj,
-        ownerType: "player",
-        submissionStatus: territory.submissionStatus || "placeholder",
-        paymentStatus: territory.paymentStatus || null,
-      };
+      // Only apply visuals if the server hasn't already placed this territory
+      if (!alreadyOnPlanet) {
+        const virtualSponsor = {
+          id: record.id,
+          name: loadedTitle || this.playerName || "Player",
+          tagline: loadedTagline,
+          websiteUrl: loadedUrl,
+          cluster: { tileIndices: validTiles },
+          patternImage: displayImage,
+          patternAdjustment: adj,
+          ownerType: "player",
+          submissionStatus: territory.submissionStatus || "placeholder",
+          paymentStatus: territory.paymentStatus || null,
+        };
+        planet.applySponsorCluster(virtualSponsor);
+      }
 
-      planet.applySponsorCluster(virtualSponsor);
       this._playerTerritories.push(record);
     }
 
