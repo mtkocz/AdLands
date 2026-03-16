@@ -2397,7 +2397,11 @@
 
     // Handle permanent connection failure (all retries exhausted)
     net.onDuplicateLogin = () => {
-      window.location.reload();
+      const ls = document.getElementById("loading-screen");
+      ls.classList.remove("hidden", "fade-out");
+      ls.querySelector(".loading-text").textContent = "Logged in from another tab";
+      ls.querySelector(".loading-bar-container")?.classList.add("hidden");
+      ls.querySelector(".loading-percent")?.classList.add("hidden");
     };
 
     net.onConnectionFailed = () => {
