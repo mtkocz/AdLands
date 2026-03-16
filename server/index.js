@@ -380,8 +380,26 @@ io.use(async (socket, next) => {
 // CONNECTION HANDLING
 // ========================
 
+const activeAuthSockets = new Map(); // uid → socketId
+
+function kickDuplicateSession(uid) {
+  const existingSocketId = activeAuthSockets.get(uid);
+  if (!existingSocketId) return;
+  const existingSocket = io.sockets.sockets.get(existingSocketId);
+  if (existingSocket) {
+    existingSocket.emit("kicked", { reason: "duplicate-login" });
+    existingSocket.disconnect(true);
+  }
+  activeAuthSockets.delete(uid);
+}
+
 io.on("connection", (socket) => {
   console.log(`[Server] New connection: ${socket.id}${socket.uid ? ` (uid: ${socket.uid})` : " (guest)"}`);
+
+  if (socket.uid) {
+    kickDuplicateSession(socket.uid);
+    activeAuthSockets.set(socket.uid, socket.id);
+  }
 
   // Attempt to restore an existing session for authenticated players
   let player = socket.uid ? mainRoom.reconnectPlayer(socket) : null;
@@ -571,6 +589,9 @@ io.on("connection", (socket) => {
       if (isAnonymous) {
         // Switched to guest mid-session — null UID so player becomes independent
         // Mark old profile cache entry offline BEFORE clearing uid
+        if (socket.uid && activeAuthSockets.get(socket.uid) === socket.id) {
+          activeAuthSockets.delete(socket.uid);
+        }
         mainRoom.unlinkPlayerFromProfileCache(socket.id);
         socket.uid = null;
         socket.isGuest = true;
@@ -605,6 +626,8 @@ io.on("connection", (socket) => {
 
         socket.uid = decoded.uid;
         socket.isGuest = false;
+        kickDuplicateSession(decoded.uid);
+        activeAuthSockets.set(decoded.uid, socket.id);
 
         // If player was a guest (or switched accounts), load their profile
         // and upgrade the GameRoom player so they appear correctly in the roster
@@ -953,6 +976,9 @@ io.on("connection", (socket) => {
       }
     }
     mainRoom.removePlayer(socket.id);
+    if (socket.uid && activeAuthSockets.get(socket.uid) === socket.id) {
+      activeAuthSockets.delete(socket.uid);
+    }
     console.log(`[Server] Disconnected: ${socket.id} (${reason})`);
   });
 });

@@ -2253,7 +2253,7 @@ class GameRoom {
     const fSinH = Math.sin(fireHeading), fCosH = Math.cos(fireHeading);
 
     // Broadcast the fire event to all clients (for muzzle flash / sound)
-    this.io.to(this.roomId).emit("player-fired", {
+    this._queueRoomEvent("player-fired", {
       id: socketId,
       turretAngle: turretAngle,
       theta: player.theta,
@@ -2326,7 +2326,7 @@ class GameRoom {
     const fSt = Math.sin(player.theta), fCt = Math.cos(player.theta);
     const fLift = R + 2;
 
-    this.io.to(this.roomId).emit("player-fired", {
+    this._queueRoomEvent("player-fired", {
       id: socketId,
       type: "missile",
       turretAngle: fireTurretAngle,
@@ -2650,7 +2650,7 @@ class GameRoom {
 
     this.flares.push(flare);
 
-    this.io.to(this.roomId).emit("flare-fired", {
+    this._queueRoomEvent("flare-fired", {
       id: flare.id,
       ownerId: socketId,
       ownerFaction: player.faction,

@@ -486,8 +486,15 @@
           continue;
         }
 
-        // Skip waiting players (d === 2)
-        if (state.d === 2) continue;
+        // Hide and skip waiting players (d === 2 = in portal)
+        if (state.d === 2) {
+          const waitingTank = remoteTanks.get(id);
+          if (waitingTank && waitingTank.group.visible) {
+            waitingTank.setVisible(false);
+            playerTags.fadeOutTag?.(id);
+          }
+          continue;
+        }
 
         // Track seen bots for cleanup
         if (id.startsWith("bot-")) mp._seenBotIds.add(id);
@@ -2389,6 +2396,10 @@
     }, CONNECTION_TIMEOUT);
 
     // Handle permanent connection failure (all retries exhausted)
+    net.onDuplicateLogin = () => {
+      window.location.reload();
+    };
+
     net.onConnectionFailed = () => {
       if (!welcomeReceived) {
         clearTimeout(connectionTimer);

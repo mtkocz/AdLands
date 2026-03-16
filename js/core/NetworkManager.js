@@ -87,6 +87,7 @@ class NetworkManager {
     this.onPlayerProfileSwitched = null; // (data) => { id, name, faction, level, ... }
     this.onTankUpgradeConfirmed = null; // (data) => { type, tier, cost }
     this.onConnectionFailed = null;    // () => {} — all reconnection attempts exhausted
+    this.onDuplicateLogin = null;      // () => {} — kicked due to duplicate login
   }
 
   // ========================
@@ -140,6 +141,9 @@ class NetworkManager {
     this.socket.on("kicked", (data) => {
       if (data && data.reason === "inactivity") {
         window.location.reload();
+      } else if (data && data.reason === "duplicate-login") {
+        this.socket.disconnect();
+        if (this.onDuplicateLogin) this.onDuplicateLogin();
       }
     });
 
@@ -220,19 +224,9 @@ class NetworkManager {
       if (this.onStateUpdate) this.onStateUpdate(meta);
     });
 
-    // Someone fired
-    this.socket.on("player-fired", (data) => {
-      if (this.onPlayerFired) this.onPlayerFired(data);
-    });
-
     // Someone was hit
     this.socket.on("player-hit", (data) => {
       if (this.onPlayerHit) this.onPlayerHit(data);
-    });
-
-    // Flare deployed
-    this.socket.on("flare-fired", (data) => {
-      if (this.onFlareFired) this.onFlareFired(data);
     });
 
     // Missile hit a flare
@@ -325,6 +319,7 @@ class NetworkManager {
           case "missile-crash": if (this.onMissileCrash) this.onMissileCrash(evt.data); break;
           case "missile-lost": if (this.onMissileLost) this.onMissileLost(evt.data); break;
           case "missile-dive": if (this.onMissileDive) this.onMissileDive(evt.data); break;
+          case "flare-fired": if (this.onFlareFired) this.onFlareFired(evt.data); break;
           case "flare-hit": if (this.onFlareHit) this.onFlareHit(evt.data); break;
           case "bodyguard-killed": if (this.onPlayerKilled) this.onPlayerKilled(evt.data); break;
           case "territory-update": if (this.onTerritoryUpdate) this.onTerritoryUpdate(evt.data); break;
