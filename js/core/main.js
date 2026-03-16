@@ -2126,7 +2126,7 @@
     // Calculate angles for each faction
     const angles = {};
     for (const faction in counts) {
-      angles[faction] = (counts[faction] / totalClusters) * Math.PI * 2;
+      angles[faction] = (counts[faction] / totalHexes) * Math.PI * 2;
     }
 
     // Build draw order: Player → Other1 → Unclaimed → Other2
