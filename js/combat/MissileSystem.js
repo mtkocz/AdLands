@@ -57,7 +57,7 @@ class MissileSystem {
 
     // Missile mesh pool
     this._pool = [];
-    this._poolMax = 60;
+    this._poolMax = 120;
     this._sharedGeometry = null;
     this._materials = {};
     this._createMissileAssets();

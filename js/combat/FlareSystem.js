@@ -414,7 +414,7 @@ class FlareSystem {
       targetAltitude,
       launchDuration: 0.4,
       age: 0,
-      maxAge: 3,
+      maxAge: 8,
       meshItem,
       shadowBB,
       serverId: null,

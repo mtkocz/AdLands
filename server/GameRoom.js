@@ -2642,7 +2642,7 @@ class GameRoom {
       theta: player.theta,
       phi: player.phi,
       age: 0,
-      maxAge: 3,
+      maxAge: 8,
       wx: fLift * fSp * fSt,
       wy: fLift * fCp,
       wz: fLift * fSp * fCt,
