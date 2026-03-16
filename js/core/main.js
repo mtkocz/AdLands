@@ -2093,32 +2093,29 @@
     const cy = canvas.height / 2;
     const radius = size / 2;
 
-    // Count only sponsored clusters — unsponsored territory excluded from global control
+    // Count hex tiles per faction across sponsored clusters
     const ownership = planet.clusterOwnership;
     const sponsorClusters = planet.getAllSponsorClusters();
-    let totalClusters = 0;
-
-    // Build set of sponsored cluster IDs
-    const sponsoredClusterIds = new Set();
-    for (const [, data] of sponsorClusters) {
-      sponsoredClusterIds.add(data.clusterId);
-    }
+    let totalHexes = 0;
 
     const counts = { rust: 0, cobalt: 0, viridian: 0, unclaimed: 0 };
-    for (const clusterId of sponsoredClusterIds) {
-      totalClusters++;
-      const faction = ownership.get(clusterId);
+    for (const [, data] of sponsorClusters) {
+      const cluster = planet.clusterData[data.clusterId];
+      if (!cluster) continue;
+      const hexCount = cluster.tiles.length;
+      totalHexes += hexCount;
+      const faction = ownership.get(data.clusterId);
       if (faction) {
-        counts[faction]++;
+        counts[faction] += hexCount;
       } else {
-        counts.unclaimed++;
+        counts.unclaimed += hexCount;
       }
     }
 
     const pcts = {};
     for (const faction in counts) {
       pcts[faction] =
-        totalClusters > 0 ? (counts[faction] / totalClusters) * 100 : 0;
+        totalHexes > 0 ? (counts[faction] / totalHexes) * 100 : 0;
     }
 
     // Draw donut chart with same color scheme
