@@ -158,6 +158,8 @@ async function handleInvoicePaid(invoice, sponsorStore, gameRoom, { reExtractIma
     try {
       const db = getFirestore();
       const firestoreUpdate = {
+        active: true,
+        submissionStatus: "active",
         paymentStatus: "active",
         activatedAt: require("firebase-admin").firestore.FieldValue.serverTimestamp(),
       };
