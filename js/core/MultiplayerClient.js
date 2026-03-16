@@ -867,12 +867,14 @@
 
       // Route to missile system — always spawn visual (flight visibility handled by farAway check)
       if (data.type === "missile") {
-        if (window.missileSystem) {
-          const spawned = window.missileSystem.spawnRemoteMissile(data, remoteTank);
-          if (spawned && data.targetId === net.playerId) {
-            window.missileSystem.showIncomingWarning();
+        try {
+          if (window.missileSystem) {
+            const spawned = window.missileSystem.spawnRemoteMissile(data, remoteTank);
+            if (spawned && data.targetId === net.playerId) {
+              window.missileSystem.showIncomingWarning();
+            }
           }
-        }
+        } catch (e) { console.error("[MP] spawnRemoteMissile failed:", e); }
         return;
       }
 
@@ -909,9 +911,11 @@
     net.onFlareFired = (data) => {
       // Skip our own flare (we already spawned the visual locally)
       if (data.ownerId === net.playerId) return;
-      if (window.flareSystem) {
-        window.flareSystem.spawnRemoteFlare(data);
-      }
+      try {
+        if (window.flareSystem) {
+          window.flareSystem.spawnRemoteFlare(data);
+        }
+      } catch (e) { console.error("[MP] spawnRemoteFlare failed:", e); }
     };
 
     net.onFlareHit = (data) => {

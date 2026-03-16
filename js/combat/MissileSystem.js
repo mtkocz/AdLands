@@ -928,7 +928,7 @@ class MissileSystem {
           fs._orphanedShadows.push(m.shadowBB);
           m.shadowBB = null;
         } else {
-          const bbFar = m._camDist > 260;
+          const bbFar = m._camDist > 400;
           m.shadowBB.group.visible = !bbFar;
           if (!bbFar) {
             fs._setShadowBillboardFrame(m.shadowBB, rawFrame);
@@ -1071,7 +1071,7 @@ class MissileSystem {
 
   _updateMissile(m, dt) {
     const dt60 = dt * 60;
-    const farAway = m._camDist > 260;
+    const farAway = m._camDist > 400;
 
     // Skip if missile was forced to a post-launch phase before direction was initialized
     if (m.phase > 0 && !m.direction) {

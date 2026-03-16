@@ -455,7 +455,7 @@ class FlareSystem {
       const pos = this._tempVec.copy(f.normal).multiplyScalar(f.altitude).add(f.surfacePos);
       f.meshItem.group.position.copy(pos);
 
-      const farAway = camPos ? camPos.distanceTo(pos) > 260 : false;
+      const farAway = camPos ? camPos.distanceTo(pos) > 400 : false;
       f.meshItem.group.visible = !farAway;
 
       // Update shadow billboard spritesheet frame (12fps)
@@ -488,7 +488,7 @@ class FlareSystem {
         this._orphanedShadows.splice(i, 1);
         continue;
       }
-      const bbFar = camPos ? camPos.distanceTo(bb.group.position) > 260 : false;
+      const bbFar = camPos ? camPos.distanceTo(bb.group.position) > 400 : false;
       bb.group.visible = !bbFar;
       if (bbFar) continue;
       const frame = Math.floor(bb.age * this._smokeBBFps);

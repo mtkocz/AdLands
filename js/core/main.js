@@ -4128,8 +4128,8 @@
     }
     cannonSystem.update(deltaTime, sharedFrustum, isFarView);
     missileSystem.hideReticle = isFarView || !hasSpawnedIn || tank.isDead;
-    missileSystem.update(deltaTime, sharedFrustum, camera);  // has own 260-unit distance cull
-    flareSystem.update(deltaTime, camera);                    // has own 260-unit distance cull
+    missileSystem.update(deltaTime, sharedFrustum, camera);  // has own 400-unit distance cull
+    flareSystem.update(deltaTime, camera);                    // has own 400-unit distance cull
 
     // Update visual effects — systems with own distance fade run always for cleanup
     capturePulse.update(deltaTime, sharedFrustum, camera);   // has own 260-unit distance cull
