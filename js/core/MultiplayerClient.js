@@ -445,6 +445,17 @@
       // Sync remote missiles/flares FIRST — before the player loop which can
       // throw and silently kill everything after it
       try {
+        // DEBUG: trace missile/flare data arrival (throttled)
+        if (!mp._syncDbgT) mp._syncDbgT = 0;
+        if (Date.now() - mp._syncDbgT > 3000) {
+          mp._syncDbgT = Date.now();
+          const ml = data.ml, fl = data.fl;
+          console.log("[SYNC-DBG] ml:", ml ? ml.length / 8 + " missiles" : "none",
+            "| fl:", fl ? fl.length / 6 + " flares" : "none",
+            "| missileSystem:", !!window.missileSystem,
+            "| flareSystem:", !!window.flareSystem,
+            "| playerId:", net.playerId);
+        }
         if (window.missileSystem) {
           window.missileSystem.syncFromState(data.ml || [], net.playerId);
         }

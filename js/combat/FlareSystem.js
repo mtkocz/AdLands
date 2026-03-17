@@ -385,6 +385,18 @@ class FlareSystem {
     const FACTIONS = ["rust", "cobalt", "viridian"];
     const STRIDE = 6;
 
+    // DEBUG: trace flare sync (throttled)
+    if (!this._syncDbgT) this._syncDbgT = 0;
+    const _now = Date.now();
+    if (_now - this._syncDbgT > 3000 && flArr.length > 0) {
+      this._syncDbgT = _now;
+      const count = flArr.length / STRIDE;
+      const owners = [];
+      for (let k = 0; k < flArr.length; k += STRIDE) owners.push(flArr[k + 5]);
+      console.log("[FL-SYNC] flares:", count, "| local:", localPlayerId,
+        "| owners:", owners.join(","), "| existing:", this.flares.length);
+    }
+
     const serverIds = new Set();
     for (let i = 0; i < flArr.length; i += STRIDE) {
       const id = flArr[i];

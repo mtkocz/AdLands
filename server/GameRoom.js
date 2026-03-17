@@ -4593,6 +4593,12 @@ class GameRoom {
     statePayload.tick = this.tick;
     statePayload.ml = mlArr.length > 0 ? mlArr : undefined;
     statePayload.fl = flArr.length > 0 ? flArr : undefined;
+    // DEBUG: trace missile/flare broadcast (throttled)
+    if (!this._syncDbgT) this._syncDbgT = 0;
+    if (Date.now() - this._syncDbgT > 3000 && (mlArr.length > 0 || flArr.length > 0)) {
+      this._syncDbgT = Date.now();
+      console.log("[SRV-SYNC] ml:", mlArr.length / 8, "missiles | fl:", flArr.length / 6, "flares | projectiles:", this.projectiles.length, "| flares:", this.flares.length);
+    }
     statePayload.bg = this.bodyguardManager.getStatesForBroadcast();
     statePayload.pr = this.planetRotation;
     // Total population + bot faction breakdown (for chat panel headers)

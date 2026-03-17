@@ -739,6 +739,19 @@ class MissileSystem {
     const FACTIONS = ["rust", "cobalt", "viridian"];
     const STRIDE = 8;
 
+    // DEBUG: trace sync processing (throttled)
+    if (!this._syncDbgT) this._syncDbgT = 0;
+    const _now = Date.now();
+    if (_now - this._syncDbgT > 3000 && mlArr.length > 0) {
+      this._syncDbgT = _now;
+      const count = mlArr.length / STRIDE;
+      const owners = [];
+      for (let k = 0; k < mlArr.length; k += STRIDE) owners.push(mlArr[k + 7]);
+      console.log("[ML-SYNC] missiles:", count, "| local:", localPlayerId,
+        "| owners:", owners.join(","), "| existing:", this.missiles.length,
+        "| pool:", this._pool.length + "/" + this._poolMax);
+    }
+
     // Build set of server missile IDs
     const serverIds = new Set();
     for (let i = 0; i < mlArr.length; i += STRIDE) {
