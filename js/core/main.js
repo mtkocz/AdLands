@@ -1980,27 +1980,33 @@
   ];
 
   function updateTerritoryChart() {
-    const ownership = planet.clusterOwnership;
-    const captureState = planet.clusterCaptureState;
-
-    // Count only contestable clusters (those with capture state).
-    // Neutral territory (pole holes, portal tiles) has no capture state
-    // and must not inflate the total or the unclaimed slice.
-    _territoryCounts.rust = 0;
-    _territoryCounts.cobalt = 0;
-    _territoryCounts.viridian = 0;
-    _territoryCounts.unclaimed = 0;
-    let totalClusters = 0;
-    for (let i = 0; i < planet.clusterData.length; i++) {
-      if (!captureState.has(i)) continue; // skip non-contestable
-      totalClusters++;
-      const faction = ownership.get(i);
-      if (faction) {
-        _territoryCounts[faction]++;
-      } else {
-        _territoryCounts.unclaimed++;
+    // Use server-authoritative territory counts when available.
+    // Computing locally from clusterOwnership causes cross-client drift
+    // due to event delivery timing differences.
+    const srv = planet.serverTerritoryPct;
+    if (srv) {
+      _territoryCounts.rust = srv.rust;
+      _territoryCounts.cobalt = srv.cobalt;
+      _territoryCounts.viridian = srv.viridian;
+      _territoryCounts.unclaimed = srv.total - srv.rust - srv.cobalt - srv.viridian;
+    } else {
+      const ownership = planet.clusterOwnership;
+      const captureState = planet.clusterCaptureState;
+      _territoryCounts.rust = 0;
+      _territoryCounts.cobalt = 0;
+      _territoryCounts.viridian = 0;
+      _territoryCounts.unclaimed = 0;
+      for (let i = 0; i < planet.clusterData.length; i++) {
+        if (!captureState.has(i)) continue;
+        const faction = ownership.get(i);
+        if (faction) {
+          _territoryCounts[faction]++;
+        } else {
+          _territoryCounts.unclaimed++;
+        }
       }
     }
+    const totalClusters = _territoryCounts.rust + _territoryCounts.cobalt + _territoryCounts.viridian + _territoryCounts.unclaimed;
     const counts = _territoryCounts;
 
     // Check faction standing for Elon Tusk commentary (update in place, avoid .map())
@@ -2093,29 +2099,36 @@
     const cy = canvas.height / 2;
     const radius = size / 2;
 
-    // Count hex tiles per faction across sponsored clusters
-    const ownership = planet.clusterOwnership;
-    const sponsorClusters = planet.getAllSponsorClusters();
-    let totalHexes = 0;
-
+    // Use server-authoritative territory counts for cross-client consistency
+    const srv = planet.serverTerritoryPct;
     const counts = { rust: 0, cobalt: 0, viridian: 0, unclaimed: 0 };
-    for (const [, data] of sponsorClusters) {
-      const cluster = planet.clusterData[data.clusterId];
-      if (!cluster) continue;
-      const hexCount = cluster.tiles.length;
-      totalHexes += hexCount;
-      const faction = ownership.get(data.clusterId);
-      if (faction) {
-        counts[faction] += hexCount;
-      } else {
-        counts.unclaimed += hexCount;
+    let totalClusters = 0;
+    if (srv) {
+      counts.rust = srv.rust;
+      counts.cobalt = srv.cobalt;
+      counts.viridian = srv.viridian;
+      counts.unclaimed = srv.total - srv.rust - srv.cobalt - srv.viridian;
+      totalClusters = srv.total;
+    } else {
+      const ownership = planet.clusterOwnership;
+      const sponsorClusters = planet.getAllSponsorClusters();
+      for (const [, data] of sponsorClusters) {
+        const cluster = planet.clusterData[data.clusterId];
+        if (!cluster) continue;
+        totalClusters++;
+        const faction = ownership.get(data.clusterId);
+        if (faction) {
+          counts[faction]++;
+        } else {
+          counts.unclaimed++;
+        }
       }
     }
 
     const pcts = {};
     for (const faction in counts) {
       pcts[faction] =
-        totalHexes > 0 ? (counts[faction] / totalHexes) * 100 : 0;
+        totalClusters > 0 ? (counts[faction] / totalClusters) * 100 : 0;
     }
 
     // Draw donut chart with same color scheme
@@ -2126,7 +2139,7 @@
     // Calculate angles for each faction
     const angles = {};
     for (const faction in counts) {
-      angles[faction] = (counts[faction] / totalHexes) * Math.PI * 2;
+      angles[faction] = totalClusters > 0 ? (counts[faction] / totalClusters) * Math.PI * 2 : 0;
     }
 
     // Build draw order: Player → Other1 → Unclaimed → Other2

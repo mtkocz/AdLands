@@ -314,8 +314,6 @@ let inquiryRouter;
 // AUTH MIDDLEWARE
 // ========================
 
-const activeAuthSockets = new Map(); // uid → socketId
-
 io.use(async (socket, next) => {
   const token = socket.handshake.auth?.token;
   if (!token) {
@@ -352,13 +350,6 @@ io.use(async (socket, next) => {
 
   socket.uid = decoded.uid;
 
-  // Block if this account is already connected
-  const existingSocketId = activeAuthSockets.get(decoded.uid);
-  const existingSocket = existingSocketId ? io.sockets.sockets.get(existingSocketId) : null;
-  if (existingSocket && existingSocket.connected) {
-    return next(new Error("account-already-connected"));
-  }
-
   // Load active profile from Firestore
   try {
     const db = getFirestore();
@@ -391,10 +382,6 @@ io.use(async (socket, next) => {
 
 io.on("connection", (socket) => {
   console.log(`[Server] New connection: ${socket.id}${socket.uid ? ` (uid: ${socket.uid})` : " (guest)"}`);
-
-  if (socket.uid) {
-    activeAuthSockets.set(socket.uid, socket.id);
-  }
 
   // Attempt to restore an existing session for authenticated players
   let player = socket.uid ? mainRoom.reconnectPlayer(socket) : null;
@@ -584,9 +571,6 @@ io.on("connection", (socket) => {
       if (isAnonymous) {
         // Switched to guest mid-session — null UID so player becomes independent
         // Mark old profile cache entry offline BEFORE clearing uid
-        if (socket.uid && activeAuthSockets.get(socket.uid) === socket.id) {
-          activeAuthSockets.delete(socket.uid);
-        }
         mainRoom.unlinkPlayerFromProfileCache(socket.id);
         socket.uid = null;
         socket.isGuest = true;
@@ -619,17 +603,8 @@ io.on("connection", (socket) => {
           mainRoom.unlinkPlayerFromProfileCache(socket.id);
         }
 
-        // Block if this account is already connected from another socket
-        const existingSocketId = activeAuthSockets.get(decoded.uid);
-        const existingSocket = existingSocketId ? io.sockets.sockets.get(existingSocketId) : null;
-        if (existingSocket && existingSocket.connected && existingSocketId !== socket.id) {
-          socket.emit("account-already-connected");
-          return;
-        }
-
         socket.uid = decoded.uid;
         socket.isGuest = false;
-        activeAuthSockets.set(decoded.uid, socket.id);
 
         // If player was a guest (or switched accounts), load their profile
         // and upgrade the GameRoom player so they appear correctly in the roster
@@ -978,9 +953,6 @@ io.on("connection", (socket) => {
       }
     }
     mainRoom.removePlayer(socket.id);
-    if (socket.uid && activeAuthSockets.get(socket.uid) === socket.id) {
-      activeAuthSockets.delete(socket.uid);
-    }
     console.log(`[Server] Disconnected: ${socket.id} (${reason})`);
   });
 });

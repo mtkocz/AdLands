@@ -478,10 +478,6 @@ class AuthScreen {
       this._isAuthenticated = false;
       this._hideLoading();
       this._showStage("welcome");
-      if (this._duplicateLoginError) {
-        this._duplicateLoginError = false;
-        this._showError("auth-error", "Account already connected. Choose a different account.");
-      }
     }
   }
 

@@ -87,7 +87,6 @@ class NetworkManager {
     this.onPlayerProfileSwitched = null; // (data) => { id, name, faction, level, ... }
     this.onTankUpgradeConfirmed = null; // (data) => { type, tier, cost }
     this.onConnectionFailed = null;    // () => {} — all reconnection attempts exhausted
-    this.onDuplicateLogin = null;      // () => {} — kicked due to duplicate login
   }
 
   // ========================
@@ -131,10 +130,6 @@ class NetworkManager {
 
     this.socket.on("connect_error", (err) => {
       console.warn("[Network] Connection error:", err.message);
-      if (err.message === "account-already-connected") {
-        this.socket.disconnect();
-        if (this.onDuplicateLogin) this.onDuplicateLogin();
-      }
     });
 
     this.socket.on("reconnect_failed", () => {
@@ -146,11 +141,6 @@ class NetworkManager {
       if (data && data.reason === "inactivity") {
         window.location.reload();
       }
-    });
-
-    this.socket.on("account-already-connected", () => {
-      this.socket.disconnect();
-      if (this.onDuplicateLogin) this.onDuplicateLogin();
     });
 
     // Ping response from server
@@ -278,6 +268,11 @@ class NetworkManager {
     // Territory ownership changes
     this.socket.on("territory-update", (data) => {
       if (this.onTerritoryUpdate) this.onTerritoryUpdate(data);
+    });
+
+    // Server-authoritative faction territory counts (1/sec)
+    this.socket.on("territory-pct", (data) => {
+      if (this.onTerritoryPct) this.onTerritoryPct(data);
     });
 
     // Server awarded tic contribution crypto (includes current tics for ring sync)

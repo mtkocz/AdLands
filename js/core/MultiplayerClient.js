@@ -323,6 +323,11 @@
         }
       }
 
+      // Apply server-authoritative territory percentages
+      if (data.territoryPct) {
+        planet.serverTerritoryPct = data.territoryPct;
+      }
+
       // Load server-persisted presence data for sponsor line graphs
       if (data.presenceData && typeof PresenceTracker !== "undefined") {
         PresenceTracker.loadServerData(data.presenceData);
@@ -1666,6 +1671,11 @@
       }
     };
 
+    // Server-authoritative faction territory counts (1/sec)
+    net.onTerritoryPct = (data) => {
+      if (planet) planet.serverTerritoryPct = data;
+    };
+
     net.onTerritoryUpdate = (changes) => {
       if (!planet) return;
       const playerCluster = tank.getCurrentClusterId(planet);
@@ -1849,6 +1859,11 @@
         for (const [clusterId, state] of Object.entries(data.captureState)) {
           planet.applyTerritoryState(Number(clusterId), state.owner, state.tics);
         }
+      }
+
+      // Apply server-authoritative territory percentages
+      if (data.territoryPct) {
+        planet.serverTerritoryPct = data.territoryPct;
       }
 
       // Load server-persisted presence data for sponsor line graphs
@@ -2396,16 +2411,6 @@
     }, CONNECTION_TIMEOUT);
 
     // Handle permanent connection failure (all retries exhausted)
-    net.onDuplicateLogin = () => {
-      if (window.authManager) {
-        window.authManager.signOut();
-      }
-      if (window._authScreenInstance) {
-        window._authScreenInstance._duplicateLoginError = true;
-        window._authScreenInstance.show();
-      }
-    };
-
     net.onConnectionFailed = () => {
       if (!welcomeReceived) {
         clearTimeout(connectionTimer);

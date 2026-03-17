@@ -734,6 +734,7 @@ class GameRoom {
       this.io.to(this.roomId).emit("sponsors-reloaded", {
         world: this._worldPayload,
         captureState: this._buildCaptureSnapshot(),
+        territoryPct: this._buildTerritoryPct(),
         presenceData: this._getPresencePayload(),
       });
     }
@@ -1043,6 +1044,7 @@ class GameRoom {
       planetRotation: this.planetRotation,
       world: this._worldPayload,
       captureState: this._buildCaptureSnapshot(),
+      territoryPct: this._buildTerritoryPct(),
       presenceData: this._getPresencePayload(),
       commanders: this._getCommanderSnapshot(),
       celestial: this._buildCelestialPayload(),
@@ -1189,6 +1191,7 @@ class GameRoom {
       planetRotation: this.planetRotation,
       world: this._worldPayload,
       captureState: this._buildCaptureSnapshot(),
+      territoryPct: this._buildTerritoryPct(),
       presenceData: this._getPresencePayload(),
       commanders: this._getCommanderSnapshot(),
       celestial: this._buildCelestialPayload(),
@@ -1351,6 +1354,15 @@ class GameRoom {
       }
     }
     return captureState;
+  }
+
+  _buildTerritoryPct() {
+    const pct = { rust: 0, cobalt: 0, viridian: 0, total: 0 };
+    for (const [, st] of this.clusterCaptureState) {
+      pct.total++;
+      if (st.owner) pct[st.owner]++;
+    }
+    return pct;
   }
 
   /**
@@ -4353,7 +4365,17 @@ class GameRoom {
       }
     }
 
-    // 4. Broadcast capture progress to cluster rooms (1/sec, synced with tic advancement)
+    // 4. Broadcast authoritative faction territory counts (once per second).
+    // Clients use these instead of computing locally, ensuring all players
+    // see identical percentages regardless of event delivery timing.
+    const tPct = { rust: 0, cobalt: 0, viridian: 0, total: 0 };
+    for (const [, st] of this.clusterCaptureState) {
+      tPct.total++;
+      if (st.owner) tPct[st.owner]++;
+    }
+    this.io.to(this.roomId).emit("territory-pct", tPct);
+
+    // 5. Broadcast capture progress to cluster rooms (1/sec, synced with tic advancement)
     // Players join/leave cluster rooms via Socket.IO rooms (managed above in cluster assignment).
     // Collect which clusters have players by checking clusterTankCounts (already built above).
     for (const [clusterId, counts] of clusterTankCounts) {
