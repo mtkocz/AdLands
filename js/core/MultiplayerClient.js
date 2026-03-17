@@ -556,6 +556,17 @@
               title: window.profileCard?.playerCache?.get(id)?.title || "Contractor",
               hp: state.hp || 100, maxHp: 100,
             });
+          } else if (state.d === 0 && remoteTank._hidden) {
+            // Transition from fast travel (hidden) back to active
+            remoteTank.setVisible(true);
+            playerTags.createTag?.(id, remoteTank, {
+              name: remoteTank.playerName || "Unknown",
+              level: 1, rank: remoteTank.rank || 0,
+              avatar: null, avatarColor: remoteTank.avatarColor || null, squad: null,
+              faction: remoteTank.faction,
+              title: window.profileCard?.playerCache?.get(id)?.title || "Contractor",
+              hp: state.hp || 100, maxHp: 100,
+            });
           } else if (state.d === 0 && !remoteTank.isDead && state.hp !== undefined) {
             // Alive — sync damage state from HP (catches gradual damage via state ticks)
             const newState = computeDamageState(state.hp, remoteTank.maxHp);
@@ -859,6 +870,16 @@
             b.userData.speed = arr[7];
           }
         });
+      }
+
+      // Sync remote missiles from server state (authoritative — doesn't rely on fire events)
+      if (window.missileSystem) {
+        window.missileSystem.syncFromState(data.ml || [], net.playerId);
+      }
+
+      // Sync remote flares from server state
+      if (window.flareSystem) {
+        window.flareSystem.syncFromState(data.fl || [], net.playerId);
       }
     };
 

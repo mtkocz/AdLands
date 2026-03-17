@@ -733,6 +733,77 @@ class MissileSystem {
     return true;
   }
 
+  // State-driven sync: spawn/remove remote missiles based on server state broadcast.
+  // Flat array: [id, factionIdx, phase, wx, wy, wz, targetId, ownerId], repeating.
+  syncFromState(mlArr, localPlayerId) {
+    const FACTIONS = ["rust", "cobalt", "viridian"];
+    const STRIDE = 8;
+
+    // Build set of server missile IDs
+    const serverIds = new Set();
+    for (let i = 0; i < mlArr.length; i += STRIDE) {
+      const id = mlArr[i];
+      const ownerId = mlArr[i + 7];
+      if (ownerId === localPlayerId) continue; // skip own missiles
+      serverIds.add(id);
+
+      // Check if we already have a visual for this missile
+      let found = false;
+      for (let j = 0; j < this.missiles.length; j++) {
+        if (this.missiles[j].serverId === id) { found = true; break; }
+      }
+      if (found) continue;
+
+      // Spawn new remote missile visual
+      const factionIdx = mlArr[i + 1];
+      const faction = FACTIONS[factionIdx] || "rust";
+      const poolItem = this._acquirePoolItem(faction);
+      if (!poolItem) continue;
+
+      const wx = mlArr[i + 3], wy = mlArr[i + 4], wz = mlArr[i + 5];
+      const startPos = new THREE.Vector3(wx, wy, wz);
+      const surfaceNormal = startPos.clone().normalize();
+      const phase = mlArr[i + 2];
+
+      const missile = {
+        poolItem,
+        position: startPos.clone(),
+        surfaceNormal,
+        faction,
+        phase: phase,
+        age: phase > 0 ? 1 : 0, // skip launch if already cruising
+        launchSpeed: 5,
+        cruiseAltitude: this.config.cruiseAltitude,
+        targetTank: null,
+        targetFaction: null,
+        direction: null,
+        isRemote: true,
+        ownerFaction: faction,
+        serverId: id,
+        serverTargetId: mlArr[i + 6] || null,
+        shadowBB: null,
+      };
+
+      this.missiles.push(missile);
+      poolItem.group.position.copy(startPos);
+    }
+
+    // Remove remote missile visuals that the server no longer tracks
+    for (let i = this.missiles.length - 1; i >= 0; i--) {
+      const m = this.missiles[i];
+      if (!m.isRemote || m.serverId == null) continue;
+      if (!serverIds.has(m.serverId)) {
+        if (m.poolItem) this._releasePoolItem(m.poolItem);
+        if (m.serverId != null) this._cancelPendingHit(m.serverId);
+        if (m.shadowBB && this.flareSystem) {
+          m.shadowBB.age = m.age;
+          this.flareSystem._orphanedShadows.push(m.shadowBB);
+        }
+        this.missiles.splice(i, 1);
+      }
+    }
+  }
+
   assignServerIdToLocal(serverId) {
     for (let i = this.missiles.length - 1; i >= 0; i--) {
       const m = this.missiles[i];

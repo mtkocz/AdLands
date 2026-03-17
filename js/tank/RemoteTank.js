@@ -585,6 +585,11 @@ class RemoteTank {
     this.group.scale.set(0.3, 0.3, 0.3);
   }
 
+  setVisible(visible) {
+    this._hidden = !visible;
+    this.group.visible = visible;
+  }
+
   /**
    * Teleport to a position (no interpolation, used on spawn/respawn).
    */
@@ -630,6 +635,7 @@ class RemoteTank {
    */
   updateLOD(camera, frustum, options) {
     if (!this.group || !camera) return;
+    if (this._hidden) return;
     camera.getWorldPosition(RemoteTank._cameraWorldPos);
     Tank.updateTankLOD(
       {

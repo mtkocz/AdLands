@@ -379,6 +379,52 @@ class FlareSystem {
     return true;
   }
 
+  // State-driven sync: spawn/remove remote flares based on server state broadcast.
+  // Flat array: [id, factionIdx, wx, wy, wz, ownerId], repeating.
+  syncFromState(flArr, localPlayerId) {
+    const FACTIONS = ["rust", "cobalt", "viridian"];
+    const STRIDE = 6;
+
+    const serverIds = new Set();
+    for (let i = 0; i < flArr.length; i += STRIDE) {
+      const id = flArr[i];
+      const ownerId = flArr[i + 5];
+      if (ownerId === localPlayerId) continue;
+      serverIds.add(id);
+
+      let found = false;
+      for (let j = 0; j < this.flares.length; j++) {
+        if (this.flares[j].serverId === id) { found = true; break; }
+      }
+      if (found) continue;
+
+      const factionIdx = flArr[i + 1];
+      const faction = FACTIONS[factionIdx] || "rust";
+      const wx = flArr[i + 2], wy = flArr[i + 3], wz = flArr[i + 4];
+      const pos = new THREE.Vector3(wx, wy, wz);
+      const normal = pos.clone().normalize();
+
+      const flare = this._createFlareVisual(pos, normal, faction, false);
+      flare.serverId = id;
+      flare.ownerId = ownerId;
+      this.flares.push(flare);
+    }
+
+    // Remove remote flares no longer tracked by server
+    for (let i = this.flares.length - 1; i >= 0; i--) {
+      const f = this.flares[i];
+      if (f.isLocal || f.serverId == null) continue;
+      if (!serverIds.has(f.serverId)) {
+        this._releaseMesh(f.meshItem);
+        if (f.shadowBB) {
+          f.shadowBB.age = f.age;
+          this._orphanedShadows.push(f.shadowBB);
+        }
+        this.flares.splice(i, 1);
+      }
+    }
+  }
+
   // ---- Spawn a remote flare ----
 
   spawnRemoteFlare(data) {
