@@ -898,16 +898,12 @@
 
       const remoteTank = remoteTanks.get(data.id);
 
-      // Route to missile system — always spawn visual (flight visibility handled by farAway check)
+      // Missiles are synced via state broadcast (syncFromState), not fire events.
+      // Show incoming warning if this missile targets us.
       if (data.type === "missile") {
-        try {
-          if (window.missileSystem) {
-            const spawned = window.missileSystem.spawnRemoteMissile(data, remoteTank);
-            if (spawned && data.targetId === net.playerId) {
-              window.missileSystem.showIncomingWarning();
-            }
-          }
-        } catch (e) { console.error("[MP] spawnRemoteMissile failed:", e); }
+        if (data.targetId === net.playerId && window.missileSystem) {
+          window.missileSystem.showIncomingWarning();
+        }
         return;
       }
 
@@ -942,13 +938,8 @@
     // ---- Flare events ----
 
     net.onFlareFired = (data) => {
-      // Skip our own flare (we already spawned the visual locally)
-      if (data.ownerId === net.playerId) return;
-      try {
-        if (window.flareSystem) {
-          window.flareSystem.spawnRemoteFlare(data);
-        }
-      } catch (e) { console.error("[MP] spawnRemoteFlare failed:", e); }
+      // Flares are synced via state broadcast (syncFromState), not fire events.
+      // Nothing to do here — kept for potential future use (e.g. sound cues).
     };
 
     net.onFlareHit = (data) => {
