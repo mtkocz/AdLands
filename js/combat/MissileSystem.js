@@ -753,12 +753,7 @@ class MissileSystem {
         if (this.missiles[j].serverId === id) { existing = this.missiles[j]; break; }
       }
       if (existing) {
-        // Update position, phase, and target from server state
-        const wx = mlArr[i + 3], wy = mlArr[i + 4], wz = mlArr[i + 5];
-        this._tempVec.set(wx, wy, wz);
-        existing.position.lerp(this._tempVec, 0.3);
-        if (existing.poolItem) existing.poolItem.group.position.copy(existing.position);
-        existing.phase = mlArr[i + 2];
+        // Update target from server (handles retargeting mid-flight)
         existing.serverTargetId = mlArr[i + 6] || null;
         continue;
       }
