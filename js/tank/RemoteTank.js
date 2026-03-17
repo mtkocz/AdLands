@@ -214,6 +214,23 @@ class RemoteTank {
     this.targetState.speed = serverState.s;
     this.targetState.turretAngle = serverState.ta;
 
+    // Detect large position jumps (e.g. bot teleported to safety) and snap
+    // instead of interpolating across the planet at supersonic speed.
+    if (this._snapCount > 0) {
+      const prevIdx = (this._snapHead - 1 + this._snapCap) % this._snapCap;
+      const prev = this._snapBuf[prevIdx];
+      let dTheta = serverState.t - prev.theta;
+      if (dTheta > Math.PI) dTheta -= Math.PI * 2;
+      if (dTheta < -Math.PI) dTheta += Math.PI * 2;
+      const dPhi = serverState.p - prev.phi;
+      if (dTheta * dTheta + dPhi * dPhi > 0.04) {
+        this.teleportTo(serverState.t, serverState.p, serverState.h);
+        this.state.speed = serverState.s;
+        this.targetState.speed = serverState.s;
+        return;
+      }
+    }
+
     // Skip stale snapshots: when the bot worker is slow, the server rebroadcasts
     // cached positions. Pushing duplicate positions creates a "frozen" interpolation
     // segment (bot stands still then jumps forward). Instead, skip the duplicate so

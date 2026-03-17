@@ -442,6 +442,17 @@
         if (data.opn) mpState.orbitalPositionNames = data.opn;
       }
 
+      // Sync remote missiles/flares FIRST — before the player loop which can
+      // throw and silently kill everything after it
+      try {
+        if (window.missileSystem) {
+          window.missileSystem.syncFromState(data.ml || [], net.playerId);
+        }
+        if (window.flareSystem) {
+          window.flareSystem.syncFromState(data.fl || [], net.playerId);
+        }
+      } catch (e) { console.error("[MP] syncFromState error:", e); }
+
       // Track which bots were seen this tick (for cleanup)
       if (!mp._seenBotIds) mp._seenBotIds = new Set();
       mp._seenBotIds.clear();
@@ -872,15 +883,6 @@
         });
       }
 
-      // Sync remote missiles from server state (authoritative — doesn't rely on fire events)
-      if (window.missileSystem) {
-        window.missileSystem.syncFromState(data.ml || [], net.playerId);
-      }
-
-      // Sync remote flares from server state
-      if (window.flareSystem) {
-        window.flareSystem.syncFromState(data.fl || [], net.playerId);
-      }
     };
 
     net.onPlayerFired = (data) => {
