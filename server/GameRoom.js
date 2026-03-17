@@ -77,7 +77,7 @@ class TargetSpatialHash {
 
     // Players
     for (const [id, p] of players) {
-      if (p.isDead || p.waitingForPortal) continue;
+      if (p.isDead || p.waitingForPortal || p._portalImmuneTicks > 0) continue;
       this._add(id, p.theta, p.phi, p.faction, false, -1, null);
     }
 
@@ -2554,7 +2554,7 @@ class GameRoom {
           }
         } else {
           const hitPlayer = this.players.get(tgtId);
-          if (hitPlayer && !hitPlayer.isDead) {
+          if (hitPlayer && !hitPlayer.isDead && !(hitPlayer._portalImmuneTicks > 0)) {
             hitPlayer.hp -= damage;
 
             const attacker = this.players.get(p.ownerId);
@@ -2858,6 +2858,7 @@ class GameRoom {
     );
     player.heading = Math.random() * Math.PI * 2;
     player.waitingForPortal = false;
+    player._portalImmuneTicks = 30; // ~3s missile lock-on immunity after portal
     player._previewPortalTile = null;
     // Leave cluster room before clearing cluster ID
     if (player.currentClusterId != null) {
@@ -2946,6 +2947,8 @@ class GameRoom {
       if (this._isUndeployed(player)) {
         continue;
       }
+
+      if (player._portalImmuneTicks > 0) player._portalImmuneTicks--;
 
       // Orbital players can't move or fire — skip physics entirely.
       // Their tank is stationary; no input, collision, or terrain checks needed.
@@ -4593,12 +4596,6 @@ class GameRoom {
     statePayload.tick = this.tick;
     statePayload.ml = mlArr.length > 0 ? mlArr : undefined;
     statePayload.fl = flArr.length > 0 ? flArr : undefined;
-    // DEBUG: trace missile/flare broadcast (throttled)
-    if (!this._syncDbgT) this._syncDbgT = 0;
-    if (Date.now() - this._syncDbgT > 3000 && (mlArr.length > 0 || flArr.length > 0)) {
-      this._syncDbgT = Date.now();
-      console.log("[SRV-SYNC] ml:", mlArr.length / 8, "missiles | fl:", flArr.length / 6, "flares | projectiles:", this.projectiles.length, "| flares:", this.flares.length);
-    }
     statePayload.bg = this.bodyguardManager.getStatesForBroadcast();
     statePayload.pr = this.planetRotation;
     // Total population + bot faction breakdown (for chat panel headers)

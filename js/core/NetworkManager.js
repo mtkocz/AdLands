@@ -549,6 +549,11 @@ class NetworkManager {
     });
   }
 
+  sendFlareFire() {
+    if (!this.connected) return;
+    this.socket.emit("fire", { type: "flare" });
+  }
+
   /**
    * Send a chat message with mode (faction/lobby/squad).
    * @param {string} text - Message text
