@@ -314,6 +314,8 @@ let inquiryRouter;
 // AUTH MIDDLEWARE
 // ========================
 
+const activeAuthSockets = new Map(); // uid → socketId
+
 io.use(async (socket, next) => {
   const token = socket.handshake.auth?.token;
   if (!token) {
@@ -350,6 +352,13 @@ io.use(async (socket, next) => {
 
   socket.uid = decoded.uid;
 
+  // Block if this account is already connected
+  const existingSocketId = activeAuthSockets.get(decoded.uid);
+  const existingSocket = existingSocketId ? io.sockets.sockets.get(existingSocketId) : null;
+  if (existingSocket && existingSocket.connected) {
+    return next(new Error("account-already-connected"));
+  }
+
   // Load active profile from Firestore
   try {
     const db = getFirestore();
@@ -380,24 +389,10 @@ io.use(async (socket, next) => {
 // CONNECTION HANDLING
 // ========================
 
-const activeAuthSockets = new Map(); // uid → socketId
-
-function kickDuplicateSession(uid) {
-  const existingSocketId = activeAuthSockets.get(uid);
-  if (!existingSocketId) return;
-  const existingSocket = io.sockets.sockets.get(existingSocketId);
-  if (existingSocket) {
-    existingSocket.emit("kicked", { reason: "duplicate-login" });
-    existingSocket.disconnect(true);
-  }
-  activeAuthSockets.delete(uid);
-}
-
 io.on("connection", (socket) => {
   console.log(`[Server] New connection: ${socket.id}${socket.uid ? ` (uid: ${socket.uid})` : " (guest)"}`);
 
   if (socket.uid) {
-    kickDuplicateSession(socket.uid);
     activeAuthSockets.set(socket.uid, socket.id);
   }
 
@@ -624,9 +619,16 @@ io.on("connection", (socket) => {
           mainRoom.unlinkPlayerFromProfileCache(socket.id);
         }
 
+        // Block if this account is already connected from another socket
+        const existingSocketId = activeAuthSockets.get(decoded.uid);
+        const existingSocket = existingSocketId ? io.sockets.sockets.get(existingSocketId) : null;
+        if (existingSocket && existingSocket.connected && existingSocketId !== socket.id) {
+          socket.emit("account-already-connected");
+          return;
+        }
+
         socket.uid = decoded.uid;
         socket.isGuest = false;
-        kickDuplicateSession(decoded.uid);
         activeAuthSockets.set(decoded.uid, socket.id);
 
         // If player was a guest (or switched accounts), load their profile

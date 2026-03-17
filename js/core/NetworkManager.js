@@ -131,6 +131,10 @@ class NetworkManager {
 
     this.socket.on("connect_error", (err) => {
       console.warn("[Network] Connection error:", err.message);
+      if (err.message === "account-already-connected") {
+        this.socket.disconnect();
+        if (this.onDuplicateLogin) this.onDuplicateLogin();
+      }
     });
 
     this.socket.on("reconnect_failed", () => {
@@ -141,10 +145,12 @@ class NetworkManager {
     this.socket.on("kicked", (data) => {
       if (data && data.reason === "inactivity") {
         window.location.reload();
-      } else if (data && data.reason === "duplicate-login") {
-        this.socket.disconnect();
-        if (this.onDuplicateLogin) this.onDuplicateLogin();
       }
+    });
+
+    this.socket.on("account-already-connected", () => {
+      this.socket.disconnect();
+      if (this.onDuplicateLogin) this.onDuplicateLogin();
     });
 
     // Ping response from server
