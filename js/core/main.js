@@ -2323,32 +2323,27 @@
       }
 
       // Determine ownership
-      // Once a faction owns a territory, it stays owned until another faction
-      // takes a clear lead. Ownership never reverts to unclaimed.
-      const currentTotal =
-        state.tics.rust + state.tics.cobalt + state.tics.viridian;
-      if (currentTotal >= state.capacity) {
-        // Find faction with most tics
-        let maxTics = 0;
-        let leadingFaction = null;
-        let isTied = false;
+      // Once a faction owns a territory, it stays owned. Ownership never reverts
+      // to unclaimed — only another faction can take it.
+      let maxTics = 0;
+      let leadingFaction = null;
+      let isTied = false;
 
-        for (const faction of _captureFactions) {
-          if (state.tics[faction] > maxTics) {
-            maxTics = state.tics[faction];
-            leadingFaction = faction;
-            isTied = false;
-          } else if (state.tics[faction] === maxTics && maxTics > 0) {
-            isTied = true;
-          }
-        }
-
-        // On tie, keep previous owner (defender's advantage)
-        if (!isTied) {
-          state.owner = leadingFaction;
+      for (const faction of _captureFactions) {
+        if (state.tics[faction] > maxTics) {
+          maxTics = state.tics[faction];
+          leadingFaction = faction;
+          isTied = false;
+        } else if (state.tics[faction] === maxTics && maxTics > 0) {
+          isTied = true;
         }
       }
-      // Below capacity: keep previous owner (territory doesn't revert to unclaimed)
+
+      // Set owner to leading faction (ties keep previous owner — defender's advantage)
+      if (!isTied && leadingFaction) {
+        state.owner = leadingFaction;
+      }
+      // If no faction has tics, keep previous owner (territory never reverts to unclaimed)
 
       // Track ownership flip for animation
       if (state.owner !== previousOwner) {

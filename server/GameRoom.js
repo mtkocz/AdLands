@@ -1698,6 +1698,21 @@ class GameRoom {
   }
 
   /**
+   * Debounced capture state save — triggers at most once per 30 seconds.
+   * Called on every ownership change to minimize data loss on crash/restart.
+   */
+  _debouncedCaptureSave() {
+    if (this._captureSavePending) return;
+    this._captureSavePending = true;
+    setTimeout(() => {
+      this._captureSavePending = false;
+      this.saveCaptureState().catch(err => {
+        console.warn(`[Room ${this.roomId}] Debounced capture save error:`, err.message);
+      });
+    }, 30000);
+  }
+
+  /**
    * Save faction capture state to Firestore.
    * Used for periodic auto-save and graceful shutdown.
    * @returns {Promise<void>}
@@ -4251,30 +4266,27 @@ class GameRoom {
       }
 
       // Determine ownership
-      // Once a faction owns a territory, it stays owned until another faction
-      // takes a clear lead. Ownership never reverts to unclaimed.
-      const currentTotal = state.tics.rust + state.tics.cobalt + state.tics.viridian;
-      if (currentTotal >= state.capacity) {
-        let maxTics = 0;
-        let leadingFaction = null;
-        let isTied = false;
+      // Once a faction owns a territory, it stays owned. Ownership never reverts
+      // to unclaimed — only another faction can take it.
+      let maxTics = 0;
+      let leadingFaction = null;
+      let isTied = false;
 
-        for (const faction of FACTIONS) {
-          if (state.tics[faction] > maxTics) {
-            maxTics = state.tics[faction];
-            leadingFaction = faction;
-            isTied = false;
-          } else if (state.tics[faction] === maxTics && maxTics > 0) {
-            isTied = true;
-          }
-        }
-
-        // On tie, keep previous owner (defender's advantage)
-        if (!isTied) {
-          state.owner = leadingFaction;
+      for (const faction of FACTIONS) {
+        if (state.tics[faction] > maxTics) {
+          maxTics = state.tics[faction];
+          leadingFaction = faction;
+          isTied = false;
+        } else if (state.tics[faction] === maxTics && maxTics > 0) {
+          isTied = true;
         }
       }
-      // Below capacity: keep previous owner (territory doesn't revert to unclaimed)
+
+      // Set owner to leading faction (ties keep previous owner — defender's advantage)
+      if (!isTied && leadingFaction) {
+        state.owner = leadingFaction;
+      }
+      // If no faction has tics, keep previous owner (territory never reverts to unclaimed)
 
       // Track ownership changes for broadcast
       if (state.owner !== previousOwner) {
@@ -4348,6 +4360,9 @@ class GameRoom {
     // 3. Broadcast territory changes to all clients
     if (territoryChanges.length > 0) {
       this._queueRoomEvent("territory-update", territoryChanges);
+
+      // Persist capture state on ownership changes (debounced — at most once per 30s)
+      this._debouncedCaptureSave();
 
       // Notify Tusk about cluster captures
       for (const change of territoryChanges) {
