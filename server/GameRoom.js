@@ -4623,9 +4623,14 @@ class GameRoom {
     statePayload.fl = flArr.length > 0 ? flArr : undefined;
     statePayload.bg = this.bodyguardManager.getStatesForBroadcast();
     statePayload.pr = this.planetRotation;
-    // Total population + bot faction breakdown (for chat panel headers)
-    statePayload.tc = this.players.size + this.botBridge.botCount;
-    statePayload.bfc = this.botBridge.getBotFactionCounts();
+    // Per-faction totals (bots + humans) for chat panel headers
+    const bfc = this.botBridge.getBotFactionCounts();
+    const fc = { rust: bfc.rust, cobalt: bfc.cobalt, viridian: bfc.viridian };
+    for (const [, p] of this.players) {
+      if (fc[p.faction] !== undefined) fc[p.faction]++;
+    }
+    statePayload.tc = fc.rust + fc.cobalt + fc.viridian;
+    statePayload.bfc = fc;
 
     // Compact orbital positions for all bots (every 10 ticks ≈ 1/sec)
     // Flat array: [theta, phi, heading, speed, factionIdx, ...]
@@ -5062,7 +5067,7 @@ class GameRoom {
    * Server-authoritative identity update from onboarding/auth screen.
    * Sanitizes name, handles duplicates, updates faction and profileIndex if changed.
    */
-  handleSetIdentity(socketId, name, faction, profileIndex) {
+  handleSetIdentity(socketId, name, faction, profileIndex, profileData) {
     const player = this.players.get(socketId);
     if (!player) return;
 
@@ -5084,6 +5089,22 @@ class GameRoom {
     const oldProfileIndex = player.profileIndex;
     player.name = sanitized;
     player.faction = faction;
+
+    // Apply full profile data if provided (ensures correct level, crypto, etc.
+    // regardless of what the auth middleware or refresh-token handler loaded)
+    if (profileData && typeof profileData === "object") {
+      player.level = profileData.level || 1;
+      player.totalCrypto = profileData.totalCrypto || 0;
+      player.crypto = profileData.totalCrypto || 0;
+      player.badges = profileData.unlockedBadges?.map(b => b.id) || [];
+      player.title = profileData.titleStats?.currentTitle || "Contractor";
+      player.profilePicture = profileData.profilePicture || null;
+      player.avatarColor = profileData.profilePicture || null;
+      player.loadout = profileData.loadout || {};
+      player.tankUpgrades = profileData.tankUpgrades || { armor: 0, speed: 0, fireRate: 0, damage: 0 };
+      player.activeSlots = profileData.activeSlots || { offense: 'offense-1', defense: 'defense-1', tactical: 'tactical-1' };
+      player.unlockedSlots = profileData.unlockedSlots || ['offense-1'];
+    }
 
     // Update profileIndex if provided (authenticated user selected a profile)
     if (player.uid && typeof profileIndex === "number" && [0, 1, 2].includes(profileIndex)) {

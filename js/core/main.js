@@ -813,20 +813,11 @@
   function updatePlayerCount() {
     const mp = window._mpState;
 
-    // Use server-authoritative counts when available (includes all bots, not just nearby ones)
+    // Use server-authoritative counts when available (includes all bots + humans per faction)
     if (mp && mp.serverTotalCount !== undefined) {
       const totalCount = mp.serverTotalCount;
-      const bfc = mp.serverBotFactionCounts || { rust: 0, cobalt: 0, viridian: 0 };
-
-      // Faction count = bot faction count + human faction count
-      let humanFactionCount = 1; // local player
-      const remotes = mp.remoteTanks;
-      if (remotes) {
-        remotes.forEach((rt) => {
-          if (rt.faction === playerFaction) humanFactionCount++;
-        });
-      }
-      const factionCount = humanFactionCount + (bfc[playerFaction] || 0);
+      const fc = mp.serverBotFactionCounts || { rust: 0, cobalt: 0, viridian: 0 };
+      const factionCount = fc[playerFaction] || 0;
       const squadCount = 1;
 
       if (chatWindow) {
@@ -1762,9 +1753,9 @@
       title: window.titleSystem?.getTitle() || "Contractor",
     });
 
-    // Send chosen identity to server (token already sent via Socket.IO handshake)
+    // Send chosen identity + full profile to server (token already sent via Socket.IO handshake)
     if (window.networkManager) {
-      window.networkManager.sendIdentity(name, faction, profileIndex);
+      window.networkManager.sendIdentity(name, faction, profileIndex, profileData);
 
       // Resend profile with correct avatarColor (initial sendProfile fires before
       // auth confirms, so window.avatarColor was still a random HSL fallback)

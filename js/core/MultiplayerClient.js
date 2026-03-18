@@ -266,9 +266,14 @@
       // Mark environment as multiplayer (server syncs celestial positions)
       if (mp.environment) mp.environment.isMultiplayer = true;
 
-      // Update local player with server-assigned identity
-      mp.setPlayerFaction(data.you.faction);
-      mp.setPlayerName(data.you.name);
+      // Update local player with server-assigned identity, but only if
+      // the user hasn't already confirmed a profile via the auth screen.
+      // Without this guard, the welcome packet can overwrite the correct
+      // faction/name with stale data from the auth middleware.
+      if (!window.profileManager || !window.profileManager.loaded) {
+        mp.setPlayerFaction(data.you.faction);
+        mp.setPlayerName(data.you.name);
+      }
 
       // Enable server-authoritative mode (disables local physics in Tank.update)
       tank.multiplayerMode = true;

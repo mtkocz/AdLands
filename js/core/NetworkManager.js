@@ -579,10 +579,11 @@ class NetworkManager {
    * @param {string} faction - Chosen faction: 'rust', 'cobalt', or 'viridian'
    * @param {number} [profileIndex] - Active profile slot (0-2), if authenticated
    */
-  sendIdentity(name, faction, profileIndex) {
+  sendIdentity(name, faction, profileIndex, profileData) {
     if (!this.connected) return;
     const data = { name, faction };
     if (profileIndex !== undefined) data.profileIndex = profileIndex;
+    if (profileData) data.profileData = profileData;
     this.socket.emit("set-identity", data);
   }
 
