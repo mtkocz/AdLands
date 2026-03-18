@@ -177,13 +177,14 @@ class MissileSystem {
         item = this._createPoolItem();
         this._pool.push(item);
       } else {
-        // Recycle the farthest missile from camera (least visible)
-        // Never recycle missiles targeting the local player (incoming warnings)
+        // Recycle the farthest REMOTE missile from camera (least visible)
+        // Never recycle local player's own missiles or missiles targeting them
         const localId = window._mpState?.net?.playerId;
         let bestDist = -1;
         let bestMissile = null;
         for (const m of this.missiles) {
           if (!m.poolItem) continue;
+          if (!m.isRemote) continue;
           if (m.serverTargetId === "local" || (localId && m.serverTargetId === localId)) continue;
           if ((m._camDist || 0) > bestDist) {
             bestDist = m._camDist || 0;
@@ -760,8 +761,13 @@ class MissileSystem {
       if (existing) {
         const wx = mlArr[i + 3], wy = mlArr[i + 4], wz = mlArr[i + 5];
         this._tempVec.set(wx, wy, wz);
-        existing.position.lerp(this._tempVec, 0.3);
-        existing.poolItem.group.position.copy(existing.position);
+        // Derive direction from server position delta (for inter-frame extrapolation)
+        const delta = this._tempVec2.copy(this._tempVec).sub(existing.position);
+        if (delta.lengthSq() > 0.0001) {
+          if (!existing.direction) existing.direction = new THREE.Vector3();
+          existing.direction.copy(delta).normalize();
+        }
+        existing.position.lerp(this._tempVec, 0.5);
         existing.phase = mlArr[i + 2];
         existing.serverTargetId = mlArr[i + 6] || null;
         continue;
@@ -1173,6 +1179,29 @@ class MissileSystem {
 
     // Hide mesh when camera is far (orbital view) — simulation still runs
     m.poolItem.group.visible = !farAway;
+
+    // Remote missiles: extrapolate along direction between server syncs.
+    // No local steering or terrain collision — server controls lifecycle.
+    if (m.isRemote) {
+      if (m.direction) {
+        const speed = m.phase === 2 ? this.config.missileSpeed * 1.2 * dt60
+                    : m.phase === 0 ? m.launchSpeed * dt
+                    : this.config.missileSpeed * dt60;
+        m.position.addScaledVector(m.phase === 0 ? m.surfaceNormal : m.direction, speed);
+        // Orient mesh along travel direction
+        const lookTarget = this._tempVec2.copy(m.position).add(m.direction);
+        m.poolItem.group.position.copy(m.position);
+        m.poolItem.group.lookAt(lookTarget);
+        m.poolItem.group.quaternion.multiply(this._meshOrientQuat);
+      } else {
+        m.poolItem.group.position.copy(m.position);
+      }
+      if (!farAway && m.phase >= 0) {
+        this._emitAfterburner(m);
+        if (m.phase >= 1) this._emitSmoke(m);
+      }
+      return;
+    }
 
     if (m.phase === 0) {
       // VERTICAL LAUNCH: Rise along surface normal
