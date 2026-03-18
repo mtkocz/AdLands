@@ -2300,19 +2300,18 @@ class GameRoom {
 
   handleMissileFire(socketId, fireTurretAngle, searchRadius) {
     const player = this.players.get(socketId);
-    if (!player || this._isUndeployed(player)) { console.log("[MISSILE-DBG] rejected: no player or undeployed", socketId); return; }
+    if (!player || this._isUndeployed(player)) return;
 
     // Cannot fire while shield or welding gun is active
-    if (player.shieldActive) { console.log("[MISSILE-DBG] rejected: shield active", socketId); return; }
-    if (player.weldingActive) { console.log("[MISSILE-DBG] rejected: welding active", socketId); return; }
+    if (player.shieldActive) return;
+    if (player.weldingActive) return;
 
     // Enforce server-side cooldown (2 seconds for missiles)
     const now = Date.now();
-    if (now - (player.lastMissileTime || 0) < 2000) { console.log("[MISSILE-DBG] rejected: cooldown", socketId); return; }
+    if (now - (player.lastMissileTime || 0) < 2000) return;
 
     // Economy: deduct missile cost
     if (player.crypto < this.costs.missile) {
-      console.log("[MISSILE-DBG] rejected: no crypto", socketId, player.crypto, "<", this.costs.missile);
       this._denyAction(socketId, "missile", this.costs.missile);
       return;
     }
@@ -2320,9 +2319,8 @@ class GameRoom {
     // Find nearest enemy within search radius (server validates)
     const maxSearchRad = Math.min((searchRadius || 120) / 480, 0.25); // Cap at ~120 world units
     const target = this._findNearestEnemyForMissile(socketId, player, maxSearchRad);
-    if (!target) { console.log("[MISSILE-DBG] rejected: no target in range", socketId, "searchRad:", searchRadius, "maxRad:", maxSearchRad); return; }
+    if (!target) return;
 
-    console.log("[MISSILE-DBG] SUCCESS: missile created", socketId, "-> target:", target.id);
     this._deductCrypto(player, this.costs.missile);
     player.lastMissileTime = now;
     player.lastActivityAt = now;
@@ -2637,22 +2635,21 @@ class GameRoom {
 
   handleFlareFire(socketId) {
     const player = this.players.get(socketId);
-    if (!player || this._isUndeployed(player) || player.isDead) { console.log("[FLARE-DBG] rejected: no player/undeployed/dead", socketId); return; }
+    if (!player || this._isUndeployed(player) || player.isDead) return;
 
     // Cannot fire while shield or welding gun is active
-    if (player.shieldActive) { console.log("[FLARE-DBG] rejected: shield", socketId); return; }
-    if (player.weldingActive) { console.log("[FLARE-DBG] rejected: welding", socketId); return; }
+    if (player.shieldActive) return;
+    if (player.weldingActive) return;
 
     // Enforce cooldown: 5 seconds
     const now = Date.now();
-    if (now - (player.lastFlareTime || 0) < 5000) { console.log("[FLARE-DBG] rejected: cooldown", socketId); return; }
+    if (now - (player.lastFlareTime || 0) < 5000) return;
 
     // Only 1 active flare per player
-    if (this.flares.some(f => f.ownerId === socketId)) { console.log("[FLARE-DBG] rejected: already active", socketId); return; }
+    if (this.flares.some(f => f.ownerId === socketId)) return;
 
     // Economy: deduct flare cost
     if (player.crypto < this.costs.flare) {
-      console.log("[FLARE-DBG] rejected: no crypto", socketId, player.crypto, "<", this.costs.flare);
       this._denyAction(socketId, 'flare', this.costs.flare);
       return;
     }
@@ -2679,7 +2676,6 @@ class GameRoom {
     };
 
     this.flares.push(flare);
-    console.log("[FLARE-DBG] SUCCESS: flare created", socketId, "id:", flare.id);
 
     this._queueRoomEvent("flare-fired", {
       id: flare.id,
