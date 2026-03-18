@@ -2571,7 +2571,7 @@ class GameRoom {
           }
         } else {
           const hitPlayer = this.players.get(tgtId);
-          if (hitPlayer && !hitPlayer.isDead && !(hitPlayer._portalImmuneTicks > 0)) {
+          if (hitPlayer && !hitPlayer.isDead && !hitPlayer.waitingForPortal && !(hitPlayer._portalImmuneTicks > 0)) {
             hitPlayer.hp -= damage;
 
             const attacker = this.players.get(p.ownerId);

@@ -435,7 +435,7 @@ class MissileSystem {
     // Check remote tanks (multiplayer)
     if (window._mpState?.remoteTanks) {
       for (const [, remoteTank] of window._mpState.remoteTanks) {
-        if (remoteTank.isDead || remoteTank.faction === playerFaction) continue;
+        if (remoteTank.isDead || remoteTank._hidden || remoteTank.faction === playerFaction) continue;
         const pos = this._getTargetWorldPos(remoteTank);
         if (!pos) continue;
         const dist = pos.distanceTo(playerPos);
@@ -467,7 +467,7 @@ class MissileSystem {
         if (bot && bot.id === serverTargetId) { tank = bot; break; }
       }
     }
-    if (!tank || tank.isDead) return null;
+    if (!tank || tank.isDead || tank._hidden) return null;
     const pos = this._getTargetWorldPos(tank);
     if (!pos) return null;
     return { tank, worldPos: pos.clone() };
@@ -503,7 +503,7 @@ class MissileSystem {
 
     if (window._mpState?.remoteTanks) {
       for (const [, remoteTank] of window._mpState.remoteTanks) {
-        if (remoteTank.isDead || remoteTank.faction === ownerFaction) continue;
+        if (remoteTank.isDead || remoteTank._hidden || remoteTank.faction === ownerFaction) continue;
         const pos = this._getTargetWorldPos(remoteTank);
         if (!pos) continue;
         // Skip targets behind the missile
@@ -524,7 +524,7 @@ class MissileSystem {
     }
 
     // Local player is a valid target for remote (enemy) missiles
-    if (this.playerTank && !this.playerTank.isDead &&
+    if (this.playerTank && !this.playerTank.isDead && !this.playerTank._hidden &&
         this.playerTank.faction !== ownerFaction) {
       const pos = this._getTargetWorldPos(this.playerTank);
       if (pos) {
