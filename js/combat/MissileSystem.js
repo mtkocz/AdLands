@@ -57,7 +57,7 @@ class MissileSystem {
 
     // Missile mesh pool
     this._pool = [];
-    this._poolMax = 120;
+    this._poolMax = 200;
     this._sharedGeometry = null;
     this._materials = {};
     this._createMissileAssets();
@@ -759,17 +759,11 @@ class MissileSystem {
         if (this.missiles[j].serverId === id) { existing = this.missiles[j]; break; }
       }
       if (existing) {
-        const wx = mlArr[i + 3], wy = mlArr[i + 4], wz = mlArr[i + 5];
-        this._tempVec.set(wx, wy, wz);
-        // Derive direction from server position delta (for inter-frame extrapolation)
-        const delta = this._tempVec2.copy(this._tempVec).sub(existing.position);
-        if (delta.lengthSq() > 0.0001) {
-          if (!existing.direction) existing.direction = new THREE.Vector3();
-          existing.direction.copy(delta).normalize();
+        existing._lastServerSync = performance.now();
+        const newTargetId = mlArr[i + 6] || null;
+        if (newTargetId && newTargetId !== existing.serverTargetId) {
+          existing.serverTargetId = newTargetId;
         }
-        existing.position.lerp(this._tempVec, 0.5);
-        existing.phase = mlArr[i + 2];
-        existing.serverTargetId = mlArr[i + 6] || null;
         continue;
       }
 
@@ -803,15 +797,29 @@ class MissileSystem {
         shadowBB: null,
       };
 
+      // Initialize direction toward target for late-spawned missiles (already cruising)
+      if (phase > 0 && missile.serverTargetId) {
+        const tgt = this._resolveServerTarget(missile.serverTargetId);
+        if (tgt) {
+          missile.direction = tgt.worldPos.clone().sub(startPos).normalize();
+        }
+      }
+
       this.missiles.push(missile);
       poolItem.group.position.copy(startPos);
     }
 
-    // Remove remote missile visuals that the server no longer tracks
+    // Remove remote missile visuals that the server no longer tracks.
+    // Grace period: wait 500ms before removal so event handlers
+    // (forceDiveToPoint via player-hit) have time to claim the missile.
+    const now = performance.now();
     for (let i = this.missiles.length - 1; i >= 0; i--) {
       const m = this.missiles[i];
       if (!m.isRemote || m.serverId == null) continue;
       if (!serverIds.has(m.serverId)) {
+        if (!m._serverGone) { m._serverGone = now; continue; }
+        if (now - m._serverGone < 500) continue;
+        if (m._forcedDive) continue;
         if (m.poolItem) this._releasePoolItem(m.poolItem);
         if (m.serverId != null) this._cancelPendingHit(m.serverId);
         if (m.shadowBB && this.flareSystem) {
@@ -819,6 +827,8 @@ class MissileSystem {
           this.flareSystem._orphanedShadows.push(m.shadowBB);
         }
         this.missiles.splice(i, 1);
+      } else {
+        m._serverGone = null;
       }
     }
     diag.remoteMissiles = this.missiles.filter(m => m.isRemote).length;
@@ -986,8 +996,8 @@ class MissileSystem {
 
       // Remove orphaned missiles (pool item recycled)
       if (!m.poolItem) {
-        // Cancel (don't flush) — the missile was invisible so explosion shouldn't appear
-        if (m.serverId != null) this._cancelPendingHit(m.serverId);
+        // Flush pending hit — mesh was stolen but damage should still apply
+        if (m.serverId != null) this._flushPendingHit(m.serverId);
         if (m.shadowBB && this.flareSystem) {
           m.shadowBB.age = m.age;
           this.flareSystem._orphanedShadows.push(m.shadowBB);
@@ -997,7 +1007,7 @@ class MissileSystem {
       }
 
       // Safety timeout
-      if (m.age > 15) {
+      if (m.age > (m.isRemote ? 25 : 15)) {
         this._destroyMissile(i, m.position);
         continue;
       }
@@ -1180,29 +1190,6 @@ class MissileSystem {
     // Hide mesh when camera is far (orbital view) — simulation still runs
     m.poolItem.group.visible = !farAway;
 
-    // Remote missiles: extrapolate along direction between server syncs.
-    // No local steering or terrain collision — server controls lifecycle.
-    if (m.isRemote) {
-      if (m.direction) {
-        const speed = m.phase === 2 ? this.config.missileSpeed * 1.2 * dt60
-                    : m.phase === 0 ? m.launchSpeed * dt
-                    : this.config.missileSpeed * dt60;
-        m.position.addScaledVector(m.phase === 0 ? m.surfaceNormal : m.direction, speed);
-        // Orient mesh along travel direction
-        const lookTarget = this._tempVec2.copy(m.position).add(m.direction);
-        m.poolItem.group.position.copy(m.position);
-        m.poolItem.group.lookAt(lookTarget);
-        m.poolItem.group.quaternion.multiply(this._meshOrientQuat);
-      } else {
-        m.poolItem.group.position.copy(m.position);
-      }
-      if (!farAway && m.phase >= 0) {
-        this._emitAfterburner(m);
-        if (m.phase >= 1) this._emitSmoke(m);
-      }
-      return;
-    }
-
     if (m.phase === 0) {
       // VERTICAL LAUNCH: Rise along surface normal
       m.launchSpeed += 30 * dt; // Accelerate upward
@@ -1329,7 +1316,7 @@ class MissileSystem {
 
       // Terrain collision check (steep terrain can rise faster than altitude correction)
       const cruiseAlt = m.position.length() - this._getSurfaceRadius(m.position);
-      if (cruiseAlt < 1.5) {
+      if (cruiseAlt < 1.5 && !m.isRemote) {
         const idx = this.missiles.indexOf(m);
         if (idx >= 0) this._destroyMissile(idx, m.position);
         return;
@@ -1389,7 +1376,7 @@ class MissileSystem {
       m.poolItem.group.quaternion.multiply(this._meshOrientQuat);
 
       const altAboveTerrain = m.position.length() - this._getSurfaceRadius(m.position);
-      if (altAboveTerrain < 1.5 || dist < 1.5) {
+      if ((!m.isRemote && altAboveTerrain < 1.5) || dist < 1.5) {
         const idx = this.missiles.indexOf(m);
         if (idx >= 0) {
           this._destroyMissile(idx, m.position);
@@ -1442,7 +1429,7 @@ class MissileSystem {
 
       // Terrain collision
       const straightAlt = m.position.length() - this._getSurfaceRadius(m.position);
-      if (straightAlt < 1.5) {
+      if (straightAlt < 1.5 && !m.isRemote) {
         const idx = this.missiles.indexOf(m);
         if (idx >= 0) this._destroyMissile(idx, m.position);
         return;
@@ -1476,7 +1463,7 @@ class MissileSystem {
 
       // Check impact (close to terrain surface)
       const altAboveTerrain = m.position.length() - this._getSurfaceRadius(m.position);
-      if (altAboveTerrain < 1.5 || dist < 1.5) {
+      if ((!m.isRemote && altAboveTerrain < 1.5) || dist < 1.5) {
         const idx = this.missiles.indexOf(m);
         if (idx >= 0) {
           this._destroyMissile(idx, m.position);
