@@ -458,7 +458,10 @@
         if (window.flareSystem) {
           window.flareSystem.syncFromState(data.fl || [], net.playerId);
         }
-      } catch (e) { console.error("[MP] syncFromState error:", e); }
+      } catch (e) {
+        console.error("[MP] syncFromState error:", e);
+        if (window._syncDiag) window._syncDiag.lastErr = e.message;
+      }
 
       // Track which bots were seen this tick (for cleanup)
       if (!mp._seenBotIds) mp._seenBotIds = new Set();

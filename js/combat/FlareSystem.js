@@ -385,6 +385,10 @@ class FlareSystem {
     const FACTIONS = ["rust", "cobalt", "viridian"];
     const STRIDE = 6;
 
+    const diag = window._syncDiag || (window._syncDiag = { mlCalls: 0, mlItems: 0, flCalls: 0, flItems: 0, remoteMissiles: 0, remoteFlares: 0, lastErr: null });
+    diag.flCalls++;
+    diag.flItems = flArr.length / STRIDE;
+
     const serverIds = new Set();
     for (let i = 0; i < flArr.length; i += STRIDE) {
       const id = flArr[i];
@@ -423,6 +427,7 @@ class FlareSystem {
         this.flares.splice(i, 1);
       }
     }
+    diag.remoteFlares = this.flares.filter(f => !f.isLocal).length;
   }
 
   // ---- Spawn a remote flare ----

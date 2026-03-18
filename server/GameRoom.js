@@ -5070,11 +5070,13 @@ class GameRoom {
     let sanitized = name.trim().replace(/[^\w\s\-]/g, "").substring(0, 20);
     if (!sanitized) sanitized = this._pickName();
 
-    // Check for duplicate names — append suffix if taken
-    for (const [id, p] of this.players) {
-      if (id !== socketId && p.name === sanitized) {
-        sanitized = sanitized + "_" + Math.floor(Math.random() * 99);
-        break;
+    // Append suffix for duplicate names only for guests — authenticated players keep their chosen name
+    if (!player.isAuthenticated) {
+      for (const [id, p] of this.players) {
+        if (id !== socketId && p.name === sanitized) {
+          sanitized = sanitized + "_" + Math.floor(Math.random() * 99);
+          break;
+        }
       }
     }
 

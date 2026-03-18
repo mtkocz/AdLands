@@ -739,6 +739,11 @@ class MissileSystem {
     const FACTIONS = ["rust", "cobalt", "viridian"];
     const STRIDE = 8;
 
+    // Runtime diagnostic (check via browser console: window._syncDiag)
+    const diag = window._syncDiag || (window._syncDiag = { mlCalls: 0, mlItems: 0, flCalls: 0, flItems: 0, remoteMissiles: 0, remoteFlares: 0, lastErr: null });
+    diag.mlCalls++;
+    diag.mlItems = mlArr.length / STRIDE;
+
     // Build set of server missile IDs
     const serverIds = new Set();
     for (let i = 0; i < mlArr.length; i += STRIDE) {
@@ -753,7 +758,11 @@ class MissileSystem {
         if (this.missiles[j].serverId === id) { existing = this.missiles[j]; break; }
       }
       if (existing) {
-        // Update target from server (handles retargeting mid-flight)
+        const wx = mlArr[i + 3], wy = mlArr[i + 4], wz = mlArr[i + 5];
+        this._tempVec.set(wx, wy, wz);
+        existing.position.lerp(this._tempVec, 0.3);
+        existing.poolItem.group.position.copy(existing.position);
+        existing.phase = mlArr[i + 2];
         existing.serverTargetId = mlArr[i + 6] || null;
         continue;
       }
@@ -806,6 +815,7 @@ class MissileSystem {
         this.missiles.splice(i, 1);
       }
     }
+    diag.remoteMissiles = this.missiles.filter(m => m.isRemote).length;
   }
 
   assignServerIdToLocal(serverId) {
@@ -889,11 +899,14 @@ class MissileSystem {
       if (m.serverId === projectileId) {
         m.phase = 4;
         m.targetTank = null;
-        // Compute crash point on planet surface from server coords
+        // Compute crash point on planet surface — apply planet rotation for world space
         const sp = Math.sin(phi), cp = Math.cos(phi);
         const st = Math.sin(theta), ct = Math.cos(theta);
         const R = this.sphereRadius;
-        m.diveTarget = new THREE.Vector3(R * sp * st, R * cp, R * sp * ct);
+        const lx = R * sp * st, lz = R * sp * ct;
+        const pr = this.planet?.hexGroup?.rotation.y || 0;
+        const cpr = Math.cos(pr), spr = Math.sin(pr);
+        m.diveTarget = new THREE.Vector3(lx * cpr + lz * spr, R * cp, -lx * spr + lz * cpr);
         return;
       }
     }
