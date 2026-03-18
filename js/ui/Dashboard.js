@@ -3436,10 +3436,11 @@ class Dashboard {
   }
 
   _savePlayerTerritories() {
-    // Save to localStorage as fallback
+    const uid = window.authManager?.uid;
+    if (!uid) return;
     try {
       localStorage.setItem(
-        "adlands_player_territories",
+        `adlands_player_territories_${uid}`,
         JSON.stringify(this._playerTerritories),
       );
     } catch (e) {
@@ -3607,11 +3608,16 @@ class Dashboard {
     let territories = [];
     let loadedFromStorage = false;
 
+    const uid = window.authManager?.uid;
+
     // Try SponsorStorage first (admin-authoritative source)
     if (typeof SponsorStorage !== "undefined" && SponsorStorage._cache) {
       try {
         const allSponsors = SponsorStorage.getAll();
-        territories = allSponsors.filter((s) => s.ownerType === "player" || s.isPlayerTerritory);
+        territories = allSponsors.filter((s) =>
+          (s.ownerType === "player" || s.isPlayerTerritory) &&
+          (!uid || s.ownerUid === uid)
+        );
         loadedFromStorage = true;
       } catch (e) {
         console.warn("[Dashboard] SponsorStorage load failed:", e);
@@ -3619,9 +3625,9 @@ class Dashboard {
     }
 
     // Fall back to localStorage only if SponsorStorage was unavailable
-    if (!loadedFromStorage) {
+    if (!loadedFromStorage && uid) {
       try {
-        const saved = localStorage.getItem("adlands_player_territories");
+        const saved = localStorage.getItem(`adlands_player_territories_${uid}`);
         if (saved) {
           const parsed = JSON.parse(saved);
           if (Array.isArray(parsed)) territories = parsed;

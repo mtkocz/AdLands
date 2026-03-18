@@ -967,7 +967,10 @@
         const R = 480 + 8; // Cruise altitude
         const sp = Math.sin(data.phi), cp = Math.cos(data.phi);
         const st = Math.sin(data.theta), ct = Math.cos(data.theta);
-        _hitWorldPos.set(R * sp * st, R * cp, R * sp * ct);
+        const lx = R * sp * st, lz = R * sp * ct;
+        const pr = mp.planet?.hexGroup?.rotation.y || 0;
+        const cpr = Math.cos(pr), spr = Math.sin(pr);
+        _hitWorldPos.set(lx * cpr + lz * spr, R * cp, -lx * spr + lz * cpr);
         cannonSystem._spawnExplosion?.(_hitWorldPos, data.faction || "rust", 1.2);
 
         // Award +10¢ flare intercept bonus to the flare owner (floating green number)
