@@ -151,12 +151,9 @@ const io = new Server(server, {
   },
   // Performance tuning
   transports: ["websocket"],       // Skip HTTP long-polling, go straight to WebSocket
-  perMessageDeflate: {
-    threshold: 65536,              // Only compress messages > 64KB (welcome/reload payloads). Per-tick state (~24KB) skips compression.
-    zlibDeflateOptions: { level: 1 }, // Fastest compression — minimize CPU per message
-  },
-  pingInterval: 25000,             // How often to check if client is alive (25s — gives welcome payload time to transfer)
-  pingTimeout: 60000,              // How long to wait for pong before disconnect (60s — client may be loading textures/world)
+  perMessageDeflate: false,        // Disabled — avoids zlib thread pool contention
+  pingInterval: 15000,             // How often to check if client is alive
+  pingTimeout: 30000,              // How long to wait for pong before disconnect
   maxHttpBufferSize: 50e6,         // 50MB — welcome payload includes base64 sponsor textures
 
 });
@@ -419,11 +416,6 @@ io.on("connection", (socket) => {
     mainRoom.handleEnterFastTravel(socket.id);
   });
 
-  // ---- Client Ready (client finished processing welcome payload) ----
-  socket.on("client-ready", () => {
-    mainRoom.handleClientReady(socket);
-  });
-
   // ---- View Mode (orbital vs ground — controls spatial filtering) ----
   socket.on("view-mode", (data) => {
     mainRoom.handleViewMode(socket.id, data?.mode);
@@ -572,14 +564,8 @@ io.on("connection", (socket) => {
   });
 
   // ---- Ping measurement (echo timestamp back) ----
-  // Use volatile so pong isn't queued behind reliable game-events
   socket.on("ping-measure", (ts) => {
-    const serverNow = Date.now();
-    const clientAge = serverNow - ts; // how old the ping is when it arrives (includes one-way network latency + any client delay)
-    if (clientAge > 5000) {
-      console.warn(`[Ping] socket=${socket.id} clientTs=${ts} serverNow=${serverNow} age=${clientAge}ms — client message arrived ${clientAge}ms late`);
-    }
-    socket.volatile.emit("pong-measure", ts);
+    socket.emit("pong-measure", ts);
   });
 
   // ---- Token Refresh (long sessions) ----
@@ -938,11 +924,8 @@ io.on("connection", (socket) => {
         console.warn(`[Server] Failed to save profile on disconnect for ${socket.id}:`, err.message);
       }
     }
-    const p = mainRoom.players.get(socket.id);
-    const readyState = p ? (p._ready ? 'ready' : 'NOT ready') : 'gone';
-    const connAge = p && p._connectTime ? `${((Date.now() - p._connectTime) / 1000).toFixed(1)}s` : '?';
     mainRoom.removePlayer(socket.id);
-    console.log(`[Server] Disconnected: ${socket.id} (${reason}) [${readyState}, age=${connAge}]`);
+    console.log(`[Server] Disconnected: ${socket.id} (${reason})`);
   });
 });
 

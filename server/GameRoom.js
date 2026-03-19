@@ -1025,12 +1025,7 @@ class GameRoom {
     };
 
     this.players.set(socket.id, player);
-    // Don't join room yet — client must send "client-ready" first.
-    // This prevents state broadcasts and game-events from flooding the socket
-    // while the client is still processing the welcome payload.
-    player._ready = false;
-    player._connectTime = Date.now();
-    player._readyTimer = setTimeout(() => this.handleClientReady(socket, true), 5000);
+    socket.join(this.roomId);
 
     this._upsertProfileCache(player, socket.id);
 
@@ -1056,13 +1051,6 @@ class GameRoom {
     });
 
     this._emitTerrainGrid(socket);
-
-    // Log welcome payload size for diagnostics
-    if (this._worldPayload) {
-      const worldJson = JSON.stringify(this._worldPayload);
-      const gridBytes = this.worldGen._blockedGrid ? this.worldGen._blockedGrid.byteLength : 0;
-      console.warn(`[Welcome] payload=${Math.round(worldJson.length / 1024)}KB world + ${Math.round(gridBytes / 1024)}KB grid = ${Math.round((worldJson.length + gridBytes) / 1024)}KB total`);
-    }
 
     // Tell everyone else about the new player (waiting — don't spawn yet)
     socket.to(this.roomId).emit("player-joined", {
@@ -1135,10 +1123,7 @@ class GameRoom {
 
     // Insert into players map under new socket ID
     this.players.set(socket.id, saved);
-    // Don't join room yet — wait for client-ready (same as addPlayer)
-    saved._ready = false;
-    saved._connectTime = Date.now();
-    saved._readyTimer = setTimeout(() => this.handleClientReady(socket, true), 5000);
+    socket.join(this.roomId);
 
     // --- Update all references from oldId to new socket ID ---
 
@@ -1537,7 +1522,6 @@ class GameRoom {
 
     this._markProfileCacheOffline(player);
 
-    if (player._readyTimer) { clearTimeout(player._readyTimer); player._readyTimer = null; }
     this.players.delete(socketId);
     this.resignedPlayers.delete(socketId);
     if (this._playerBotSets) this._playerBotSets.delete(socketId);
@@ -2797,17 +2781,6 @@ class GameRoom {
         break;
       }
     }
-  }
-
-  handleClientReady(socket, fromTimer) {
-    const player = this.players.get(socket.id);
-    if (!player || player._ready) return;
-    if (player._readyTimer) { clearTimeout(player._readyTimer); player._readyTimer = null; }
-    player._ready = true;
-    socket.join(this.roomId);
-    this._sendRosterToPlayer(socket.id);
-    const elapsed = Date.now() - (player._connectTime || Date.now());
-    console.warn(`[Ready] ${socket.id} ready after ${elapsed}ms (${fromTimer ? 'fallback timer' : 'client-ready'})`);
   }
 
   handleViewMode(socketId, mode) {
@@ -4824,7 +4797,6 @@ class GameRoom {
     const orbitalDv = new DataView(orbitalBinaryBuf.buffer, 0, orbitalBinaryBuf.byteLength);
 
     for (const [socketId, player] of this.players) {
-      if (!player._ready) continue;
       if (player._viewMode !== "orbital") continue;
 
       const selfState = playerStates[socketId];
@@ -4868,7 +4840,6 @@ class GameRoom {
     statePayload.opn = undefined;
 
     for (const [socketId, player] of this.players) {
-      if (!player._ready) continue;
       if (player._viewMode === "orbital") continue;
 
       const isCommander = this.commanders[player.faction]?.id === socketId;
@@ -5506,7 +5477,6 @@ class GameRoom {
    */
   _broadcastFactionRosters() {
     for (const [socketId, player] of this.players) {
-      if (!player._ready) continue;
       const roster = this._factionRosters[player.faction];
       if (!roster) continue;
 
