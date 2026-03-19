@@ -565,6 +565,11 @@ io.on("connection", (socket) => {
 
   // ---- Ping measurement (echo timestamp back) ----
   socket.on("ping-measure", (ts) => {
+    const buf = socket.conn?.transport?.writable;
+    const buffered = socket.conn?.bufferedAmount || 0;
+    if (buffered > 100000) {
+      console.warn(`[Ping] socket=${socket.id} buffered=${Math.round(buffered/1024)}KB writable=${buf}`);
+    }
     socket.emit("pong-measure", ts);
   });
 

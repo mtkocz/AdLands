@@ -1052,6 +1052,13 @@ class GameRoom {
 
     this._emitTerrainGrid(socket);
 
+    // Log welcome payload size for diagnostics
+    if (this._worldPayload) {
+      const worldJson = JSON.stringify(this._worldPayload);
+      const gridBytes = this.worldGen._blockedGrid ? this.worldGen._blockedGrid.byteLength : 0;
+      console.warn(`[Welcome] payload=${Math.round(worldJson.length / 1024)}KB world + ${Math.round(gridBytes / 1024)}KB grid = ${Math.round((worldJson.length + gridBytes) / 1024)}KB total`);
+    }
+
     // Tell everyone else about the new player (waiting — don't spawn yet)
     socket.to(this.roomId).emit("player-joined", {
       id: player.id,
@@ -3175,10 +3182,13 @@ class GameRoom {
       const kbps = this._payloadCount ? Math.round(this._payloadByteSum / (n / 10) / 1024 * 10) / 10 : 0;
       const wt = this.botBridge.drainWorkerTiming();
       const workerStr = wt ? ` | worker avg=${wt.avg.toFixed(1)}ms max=${wt.max.toFixed(1)}ms (update=${wt.updateAvg.toFixed(1)} collect=${wt.collectAvg.toFixed(1)}) missed=${wt.missed}/${wt.count + wt.missed}` : '';
-      console.warn(`[Tick] avg=${(this._tickSum/n).toFixed(0)}ms max=${this._tickMax}ms | players=${(p[0]/n).toFixed(0)} guards=${(p[1]/n).toFixed(0)} bots=${(p[2]/n).toFixed(0)} collide=${(p[3]/n).toFixed(0)} proj=${(p[4]/n).toFixed(0)} broadcast=${(p[5]/n).toFixed(0)} | n=${this.botBridge.botCount}bots ${this.players.size}players | payload=${avgBytes}B ${avgEntities}ents ${kbps}KB/s${workerStr}`);
+      const evtAvg = this._eventSum ? Math.round(this._eventSum / n) : 0;
+      const evtMax = this._eventMax || 0;
+      console.warn(`[Tick] avg=${(this._tickSum/n).toFixed(0)}ms max=${this._tickMax}ms | players=${(p[0]/n).toFixed(0)} guards=${(p[1]/n).toFixed(0)} bots=${(p[2]/n).toFixed(0)} collide=${(p[3]/n).toFixed(0)} proj=${(p[4]/n).toFixed(0)} broadcast=${(p[5]/n).toFixed(0)} | n=${this.botBridge.botCount}bots ${this.players.size}players | payload=${avgBytes}B ${avgEntities}ents ${kbps}KB/s | events avg=${evtAvg} max=${evtMax}${workerStr}`);
       this._tickSum = 0; this._tickMax = 0; this._tickCount = 0;
       this._phaseSum = [0,0,0,0,0,0];
       this._payloadByteSum = 0; this._payloadEntitySum = 0; this._payloadCount = 0; this._payloadEmitCount = 0;
+      this._eventSum = 0; this._eventMax = 0;
     }
   }
 
@@ -4014,6 +4024,10 @@ class GameRoom {
 
   _flushTickEvents() {
     if (this._tickEventQueue.length === 0) return;
+    if (!this._eventSum) this._eventSum = 0;
+    if (!this._eventMax) this._eventMax = 0;
+    this._eventSum += this._tickEventQueue.length;
+    this._eventMax = Math.max(this._eventMax, this._tickEventQueue.length);
     this.io.to(this.roomId).emit("game-events", this._tickEventQueue);
     this._tickEventQueue = [];
   }
