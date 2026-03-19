@@ -419,6 +419,11 @@ io.on("connection", (socket) => {
     mainRoom.handleEnterFastTravel(socket.id);
   });
 
+  // ---- Client Ready (client finished processing welcome payload) ----
+  socket.on("client-ready", () => {
+    mainRoom.handleClientReady(socket);
+  });
+
   // ---- View Mode (orbital vs ground — controls spatial filtering) ----
   socket.on("view-mode", (data) => {
     mainRoom.handleViewMode(socket.id, data?.mode);
@@ -567,13 +572,14 @@ io.on("connection", (socket) => {
   });
 
   // ---- Ping measurement (echo timestamp back) ----
+  // Use volatile so pong isn't queued behind reliable game-events
   socket.on("ping-measure", (ts) => {
-    const buf = socket.conn?.transport?.writable;
-    const buffered = socket.conn?.bufferedAmount || 0;
-    if (buffered > 100000) {
-      console.warn(`[Ping] socket=${socket.id} buffered=${Math.round(buffered/1024)}KB writable=${buf}`);
+    const serverNow = Date.now();
+    const clientAge = serverNow - ts; // how old the ping is when it arrives (includes one-way network latency + any client delay)
+    if (clientAge > 5000) {
+      console.warn(`[Ping] socket=${socket.id} clientTs=${ts} serverNow=${serverNow} age=${clientAge}ms — client message arrived ${clientAge}ms late`);
     }
-    socket.emit("pong-measure", ts);
+    socket.volatile.emit("pong-measure", ts);
   });
 
   // ---- Token Refresh (long sessions) ----

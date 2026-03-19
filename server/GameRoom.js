@@ -1025,7 +1025,10 @@ class GameRoom {
     };
 
     this.players.set(socket.id, player);
-    socket.join(this.roomId);
+    // Don't join room yet — client must send "client-ready" first.
+    // This prevents state broadcasts and game-events from flooding the socket
+    // while the client is still processing the welcome payload.
+    player._ready = false;
 
     this._upsertProfileCache(player, socket.id);
 
@@ -1130,7 +1133,8 @@ class GameRoom {
 
     // Insert into players map under new socket ID
     this.players.set(socket.id, saved);
-    socket.join(this.roomId);
+    // Don't join room yet — wait for client-ready (same as addPlayer)
+    saved._ready = false;
 
     // --- Update all references from oldId to new socket ID ---
 
@@ -2788,6 +2792,15 @@ class GameRoom {
         break;
       }
     }
+  }
+
+  handleClientReady(socket) {
+    const player = this.players.get(socket.id);
+    if (!player || player._ready) return;
+    player._ready = true;
+    socket.join(this.roomId);
+    // Send roster now that they're ready
+    this._sendRosterToPlayer(socket.id);
   }
 
   handleViewMode(socketId, mode) {
@@ -4804,6 +4817,7 @@ class GameRoom {
     const orbitalDv = new DataView(orbitalBinaryBuf.buffer, 0, orbitalBinaryBuf.byteLength);
 
     for (const [socketId, player] of this.players) {
+      if (!player._ready) continue;
       if (player._viewMode !== "orbital") continue;
 
       const selfState = playerStates[socketId];
@@ -4847,6 +4861,7 @@ class GameRoom {
     statePayload.opn = undefined;
 
     for (const [socketId, player] of this.players) {
+      if (!player._ready) continue;
       if (player._viewMode === "orbital") continue;
 
       const isCommander = this.commanders[player.faction]?.id === socketId;
@@ -5484,6 +5499,7 @@ class GameRoom {
    */
   _broadcastFactionRosters() {
     for (const [socketId, player] of this.players) {
+      if (!player._ready) continue;
       const roster = this._factionRosters[player.faction];
       if (!roster) continue;
 

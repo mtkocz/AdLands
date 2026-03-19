@@ -428,6 +428,10 @@
           }
         }
       }
+
+      // Signal server that welcome processing is done — server will start
+      // sending state broadcasts and join us to the room for game-events
+      net.socket.emit("client-ready");
     };
 
     // Terrain grid received — pass to tank for server-matching collision checks
