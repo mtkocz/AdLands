@@ -154,8 +154,8 @@ const io = new Server(server, {
   perMessageDeflate: {              // Enable WebSocket compression for large payloads
     threshold: 8192,               // Only compress messages > 8KB (skip per-tick state broadcasts to reduce jitter)
   },
-  pingInterval: 10000,             // How often to check if client is alive
-  pingTimeout: 5000,               // How long to wait for pong before disconnect
+  pingInterval: 15000,             // How often to check if client is alive
+  pingTimeout: 30000,              // How long to wait for pong before disconnect
   maxHttpBufferSize: 50e6,         // 50MB — welcome payload includes base64 sponsor textures
 
 });
