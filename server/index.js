@@ -151,9 +151,12 @@ const io = new Server(server, {
   },
   // Performance tuning
   transports: ["websocket"],       // Skip HTTP long-polling, go straight to WebSocket
-  perMessageDeflate: false,          // Disabled — zlib compression per-socket saturates the libuv thread pool at 100+ players
-  pingInterval: 15000,             // How often to check if client is alive
-  pingTimeout: 30000,              // How long to wait for pong before disconnect
+  perMessageDeflate: {
+    threshold: 65536,              // Only compress messages > 64KB (welcome/reload payloads). Per-tick state (~24KB) skips compression.
+    zlibDeflateOptions: { level: 1 }, // Fastest compression — minimize CPU per message
+  },
+  pingInterval: 25000,             // How often to check if client is alive (25s — gives welcome payload time to transfer)
+  pingTimeout: 60000,              // How long to wait for pong before disconnect (60s — client may be loading textures/world)
   maxHttpBufferSize: 50e6,         // 50MB — welcome payload includes base64 sponsor textures
 
 });
