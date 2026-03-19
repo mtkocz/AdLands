@@ -1029,7 +1029,8 @@ class GameRoom {
     // This prevents state broadcasts and game-events from flooding the socket
     // while the client is still processing the welcome payload.
     player._ready = false;
-    player._readyTimer = setTimeout(() => this.handleClientReady(socket), 5000);
+    player._connectTime = Date.now();
+    player._readyTimer = setTimeout(() => this.handleClientReady(socket, true), 5000);
 
     this._upsertProfileCache(player, socket.id);
 
@@ -1136,7 +1137,8 @@ class GameRoom {
     this.players.set(socket.id, saved);
     // Don't join room yet — wait for client-ready (same as addPlayer)
     saved._ready = false;
-    saved._readyTimer = setTimeout(() => this.handleClientReady(socket), 5000);
+    saved._connectTime = Date.now();
+    saved._readyTimer = setTimeout(() => this.handleClientReady(socket, true), 5000);
 
     // --- Update all references from oldId to new socket ID ---
 
@@ -2797,13 +2799,15 @@ class GameRoom {
     }
   }
 
-  handleClientReady(socket) {
+  handleClientReady(socket, fromTimer) {
     const player = this.players.get(socket.id);
     if (!player || player._ready) return;
     if (player._readyTimer) { clearTimeout(player._readyTimer); player._readyTimer = null; }
     player._ready = true;
     socket.join(this.roomId);
     this._sendRosterToPlayer(socket.id);
+    const elapsed = Date.now() - (player._connectTime || Date.now());
+    console.warn(`[Ready] ${socket.id} ready after ${elapsed}ms (${fromTimer ? 'fallback timer' : 'client-ready'})`);
   }
 
   handleViewMode(socketId, mode) {

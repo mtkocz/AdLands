@@ -938,8 +938,11 @@ io.on("connection", (socket) => {
         console.warn(`[Server] Failed to save profile on disconnect for ${socket.id}:`, err.message);
       }
     }
+    const p = mainRoom.players.get(socket.id);
+    const readyState = p ? (p._ready ? 'ready' : 'NOT ready') : 'gone';
+    const connAge = p && p._connectTime ? `${((Date.now() - p._connectTime) / 1000).toFixed(1)}s` : '?';
     mainRoom.removePlayer(socket.id);
-    console.log(`[Server] Disconnected: ${socket.id} (${reason})`);
+    console.log(`[Server] Disconnected: ${socket.id} (${reason}) [${readyState}, age=${connAge}]`);
   });
 });
 
