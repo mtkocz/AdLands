@@ -4626,8 +4626,9 @@ class GameRoom {
     if (!this._statePayload) this._statePayload = { tick: 0, bg: null, pr: 0, ma: [], sa: [], ba: [], tc: 0, bfc: null, ids: null, names: null, seq: 0, r: 0, rt: 0 };
     const statePayload = this._statePayload;
     statePayload.tick = this.tick;
-    statePayload.ml = mlArr.length > 0 ? mlArr : undefined;
-    statePayload.fl = flArr.length > 0 ? flArr : undefined;
+    // TEMP DISABLED: missile/flare data to isolate ping issue
+    statePayload.ml = undefined;
+    statePayload.fl = undefined;
     statePayload.bg = this.bodyguardManager.getStatesForBroadcast();
     statePayload.pr = this.planetRotation;
     // Per-faction totals (bots + humans) for chat panel headers

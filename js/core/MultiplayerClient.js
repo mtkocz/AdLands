@@ -455,19 +455,18 @@
         if (data.opn) mpState.orbitalPositionNames = data.opn;
       }
 
-      // Sync remote missiles/flares FIRST — before the player loop which can
-      // throw and silently kill everything after it
-      try {
-        if (window.missileSystem) {
-          window.missileSystem.syncFromState(data.ml || [], net.playerId);
-        }
-        if (window.flareSystem) {
-          window.flareSystem.syncFromState(data.fl || [], net.playerId);
-        }
-      } catch (e) {
-        console.error("[MP] syncFromState error:", e);
-        if (window._syncDiag) window._syncDiag.lastErr = e.message;
-      }
+      // TEMP DISABLED: missile/flare sync to isolate ping issue
+      // try {
+      //   if (window.missileSystem) {
+      //     window.missileSystem.syncFromState(data.ml || [], net.playerId);
+      //   }
+      //   if (window.flareSystem) {
+      //     window.flareSystem.syncFromState(data.fl || [], net.playerId);
+      //   }
+      // } catch (e) {
+      //   console.error("[MP] syncFromState error:", e);
+      //   if (window._syncDiag) window._syncDiag.lastErr = e.message;
+      // }
 
       // Track which bots were seen this tick (for cleanup)
       if (!mp._seenBotIds) mp._seenBotIds = new Set();
