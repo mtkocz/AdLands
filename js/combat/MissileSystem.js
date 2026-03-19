@@ -764,6 +764,11 @@ class MissileSystem {
         if (newTargetId && newTargetId !== existing.serverTargetId) {
           existing.serverTargetId = newTargetId;
         }
+        // Update server world position for lightweight interpolation
+        const wx = mlArr[i + 3], wy = mlArr[i + 4], wz = mlArr[i + 5];
+        if (!existing._serverPos) existing._serverPos = new THREE.Vector3();
+        existing._serverPos.set(wx, wy, wz);
+        existing.phase = mlArr[i + 2];
         continue;
       }
 
@@ -1189,6 +1194,63 @@ class MissileSystem {
 
     // Hide mesh when camera is far (orbital view) — simulation still runs
     m.poolItem.group.visible = !farAway;
+
+    // Remote missiles: lightweight visual interpolation toward server position.
+    // No terrain queries, no local target finding — server controls lifecycle.
+    if (m.isRemote && !m._forcedDive) {
+      if (m._serverPos) {
+        // Smoothly interpolate toward server-authoritative position
+        m.position.lerp(m._serverPos, 0.3);
+        // Derive direction from movement for mesh orientation
+        const delta = this._tempVec2.copy(m._serverPos).sub(m.position);
+        if (delta.lengthSq() > 0.0001) {
+          if (!m.direction) m.direction = new THREE.Vector3();
+          m.direction.copy(delta).normalize();
+        }
+      }
+      // Steer visually toward target (flares take priority)
+      if (m.phase >= 1 && m.direction) {
+        let targetPos = null;
+        if (window.flareSystem) {
+          const flares = window.flareSystem.getActiveFlares();
+          let flareDist = Infinity;
+          for (let i = 0; i < flares.length; i++) {
+            const dist = flares[i].position.distanceTo(m.position);
+            if (dist < flareDist && dist <= this.config.searchRadiusMax) {
+              targetPos = flares[i].position;
+              flareDist = dist;
+            }
+          }
+        }
+        if (!targetPos && m.serverTargetId) {
+          const tgt = this._resolveServerTarget(m.serverTargetId);
+          if (tgt) targetPos = tgt.worldPos;
+        }
+        if (targetPos) {
+          const desired = this._tempVec3.copy(targetPos).sub(m.position).normalize();
+          const maxSteer = this.config.turnRate * dt;
+          m.direction.lerp(desired, Math.min(maxSteer, 1.0)).normalize();
+        }
+        // Extrapolate between server syncs
+        const speed = m.phase === 2 ? this.config.missileSpeed * 1.2 * dt60
+                    : this.config.missileSpeed * dt60;
+        m.position.addScaledVector(m.direction, speed);
+      } else if (m.phase === 0 && m.surfaceNormal) {
+        m.launchSpeed += 30 * dt;
+        m.position.addScaledVector(m.surfaceNormal, m.launchSpeed * dt);
+      }
+      m.poolItem.group.position.copy(m.position);
+      if (m.direction) {
+        const lookTarget = this._tempVec2.copy(m.position).add(m.direction);
+        m.poolItem.group.lookAt(lookTarget);
+        m.poolItem.group.quaternion.multiply(this._meshOrientQuat);
+      }
+      if (!farAway && m.phase >= 0) {
+        this._emitAfterburner(m);
+        if (m.phase >= 1) this._emitSmoke(m);
+      }
+      return;
+    }
 
     if (m.phase === 0) {
       // VERTICAL LAUNCH: Rise along surface normal
