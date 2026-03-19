@@ -735,52 +735,48 @@ class MissileSystem {
   }
 
   // State-driven sync: spawn/remove remote missiles based on server state broadcast.
-  // Flat array: [id, factionIdx, phase, theta, phi, targetId, ownerId], stride 7.
+  // Flat array: [id, factionIdx, phase, wx, wy, wz, targetId, ownerId], repeating.
   syncFromState(mlArr, localPlayerId) {
     const FACTIONS = ["rust", "cobalt", "viridian"];
-    const STRIDE = 7;
-    const R = 480;
-    const pr = window._mp?.getPlanetRotation?.() || 0;
-    const cosPR = Math.cos(pr), sinPR = Math.sin(pr);
+    const STRIDE = 8;
 
+    // Runtime diagnostic (check via browser console: window._syncDiag)
     const diag = window._syncDiag || (window._syncDiag = { mlCalls: 0, mlItems: 0, flCalls: 0, flItems: 0, remoteMissiles: 0, remoteFlares: 0, lastErr: null });
     diag.mlCalls++;
     diag.mlItems = mlArr.length / STRIDE;
 
+    // Build set of server missile IDs
     const serverIds = new Set();
     for (let i = 0; i < mlArr.length; i += STRIDE) {
       const id = mlArr[i];
-      const ownerId = mlArr[i + 6];
-      if (ownerId === localPlayerId) continue;
+      const ownerId = mlArr[i + 7];
+      if (ownerId === localPlayerId) continue; // skip own missiles
       serverIds.add(id);
 
+      // Check if we already have a visual for this missile
       let existing = null;
       for (let j = 0; j < this.missiles.length; j++) {
         if (this.missiles[j].serverId === id) { existing = this.missiles[j]; break; }
       }
       if (existing) {
         existing._lastServerSync = performance.now();
-        const newTargetId = mlArr[i + 5] || null;
+        const newTargetId = mlArr[i + 6] || null;
         if (newTargetId && newTargetId !== existing.serverTargetId) {
           existing.serverTargetId = newTargetId;
         }
         continue;
       }
 
+      // Spawn new remote missile visual
       const factionIdx = mlArr[i + 1];
       const faction = FACTIONS[factionIdx] || "rust";
       const poolItem = this._acquirePoolItem(faction);
       if (!poolItem) continue;
 
-      const phase = mlArr[i + 2];
-      const theta = mlArr[i + 3], phi = mlArr[i + 4];
-      const sp = Math.sin(phi), cp = Math.cos(phi);
-      const st = Math.sin(theta), ct = Math.cos(theta);
-      const lift = R + (phase === 0 ? 2 : 8);
-      const lx = lift * sp * st, lz = lift * sp * ct;
-      const wx = lx * cosPR + lz * sinPR, wy = lift * cp, wz = -lx * sinPR + lz * cosPR;
+      const wx = mlArr[i + 3], wy = mlArr[i + 4], wz = mlArr[i + 5];
       const startPos = new THREE.Vector3(wx, wy, wz);
       const surfaceNormal = startPos.clone().normalize();
+      const phase = mlArr[i + 2];
 
       const missile = {
         poolItem,
@@ -788,7 +784,7 @@ class MissileSystem {
         surfaceNormal,
         faction,
         phase: phase,
-        age: phase > 0 ? 1 : 0,
+        age: phase > 0 ? 1 : 0, // skip launch if already cruising
         launchSpeed: 5,
         cruiseAltitude: this.config.cruiseAltitude,
         targetTank: null,
@@ -797,10 +793,11 @@ class MissileSystem {
         isRemote: true,
         ownerFaction: faction,
         serverId: id,
-        serverTargetId: mlArr[i + 5] || null,
+        serverTargetId: mlArr[i + 6] || null,
         shadowBB: null,
       };
 
+      // Initialize direction toward target for late-spawned missiles (already cruising)
       if (phase > 0 && missile.serverTargetId) {
         const tgt = this._resolveServerTarget(missile.serverTargetId);
         if (tgt) {

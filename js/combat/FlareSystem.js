@@ -380,13 +380,10 @@ class FlareSystem {
   }
 
   // State-driven sync: spawn/remove remote flares based on server state broadcast.
-  // Flat array: [id, factionIdx, theta, phi, ownerId], stride 5.
+  // Flat array: [id, factionIdx, wx, wy, wz, ownerId], repeating.
   syncFromState(flArr, localPlayerId) {
     const FACTIONS = ["rust", "cobalt", "viridian"];
-    const STRIDE = 5;
-    const R = 480 + 2;
-    const pr = window._mp?.getPlanetRotation?.() || 0;
-    const cosPR = Math.cos(pr), sinPR = Math.sin(pr);
+    const STRIDE = 6;
 
     const diag = window._syncDiag || (window._syncDiag = { mlCalls: 0, mlItems: 0, flCalls: 0, flItems: 0, remoteMissiles: 0, remoteFlares: 0, lastErr: null });
     diag.flCalls++;
@@ -395,7 +392,7 @@ class FlareSystem {
     const serverIds = new Set();
     for (let i = 0; i < flArr.length; i += STRIDE) {
       const id = flArr[i];
-      const ownerId = flArr[i + 4];
+      const ownerId = flArr[i + 5];
       if (ownerId === localPlayerId) continue;
       serverIds.add(id);
 
@@ -407,11 +404,8 @@ class FlareSystem {
 
       const factionIdx = flArr[i + 1];
       const faction = FACTIONS[factionIdx] || "rust";
-      const theta = flArr[i + 2], phi = flArr[i + 3];
-      const sp = Math.sin(phi), cp = Math.cos(phi);
-      const st = Math.sin(theta), ct = Math.cos(theta);
-      const lx = R * sp * st, lz = R * sp * ct;
-      const pos = new THREE.Vector3(lx * cosPR + lz * sinPR, R * cp, -lx * sinPR + lz * cosPR);
+      const wx = flArr[i + 2], wy = flArr[i + 3], wz = flArr[i + 4];
+      const pos = new THREE.Vector3(wx, wy, wz);
       const normal = pos.clone().normalize();
 
       const flare = this._createFlareVisual(pos, normal, faction, false);

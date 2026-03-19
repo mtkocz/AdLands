@@ -4583,37 +4583,44 @@ class GameRoom {
       state.weld = p.weldingActive ? 1 : 0;
     }
 
-    // -- Active missiles & flares (sphere coords for client sync) --
-    // Flat arrays: missiles = [id, factionIdx, phase, theta, phi, targetId, ownerId], stride 7
-    //              flares   = [id, factionIdx, theta, phi, ownerId], stride 5
-    // Client converts theta/phi to world coords using planetRotation.
+    // -- Active missiles & flares (world positions for client sync) --
+    // Flat arrays: missiles = [id, factionIdx, phase, wx, wy, wz, targetId, ownerId], ...
+    //              flares   = [id, factionIdx, wx, wy, wz, ownerId], ...
+    // Theta/phi are LOCAL sphere coords — rotate by planetRotation (Y-axis) for world space.
+    const R = 480;
     const FACTION_IDX = { rust: 0, cobalt: 1, viridian: 2 };
-    let mlArr;
-    if (this._hasMissiles) {
-      mlArr = [];
-      for (let i = 0; i < this.projectiles.length; i++) {
-        const p = this.projectiles[i];
-        if (p.type !== "missile") continue;
-        mlArr.push(p.id, FACTION_IDX[p.ownerFaction] || 0, p.phase,
-          p.theta, p.phi, p.targetId || "", p.ownerId);
-      }
+    const cosPR = Math.cos(this.planetRotation);
+    const sinPR = Math.sin(this.planetRotation);
+    const mlArr = [];
+    for (let i = 0; i < this.projectiles.length; i++) {
+      const p = this.projectiles[i];
+      if (p.type !== "missile") continue;
+      const sp = Math.sin(p.phi), cp = Math.cos(p.phi);
+      const st = Math.sin(p.theta), ct = Math.cos(p.theta);
+      const lift = R + (p.phase === 0 ? 2 : 8);
+      const lx = lift * sp * st, lz = lift * sp * ct;
+      mlArr.push(p.id, FACTION_IDX[p.ownerFaction] || 0, p.phase,
+        lx * cosPR + lz * sinPR, lift * cp, -lx * sinPR + lz * cosPR,
+        p.targetId || "", p.ownerId);
     }
-    let flArr;
-    if (this.flares.length > 0) {
-      flArr = [];
-      for (let i = 0; i < this.flares.length; i++) {
-        const fl = this.flares[i];
-        flArr.push(fl.id, FACTION_IDX[fl.ownerFaction] || 0,
-          fl.theta, fl.phi, fl.ownerId);
-      }
+    const flArr = [];
+    for (let i = 0; i < this.flares.length; i++) {
+      const fl = this.flares[i];
+      const fsp = Math.sin(fl.phi), fcp = Math.cos(fl.phi);
+      const fst = Math.sin(fl.theta), fct = Math.cos(fl.theta);
+      const fLift = R + 2;
+      const flx = fLift * fsp * fst, flz = fLift * fsp * fct;
+      flArr.push(fl.id, FACTION_IDX[fl.ownerFaction] || 0,
+        flx * cosPR + flz * sinPR, fLift * fcp, -flx * sinPR + flz * cosPR,
+        fl.ownerId);
     }
 
     // -- Celestial data (shared by all clients — computed once) --
     if (!this._statePayload) this._statePayload = { tick: 0, bg: null, pr: 0, ma: [], sa: [], ba: [], tc: 0, bfc: null, ids: null, names: null, seq: 0, r: 0, rt: 0 };
     const statePayload = this._statePayload;
     statePayload.tick = this.tick;
-    statePayload.ml = mlArr || undefined;
-    statePayload.fl = flArr || undefined;
+    statePayload.ml = mlArr.length > 0 ? mlArr : undefined;
+    statePayload.fl = flArr.length > 0 ? flArr : undefined;
     statePayload.bg = this.bodyguardManager.getStatesForBroadcast();
     statePayload.pr = this.planetRotation;
     // Per-faction totals (bots + humans) for chat panel headers
