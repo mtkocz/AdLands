@@ -4807,15 +4807,6 @@ class GameRoom {
         orbitalDv.setUint8(off + 19, (fIdx & 3) | (shield << 2) | (deploy << 3));
       }
 
-      // Track payload size
-      if (!this._payloadEmitCount) { this._payloadByteSum = 0; this._payloadEntitySum = 0; this._payloadCount = 0; this._payloadEmitCount = 0; }
-      this._payloadEmitCount++;
-      if (this._payloadEmitCount % 50 === 0) {
-        this._payloadByteSum += JSON.stringify(statePayload).length + orbitalBinaryBuf.byteLength;
-        this._payloadEntitySum += orbitalIds.length;
-        this._payloadCount++;
-      }
-
       const socket = this.io.sockets.sockets.get(socketId);
       if (socket) {
         socket.volatile.emit("state", statePayload, orbitalBinaryBuf);
@@ -4944,18 +4935,6 @@ class GameRoom {
       statePayload.r = selfState ? (selfState.r || 0) : 0;
       statePayload.rt = selfState ? (selfState.rt || 0) : 0;
 
-      // Track payload size for bandwidth monitoring (sample every 50th emit)
-      if (!this._payloadByteSum) this._payloadByteSum = 0;
-      if (!this._payloadEntitySum) this._payloadEntitySum = 0;
-      if (!this._payloadCount) this._payloadCount = 0;
-      if (!this._payloadEmitCount) this._payloadEmitCount = 0;
-      this._payloadEmitCount++;
-      if (this._payloadEmitCount % 50 === 0) {
-        this._payloadByteSum += JSON.stringify(statePayload).length + binaryBuf.byteLength;
-        this._payloadEntitySum += entityCount;
-        this._payloadCount++;
-      }
-
       const socket = this.io.sockets.sockets.get(socketId);
       if (socket) {
         socket.volatile.emit("state", statePayload, binaryBuf);
@@ -4965,6 +4944,17 @@ class GameRoom {
     // Restore orbital data on shared payload (for next tick's op computation)
     statePayload.op = savedOp;
     statePayload.opn = savedOpn;
+
+    // Lightweight payload size tracking (once per tick, no JSON.stringify)
+    if (!this._payloadEmitCount) { this._payloadByteSum = 0; this._payloadEntitySum = 0; this._payloadCount = 0; this._payloadEmitCount = 0; }
+    this._payloadEmitCount++;
+    if (this._payloadEmitCount % 10 === 0) {
+      const entityCount = Object.keys(playerStates).length;
+      const estimatedBytes = entityCount * 80 + (statePayload.missiles ? statePayload.missiles.length * 60 : 0) + (statePayload.flares ? statePayload.flares.length * 40 : 0);
+      this._payloadByteSum += estimatedBytes;
+      this._payloadEntitySum += entityCount;
+      this._payloadCount++;
+    }
   }
 
   _getAllPlayerStates() {
