@@ -389,6 +389,8 @@ class FlareSystem {
     diag.flCalls++;
     diag.flItems = flArr.length / STRIDE;
 
+    if (!this._flareIndex) this._flareIndex = new Map();
+
     const serverIds = new Set();
     for (let i = 0; i < flArr.length; i += STRIDE) {
       const id = flArr[i];
@@ -396,11 +398,7 @@ class FlareSystem {
       if (ownerId === localPlayerId) continue;
       serverIds.add(id);
 
-      let found = false;
-      for (let j = 0; j < this.flares.length; j++) {
-        if (this.flares[j].serverId === id) { found = true; break; }
-      }
-      if (found) continue;
+      if (this._flareIndex.has(id)) continue;
 
       const factionIdx = flArr[i + 1];
       const faction = FACTIONS[factionIdx] || "rust";
@@ -412,9 +410,9 @@ class FlareSystem {
       flare.serverId = id;
       flare.ownerId = ownerId;
       this.flares.push(flare);
+      this._flareIndex.set(id, flare);
     }
 
-    // Remove remote flares no longer tracked by server
     for (let i = this.flares.length - 1; i >= 0; i--) {
       const f = this.flares[i];
       if (f.isLocal || f.serverId == null) continue;
@@ -424,10 +422,10 @@ class FlareSystem {
           f.shadowBB.age = f.age;
           this._orphanedShadows.push(f.shadowBB);
         }
+        this._flareIndex.delete(f.serverId);
         this.flares.splice(i, 1);
       }
     }
-    diag.remoteFlares = this.flares.filter(f => !f.isLocal).length;
   }
 
   // ---- Spawn a remote flare ----
@@ -485,11 +483,11 @@ class FlareSystem {
 
       if (f.age >= f.maxAge) {
         this._releaseMesh(f.meshItem);
-        // Orphan billboard to finish its animation
         if (f.shadowBB) {
           f.shadowBB.age = f.age;
           this._orphanedShadows.push(f.shadowBB);
         }
+        if (this._flareIndex && f.serverId != null) this._flareIndex.delete(f.serverId);
         this.flares.splice(i, 1);
         continue;
       }
@@ -733,6 +731,7 @@ class FlareSystem {
         f.shadowBB.age = f.age;
         this._orphanedShadows.push(f.shadowBB);
       }
+      if (this._flareIndex && f.serverId != null) this._flareIndex.delete(f.serverId);
       this.flares.splice(idx, 1);
     }
   }
@@ -746,6 +745,7 @@ class FlareSystem {
         f.shadowBB.age = f.age;
         this._orphanedShadows.push(f.shadowBB);
       }
+      if (this._flareIndex && f.serverId != null) this._flareIndex.delete(f.serverId);
       this.flares.splice(idx, 1);
     }
   }

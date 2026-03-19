@@ -489,10 +489,7 @@ class CannonSystem {
    * @param {THREE.Vector3} position - World position of the dead tank
    */
   spawnOilPuddle(position) {
-    if (!this.planet || this.isOrbitalView) {
-      console.warn("[OIL PUDDLE] Planet not set");
-      return;
-    }
+    if (!this.planet || this.isOrbitalView) return;
 
     const cfg = this.oilPuddleConfig;
 

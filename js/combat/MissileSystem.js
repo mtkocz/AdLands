@@ -740,24 +740,20 @@ class MissileSystem {
     const FACTIONS = ["rust", "cobalt", "viridian"];
     const STRIDE = 8;
 
-    // Runtime diagnostic (check via browser console: window._syncDiag)
     const diag = window._syncDiag || (window._syncDiag = { mlCalls: 0, mlItems: 0, flCalls: 0, flItems: 0, remoteMissiles: 0, remoteFlares: 0, lastErr: null });
     diag.mlCalls++;
     diag.mlItems = mlArr.length / STRIDE;
 
-    // Build set of server missile IDs
+    if (!this._missileIndex) this._missileIndex = new Map();
+
     const serverIds = new Set();
     for (let i = 0; i < mlArr.length; i += STRIDE) {
       const id = mlArr[i];
       const ownerId = mlArr[i + 7];
-      if (ownerId === localPlayerId) continue; // skip own missiles
+      if (ownerId === localPlayerId) continue;
       serverIds.add(id);
 
-      // Check if we already have a visual for this missile
-      let existing = null;
-      for (let j = 0; j < this.missiles.length; j++) {
-        if (this.missiles[j].serverId === id) { existing = this.missiles[j]; break; }
-      }
+      const existing = this._missileIndex.get(id) || null;
       if (existing) {
         existing._lastServerSync = performance.now();
         const newTargetId = mlArr[i + 6] || null;
@@ -811,12 +807,10 @@ class MissileSystem {
       }
 
       this.missiles.push(missile);
+      this._missileIndex.set(id, missile);
       poolItem.group.position.copy(startPos);
     }
 
-    // Remove remote missile visuals that the server no longer tracks.
-    // Grace period: wait 500ms before removal so event handlers
-    // (forceDiveToPoint via player-hit) have time to claim the missile.
     const now = performance.now();
     for (let i = this.missiles.length - 1; i >= 0; i--) {
       const m = this.missiles[i];
@@ -831,12 +825,12 @@ class MissileSystem {
           m.shadowBB.age = m.age;
           this.flareSystem._orphanedShadows.push(m.shadowBB);
         }
+        this._missileIndex.delete(m.serverId);
         this.missiles.splice(i, 1);
       } else {
         m._serverGone = null;
       }
     }
-    diag.remoteMissiles = this.missiles.filter(m => m.isRemote).length;
   }
 
   assignServerIdToLocal(serverId) {
@@ -1007,6 +1001,7 @@ class MissileSystem {
           m.shadowBB.age = m.age;
           this.flareSystem._orphanedShadows.push(m.shadowBB);
         }
+        if (this._missileIndex && m.serverId != null) this._missileIndex.delete(m.serverId);
         this.missiles.splice(i, 1);
         continue;
       }
@@ -1020,6 +1015,7 @@ class MissileSystem {
       // NaN position guard — destroy corrupted missiles
       if (isNaN(m.position.x)) {
         if (m.poolItem) this._releasePoolItem(m.poolItem);
+        if (this._missileIndex && m.serverId != null) this._missileIndex.delete(m.serverId);
         this.missiles.splice(i, 1);
         continue;
       }
@@ -1580,6 +1576,7 @@ class MissileSystem {
     }
 
     if (m.poolItem) this._releasePoolItem(m.poolItem);
+    if (this._missileIndex && m.serverId != null) this._missileIndex.delete(m.serverId);
     this.missiles.splice(index, 1);
   }
 
