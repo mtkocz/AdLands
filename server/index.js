@@ -151,9 +151,7 @@ const io = new Server(server, {
   },
   // Performance tuning
   transports: ["websocket"],       // Skip HTTP long-polling, go straight to WebSocket
-  perMessageDeflate: {              // Enable WebSocket compression for large payloads
-    threshold: 8192,               // Only compress messages > 8KB (skip per-tick state broadcasts to reduce jitter)
-  },
+  perMessageDeflate: false,          // Disabled — zlib compression per-socket saturates the libuv thread pool at 100+ players
   pingInterval: 15000,             // How often to check if client is alive
   pingTimeout: 30000,              // How long to wait for pong before disconnect
   maxHttpBufferSize: 50e6,         // 50MB — welcome payload includes base64 sponsor textures

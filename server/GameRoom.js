@@ -4729,7 +4729,13 @@ class GameRoom {
 
     // Collect all human player IDs into an array for fast iteration
     const humanIds = [];
-    for (const [id] of this.players) humanIds.push(id);
+    if (!this._humanIdIndex) this._humanIdIndex = new Map();
+    const humanIdIndex = this._humanIdIndex;
+    humanIdIndex.clear();
+    for (const [id] of this.players) {
+      humanIdIndex.set(id, humanIds.length);
+      humanIds.push(id);
+    }
 
     // Save orbital data references for per-player toggling
     const savedOp = statePayload.op;
@@ -4792,7 +4798,7 @@ class GameRoom {
       statePayload.rt = selfState ? (selfState.rt || 0) : 0;
 
       // Patch self-state in orbital buffer with full precision (20 bytes at known offset)
-      const selfIdx = humanIds.indexOf(socketId);
+      const selfIdx = humanIdIndex.has(socketId) ? humanIdIndex.get(socketId) : -1;
       if (selfIdx >= 0) {
         const off = selfIdx * ENTITY_STRIDE;
         orbitalDv.setFloat32(off, player.theta, true);
