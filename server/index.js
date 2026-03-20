@@ -153,11 +153,9 @@ const io = new Server(server, {
   transports: ["websocket"],       // Skip HTTP long-polling, go straight to WebSocket
   perMessageDeflate: {
     threshold: 8192,
-    zlibDeflateOptions: { level: 1 },
-    serverNoContextTakeover: true,     // Don't reuse zlib context — prevents memory accumulation and GC spikes
   },
-  pingInterval: 25000,             // How often to check if client is alive
-  pingTimeout: 20000,              // How long to wait for pong before disconnect
+  pingInterval: 10000,             // How often to check if client is alive
+  pingTimeout: 10000,              // How long to wait for pong before disconnect
   maxHttpBufferSize: 50e6,         // 50MB — welcome payload includes base64 sponsor textures
 
 });
