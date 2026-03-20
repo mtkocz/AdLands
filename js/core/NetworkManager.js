@@ -150,12 +150,6 @@ class NetworkManager {
       const alpha = 0.15;
       this.smoothPing = this.smoothPing * (1 - alpha) + rawPing * alpha;
       this.jitter = this.jitter * (1 - alpha) + Math.abs(rawPing - this.smoothPing) * alpha;
-      // DIAG: log every pong to understand ping behavior
-      if (!this._pongCount) this._pongCount = 0;
-      this._pongCount++;
-      if (this._pongCount <= 20 || rawPing > 500) {
-        console.warn(`[PONG] #${this._pongCount} raw=${rawPing}ms transport=${this.socket?.io?.engine?.transport?.name}`);
-      }
     });
 
     this.socket.on("reconnect", () => {

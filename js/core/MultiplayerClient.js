@@ -446,10 +446,6 @@
     };
 
     net.onStateUpdate = (data) => {
-      // DIAG: measure state handler duration
-      const _diagStart = performance.now();
-      if (!window._stateDiag) window._stateDiag = { count: 0, totalMs: 0, maxMs: 0, spawnCount: 0, queueDepth: 0 };
-
       // Store server-authoritative population counts on _mpState (read by main.js)
       const mpState = window._mpState;
       if (mpState) {
@@ -536,7 +532,6 @@
         // Lazy-spawn bots that entered the spatial filter radius
         let remoteTank = remoteTanks.get(id);
         if (!remoteTank && id.startsWith("bot-") && state.d !== 1) {
-          if (window._stateDiag) window._stateDiag.spawnCount++;
           spawnRemoteTank({
             id, name: state.n || id.slice(4),
             faction: state.f, theta: state.t, phi: state.p,
@@ -902,16 +897,6 @@
         });
       }
 
-      // DIAG: log state handler duration every 100 ticks
-      const _diagMs = performance.now() - _diagStart;
-      const sd = window._stateDiag;
-      sd.count++;
-      sd.totalMs += _diagMs;
-      if (_diagMs > sd.maxMs) sd.maxMs = _diagMs;
-      if (sd.count % 100 === 0) {
-        console.warn(`[STATE DIAG] avg=${(sd.totalMs/sd.count).toFixed(1)}ms max=${sd.maxMs.toFixed(1)}ms spawns=${sd.spawnCount} | remoteTanks=${remoteTanks.size}`);
-        sd.count = 0; sd.totalMs = 0; sd.maxMs = 0; sd.spawnCount = 0;
-      }
     };
 
     net.onPlayerFired = (data) => {
