@@ -2299,7 +2299,6 @@ class GameRoom {
   // ---- Missile Fire ----
 
   handleMissileFire(socketId, fireTurretAngle, searchRadius) {
-    return; // TEMP DISABLED: isolating ping issue
     const player = this.players.get(socketId);
     if (!player || this._isUndeployed(player)) return;
 
@@ -2635,7 +2634,6 @@ class GameRoom {
   // ---- Flare countermeasure system ----
 
   handleFlareFire(socketId) {
-    return; // TEMP DISABLED: isolating ping issue
     const player = this.players.get(socketId);
     if (!player || this._isUndeployed(player) || player.isDead) return;
 
@@ -4628,9 +4626,8 @@ class GameRoom {
     if (!this._statePayload) this._statePayload = { tick: 0, bg: null, pr: 0, ma: [], sa: [], ba: [], tc: 0, bfc: null, ids: null, names: null, seq: 0, r: 0, rt: 0 };
     const statePayload = this._statePayload;
     statePayload.tick = this.tick;
-    // TEMP DISABLED: missile/flare data to isolate ping issue
-    statePayload.ml = undefined;
-    statePayload.fl = undefined;
+    statePayload.ml = mlArr.length > 0 ? mlArr : undefined;
+    statePayload.fl = flArr.length > 0 ? flArr : undefined;
     statePayload.bg = this.bodyguardManager.getStatesForBroadcast();
     statePayload.pr = this.planetRotation;
     // Per-faction totals (bots + humans) for chat panel headers
