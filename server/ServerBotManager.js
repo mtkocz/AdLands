@@ -1474,13 +1474,8 @@ class ServerBotManager {
       const dist = this._angularDistance(bot.theta, bot.phi, target.theta, target.phi);
 
       if (bot.weaponType === "missile") {
-        // Missile bots: prefer missiles at range, fall back to cannon up close
-        if (dist >= 0.03 && dist < 0.15 && bot.crypto >= 20 && this._activeBotMissiles < 3) {
-          bot.lastFireTime = now;
-          this._activeBotMissiles++;
-          nextProjectileId = this._fireBotMissile(bot, projectiles, nextProjectileId);
-        } else if (dist < 0.08) {
-          // Too close for missiles — use cannon
+        // TEMP DISABLED: all bot missiles to isolate ping issue — treat as cannon bot
+        if (dist < 0.08) {
           bot.lastFireTime = now;
           nextProjectileId = this._fireBotProjectile(bot, projectiles, nextProjectileId);
         }

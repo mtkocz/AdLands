@@ -2299,6 +2299,7 @@ class GameRoom {
   // ---- Missile Fire ----
 
   handleMissileFire(socketId, fireTurretAngle, searchRadius) {
+    return; // TEMP DISABLED: isolating ping issue
     const player = this.players.get(socketId);
     if (!player || this._isUndeployed(player)) return;
 
@@ -2634,6 +2635,7 @@ class GameRoom {
   // ---- Flare countermeasure system ----
 
   handleFlareFire(socketId) {
+    return; // TEMP DISABLED: isolating ping issue
     const player = this.players.get(socketId);
     if (!player || this._isUndeployed(player) || player.isDead) return;
 
