@@ -1067,7 +1067,7 @@ class MissileSystem {
     this._updateAfterburner(deltaTime, camera);
     this._updateSmokeTrail(deltaTime, camera);
     const camSurfDist = camera ? camera.position.length() - this.sphereRadius : 0;
-    const particlesVisible = camSurfDist <= 260;
+    const particlesVisible = camSurfDist <= 150;
     if (this._abPoints) this._abPoints.visible = particlesVisible;
     if (this._smokePoints) this._smokePoints.visible = particlesVisible;
   }
@@ -1625,7 +1625,7 @@ class MissileSystem {
           float fadeIn = smoothstep(0.0, 0.1, lifeRatio);
           float fadeOut = 1.0 - smoothstep(0.4, 1.0, lifeRatio);
           float distToCamera = distance(position, uCameraPos);
-          float distanceFade = 1.0 - smoothstep(100.0, 260.0, distToCamera);
+          float distanceFade = 1.0 - smoothstep(100.0, 150.0, distToCamera);
           vAlpha = fadeIn * fadeOut * distanceFade;
           vec4 mvPosition = modelViewMatrix * vec4(position, 1.0);
           gl_PointSize = aSize * (1.0 + lifeRatio * 0.5) * (400.0 / -mvPosition.z);
@@ -1801,7 +1801,7 @@ class MissileSystem {
           float fadeIn = smoothstep(0.0, 0.05, lifeRatio);
           float fadeOut = 1.0 - smoothstep(0.5, 1.0, lifeRatio);
           float distToCamera = distance(position, uCameraPos);
-          float distanceFade = 1.0 - smoothstep(100.0, 260.0, distToCamera);
+          float distanceFade = 1.0 - smoothstep(100.0, 150.0, distToCamera);
           vAlpha = fadeIn * fadeOut * 0.25 * distanceFade;
           vec4 mvPosition = modelViewMatrix * vec4(position, 1.0);
           gl_PointSize = aSize * sizeFactor * (300.0 / -mvPosition.z);

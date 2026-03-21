@@ -118,9 +118,9 @@ class Environment {
     // These fade IN when zooming out, fade OUT when close to surface
     this.spaceObjectVisibility = {
       // Camera height above surface thresholds
-      fadeInStart: 200, // Start fading in at 200 units above surface
-      fadeInEnd: 260, // Fully visible at 260 units above surface
-      cutoffDistance: 200, // Completely hidden below 200 units
+      fadeInStart: 180, // Start fading in at 180 units above surface
+      fadeInEnd: 220, // Fully visible at 220 units above surface
+      cutoffDistance: 180, // Completely hidden below 180 units
 
       // Per-object distance culling (camera to object)
       maxRenderDistance: 8000, // Don't render objects beyond this

@@ -291,9 +291,9 @@ class TankDamageEffects {
                     vRotation = aRotation;
                     vWorldPosition = position;
 
-                    // Distance-based fade (invisible beyond 260 units)
+                    // Distance-based fade (invisible beyond 100 units)
                     float distToCamera = distance(position, uCameraPos);
-                    float distanceFade = 1.0 - smoothstep(100.0, 260.0, distToCamera);
+                    float distanceFade = 1.0 - smoothstep(80.0, 100.0, distToCamera);
 
                     // Fade in quickly, smoother fade out (missile-style)
                     float fadeIn = smoothstep(0.0, 0.05, lifeRatio);
@@ -556,7 +556,7 @@ class TankDamageEffects {
                     float fadeIn = smoothstep(0.0, 0.1, lifeRatio);
                     float fadeOut = 1.0 - smoothstep(0.4, 1.0, lifeRatio);
                     float distToCamera = distance(position, uCameraPos);
-                    float distanceFade = 1.0 - smoothstep(100.0, 260.0, distToCamera);
+                    float distanceFade = 1.0 - smoothstep(80.0, 100.0, distToCamera);
                     vAlpha = fadeIn * fadeOut * distanceFade;
                     vec4 mvPosition = modelViewMatrix * vec4(position, 1.0);
                     gl_PointSize = aSize * (1.0 + lifeRatio * 0.5) * (400.0 / -mvPosition.z);

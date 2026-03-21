@@ -24,8 +24,8 @@ const HEADLIGHT_FLICKER = {
   SPOT_ANGLE: 0.22, // ~12.5° half-angle, matches sprite cone
   SPOT_PENUMBRA: 0.6,
   // Camera distance fade (surface distance in units)
-  FADE_THRESHOLD: 260,
-  FADE_RANGE: 40, // smooth fade zone (240–280 from surface)
+  FADE_THRESHOLD: 100,
+  FADE_RANGE: 40, // smooth fade zone (80–120 from surface)
 };
 
 function _randomRange(min, max) {

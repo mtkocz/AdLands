@@ -269,7 +269,7 @@ class WeldingGunSystem {
 
     // Distance culling — hide everything beyond surface combat range
     const camDist = camera ? camera.position.length() - this.R : 0;
-    if (camDist > 260) {
+    if (camDist > 100) {
       this.hideAll();
       this._updateSparks(dt);
       this._updateSmoke(dt);

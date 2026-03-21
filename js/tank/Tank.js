@@ -1863,7 +1863,7 @@ Tank.updateTankLOD = function (
   const boundingSphere = temp.boundingSphere;
 
   // LOD thresholds
-  const LOD_DISTANCE = 260;
+  const LOD_DISTANCE = 200;
   const MIN_SCREENSPACE = 2;
 
   // Get tank world position
@@ -1876,7 +1876,7 @@ Tank.updateTankLOD = function (
   const dotProduct = surfaceNormal.dot(cameraToTank);
 
   // Threshold varies: more lenient for close tanks
-  const backfaceThreshold = distanceToCamera > 260 ? 0.15 : 0.3;
+  const backfaceThreshold = distanceToCamera > 200 ? 0.15 : 0.3;
   if (dotProduct > backfaceThreshold) {
     tank.group.visible = false;
     tank._lodState = -1;

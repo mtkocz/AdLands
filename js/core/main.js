@@ -13,6 +13,11 @@
   const CONFIG = {
     sphereRadius: 480,
     dayNightCycleMinutes: 30,
+    lodBands: {
+      far: 200,   // Band 1: tank meshes, cannon LOD, server viewMode
+      mid: 150,   // Band 2: particle systems (dust, missiles, flares)
+      near: 100,  // Band 3: fine details (headlights, shields, tracks)
+    },
     bloom: {
       strength: 3,
       radius: 1.2,
@@ -4001,15 +4006,17 @@
     const isOrbitalView =
       gameCamera.mode === "orbital" || gameCamera.mode === "fastTravel" ||
       (gameCamera.transitioning && (gameCamera.transitionType === "toOrbital" || gameCamera.transitionType === "toFastTravel"));
-    // Distance-based cutoff for visual effects (260 units from surface)
+    // Distance-based LOD bands for visual effects (staggered to avoid single-frame spike)
     const cameraSurfaceDist = camera.position.length() - CONFIG.sphereRadius;
-    const isFarView = cameraSurfaceDist > 260;
+    const isFarView = cameraSurfaceDist > CONFIG.lodBands.far;
+    const isMidView = cameraSurfaceDist > CONFIG.lodBands.mid;
+    const isNearView = cameraSurfaceDist > CONFIG.lodBands.near;
     if (!fastTravel.active) {
       tank.setControlsEnabled(!isOrbitalView);
     }
 
     // Notify server of view mode transitions so it can skip spatial filtering.
-    // Switch to "ground" early when camera swoops below 260 units (even during
+    // Switch to "ground" early when camera swoops below 200 units (even during
     // fastTravel→surface transition) so the server starts sending nearby bots
     // before deployment completes — tanks are visible as the camera arrives.
     if (window.networkManager?.connected) {
@@ -4120,29 +4127,30 @@
     missileSystem.setMissileEquipped(isMissileActive);
 
     // Update cannon charging, projectiles, and combat effects
-    // All surface effects use 260-unit distance cutoff (isFarView)
-    cannonSystem.isOrbitalView = isFarView; // LOD explosion decisions
+    // Band FAR (200 units): tank meshes + cannon effects
+    cannonSystem.isOrbitalView = isFarView;
     if (!isFarView) {
       cannonSystem.updateCharge(deltaTime, tank, playerFaction);
     }
     cannonSystem.update(deltaTime, sharedFrustum, isFarView);
     missileSystem.hideReticle = isFarView || !hasSpawnedIn || tank.isDead;
-    missileSystem.update(deltaTime, sharedFrustum, camera);  // has own 400-unit distance cull
-    flareSystem.update(deltaTime, camera);                    // has own 400-unit distance cull
+    missileSystem.update(deltaTime, sharedFrustum, camera);
+    flareSystem.update(deltaTime, camera);
 
-    // Update visual effects — systems with own distance fade run always for cleanup
-    capturePulse.update(deltaTime, sharedFrustum, camera);   // has own 260-unit distance cull
+    // Band MID (150 units): particle systems (own distance culling for cleanup)
+    capturePulse.update(deltaTime, sharedFrustum, camera);
     cryptoVisuals.update(deltaTime);
-    tankHeadlights.update(deltaTime, camera);  // has own 260-unit distance fade
-    dustShockwave.update(deltaTime, sharedFrustum, isFarView);
-    if (!isFarView) {
-      treadTracks.update(tank, deltaTime, camera, isFarView, sharedFrustum);
-      treadDust.update(deltaTime, camera, isFarView, sharedFrustum);
+    dustShockwave.update(deltaTime, sharedFrustum, isMidView);
+
+    // Band NEAR (100 units): fine details
+    tankHeadlights.update(deltaTime, camera);
+    if (!isNearView) {
+      treadTracks.update(tank, deltaTime, camera, isNearView, sharedFrustum);
+      treadDust.update(deltaTime, camera, isNearView, sharedFrustum);
       tankDamageEffects.update(deltaTime, sharedFrustum, camera);
       shieldHolosphere.update(deltaTime);
       tankCollision.update(deltaTime, sharedFrustum, camera);
     } else {
-      // Hide particle Points meshes to avoid zero-opacity draw calls
       tankDamageEffects.setVisible(false);
       tankCollision.setVisible(false);
     }

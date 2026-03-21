@@ -283,7 +283,7 @@ class CapturePulse {
     if (camera) camera.getWorldPosition(_cpCameraPos);
 
     // Hide all waves when camera is too far (e.g. orbital view)
-    if (camera && _cpCameraPos.length() - this.sphereRadius > 260) {
+    if (camera && _cpCameraPos.length() - this.sphereRadius > 150) {
       for (let i = 0; i < this.waves.length; i++) this.waves[i].mesh.visible = false;
       return;
     }

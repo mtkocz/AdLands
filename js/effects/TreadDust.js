@@ -328,7 +328,7 @@ class TreadDust {
         },
         uCameraPos: { value: new THREE.Vector3() },
         uFadeStart: { value: 100.0 }, // Start fading at this distance
-        uFadeEnd: { value: 260.0 }, // Fully invisible at this distance
+        uFadeEnd: { value: 150.0 }, // Fully invisible at this distance
         // Lighting uniforms for subtle tinting
         uSunColor: { value: new THREE.Vector3(1.0, 0.85, 0.72) }, // 0xffd9b7
         uSunDirection: { value: new THREE.Vector3(1, 0, 0) },

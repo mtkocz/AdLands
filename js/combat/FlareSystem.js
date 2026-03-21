@@ -79,7 +79,7 @@ class FlareSystem {
           float fadeIn = smoothstep(0.0, 0.1, lifeRatio);
           float fadeOut = 1.0 - smoothstep(0.4, 1.0, lifeRatio);
           float distToCamera = distance(position, uCameraPos);
-          float distanceFade = 1.0 - smoothstep(100.0, 260.0, distToCamera);
+          float distanceFade = 1.0 - smoothstep(100.0, 150.0, distToCamera);
           vAlpha = fadeIn * fadeOut * distanceFade;
           vec4 mvPosition = modelViewMatrix * vec4(position, 1.0);
           gl_PointSize = aSize * (1.0 + lifeRatio * 0.5) * (400.0 / -mvPosition.z);
@@ -169,7 +169,7 @@ class FlareSystem {
           float fadeIn = smoothstep(0.0, 0.05, lifeRatio);
           float fadeOut = 1.0 - smoothstep(0.5, 1.0, lifeRatio);
           float distToCamera = distance(position, uCameraPos);
-          float distanceFade = 1.0 - smoothstep(100.0, 260.0, distToCamera);
+          float distanceFade = 1.0 - smoothstep(100.0, 150.0, distToCamera);
           vAlpha = fadeIn * fadeOut * 0.45 * distanceFade;
           vec4 mvPosition = modelViewMatrix * vec4(position, 1.0);
           gl_PointSize = aSize * sizeFactor * (300.0 / -mvPosition.z);
@@ -554,7 +554,7 @@ class FlareSystem {
 
     // Update both particle systems — skip entirely when camera beyond 260 from surface
     const camSurfDist = camPos ? camPos.length() - this.R : 0;
-    const farCamera = camSurfDist > 260;
+    const farCamera = camSurfDist > 150;
     const hasFireParticles = !farCamera && (anyVisible || this._fire.activeCount > 0);
     const hasSmokeParticles = !farCamera && (anyVisible || this._smoke.activeCount > 0);
 

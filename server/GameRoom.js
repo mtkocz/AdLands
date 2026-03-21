@@ -2177,7 +2177,14 @@ class GameRoom {
 
   handleInput(socketId, input) {
     const player = this.players.get(socketId);
-    if (!player || this._isUndeployed(player)) return;
+    if (!player) return;
+
+    // Always update ping timestamp, even when undeployed
+    if (typeof input.pt === "number") {
+      player._pingTs = input.pt;
+    }
+
+    if (this._isUndeployed(player)) return;
 
     // Validate and apply input (don't trust client positions, only keys)
     if (input.keys) {
@@ -2205,10 +2212,6 @@ class GameRoom {
       player.lastInputSeq = input.seq;
     }
 
-    // Store ping timestamp for echo in state broadcast
-    if (typeof input.pt === "number") {
-      player._pingTs = input.pt;
-    }
   }
 
   handleFire(socketId, power, fireTurretAngle) {
@@ -4809,6 +4812,7 @@ class GameRoom {
       statePayload.r = selfState ? (selfState.r || 0) : 0;
       statePayload.rt = selfState ? (selfState.rt || 0) : 0;
       statePayload.pt = player._pingTs || 0;
+      player._pingTs = 0;
 
       // Patch self-state in orbital buffer with full precision (20 bytes at known offset)
       const selfIdx = humanIdIndex.has(socketId) ? humanIdIndex.get(socketId) : -1;
@@ -4954,6 +4958,7 @@ class GameRoom {
       statePayload.r = selfState ? (selfState.r || 0) : 0;
       statePayload.rt = selfState ? (selfState.rt || 0) : 0;
       statePayload.pt = player._pingTs || 0;
+      player._pingTs = 0;
 
       const socket = this.io.sockets.sockets.get(socketId);
       if (socket) {
