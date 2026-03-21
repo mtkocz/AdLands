@@ -565,11 +565,6 @@ io.on("connection", (socket) => {
     }
   });
 
-  // ---- Ping measurement (echo timestamp back) ----
-  socket.on("ping-measure", (ts) => {
-    socket.emit("pong-measure", ts);
-  });
-
   // ---- Token Refresh (long sessions) ----
   socket.on("refresh-token", async (token) => {
     const decoded = await verifyToken(token);

@@ -2204,6 +2204,11 @@ class GameRoom {
     if (typeof input.seq === "number") {
       player.lastInputSeq = input.seq;
     }
+
+    // Store ping timestamp for echo in state broadcast
+    if (typeof input.pt === "number") {
+      player._pingTs = input.pt;
+    }
   }
 
   handleFire(socketId, power, fireTurretAngle) {
@@ -4803,6 +4808,7 @@ class GameRoom {
       statePayload.seq = selfState ? selfState.seq : 0;
       statePayload.r = selfState ? (selfState.r || 0) : 0;
       statePayload.rt = selfState ? (selfState.rt || 0) : 0;
+      statePayload.pt = player._pingTs || 0;
 
       // Patch self-state in orbital buffer with full precision (20 bytes at known offset)
       const selfIdx = humanIdIndex.has(socketId) ? humanIdIndex.get(socketId) : -1;
@@ -4947,6 +4953,7 @@ class GameRoom {
       statePayload.seq = selfState ? selfState.seq : 0;
       statePayload.r = selfState ? (selfState.r || 0) : 0;
       statePayload.rt = selfState ? (selfState.rt || 0) : 0;
+      statePayload.pt = player._pingTs || 0;
 
       const socket = this.io.sockets.sockets.get(socketId);
       if (socket) {

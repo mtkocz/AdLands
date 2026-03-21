@@ -38,7 +38,6 @@ class NetworkManager {
     this.ping = 0;           // latest raw round-trip time in ms
     this.smoothPing = 50;    // exponential moving average of ping
     this.jitter = 0;         // exponential moving average of ping variance
-    this._pingInterval = null;
 
     // Server state for reconciliation
     this.lastServerState = null;
@@ -119,13 +118,13 @@ class NetworkManager {
     this.socket.on("connect", () => {
       this.connected = true;
       this.playerId = this.socket.id;
-      // Start ping measurement (every 2s)
-      this._startPing();
+      this.ping = 0;
+      this.smoothPing = 50;
     });
 
     this.socket.on("disconnect", (reason) => {
       this.connected = false;
-      this._stopPing();
+      this.ping = 0;
     });
 
     this.socket.on("connect_error", (err) => {
@@ -143,14 +142,7 @@ class NetworkManager {
       }
     });
 
-    // Ping response from server
-    this.socket.on("pong-measure", (ts) => {
-      const rawPing = Date.now() - ts;
-      this.ping = rawPing;
-      const alpha = 0.15;
-      this.smoothPing = this.smoothPing * (1 - alpha) + rawPing * alpha;
-      this.jitter = this.jitter * (1 - alpha) + Math.abs(rawPing - this.smoothPing) * alpha;
-    });
+    // Ping measurement is piggybacked on state updates (see "state" handler below)
 
     this.socket.on("reconnect", () => {
     });
@@ -213,6 +205,16 @@ class NetworkManager {
           meta.players[this.playerId].seq = meta.seq;
           meta.players[this.playerId].r = meta.r;
           meta.players[this.playerId].rt = meta.rt;
+        }
+      }
+      // Measure ping from echoed timestamp (piggybacked on volatile state, not queued behind reliable events)
+      if (meta.pt) {
+        const rawPing = Date.now() - meta.pt;
+        if (rawPing >= 0 && rawPing < 10000) {
+          this.ping = rawPing;
+          const alpha = 0.15;
+          this.smoothPing = this.smoothPing * (1 - alpha) + rawPing * alpha;
+          this.jitter = this.jitter * (1 - alpha) + Math.abs(rawPing - this.smoothPing) * alpha;
         }
       }
       this.lastServerState = meta;
@@ -517,6 +519,7 @@ class NetworkManager {
     // Each input contains full key state, so server only needs the latest
     const now = performance.now();
     if (now - this._lastInputSendTime >= this._inputSendInterval) {
+      input.pt = Date.now();
       this.socket.emit("input", input);
       this._lastInputSendTime = now;
     }
@@ -709,19 +712,6 @@ class NetworkManager {
   // PING MEASUREMENT
   // ========================
 
-  _startPing() {
-    this._stopPing();
-    this._pingInterval = setInterval(() => {
-      if (this.connected) this.socket.emit("ping-measure", Date.now());
-    }, 1000);
-  }
-
-  _stopPing() {
-    if (this._pingInterval) {
-      clearInterval(this._pingInterval);
-      this._pingInterval = null;
-    }
-  }
 
   // ========================
   // CLIENT-SIDE PREDICTION
