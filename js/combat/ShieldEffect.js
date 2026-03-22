@@ -90,13 +90,11 @@ class ShieldEffect {
         '  float edgeDist = abs(vNormAngle - uPulseEdge);',
         '  float pulse = uPulseEdge > -0.5 ? smoothstep(0.12, 0.0, edgeDist) : 0.0;',
         '  vec3 col = uColor + pulse * vec3(0.8) + uFlash * vec3(1.0);',
-        '  float alpha = 0.9 + pulse * 0.6 + uFlash * 0.5;',
-        '  gl_FragColor = vec4(col, alpha);',
+        '  gl_FragColor = vec4(col, 1.0);',
         '}',
       ].join('\n'),
-      transparent: true,
-      blending: THREE.AdditiveBlending,
-      depthWrite: false,
+      transparent: false,
+      depthWrite: true,
       side: THREE.DoubleSide,
     });
 

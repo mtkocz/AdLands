@@ -525,11 +525,18 @@ class NetworkManager {
    */
   _startPing() {
     this._stopPing();
+    this._pingLog = [];
     this._pingInterval = setInterval(() => {
       if (!this.connected) return;
       const t = performance.now();
       this.socket.emit("pi", () => {
         const rtt = performance.now() - t;
+        this._pingLog.push(Math.round(rtt));
+        if (this._pingLog.length >= 10) {
+          const sorted = this._pingLog.slice().sort((a, b) => a - b);
+          console.log(`[PING] last 10: [${this._pingLog.join(', ')}]  min=${sorted[0]}  median=${sorted[5]}  max=${sorted[9]}  smooth=${Math.round(this.smoothPing)}`);
+          this._pingLog = [];
+        }
         if (rtt >= 0 && rtt < 10000) {
           this.ping = Math.round(rtt);
           const alpha = 0.15;
