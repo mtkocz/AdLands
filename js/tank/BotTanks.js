@@ -378,19 +378,8 @@ class BotTanks {
   }
 
   _setupSharedAssets() {
-    // Shared geometries (created once, reused by all bots)
-    this._sharedGeom = {
-      hull: new THREE.BoxGeometry(2.5, 0.8, 5),
-      frontSlope: new THREE.BoxGeometry(2.2, 0.5, 1.0),
-      rear: new THREE.BoxGeometry(2.2, 1.0, 0.8),
-      track: new THREE.BoxGeometry(0.6, 0.6, 5.2),
-      turret: new THREE.BoxGeometry(1.5, 0.6, 1.8),
-      barrel: new THREE.CylinderGeometry(0.15, 0.2, 2.5, 8),
-      muzzle: new THREE.BoxGeometry(0.4, 0.3, 0.3),
-      hitbox: new THREE.BoxGeometry(3, 1.5, 5.5), // Collision hitbox
-      // LOD box - same dimensions as hitbox for consistent silhouette
-      lodBox: new THREE.BoxGeometry(3, 1.5, 5.5),
-    };
+    // Reuse Tank's shared geometry cache (same dimensions, avoids duplicate GPU uploads)
+    this._sharedGeom = Tank._getSharedGeo();
 
     // Shared invisible hitbox material
     this._hitboxMaterial = new THREE.MeshBasicMaterial({ visible: false });
@@ -432,28 +421,24 @@ class BotTanks {
       };
     }
 
-    // Shadow blob assets (fake shadows for orbital mode)
-    // Rectangular shape matching tank proportions (width 4.5, depth 7)
-    this._shadowGeometry = new THREE.PlaneGeometry(4.5, 7);
+    // Reuse shared geometry + shadow texture from Tank cache
+    const geo = Tank._getSharedGeo();
+    this._shadowGeometry = geo.shadow;
+    if (!Tank._sharedShadowTex) {
+      Tank._sharedShadowTex = this._createRectangularShadowTexture();
+    }
     this._shadowMaterial = new THREE.MeshBasicMaterial({
       color: 0x000000,
       opacity: 0.5,
       transparent: true,
       depthWrite: false,
-      alphaMap: this._createRectangularShadowTexture(),
+      alphaMap: Tank._sharedShadowTex,
     });
 
-    // LOD dot assets (billboarded planes with shader-based outline)
-    const dotSize = 8.44; // Visual size (75% of 11.25, shrunk 25% for orbital view)
-    this._lodDotRadius = dotSize / 2; // For commander outline and raycasting
-    this._lodDotGeometry = new THREE.PlaneGeometry(dotSize, dotSize);
-    // 3D torus ring for commander outline
-    this._lodDotCommanderOutlineGeometry = new THREE.TorusGeometry(
-      this._lodDotRadius + 2.25,
-      0.8,
-      8,
-      16,
-    );
+    const dotSize = 8.44;
+    this._lodDotRadius = dotSize / 2;
+    this._lodDotGeometry = geo.lodDot;
+    this._lodDotCommanderOutlineGeometry = geo.cmdOutline;
     this._lodDotMaterials = {};
     this._lodDotCommanderOutlineMaterial = new THREE.MeshBasicMaterial({
       color: 0xffd700,

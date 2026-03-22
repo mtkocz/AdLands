@@ -715,121 +715,76 @@ class Tank {
 
   _buildTank() {
     const { primary, secondary, tracks, barrel } = this.colors;
+    const geo = Tank._getSharedGeo();
 
-    // Materials
+    // Materials (must be per-instance — faction colors differ)
     const hullMaterial = new THREE.MeshStandardMaterial({
-      color: primary,
-      roughness: 0.7,
-      metalness: 0.3,
-      flatShading: true,
+      color: primary, roughness: 0.7, metalness: 0.3, flatShading: true,
     });
-
     const turretMaterial = new THREE.MeshStandardMaterial({
-      color: secondary,
-      roughness: 0.6,
-      metalness: 0.4,
-      flatShading: true,
+      color: secondary, roughness: 0.6, metalness: 0.4, flatShading: true,
     });
-
     const trackMaterial = new THREE.MeshStandardMaterial({
-      color: tracks,
-      roughness: 0.9,
-      metalness: 0.1,
-      flatShading: true,
+      color: tracks, roughness: 0.9, metalness: 0.1, flatShading: true,
     });
-
     const barrelMaterial = new THREE.MeshStandardMaterial({
-      color: barrel,
-      roughness: 0.5,
-      metalness: 0.6,
-      flatShading: true,
+      color: barrel, roughness: 0.5, metalness: 0.6, flatShading: true,
     });
 
-    // Body group — lean/wiggle applied here, not on outer group
-    // Headlights, hitbox, LOD, shadow stay on outer group (unaffected by lean)
     this.bodyGroup = new THREE.Group();
     this.group.add(this.bodyGroup);
 
-    // Hull (2.5 × 0.8 × 5)
-    const hull = new THREE.Mesh(
-      new THREE.BoxGeometry(2.5, 0.8, 5),
-      hullMaterial,
-    );
+    const hull = new THREE.Mesh(geo.hull, hullMaterial);
     hull.position.y = 0.4;
     hull.castShadow = true;
     hull.receiveShadow = true;
     this.bodyGroup.add(hull);
 
-    // Front slope (2.2 × 0.5 × 1.0)
-    const frontSlope = new THREE.Mesh(
-      new THREE.BoxGeometry(2.2, 0.5, 1.0),
-      hullMaterial,
-    );
+    const frontSlope = new THREE.Mesh(geo.frontSlope, hullMaterial);
     frontSlope.position.set(0, 0.7, -2.5);
     frontSlope.rotation.x = 0.3;
     frontSlope.castShadow = true;
     frontSlope.receiveShadow = true;
     this.bodyGroup.add(frontSlope);
 
-    // Rear (2.2 × 1.0 × 0.8)
-    const rear = new THREE.Mesh(
-      new THREE.BoxGeometry(2.2, 1.0, 0.8),
-      hullMaterial,
-    );
+    const rear = new THREE.Mesh(geo.rear, hullMaterial);
     rear.position.set(0, 0.5, 2.6);
     rear.castShadow = true;
     rear.receiveShadow = true;
     this.bodyGroup.add(rear);
 
-    // Tracks (0.6 × 0.6 × 5.2)
-    const trackGeom = new THREE.BoxGeometry(0.6, 0.6, 5.2);
-
-    const leftTrack = new THREE.Mesh(trackGeom, trackMaterial);
+    const leftTrack = new THREE.Mesh(geo.track, trackMaterial);
     leftTrack.position.set(-1.3, 0.3, 0);
     leftTrack.castShadow = true;
     leftTrack.receiveShadow = true;
     this.bodyGroup.add(leftTrack);
 
-    const rightTrack = new THREE.Mesh(trackGeom, trackMaterial);
+    const rightTrack = new THREE.Mesh(geo.track, trackMaterial);
     rightTrack.position.set(1.3, 0.3, 0);
     rightTrack.castShadow = true;
     rightTrack.receiveShadow = true;
     this.bodyGroup.add(rightTrack);
 
-    // Turret group
     this.turretGroup = new THREE.Group();
     this.turretGroup.position.y = 0.8;
 
-    // Turret base (1.5 × 0.6 × 1.8)
-    const turret = new THREE.Mesh(
-      new THREE.BoxGeometry(1.5, 0.6, 1.8),
-      turretMaterial,
-    );
+    const turret = new THREE.Mesh(geo.turret, turretMaterial);
     turret.position.y = 0.3;
     turret.castShadow = true;
     turret.receiveShadow = true;
     this.turretGroup.add(turret);
 
-    // Barrel (cylinder, radius 0.15→0.2, length 2.5)
-    this.barrelMesh = new THREE.Mesh(
-      new THREE.CylinderGeometry(0.15, 0.2, 2.5, 8),
-      barrelMaterial,
-    );
+    this.barrelMesh = new THREE.Mesh(geo.barrel, barrelMaterial);
     this.barrelMesh.rotation.x = -Math.PI / 2;
     this.barrelMesh.position.set(0, 0.4, -2.0);
     this.barrelMesh.castShadow = true;
     this.barrelMesh.receiveShadow = true;
     this.turretGroup.add(this.barrelMesh);
 
-    // Store base positions for recoil animation
     this.barrelBaseZ = -2.0;
     this.muzzleBaseZ = -3.2;
 
-    // Muzzle brake
-    this.muzzleMesh = new THREE.Mesh(
-      new THREE.BoxGeometry(0.4, 0.3, 0.3),
-      barrelMaterial,
-    );
+    this.muzzleMesh = new THREE.Mesh(geo.muzzle, barrelMaterial);
     this.muzzleMesh.position.set(0, 0.4, -3.2);
     this.muzzleMesh.castShadow = true;
     this.muzzleMesh.receiveShadow = true;
@@ -837,8 +792,6 @@ class Tank {
 
     this.bodyGroup.add(this.turretGroup);
 
-    // Enable layer 1 so body meshes receive spotlight illumination
-    // (spotlights are on layer 1 only, hex ground stays on layer 0)
     this.bodyGroup.traverse((child) => {
       if (child.isMesh) child.layers.enable(1);
     });
@@ -849,11 +802,10 @@ class Tank {
   // ========================
 
   _createHitbox() {
-    // Invisible collision box for projectile detection
-    const hitboxGeometry = new THREE.BoxGeometry(3, 1.5, 5.5);
+    const geo = Tank._getSharedGeo();
     const hitboxMaterial = new THREE.MeshBasicMaterial({ visible: false });
-    this.hitbox = new THREE.Mesh(hitboxGeometry, hitboxMaterial);
-    this.hitbox.position.set(0, 0.75, 0); // Center on tank body
+    this.hitbox = new THREE.Mesh(geo.hitbox, hitboxMaterial);
+    this.hitbox.position.set(0, 0.75, 0);
     this.hitbox.userData.tankRef = this;
     this.hitbox.userData.type = "tank";
     this.group.add(this.hitbox);
@@ -871,29 +823,29 @@ class Tank {
       }
     });
 
-    // Create LOD box material with terminator-aware lighting
+    const geo = Tank._getSharedGeo();
+
     const lodMaterial = this._createLODMaterial(this.colors.primary);
 
-    // Create LOD box (same dimensions as hitbox for consistent silhouette)
-    const lodGeometry = new THREE.BoxGeometry(3, 1.5, 5.5);
-    this.lodMesh = new THREE.Mesh(lodGeometry, lodMaterial);
+    this.lodMesh = new THREE.Mesh(geo.lodBox, lodMaterial);
     this.lodMesh.position.set(0, 0.75, 0);
     this.lodMesh.visible = false;
     this.lodMesh.castShadow = false;
     this.lodMesh.receiveShadow = false;
     this.group.add(this.lodMesh);
 
-    // Create fake shadow blob (shown only in orbital mode)
-    // Rectangular shape matching tank proportions (width 4.5, depth 7)
-    const shadowGeometry = new THREE.PlaneGeometry(4.5, 7);
+    // Shared shadow texture (canvas-based — expensive to create per tank)
+    if (!Tank._sharedShadowTex) {
+      Tank._sharedShadowTex = this._createRectangularShadowTexture();
+    }
     const shadowMaterial = new THREE.MeshBasicMaterial({
       color: 0x000000,
       opacity: 0.5,
       transparent: true,
       depthWrite: false,
-      alphaMap: this._createRectangularShadowTexture(),
+      alphaMap: Tank._sharedShadowTex,
     });
-    this.shadowBlob = new THREE.Mesh(shadowGeometry, shadowMaterial);
+    this.shadowBlob = new THREE.Mesh(geo.shadow, shadowMaterial);
     this.shadowBlob.position.set(0, -0.3, 0);
     this.shadowBlob.scale.set(1, 1, 1); // No scaling needed - geometry is correct size
     this.shadowBlob.rotation.x = -Math.PI / 2;
@@ -910,9 +862,8 @@ class Tank {
 
     const dotSize = 8.44; // Visual size (75% of 11.25, shrunk 25% for orbital view)
     const dotRadius = dotSize / 2; // For outline calculations
-    const dotGeometry = new THREE.PlaneGeometry(dotSize, dotSize);
     const dotMaterial = this._createLODDotMaterial(pureFactionColor);
-    this.lodDot = new THREE.Mesh(dotGeometry, dotMaterial);
+    this.lodDot = new THREE.Mesh(geo.lodDot, dotMaterial);
     this.lodDot.position.set(0, 3, 0); // Slightly above tank
     this.lodDot.visible = false;
     this.lodDot.castShadow = false; // Don't cast shadows
@@ -955,21 +906,13 @@ class Tank {
       isCommander: false,
     };
 
-    // Gold outline for commanders (3D torus ring)
-    const commanderOutlineRadius = dotRadius + 2.25;
-    const commanderOutlineGeometry = new THREE.TorusGeometry(
-      commanderOutlineRadius,
-      0.8,
-      8,
-      16,
-    );
     const commanderOutlineMaterial = new THREE.MeshBasicMaterial({
       color: 0xffd700,
       transparent: true,
       opacity: 0.9,
     });
     this.lodDotOutline = new THREE.Mesh(
-      commanderOutlineGeometry,
+      geo.cmdOutline,
       commanderOutlineMaterial,
     );
     this.lodDotOutline.position.set(0, 3, 0);
@@ -1838,6 +1781,30 @@ Tank._collisionProbes = [
   [-2.75, -1.5],   // rear-left
   [-2.75,  1.5],   // rear-right
 ];
+
+// Shared geometry + texture cache — created once, reused by all Tank/RemoteTank instances.
+// Eliminates per-spawn GPU uploads and geometry construction (biggest frame-drop source).
+Tank._sharedGeo = null;
+Tank._sharedShadowTex = null;
+Tank._getSharedGeo = function () {
+  if (!Tank._sharedGeo) {
+    Tank._sharedGeo = {
+      hull: new THREE.BoxGeometry(2.5, 0.8, 5),
+      frontSlope: new THREE.BoxGeometry(2.2, 0.5, 1.0),
+      rear: new THREE.BoxGeometry(2.2, 1.0, 0.8),
+      track: new THREE.BoxGeometry(0.6, 0.6, 5.2),
+      turret: new THREE.BoxGeometry(1.5, 0.6, 1.8),
+      barrel: new THREE.CylinderGeometry(0.15, 0.2, 2.5, 8),
+      muzzle: new THREE.BoxGeometry(0.4, 0.3, 0.3),
+      hitbox: new THREE.BoxGeometry(3, 1.5, 5.5),
+      lodBox: new THREE.BoxGeometry(3, 1.5, 5.5),
+      shadow: new THREE.PlaneGeometry(4.5, 7),
+      lodDot: new THREE.PlaneGeometry(8.44, 8.44),
+      cmdOutline: new THREE.TorusGeometry(8.44 / 2 + 2.25, 0.8, 8, 16),
+    };
+  }
+  return Tank._sharedGeo;
+};
 
 Tank._lodTemp = {
   tankWorldPos: new THREE.Vector3(),

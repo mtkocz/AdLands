@@ -534,7 +534,7 @@
         // Cap spawns per tick to avoid blocking the main thread during transitions
         let remoteTank = remoteTanks.get(id);
         if (!remoteTank && id.startsWith("bot-") && state.d !== 1) {
-          if (botSpawnsThisTick < 5) {
+          if (botSpawnsThisTick < 2) {
             spawnRemoteTank({
               id, name: state.n || id.slice(4),
               faction: state.f, theta: state.t, phi: state.p,

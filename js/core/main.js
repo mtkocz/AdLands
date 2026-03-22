@@ -4103,7 +4103,11 @@
     };
 
     // Update tank LOD after camera update so distance is current frame's position
-    tank.updateLOD(camera, sharedFrustum, lodOptions);
+    // Skip LOD during toSurface transitions — camera is still at orbital height
+    // and backface/screen-space culling would hide the tank before camera arrives
+    if (!gameCamera.transitioning || gameCamera.transitionType !== 'toSurface') {
+      tank.updateLOD(camera, sharedFrustum, lodOptions);
+    }
 
     // Pass LOD options to botTanks for commander dot mode
     botTanks.setLODOptions(lodOptions);
