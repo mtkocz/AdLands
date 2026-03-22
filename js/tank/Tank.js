@@ -1844,6 +1844,7 @@ Tank.updateTankLOD = function (
 
   // LOD thresholds
   const LOD_DISTANCE = 200;
+  const DOT_DISTANCE = 100; // Dots appear closer than LOD boxes
   const MIN_SCREENSPACE = 2;
 
   // Get tank world position
@@ -1892,12 +1893,13 @@ Tank.updateTankLOD = function (
   // LOD switching: use simple representation when camera is far
   const useLOD = distanceToCamera > LOD_DISTANCE;
 
-  // Type 2 (dots): ALL tanks if viewer is commander, only friendlies otherwise
-  // Type 1 (box): enemies when viewer is NOT commander
-  const useDot = useLOD && (isHumanCommander || isSameFaction);
+  // Type 2 (dots): shown at DOT_DISTANCE+ (closer than LOD boxes)
+  // ALL tanks if viewer is commander, only friendlies otherwise
+  const useDot = distanceToCamera > DOT_DISTANCE && (isHumanCommander || isSameFaction);
 
   // Store LOD state for instanced rendering (0=detail, 1=box, 2=dot, -1=hidden)
-  tank._lodState = useLOD ? (useDot ? 2 : 1) : 0;
+  const useSimplified = useLOD || useDot;
+  tank._lodState = useDot ? 2 : (useLOD ? 1 : 0);
 
   // Toggle LOD dot visibility (Type 2 - friendly faction)
   if (tank.lodDot) {
@@ -1950,20 +1952,20 @@ Tank.updateTankLOD = function (
     tank.lodMesh.visible = useLOD && !useDot;
   }
 
-  // Toggle detailed meshes visibility
+  // Toggle detailed meshes visibility (hide when dot or LOD box is active)
   if (tank.detailedMeshes) {
     for (const mesh of tank.detailedMeshes) {
-      mesh.visible = !useLOD;
+      mesh.visible = !useSimplified;
     }
   }
 
-  // Show blob shadow for LOD tanks (replaces cast shadow)
+  // Show blob shadow for LOD box tanks (not for dots)
   if (tank.shadowBlob) {
     tank.shadowBlob.visible = useLOD && !useDot;
   }
 
   // Update shadow casting based on LOD
-  const shouldDetailedCastShadow = !useLOD;
+  const shouldDetailedCastShadow = !useSimplified;
   if (tank.detailedMeshes && tank.detailedMeshes.length > 0) {
     const currentlyCastingShadow = tank.detailedMeshes[0]?.castShadow ?? true;
 
