@@ -470,6 +470,7 @@
       // Track which bots were seen this tick (for cleanup)
       if (!mp._seenBotIds) mp._seenBotIds = new Set();
       mp._seenBotIds.clear();
+      let botSpawnsThisTick = 0;
 
       // Update all remote tanks with their new target states
       // Use for...in instead of Object.entries() to avoid allocating a new array per tick
@@ -530,18 +531,24 @@
         if (id.startsWith("bot-")) mp._seenBotIds.add(id);
 
         // Lazy-spawn bots that entered the spatial filter radius
+        // Cap spawns per tick to avoid blocking the main thread during transitions
         let remoteTank = remoteTanks.get(id);
         if (!remoteTank && id.startsWith("bot-") && state.d !== 1) {
-          spawnRemoteTank({
-            id, name: state.n || id.slice(4),
-            faction: state.f, theta: state.t, phi: state.p,
-            heading: state.h, speed: state.s, hp: state.hp || 100, maxHp: 100,
-            isBot: true,
-          });
-          remoteTank = remoteTanks.get(id);
-          if (remoteTank) {
-            remoteTank._spawnScale = 0;
-            remoteTank.group.scale.setScalar(0);
+          if (botSpawnsThisTick < 5) {
+            spawnRemoteTank({
+              id, name: state.n || id.slice(4),
+              faction: state.f, theta: state.t, phi: state.p,
+              heading: state.h, speed: state.s, hp: state.hp || 100, maxHp: 100,
+              isBot: true,
+            });
+            remoteTank = remoteTanks.get(id);
+            if (remoteTank) {
+              remoteTank._spawnScale = 0;
+              remoteTank.group.scale.setScalar(0);
+            }
+            botSpawnsThisTick++;
+          } else {
+            continue;
           }
         }
         if (remoteTank) {
