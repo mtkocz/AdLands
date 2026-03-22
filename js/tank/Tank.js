@@ -1868,7 +1868,7 @@ Tank.updateTankLOD = function (
   frustum = null,
   options = {},
 ) {
-  const { isOrbitalView, isHumanCommander, commanderSystem, lodWarmup = 0 } = options;
+  const { isOrbitalView, isHumanCommander, commanderSystem } = options;
   const temp = Tank._lodTemp;
   const tankWorldPos = temp.tankWorldPos;
   const surfaceNormal = temp.surfaceNormal;
@@ -1922,12 +1922,8 @@ Tank.updateTankLOD = function (
   const isSameFaction =
     tank.faction && viewerFaction && tank.faction === viewerFaction;
 
-  // LOD switching: during warmup, expand detail radius from 0 → LOD_DISTANCE
-  // over 200ms so tanks switch closest-first instead of all at once
-  const detailRadius = lodWarmup > 0
-    ? LOD_DISTANCE * Math.max(0, 1 - lodWarmup * 5)
-    : LOD_DISTANCE;
-  const useLOD = distanceToCamera > detailRadius;
+  // LOD switching: use simple representation when camera is far
+  const useLOD = distanceToCamera > LOD_DISTANCE;
 
   // Type 2 (dots): ALL tanks if viewer is commander, only friendlies otherwise
   // Type 1 (box): enemies when viewer is NOT commander
