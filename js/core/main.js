@@ -3956,6 +3956,7 @@
   const ssChildMats = []; // Preallocated for bloom pass space station material swap
   let bloomMeshCache = null; // Cached mesh references for bloom pass (avoids traverse per frame)
   const _shadowTargetTemp = new THREE.Vector3(); // Reused for orbital shadow target
+  let _lodWarmup = 0; // Time-based LOD warmup after orbital→surface transition
 
   function animate() {
     requestAnimationFrame(animate);
@@ -4006,11 +4007,18 @@
     const isOrbitalView =
       gameCamera.mode === "orbital" || gameCamera.mode === "fastTravel" ||
       (gameCamera.transitioning && (gameCamera.transitionType === "toOrbital" || gameCamera.transitionType === "toFastTravel"));
-    // Distance-based LOD bands for visual effects (staggered to avoid single-frame spike)
+    // LOD bands with time-based warmup after landing (distance stagger alone is
+    // too narrow — camera sweeps 200→100 units in ~5 frames during smoothstep push)
     const cameraSurfaceDist = camera.position.length() - CONFIG.sphereRadius;
-    const isFarView = cameraSurfaceDist > CONFIG.lodBands.far;
-    const isMidView = cameraSurfaceDist > CONFIG.lodBands.mid;
-    const isNearView = cameraSurfaceDist > CONFIG.lodBands.near;
+    const isDescending = gameCamera.transitioning && gameCamera.transitionType === "toSurface";
+    if (isDescending) {
+      _lodWarmup = 0.3; // reset warmup timer each frame while descending
+    } else if (_lodWarmup > 0) {
+      _lodWarmup = Math.max(0, _lodWarmup - deltaTime);
+    }
+    const isFarView = isDescending || cameraSurfaceDist > CONFIG.lodBands.far;
+    const isMidView = isFarView || _lodWarmup > 0.2 || cameraSurfaceDist > CONFIG.lodBands.mid;
+    const isNearView = isMidView || _lodWarmup > 0.1 || cameraSurfaceDist > CONFIG.lodBands.near;
     if (!fastTravel.active) {
       tank.setControlsEnabled(!isOrbitalView);
     }
@@ -4028,8 +4036,11 @@
     }
 
     // Scale shadow frustum with camera distance so terrain shadows stay visible
+    // Skip during descent — shadow frustum snaps to final size when transition ends
     const cameraDistance = gameCamera.getEffectiveDistance();
-    environment.setShadowMode(cameraDistance);
+    if (!isDescending) {
+      environment.setShadowMode(cameraDistance);
+    }
 
     // Update all systems
     tank.isSurfaceView = gameCamera.mode === "surface" && !gameCamera.transitioning;

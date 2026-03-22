@@ -2333,8 +2333,8 @@ class Planet {
     // Fade noise overlay based on camera altitude above planet surface
     if (this._noiseOverlayMesh) {
       const altitude = temp.cameraWorldPos.length() - this.radius;
-      const fadeStart = 260;
-      const fadeEnd = 320;
+      const fadeStart = 200;
+      const fadeEnd = 260;
       const fade = 1 - Math.min(1, Math.max(0, (altitude - fadeStart) / (fadeEnd - fadeStart)));
       this._noiseOverlayMesh.material.uniforms.uFade.value = fade;
       this._noiseOverlayMesh.visible = fade > 0;

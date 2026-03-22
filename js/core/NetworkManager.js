@@ -539,21 +539,16 @@ class NetworkManager {
         if (buf.length >= this._pingSampleMax) buf.shift();
         buf.push(rtt);
 
-        if (buf.length < 3) {
-          this.ping = Math.round(rtt);
-          this.smoothPing = rtt;
-          return;
-        }
+        // Display: min of window (true RTT, unaffected by TCP queuing jitter)
+        let min = buf[0];
+        for (let i = 1; i < buf.length; i++) if (buf[i] < min) min = buf[i];
+        this.ping = Math.round(min);
 
+        // Interpolation uses smoothPing/jitter — base on recent P25 for safety margin
         const sorted = buf.slice().sort((a, b) => a - b);
-        const mid = sorted.length >> 1;
-        const median = sorted[mid];
-        const q1 = sorted[Math.floor(sorted.length * 0.25)];
-        const q3 = sorted[Math.ceil(sorted.length * 0.75) - 1];
-
-        this.ping = Math.round(median);
-        this.smoothPing = median;
-        this.jitter = (q3 - q1) * 0.5;
+        this.smoothPing = sorted[Math.floor(sorted.length * 0.25)] || min;
+        const q3 = sorted[Math.ceil(sorted.length * 0.75) - 1] || min;
+        this.jitter = (q3 - min) * 0.5;
       });
     }, 2000);
   }
