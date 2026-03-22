@@ -389,6 +389,9 @@ io.on("connection", (socket) => {
     player = mainRoom.addPlayer(socket);
   }
 
+  // ---- Ping ----
+  socket.on("pi", (cb) => { if (typeof cb === "function") cb(); });
+
   // ---- Input ----
   // Client sends input every frame (keys + turret angle + sequence number)
   socket.on("input", (data) => {

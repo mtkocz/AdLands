@@ -120,11 +120,13 @@ class NetworkManager {
       this.playerId = this.socket.id;
       this.ping = 0;
       this.smoothPing = 50;
+      this._startPing();
     });
 
     this.socket.on("disconnect", (reason) => {
       this.connected = false;
       this.ping = 0;
+      this._stopPing();
     });
 
     this.socket.on("connect_error", (err) => {
@@ -205,16 +207,6 @@ class NetworkManager {
           meta.players[this.playerId].seq = meta.seq;
           meta.players[this.playerId].r = meta.r;
           meta.players[this.playerId].rt = meta.rt;
-        }
-      }
-      // Measure ping from echoed timestamp (piggybacked on volatile state, not queued behind reliable events)
-      if (meta.pt) {
-        const rawPing = Date.now() - meta.pt;
-        if (rawPing >= 0 && rawPing < 10000) {
-          this.ping = rawPing;
-          const alpha = 0.15;
-          this.smoothPing = this.smoothPing * (1 - alpha) + rawPing * alpha;
-          this.jitter = this.jitter * (1 - alpha) + Math.abs(rawPing - this.smoothPing) * alpha;
         }
       }
       this.lastServerState = meta;
@@ -519,7 +511,6 @@ class NetworkManager {
     // Each input contains full key state, so server only needs the latest
     const now = performance.now();
     if (now - this._lastInputSendTime >= this._inputSendInterval) {
-      input.pt = Date.now();
       this.socket.emit("input", input);
       this._lastInputSendTime = now;
     }
@@ -532,6 +523,30 @@ class NetworkManager {
    * @param {number} power - Charge power level (0-10)
    * @param {number} turretAngle - Current turret angle at moment of firing
    */
+  _startPing() {
+    this._stopPing();
+    this._pingInterval = setInterval(() => {
+      if (!this.connected) return;
+      const t = performance.now();
+      this.socket.emit("pi", () => {
+        const rtt = performance.now() - t;
+        if (rtt >= 0 && rtt < 10000) {
+          this.ping = Math.round(rtt);
+          const alpha = 0.15;
+          this.smoothPing = this.smoothPing * (1 - alpha) + rtt * alpha;
+          this.jitter = this.jitter * (1 - alpha) + Math.abs(rtt - this.smoothPing) * alpha;
+        }
+      });
+    }, 2000);
+  }
+
+  _stopPing() {
+    if (this._pingInterval) {
+      clearInterval(this._pingInterval);
+      this._pingInterval = null;
+    }
+  }
+
   sendFire(power, turretAngle) {
     if (!this.connected) return;
     this.socket.emit("fire", { power: power || 0, turretAngle: turretAngle });

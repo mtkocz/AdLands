@@ -3980,7 +3980,7 @@
       // Update ping display
       const net = window.networkManager;
       if (net && net.connected) {
-        const ms = net.ping;
+        const ms = Math.round(net.smoothPing);
         pingCounter.textContent = ms + " ms";
         pingCounter.style.color =
           ms <= 80 ? "#00ff00" : ms <= 150 ? "#ffd700" : "#ff0000";
