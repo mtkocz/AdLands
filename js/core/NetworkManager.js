@@ -34,10 +34,12 @@ class NetworkManager {
     // Callback to get current planet rotation (set by MultiplayerClient).
     // Used to convert server world-space theta to hexGroup local-space.
 
-    // Ping measurement
-    this.ping = 0;           // latest raw round-trip time in ms
-    this.smoothPing = 50;    // exponential moving average of ping
-    this.jitter = 0;         // exponential moving average of ping variance
+    // Ping measurement (sliding window median, robust against TCP jitter)
+    this.ping = 0;           // display value: median of recent samples
+    this.smoothPing = 50;    // median-based smooth ping (used for interpolation delay)
+    this.jitter = 0;         // IQR-based jitter estimate
+    this._pingSamples = [];  // circular buffer of recent RTT samples
+    this._pingSampleMax = 7; // window size (odd for clean median)
 
     // Server state for reconciliation
     this.lastServerState = null;
@@ -525,24 +527,33 @@ class NetworkManager {
    */
   _startPing() {
     this._stopPing();
-    this._pingLog = [];
+    this._pingSamples = [];
     this._pingInterval = setInterval(() => {
       if (!this.connected) return;
       const t = performance.now();
       this.socket.emit("pi", () => {
         const rtt = performance.now() - t;
-        this._pingLog.push(Math.round(rtt));
-        if (this._pingLog.length >= 10) {
-          const sorted = this._pingLog.slice().sort((a, b) => a - b);
-          console.log(`[PING] last 10: [${this._pingLog.join(', ')}]  min=${sorted[0]}  median=${sorted[5]}  max=${sorted[9]}  smooth=${Math.round(this.smoothPing)}`);
-          this._pingLog = [];
-        }
-        if (rtt >= 0 && rtt < 10000) {
+        if (rtt < 0 || rtt >= 10000) return;
+
+        const buf = this._pingSamples;
+        if (buf.length >= this._pingSampleMax) buf.shift();
+        buf.push(rtt);
+
+        if (buf.length < 3) {
           this.ping = Math.round(rtt);
-          const alpha = 0.15;
-          this.smoothPing = this.smoothPing * (1 - alpha) + rtt * alpha;
-          this.jitter = this.jitter * (1 - alpha) + Math.abs(rtt - this.smoothPing) * alpha;
+          this.smoothPing = rtt;
+          return;
         }
+
+        const sorted = buf.slice().sort((a, b) => a - b);
+        const mid = sorted.length >> 1;
+        const median = sorted[mid];
+        const q1 = sorted[Math.floor(sorted.length * 0.25)];
+        const q3 = sorted[Math.ceil(sorted.length * 0.75) - 1];
+
+        this.ping = Math.round(median);
+        this.smoothPing = median;
+        this.jitter = (q3 - q1) * 0.5;
       });
     }, 2000);
   }
