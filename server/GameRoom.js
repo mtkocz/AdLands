@@ -265,8 +265,8 @@ class GameRoom {
     // Server-authoritative billboard orbital parameters (18 billboards across 2 tiers)
     this.billboardOrbits = this._generateBillboardOrbits();
 
-    // Tick loop: 10 ticks/second
-    this.tickRate = 10;
+    // Tick loop: 20 ticks/second
+    this.tickRate = 20;
     this.tickDelta = 1 / this.tickRate;
     this.tickInterval = null;
     this.lastTickTime = Date.now();
@@ -3151,9 +3151,9 @@ class GameRoom {
     this.lastTickTime = now;
 
     // 9. Send NEXT tick's input to bot worker — placed at end of tick so the
-    //    worker has the full ~100ms inter-tick gap to process. Its output will
+    //    worker has the full inter-tick gap to process. Its output will
     //    be ready at the start of the next tick (no 1-tick stale positions).
-    const sendCaptureState = (this.tick % 50 === 0) ? this.clusterCaptureState : null;
+    const sendCaptureState = (this.tick % (this.tickRate * 5) === 0) ? this.clusterCaptureState : null;
     this.botBridge.sendTickInput(dt, this.players, this.planetRotation, this.tick, this.nextProjectileId, sendCaptureState);
 
     // Log tick duration every 100 ticks (~10s)
@@ -4642,11 +4642,11 @@ class GameRoom {
     statePayload.tc = fc.rust + fc.cobalt + fc.viridian;
     statePayload.bfc = fc;
 
-    // Compact orbital positions for all bots (every 10 ticks ≈ 1/sec)
+    // Compact orbital positions for all bots (~1/sec)
     // Flat array: [theta, phi, heading, speed, factionIdx, ...]
     // Heading + speed allow client-side dead-reckoning between updates
     // factionIdx: 0=rust, 1=cobalt, 2=viridian
-    if (this.tick % 10 === 0) {
+    if (this.tick % this.tickRate === 0) {
       const op = [];
       const opn = [];
       for (const botId in botStates) {
@@ -4671,7 +4671,7 @@ class GameRoom {
     for (let i = 0; i < this.moons.length; i++) statePayload.ma[i] = this.moons[i].angle;
 
     // Update station data in-place
-    if (this.tick % 100 === 0) {
+    if (this.tick % (this.tickRate * 10) === 0) {
       statePayload.sa = this.stations.map(s => [s.orbitalAngle, s.localRotation, s.inclination, s.ascendingNode, s.orbitRadius]);
     } else {
       statePayload.sa.length = this.stations.length;
@@ -4685,7 +4685,7 @@ class GameRoom {
     }
 
     // Update billboard orbital angles in-place
-    if (this.tick % 100 === 0) {
+    if (this.tick % (this.tickRate * 10) === 0) {
       statePayload.ba = this.billboardOrbits.map(b => [b.orbitalAngle, b.inclination, b.ascendingNode, b.orbitRadius, b.wobbleX, b.wobbleY, b.wobbleZ, b.speed]);
     } else {
       statePayload.ba.length = this.billboardOrbits.length;

@@ -270,6 +270,12 @@
   const finalComposer = new THREE.EffectComposer(renderer);
   const finalRenderPass = new THREE.RenderPass(scene, camera);
   finalComposer.addPass(finalRenderPass);
+
+  // Motion blur pass (radial zoom blur during camera transitions)
+  const motionBlurPass = new THREE.ShaderPass(MotionBlurShader);
+  motionBlurPass.needsSwap = true;
+  finalComposer.addPass(motionBlurPass);
+
   const bloomBlendPass = new THREE.ShaderPass(bloomBlendShader, "baseTexture");
   bloomBlendPass.uniforms.bloomTexture.value =
     bloomComposer.renderTarget2.texture;
@@ -3957,6 +3963,8 @@
   let bloomMeshCache = null; // Cached mesh references for bloom pass (avoids traverse per frame)
   const _shadowTargetTemp = new THREE.Vector3(); // Reused for orbital shadow target
   let _lodWarmup = 0; // Time-based LOD warmup after orbital→surface transition
+  let _prevCameraDist = 0; // Previous frame camera distance for motion blur velocity
+  let _motionBlurIntensity = 0; // Smoothed motion blur intensity
 
   function animate() {
     requestAnimationFrame(animate);
@@ -4092,6 +4100,7 @@
       isHumanCommander,
       viewerFaction: playerFaction,
       commanderSystem,
+      lodWarmup: _lodWarmup,
     };
 
     // Update tank LOD after camera update so distance is current frame's position
@@ -4165,6 +4174,18 @@
       tankDamageEffects.setVisible(false);
       tankCollision.setVisible(false);
     }
+
+    // Update motion blur intensity based on camera radial velocity
+    const cameraDist = camera.position.length();
+    if (_prevCameraDist > 0) {
+      const velocity = Math.abs(cameraDist - _prevCameraDist) / Math.max(deltaTime, 0.001);
+      const targetIntensity = gameCamera.transitioning ? Math.min(velocity * 0.00008, 0.06) : 0;
+      const blurSmoothing = targetIntensity > _motionBlurIntensity ? 0.15 : 0.08;
+      _motionBlurIntensity += (targetIntensity - _motionBlurIntensity) * blurSmoothing;
+      if (_motionBlurIntensity < 0.001) _motionBlurIntensity = 0;
+    }
+    _prevCameraDist = cameraDist;
+    motionBlurPass.uniforms.uIntensity.value = _motionBlurIntensity;
 
     // Update visual effects (post-processing state)
     visualEffects.update(deltaTime);

@@ -141,7 +141,7 @@ class Tank {
     // Normal movement lag is sub-pixel; sudden jumps are smoothed over 2-3 frames.
     this._visualTheta = this.state.theta;
     this._visualPhi = this.state.phi;
-
+    this._visualHeading = this.state.heading;
 
     // Initialize position
     this._updateVisual(0);
@@ -299,6 +299,7 @@ class Tank {
     // Snap visual position to avoid 1-frame lag after teleport
     this._visualTheta = theta;
     this._visualPhi = phi;
+    this._visualHeading = this.state.heading;
     this._updateVisual(0);
   }
 
@@ -517,6 +518,18 @@ class Tank {
       // Keep visual theta wrapped
       if (this._visualTheta > Math.PI * 2) this._visualTheta -= Math.PI * 2;
       else if (this._visualTheta < 0) this._visualTheta += Math.PI * 2;
+
+      // Smooth visual heading (absorbs reconciliation heading corrections)
+      let dHeading = this.state.heading - this._visualHeading;
+      if (dHeading > Math.PI) dHeading -= Math.PI * 2;
+      else if (dHeading < -Math.PI) dHeading += Math.PI * 2;
+      if (Math.abs(dHeading) > Math.PI * 0.5) {
+        this._visualHeading = this.state.heading;
+      } else {
+        this._visualHeading += dHeading * smooth;
+      }
+      if (this._visualHeading > Math.PI * 2) this._visualHeading -= Math.PI * 2;
+      else if (this._visualHeading < 0) this._visualHeading += Math.PI * 2;
     }
 
     // Update momentum lean springs
@@ -525,7 +538,7 @@ class Tank {
     // Reuse pre-allocated entity (avoids per-frame GC)
     const ve = this._visualEntity;
     ve.theta = this._visualTheta; ve.phi = this._visualPhi;
-    ve.heading = this.state.heading; ve.speed = this.state.speed;
+    ve.heading = this._visualHeading; ve.speed = this.state.speed;
     ve.wigglePhase = this.state.wigglePhase; ve.currentRollAngle = 0;
     ve.hp = this.hp; ve.maxHp = this.maxHp; ve.isDead = this.isDead;
     Tank.updateEntityVisual(ve, this.sphereRadius);
@@ -1855,7 +1868,7 @@ Tank.updateTankLOD = function (
   frustum = null,
   options = {},
 ) {
-  const { isOrbitalView, isHumanCommander, commanderSystem } = options;
+  const { isOrbitalView, isHumanCommander, commanderSystem, lodWarmup = 0 } = options;
   const temp = Tank._lodTemp;
   const tankWorldPos = temp.tankWorldPos;
   const surfaceNormal = temp.surfaceNormal;
@@ -1909,8 +1922,12 @@ Tank.updateTankLOD = function (
   const isSameFaction =
     tank.faction && viewerFaction && tank.faction === viewerFaction;
 
-  // LOD switching: use simple representation when camera is far
-  const useLOD = distanceToCamera > LOD_DISTANCE;
+  // LOD switching: during warmup, expand detail radius from 0 → LOD_DISTANCE
+  // over 200ms so tanks switch closest-first instead of all at once
+  const detailRadius = lodWarmup > 0
+    ? LOD_DISTANCE * Math.max(0, 1 - lodWarmup * 5)
+    : LOD_DISTANCE;
+  const useLOD = distanceToCamera > detailRadius;
 
   // Type 2 (dots): ALL tanks if viewer is commander, only friendlies otherwise
   // Type 1 (box): enemies when viewer is NOT commander

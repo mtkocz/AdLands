@@ -778,7 +778,12 @@ class NetworkManager {
     this._lastServerTheta = serverPlayerState.t;
     this._lastServerPhi = serverPlayerState.p;
 
-    // Replay from server authoritative state
+    // Replay from server authoritative state to get the "correct" predicted position
+    const replayTheta = localTank.state.theta;
+    const replayPhi = localTank.state.phi;
+    const replayHeading = localTank.state.heading;
+    const replaySpeed = localTank.state.speed;
+
     localTank.state.theta = serverPlayerState.t;
     localTank.state.phi = serverPlayerState.p;
     localTank.state.heading = serverPlayerState.h;
@@ -798,18 +803,28 @@ class NetworkManager {
       localTank.state.keys = prevKeys;
     }
 
-    // Midpoint integration in SharedPhysics makes the position integration
-    // timestep-independent (S*dt + a*dt²/2 is identical for 1×0.1s and 6×0.0167s).
-    // Combined with the shared terrain grid, replayed and predicted positions
-    // now match to float precision. We snap to the replayed position and let
-    // the visual smoothing layer (95%/frame) absorb any sub-pixel difference.
+    // If replayed position is very close to our local prediction, blend
+    // instead of snapping — reduces micro-jitter from float/timing drift
+    let dT = localTank.state.theta - replayTheta;
+    if (dT > Math.PI) dT -= Math.PI * 2;
+    else if (dT < -Math.PI) dT += Math.PI * 2;
+    const dP = localTank.state.phi - replayPhi;
+    const posDrift = Math.abs(dT) + Math.abs(dP);
+
+    if (posDrift < 0.00005 && Math.abs(localTank.state.speed - replaySpeed) < 0.000005) {
+      // Drift is sub-pixel — keep local prediction to avoid any visual noise
+      localTank.state.theta = replayTheta;
+      localTank.state.phi = replayPhi;
+      localTank.state.heading = replayHeading;
+      localTank.state.speed = replaySpeed;
+    }
+
     if (serverJump > 0.05) {
       // Teleport (portal, respawn) — snap visual too
       localTank._visualTheta = localTank.state.theta;
       localTank._visualPhi = localTank.state.phi;
+      localTank._visualHeading = localTank.state.heading;
     }
-    // Otherwise: physics state is already at the replayed position (snapped).
-    // Visual smoothing in _updateVisual() handles the rest.
   }
 
   // ========================
