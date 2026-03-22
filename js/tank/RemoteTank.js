@@ -58,7 +58,7 @@ class RemoteTank {
     }
     this._snapHead = 0;  // next write position
     this._snapCount = 0; // valid entries (0 to _snapCap)
-    this.interpolationDelay = 50; // ms — render 1 server tick behind real-time
+    this.interpolationDelay = 100; // ms — render 1 server tick behind real-time (10Hz)
 
     // Snap-back dampening: when transitioning from extrapolation back to
     // interpolation, the corrected position can differ from the extrapolated one.

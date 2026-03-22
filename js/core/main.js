@@ -4100,7 +4100,7 @@
       isHumanCommander,
       viewerFaction: playerFaction,
       commanderSystem,
-      lodWarmup: _lodWarmup,
+      lodWarmup: cameraSurfaceDist > CONFIG.lodBands.near ? _lodWarmup : 0,
     };
 
     // Update tank LOD after camera update so distance is current frame's position
