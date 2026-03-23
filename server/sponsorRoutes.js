@@ -191,7 +191,7 @@ function createSponsorRoutes(sponsorStore, gameRoom, { imageUrls, contentHashes,
 
   // Resend email config (reuses SMTP_PASS as API key)
   const resendApiKey = process.env.SMTP_PASS || null;
-  const fromAddress = process.env.SMTP_FROM || "AdLands - A Limited Liability Company <noreply@adlands.gg>";
+  const fromAddress = process.env.SMTP_FROM || "AdLands - Capture. Control. Capitalize. <noreply@adlands.gg>";
 
   // Mutable reference so we can update after re-extraction
   let _imageUrls = imageUrls || {};

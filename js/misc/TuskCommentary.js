@@ -81,7 +81,7 @@ const TUSK_LINES = {
   on_portal_use: [
     "Portal transit detected. Fast Travel — another AdLands innovation!",
     "Teleporting! That's $12 in infrastructure costs, FYI.",
-    "Quantum gate utilized. Efficiency is our middle name. Well, it's 'Limited Liability,' but still.",
+    "Quantum gate utilized. Efficiency is our middle name. Well, it's 'Capture, Control, Capitalize,' but still.",
   ],
   random_ambient: [
     "Remember: every action is data. Make it good data.",

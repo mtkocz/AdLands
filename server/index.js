@@ -263,7 +263,7 @@ let inquiryRouter;
   // Password reset via Firebase Admin SDK + Resend
   const admin = require("firebase-admin");
   const resendApiKey = process.env.SMTP_PASS || null;
-  const fromAddress = process.env.SMTP_FROM || "AdLands - A Limited Liability Company <noreply@adlands.gg>";
+  const fromAddress = process.env.SMTP_FROM || "AdLands - Capture. Control. Capitalize. <noreply@adlands.gg>";
 
   app.post("/api/auth/reset-password", async (req, res) => {
     const { email } = req.body;
