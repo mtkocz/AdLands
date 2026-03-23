@@ -1843,8 +1843,8 @@ Tank.updateTankLOD = function (
   const boundingSphere = temp.boundingSphere;
 
   // LOD thresholds
-  const LOD_DISTANCE = 200;
-  const DOT_DISTANCE = 100; // Dots appear closer than LOD boxes
+  const LOD_DISTANCE = 100; // 0-100: detail, 100+: box
+  const DOT_DISTANCE = 200; // 200+: dots (friendlies / all if commander)
   const MIN_SCREENSPACE = 2;
 
   // Get tank world position
@@ -1857,7 +1857,7 @@ Tank.updateTankLOD = function (
   const dotProduct = surfaceNormal.dot(cameraToTank);
 
   // Threshold varies: more lenient for close tanks
-  const backfaceThreshold = distanceToCamera > 200 ? 0.15 : 0.3;
+  const backfaceThreshold = distanceToCamera > LOD_DISTANCE ? 0.15 : 0.3;
   if (dotProduct > backfaceThreshold) {
     tank.group.visible = false;
     tank._lodState = -1;
@@ -1890,11 +1890,9 @@ Tank.updateTankLOD = function (
   const isSameFaction =
     tank.faction && viewerFaction && tank.faction === viewerFaction;
 
-  // LOD switching: use simple representation when camera is far
+  // LOD switching: 100+ = box, 200+ = dot (when applicable)
   const useLOD = distanceToCamera > LOD_DISTANCE;
-
-  // Type 2 (dots): shown at DOT_DISTANCE+ (closer than LOD boxes)
-  // ALL tanks if viewer is commander, only friendlies otherwise
+  // Dots at 200+: commanders see ALL tanks, others see only friendlies
   const useDot = distanceToCamera > DOT_DISTANCE && (isHumanCommander || isSameFaction);
 
   // Store LOD state for instanced rendering (0=detail, 1=box, 2=dot, -1=hidden)

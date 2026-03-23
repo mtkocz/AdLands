@@ -78,7 +78,7 @@ class AuthScreen {
         <!-- Stage: Welcome / Auth Gate -->
         <div class="auth-stage" id="auth-stage-welcome">
           <div class="auth-title">AdLands</div>
-          <div class="auth-subtitle">A Limited Liability Company</div>
+          <div class="auth-subtitle">Capture. Control. Capitalize.</div>
 
           <div class="auth-providers">
             <button class="auth-btn auth-btn-google" data-provider="google">

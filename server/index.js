@@ -300,7 +300,7 @@ let inquiryRouter;
     console.log("");
     console.log("═══════════════════════════════════════════════");
     console.log("  AdLands - Multiplayer Server");
-    console.log("  A Limited Liability Company");
+    console.log("  Capture. Control. Capitalize.");
     console.log("═══════════════════════════════════════════════");
     console.log(`  Local:   http://localhost:${PORT}`);
     console.log(`  Network: http://<your-ip>:${PORT}`);
