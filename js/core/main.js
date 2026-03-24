@@ -4174,6 +4174,10 @@
       shieldHolosphere.update(deltaTime);
       tankCollision.update(deltaTime, sharedFrustum, camera);
     } else {
+      treadDust.playerDustSystem.visible = false;
+      treadDust.otherDustSystem.visible = false;
+      treadTracks.playerMesh.visible = false;
+      treadTracks.otherMesh.visible = false;
       tankDamageEffects.setVisible(false);
       tankCollision.setVisible(false);
     }

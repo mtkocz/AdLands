@@ -432,6 +432,7 @@ class FastTravel {
 
     _abortTravel() {
         // Travel back to origin portal (same as traveling to any other portal, skip confirmation)
+        this._isAborting = true;
         this.previewPortalIndex = this.originPortalIndex;
         this._executeTravel();
     }
@@ -472,11 +473,22 @@ class FastTravel {
             this.dustShockwave.emit((this.tank.group._cachedWorldPos || this.tank.group.position).clone(), 0.5);
         }
 
-        // Show tank + enable controls only when camera arrives at surface
-        this.gameCamera.onTransitionComplete = () => {
+        const isAborting = this._isAborting;
+        this._isAborting = false;
+
+        if (isAborting) {
+            // Abort: tank hidden until camera arrives at surface
+            this.gameCamera.onTransitionComplete = () => {
+                this.tank.setVisible(true);
+                this.tank.setControlsEnabled(true);
+            };
+        } else {
+            // Normal deploy: show tank immediately
             this.tank.setVisible(true);
-            this.tank.setControlsEnabled(true);
-        };
+            this.gameCamera.onTransitionComplete = () => {
+                this.tank.setControlsEnabled(true);
+            };
+        }
 
         // Exit camera fast travel mode (camera swoops down to meet tank)
         this.gameCamera.exitFastTravel();
