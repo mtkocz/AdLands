@@ -29,6 +29,7 @@ class DustShockwave {
     this.scene = scene;
     this.sphereRadius = sphereRadius;
     this.shockwaves = [];
+    this._isOrbitalView = false;
 
     // Configuration
     this.config = {
@@ -549,6 +550,7 @@ class DustShockwave {
       duration: cfg.duration,
       startSize: startSize,
       finalSize: finalSize,
+      deferred: this._isOrbitalView,
     });
 
     // Also spawn sprite sheet animation
@@ -702,6 +704,7 @@ class DustShockwave {
       basePosition: position.clone(), // Store base position for height animation
       surfaceNormal: normal.clone(), // Store surface normal for height animation
       maxHeight: maxHeight, // Cliff cap: max height above surface
+      deferred: this._isOrbitalView,
     });
   }
 
@@ -840,13 +843,7 @@ class DustShockwave {
   update(deltaTime, frustum = null, isOrbitalView = false) {
     const cfg = this.config;
 
-    // Hide all effects in orbital view (pause animation, don't age)
-    if (isOrbitalView) {
-      this._hideShockwaves();
-      this._hideDustwaveSprites();
-      this._hideMuzzleSmokeSprites();
-      return;
-    }
+    this._isOrbitalView = isOrbitalView;
 
     // Cache camera world position for distance fade
     if (this.gameCamera?.camera) {
@@ -855,6 +852,13 @@ class DustShockwave {
 
     for (let i = this.shockwaves.length - 1; i >= 0; i--) {
       const sw = this.shockwaves[i];
+      // Deferred: emitted during orbital view, wait until camera arrives
+      if (sw.deferred) {
+        sw.mesh.visible = false;
+        if (!isOrbitalView) sw.deferred = false;
+        continue;
+      }
+
       sw.age += deltaTime;
       const progress = sw.age / sw.duration;
 
@@ -932,6 +936,15 @@ class DustShockwave {
 
     for (let i = this.dustwaveSprites.length - 1; i >= 0; i--) {
       const sprite = this.dustwaveSprites[i];
+
+      // Deferred: emitted during orbital view, wait until camera arrives
+      if (sprite.deferred) {
+        sprite.sprite.visible = false;
+        if (sprite.shadowSprite) sprite.shadowSprite.visible = false;
+        if (!this._isOrbitalView) sprite.deferred = false;
+        continue;
+      }
+
       sprite.age += deltaTime;
       const progress = sprite.age / sprite.duration;
 
@@ -1161,23 +1174,6 @@ class DustShockwave {
   /**
    * Clean up all resources
    */
-  _hideShockwaves() {
-    for (const sw of this.shockwaves) sw.mesh.visible = false;
-  }
-
-  _hideDustwaveSprites() {
-    for (const sprite of this.dustwaveSprites) {
-      sprite.sprite.visible = false;
-      if (sprite.shadowSprite) sprite.shadowSprite.visible = false;
-    }
-  }
-
-  _hideMuzzleSmokeSprites() {
-    for (const sprite of this.muzzleSmokeSprites) {
-      sprite.sprite.visible = false;
-      if (sprite.shadowSprite) sprite.shadowSprite.visible = false;
-    }
-  }
 
   dispose() {
     for (const sw of this.shockwaves) {
