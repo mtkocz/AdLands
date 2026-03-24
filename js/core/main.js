@@ -4182,7 +4182,7 @@
     const cameraDist = camera.position.length();
     if (_prevCameraDist > 0) {
       const velocity = Math.abs(cameraDist - _prevCameraDist) / Math.max(deltaTime, 0.001);
-      const targetIntensity = gameCamera.transitioning ? Math.min(velocity * 0.00008, 0.06) : 0;
+      const targetIntensity = Math.min(velocity * 0.00008, 0.06);
       const blurSmoothing = targetIntensity > _motionBlurIntensity ? 0.15 : 0.08;
       _motionBlurIntensity += (targetIntensity - _motionBlurIntensity) * blurSmoothing;
       if (_motionBlurIntensity < 0.001) _motionBlurIntensity = 0;

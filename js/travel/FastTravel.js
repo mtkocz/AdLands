@@ -470,14 +470,12 @@ class FastTravel {
         // Show tank immediately (before camera transition)
         this.tank.setVisible(true);
 
-        // Emit dust shockwave at spawn point (half size for spawns)
-        if (this.dustShockwave) {
-            this.dustShockwave.emit((this.tank.group._cachedWorldPos || this.tank.group.position).clone(), 0.5);
-        }
-
-        // Enable controls only when camera arrives
+        // Enable controls + emit shockwave only when camera arrives
         this.gameCamera.onTransitionComplete = () => {
             this.tank.setControlsEnabled(true);
+            if (this.dustShockwave) {
+                this.dustShockwave.emit((this.tank.group._cachedWorldPos || this.tank.group.position).clone(), 0.5);
+            }
         };
 
         // Exit camera fast travel mode (camera swoops down to meet tank)
