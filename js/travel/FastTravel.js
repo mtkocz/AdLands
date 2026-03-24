@@ -467,16 +467,14 @@ class FastTravel {
         // Hide UI
         this._hideAllUI();
 
-        // Show tank immediately (before camera transition)
-        this.tank.setVisible(true);
-
         // Emit dust shockwave at spawn point (half size for spawns)
         if (this.dustShockwave) {
             this.dustShockwave.emit((this.tank.group._cachedWorldPos || this.tank.group.position).clone(), 0.5);
         }
 
-        // Enable controls only when camera arrives
+        // Show tank + enable controls only when camera arrives at surface
         this.gameCamera.onTransitionComplete = () => {
+            this.tank.setVisible(true);
             this.tank.setControlsEnabled(true);
         };
 
