@@ -4083,6 +4083,15 @@
     );
     sharedFrustum.setFromProjectionMatrix(sharedProjMatrix);
 
+    // Freeze shadow map during camera transitions to prevent frame drops.
+    // LOD transitions toggle castShadow on 100+ tanks in a few frames — each toggle
+    // invalidates the shadow map, causing a GPU stall from burst rebuilds.
+    // Frozen shadows are invisible during fast camera motion (same rationale as frustum cull skip below).
+    renderer.shadowMap.autoUpdate = !gameCamera.transitioning;
+    if (!gameCamera.transitioning && _lodWarmup > 0) {
+      renderer.shadowMap.needsUpdate = true;
+    }
+
     // Update terrain visibility culling (hide tiles on far side of planet + frustum cull overlays).
     // During camera transitions (zooming), skip per-tile frustum culling (expensive intersectsObject
     // calls) and rely on backface culling alone — the brief over-draw is invisible during fast motion.

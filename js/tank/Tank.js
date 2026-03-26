@@ -1122,9 +1122,42 @@ class Tank {
    */
   updateLOD(camera, frustum = null, options = {}) {
     if (!this.lodMesh || !camera) return;
-    if (this._hidden) return;
 
     camera.getWorldPosition(Tank._lodTemp.cameraWorldPos);
+
+    // When tank is hidden (e.g. during fast travel), only show the dot in orbital view
+    if (this._hidden) {
+      if (this.lodDot && options.isOrbitalView) {
+        const distanceToCamera = this.group.position.length() > 0
+          ? Tank._lodTemp.cameraWorldPos.distanceTo(
+              this.group.getWorldPosition(Tank._lodTemp.tankWorldPos)
+            )
+          : Infinity;
+        if (distanceToCamera > 200) {
+          this.group.visible = true;
+          this.lodDot.visible = true;
+          if (this.lodMesh) this.lodMesh.visible = false;
+          if (this.shadowBlob) this.shadowBlob.visible = false;
+          if (this.detailedMeshes) {
+            for (const mesh of this.detailedMeshes) mesh.visible = false;
+          }
+          // Update dot position (surface-normal direction)
+          const surfaceNormal = Tank._lodTemp.surfaceNormal;
+          surfaceNormal.copy(Tank._lodTemp.tankWorldPos).normalize();
+          const inverseQuat = Tank._lodTemp.inverseQuat;
+          this.group.getWorldQuaternion(inverseQuat);
+          inverseQuat.invert();
+          const localDotOffset = Tank._lodTemp.localDotOffset;
+          localDotOffset.copy(surfaceNormal).multiplyScalar(3);
+          localDotOffset.applyQuaternion(inverseQuat);
+          this.lodDot.position.copy(localDotOffset);
+        } else {
+          this.group.visible = false;
+          this.lodDot.visible = false;
+        }
+      }
+      return;
+    }
 
     // Use shared LOD update logic
     Tank.updateTankLOD(
