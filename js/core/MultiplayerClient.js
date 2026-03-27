@@ -614,14 +614,14 @@
 
           remoteTank.setTargetState(state);
 
-          // Adaptive interpolation delay: only needs to cover packet arrival jitter,
-          // NOT round-trip time (RTT is irrelevant for buffer safety — we're
-          // interpolating between already-received snapshots).
-          // 1 tick minimum — extrapolation handles gaps when buffer runs thin.
+          // Adaptive interpolation delay: covers packet arrival jitter only.
+          // Cap jitter contribution at 80ms — beyond that, extrapolation handles
+          // the gap smoothly rather than adding excessive render latency.
           if (remoteTank._snapBuf) {
             const tickMs = 1000 / (net.serverTickRate || 10);
-            const adaptiveDelay = Math.max(tickMs, Math.min(300, net.jitter * 1.5 + tickMs));
-            remoteTank.interpolationDelay = remoteTank.interpolationDelay * 0.65 + adaptiveDelay * 0.35;
+            const jitterMs = Math.min(80, net.jitter * 1.5);
+            const adaptiveDelay = tickMs + jitterMs;
+            remoteTank.interpolationDelay = remoteTank.interpolationDelay * 0.8 + adaptiveDelay * 0.2;
           }
 
           // Sync server-authoritative rank
