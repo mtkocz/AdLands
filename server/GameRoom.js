@@ -2510,8 +2510,8 @@ class GameRoom {
       return;
     }
 
-    // Tell client to start visual dive when entering dive range
-    if (!p._diving && arrivalDist < DIVE_START_DIST) {
+    // Tell client to start visual dive when entering dive range (not for flares — they're hit instantly)
+    if (!p._diving && !p._tgtIsFlare && arrivalDist < DIVE_START_DIST) {
       p._diving = true;
       this._queueRoomEvent("missile-dive", {
         missileId: p.id,

@@ -19,16 +19,16 @@ class TerrainElevation {
     // Config (identical to client)
     this.config = {
       EXTRUSION_HEIGHT: 3.5,
-      COVERAGE_TARGET: 0.18,
-      PRIMARY_MIN_SIZE: 8,
-      PRIMARY_MAX_SIZE: 30,
-      SECONDARY_MIN_SIZE: 3,
-      SECONDARY_MAX_SIZE: 12,
+      COVERAGE_TARGET: 0.25,
+      PRIMARY_MIN_SIZE: 10,
+      PRIMARY_MAX_SIZE: 38,
+      SECONDARY_MIN_SIZE: 4,
+      SECONDARY_MAX_SIZE: 15,
       SECONDARY_MIN_PARENT: 12,
       TERTIARY_MIN_SIZE: 2,
-      TERTIARY_MAX_SIZE: 6,
+      TERTIARY_MAX_SIZE: 8,
       TERTIARY_MIN_PARENT: 8,
-      MIN_SEED_SPACING: 0.12,
+      MIN_SEED_SPACING: 0.10,
     };
   }
 

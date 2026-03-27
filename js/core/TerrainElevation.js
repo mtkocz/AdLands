@@ -24,16 +24,16 @@ class TerrainElevation {
     // Config
     this.config = {
       EXTRUSION_HEIGHT: 3.5,         // World units per elevation level
-      COVERAGE_TARGET: 0.18,         // ~18% of eligible tiles (50% more terrain)
-      PRIMARY_MIN_SIZE: 8,
-      PRIMARY_MAX_SIZE: 30,
-      SECONDARY_MIN_SIZE: 3,
-      SECONDARY_MAX_SIZE: 12,
+      COVERAGE_TARGET: 0.25,         // ~25% of eligible tiles
+      PRIMARY_MIN_SIZE: 10,
+      PRIMARY_MAX_SIZE: 38,
+      SECONDARY_MIN_SIZE: 4,
+      SECONDARY_MAX_SIZE: 15,
       SECONDARY_MIN_PARENT: 12,      // Parent must have >= N tiles for sub-regions
       TERTIARY_MIN_SIZE: 2,
-      TERTIARY_MAX_SIZE: 6,
+      TERTIARY_MAX_SIZE: 8,
       TERTIARY_MIN_PARENT: 8,
-      MIN_SEED_SPACING: 0.12,        // Radians between primary seeds
+      MIN_SEED_SPACING: 0.10,        // Radians between primary seeds
       CLIFF_BASE_COLOR: { r: 80 / 255, g: 80 / 255, b: 80 / 255 },
       CLIFF_COLOR_VARIATION: 0.08,
     };

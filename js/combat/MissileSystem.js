@@ -468,6 +468,14 @@ class MissileSystem {
         if (bot && bot.id === serverTargetId) { tank = bot; break; }
       }
     }
+    // Flare IDs are numeric — return closest flare as visual target
+    if (!tank && typeof serverTargetId === "number" && window.flareSystem) {
+      const flares = window.flareSystem.getActiveFlares();
+      if (flares.length > 0) {
+        return { tank: null, worldPos: flares[0].position.clone(), isFlare: true };
+      }
+      return null;
+    }
     if (!tank || tank.isDead || tank._hidden) return null;
     const pos = this._getTargetWorldPos(tank);
     if (!pos) return null;
@@ -1194,6 +1202,20 @@ class MissileSystem {
     // Remote missiles: lightweight visual interpolation toward server position.
     // No terrain queries, no local target finding — server controls lifecycle.
     if (m.isRemote && !m._forcedDive) {
+      // Check if a flare is nearby — flares override server position for visual steering
+      let nearestFlarePos = null;
+      if (m.phase >= 1 && window.flareSystem) {
+        const flares = window.flareSystem.getActiveFlares();
+        let flareDist = Infinity;
+        for (let i = 0; i < flares.length; i++) {
+          const dist = flares[i].position.distanceTo(m.position);
+          if (dist < flareDist && dist <= this.config.searchRadiusMax) {
+            nearestFlarePos = flares[i].position;
+            flareDist = dist;
+          }
+        }
+      }
+
       if (m._serverPos) {
         // Smoothly interpolate toward server-authoritative position
         m.position.lerp(m._serverPos, 0.3);
@@ -1206,25 +1228,16 @@ class MissileSystem {
       }
       // Steer visually toward target (flares take priority)
       if (m.phase >= 1 && m.direction) {
-        let targetPos = null;
-        if (window.flareSystem) {
-          const flares = window.flareSystem.getActiveFlares();
-          let flareDist = Infinity;
-          for (let i = 0; i < flares.length; i++) {
-            const dist = flares[i].position.distanceTo(m.position);
-            if (dist < flareDist && dist <= this.config.searchRadiusMax) {
-              targetPos = flares[i].position;
-              flareDist = dist;
-            }
-          }
-        }
+        let targetPos = nearestFlarePos;
         if (!targetPos && m.serverTargetId) {
           const tgt = this._resolveServerTarget(m.serverTargetId);
           if (tgt) targetPos = tgt.worldPos;
         }
         if (targetPos) {
+          // Flares get aggressive steering so the visual turn is obvious
+          const steerFactor = nearestFlarePos ? this.config.turnRate * 3 : this.config.turnRate;
+          const maxSteer = steerFactor * dt;
           const desired = this._tempVec3.copy(targetPos).sub(m.position).normalize();
-          const maxSteer = this.config.turnRate * dt;
           m.direction.lerp(desired, Math.min(maxSteer, 1.0)).normalize();
         }
         // Extrapolate between server syncs
