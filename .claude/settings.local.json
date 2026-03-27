@@ -25,7 +25,10 @@
       "Read(//private/tmp/claude-501/-Users-mtkocz-Library-CloudStorage-Dropbox-Personal-ROBOTA-2026-AdLands/2b357097-3d8e-419e-a4fc-5f97ad9061fe/tasks/**)",
       "Bash(/usr/bin/git log:*)",
       "Bash(ping -c 10 198.211.110.149)",
-      "Bash(ssh root@adlands \"pm2 logs adlands --lines 30 --nostream 2>/dev/null\")"
+      "Bash(ssh root@adlands \"pm2 logs adlands --lines 30 --nostream 2>/dev/null\")",
+      "Bash(ssh root@adlands \"nginx -t 2>&1; echo ''===''; cat /etc/nginx/sites-enabled/* 2>/dev/null; echo ''===''; cat /etc/nginx/conf.d/*.conf 2>/dev/null\")",
+      "Bash(ssh root@adlands \"which caddy 2>/dev/null; systemctl list-units --type=service --state=running 2>/dev/null | grep -iE ''nginx|caddy|apache|haproxy|traefik''; echo ''===''; ss -tlnp | grep -E '':80|:443''\")",
+      "Bash(ssh root@adlands \"cat /etc/caddy/Caddyfile\")"
     ]
   }
 }
