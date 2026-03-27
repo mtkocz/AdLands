@@ -769,6 +769,13 @@ class NetworkManager {
     }
     this.pendingInputs.length = writeIdx;
 
+    // Cap replay count — during network stalls, hundreds of inputs can queue up.
+    // Replaying all of them in one frame causes a frame drop. Keep only the most
+    // recent 30 (covers ~300ms at 100fps). Older inputs are stale anyway.
+    if (this.pendingInputs.length > 30) {
+      this.pendingInputs.splice(0, this.pendingInputs.length - 30);
+    }
+
     // Detect true server-side teleport (portal, respawn, etc.) by checking
     // how far the SERVER position moved since last state update.
     let serverDTheta = this._lastServerTheta !== undefined
