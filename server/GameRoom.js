@@ -265,8 +265,8 @@ class GameRoom {
     // Server-authoritative billboard orbital parameters (18 billboards across 2 tiers)
     this.billboardOrbits = this._generateBillboardOrbits();
 
-    // Tick loop: 10 ticks/second
-    this.tickRate = 10;
+    // Tick loop: 20 ticks/second (players broadcast every tick, bots every other tick)
+    this.tickRate = 20;
     this.tickDelta = 1 / this.tickRate;
     this.tickInterval = null;
     this.lastTickTime = Date.now();
@@ -3015,8 +3015,11 @@ class GameRoom {
     this.bodyguardManager.update(dt, this.players, this.planetRotation);
 
     const _t2 = Date.now();
-    // 1.6. Process previous tick's bot output (worker already finished during inter-tick gap)
-    const botResult = this.botBridge.processPendingOutput();
+    // 1.6. Process previous tick's bot output (worker runs at 10Hz — every other tick)
+    const isBotTick = this.tick % 2 === 0;
+    const botResult = isBotTick
+      ? this.botBridge.processPendingOutput()
+      : { nextProjectileId: this.nextProjectileId, newProjectiles: [], events: [], playerHeals: [] };
     this.nextProjectileId = botResult.nextProjectileId;
     // Add bot-fired projectiles to shared array
     for (const proj of botResult.newProjectiles) {
@@ -3155,11 +3158,13 @@ class GameRoom {
 
     this.lastTickTime = now;
 
-    // 9. Send NEXT tick's input to bot worker — placed at end of tick so the
-    //    worker has the full inter-tick gap to process. Its output will
-    //    be ready at the start of the next tick (no 1-tick stale positions).
-    const sendCaptureState = (this.tick % (this.tickRate * 5) === 0) ? this.clusterCaptureState : null;
-    this.botBridge.sendTickInput(dt, this.players, this.planetRotation, this.tick, this.nextProjectileId, sendCaptureState);
+    // 9. Send NEXT tick's input to bot worker (10Hz — every other tick)
+    //    Placed at end of tick so the worker has the full inter-tick gap to process.
+    //    Its output will be ready at the start of the next bot tick.
+    if (isBotTick) {
+      const sendCaptureState = (this.tick % (this.tickRate * 5) === 0) ? this.clusterCaptureState : null;
+      this.botBridge.sendTickInput(dt * 2, this.players, this.planetRotation, this.tick, this.nextProjectileId, sendCaptureState);
+    }
 
     // Log tick duration every 100 ticks (~10s)
     const tickMs = Date.now() - tickStart;
