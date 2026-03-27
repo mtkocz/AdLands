@@ -614,16 +614,13 @@
 
           remoteTank.setTargetState(state);
 
-          // Adaptive interpolation delay based on server tick rate + ping/jitter.
+          // Adaptive interpolation delay: only needs to cover packet arrival jitter,
+          // NOT round-trip time (RTT is irrelevant for buffer safety — we're
+          // interpolating between already-received snapshots).
           // 1 tick minimum — extrapolation handles gaps when buffer runs thin.
           if (remoteTank._snapBuf) {
             const tickMs = 1000 / (net.serverTickRate || 10);
-            const halfRtt = net.smoothPing / 2;
-            const minDelay = tickMs; // 1 tick minimum; extrapolation covers the rest
-            const adaptiveDelay = Math.max(minDelay, Math.min(400, halfRtt + net.jitter * 2 + tickMs));
-            // Blend toward target delay — fast enough to track network changes (~2s),
-            // slow enough to ignore single-sample noise. Jitter headroom (2x) in
-            // adaptiveDelay already absorbs per-packet variance.
+            const adaptiveDelay = Math.max(tickMs, Math.min(300, net.jitter * 1.5 + tickMs));
             remoteTank.interpolationDelay = remoteTank.interpolationDelay * 0.65 + adaptiveDelay * 0.35;
           }
 
