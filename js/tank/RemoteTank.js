@@ -368,7 +368,7 @@ class RemoteTank {
             this._correctionAlpha = 0;
           }
           if (this._correctionAlpha < 1) {
-            this._correctionAlpha = Math.min(1, this._correctionAlpha + deltaTime * 20); // ~50ms blend
+            this._correctionAlpha = Math.min(1, this._correctionAlpha + deltaTime * 8); // ~125ms blend
             const a = this._correctionAlpha;
             this.state.phi = this.state.phi + (newPhi - this.state.phi) * a;
             this.state.theta = MathUtils.lerpAngle2Pi(this.state.theta, newTheta, a);

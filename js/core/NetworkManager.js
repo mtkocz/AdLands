@@ -806,27 +806,34 @@ class NetworkManager {
       localTank.state.keys = prevKeys;
     }
 
-    // If replayed position is very close to our local prediction, blend
-    // instead of snapping — reduces micro-jitter from float/timing drift
+    // Compare replayed position vs local prediction
     let dT = localTank.state.theta - replayTheta;
     if (dT > Math.PI) dT -= Math.PI * 2;
     else if (dT < -Math.PI) dT += Math.PI * 2;
     const dP = localTank.state.phi - replayPhi;
     const posDrift = Math.abs(dT) + Math.abs(dP);
 
-    if (posDrift < 0.00005 && Math.abs(localTank.state.speed - replaySpeed) < 0.000005) {
+    if (serverJump > 0.05) {
+      // Teleport (portal, respawn) — snap both state and visual
+      localTank._visualTheta = localTank.state.theta;
+      localTank._visualPhi = localTank.state.phi;
+      localTank._visualHeading = localTank.state.heading;
+    } else if (posDrift < 0.0001 && Math.abs(localTank.state.speed - replaySpeed) < 0.00001) {
       // Drift is sub-pixel — keep local prediction to avoid any visual noise
       localTank.state.theta = replayTheta;
       localTank.state.phi = replayPhi;
       localTank.state.heading = replayHeading;
       localTank.state.speed = replaySpeed;
-    }
-
-    if (serverJump > 0.05) {
-      // Teleport (portal, respawn) — snap visual too
-      localTank._visualTheta = localTank.state.theta;
-      localTank._visualPhi = localTank.state.phi;
-      localTank._visualHeading = localTank.state.heading;
+    } else {
+      // Non-trivial correction — shift visual position by the same delta so
+      // _updateVisual sees no discontinuity. The visual stays continuous while
+      // the simulation state snaps to the corrected position.
+      localTank._visualTheta += dT;
+      localTank._visualPhi += dP;
+      let dH = localTank.state.heading - replayHeading;
+      if (dH > Math.PI) dH -= Math.PI * 2;
+      else if (dH < -Math.PI) dH += Math.PI * 2;
+      localTank._visualHeading += dH;
     }
   }
 
