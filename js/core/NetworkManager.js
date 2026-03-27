@@ -30,6 +30,7 @@ class NetworkManager {
     // Input send throttle: match server tick rate (20Hz = 50ms)
     this._lastInputSendTime = 0;
     this._inputSendInterval = 50; // ms — matches 20 tick/sec server
+    this._recentInputs = []; // last 3 inputs for redundancy (handles packet loss)
 
     // Callback to get current planet rotation (set by MultiplayerClient).
     // Used to convert server world-space theta to hexGroup local-space.
@@ -510,10 +511,12 @@ class NetworkManager {
     });
 
     // Throttle network sends to match server tick rate (20Hz)
-    // Each input contains full key state, so server only needs the latest
+    // Bundle last 3 inputs for redundancy — if a packet drops, the next one fills the gap
     const now = performance.now();
     if (now - this._lastInputSendTime >= this._inputSendInterval) {
-      this.socket.emit("input", input);
+      if (this._recentInputs.length >= 3) this._recentInputs.shift();
+      this._recentInputs.push(input);
+      this.socket.emit("input", this._recentInputs);
       this._lastInputSendTime = now;
     }
 

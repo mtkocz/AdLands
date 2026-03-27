@@ -2175,38 +2175,43 @@ class GameRoom {
   // INPUT HANDLING
   // ========================
 
-  handleInput(socketId, input) {
+  handleInput(socketId, data) {
     const player = this.players.get(socketId);
     if (!player) return;
 
     if (this._isUndeployed(player)) return;
 
-    // Validate and apply input (don't trust client positions, only keys)
-    if (input.keys) {
-      player.keys.w = !!input.keys.w;
-      player.keys.a = !!input.keys.a;
-      player.keys.s = !!input.keys.s;
-      player.keys.d = !!input.keys.d;
-      player.keys.shift = !!input.keys.shift;
-      player.keys.q = !!input.keys.q;
-      player.keys.tac = !!input.keys.tac;
+    // Support both single input (legacy) and redundant array
+    const inputs = Array.isArray(data) ? data : [data];
 
-      // Any key pressed counts as meaningful activity
-      if (input.keys.w || input.keys.a || input.keys.s || input.keys.d) {
-        player.lastActivityAt = Date.now();
+    for (let i = 0; i < inputs.length; i++) {
+      const input = inputs[i];
+
+      // Skip already-processed inputs (redundancy dedup)
+      if (typeof input.seq === "number" && input.seq <= player.lastInputSeq) continue;
+
+      if (input.keys) {
+        player.keys.w = !!input.keys.w;
+        player.keys.a = !!input.keys.a;
+        player.keys.s = !!input.keys.s;
+        player.keys.d = !!input.keys.d;
+        player.keys.shift = !!input.keys.shift;
+        player.keys.q = !!input.keys.q;
+        player.keys.tac = !!input.keys.tac;
+
+        if (input.keys.w || input.keys.a || input.keys.s || input.keys.d) {
+          player.lastActivityAt = Date.now();
+        }
+      }
+
+      if (typeof input.turretAngle === "number" && isFinite(input.turretAngle)) {
+        player.turretAngle = input.turretAngle;
+      }
+
+      if (typeof input.seq === "number") {
+        player.lastInputSeq = input.seq;
       }
     }
-
-    // Turret angle (validated — must be a finite number)
-    if (typeof input.turretAngle === "number" && isFinite(input.turretAngle)) {
-      player.turretAngle = input.turretAngle;
-    }
-
-    // Track the input sequence number for client prediction reconciliation
-    if (typeof input.seq === "number") {
-      player.lastInputSeq = input.seq;
-    }
-
   }
 
   handleFire(socketId, power, fireTurretAngle) {

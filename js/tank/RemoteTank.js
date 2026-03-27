@@ -54,7 +54,7 @@ class RemoteTank {
     this._snapBuf = new Array(this._snapCap);
     // Pre-allocate snapshot objects to avoid per-tick GC pressure
     for (let i = 0; i < this._snapCap; i++) {
-      this._snapBuf[i] = { t: 0, theta: 0, phi: 0, heading: 0, speed: 0, turretAngle: 0 };
+      this._snapBuf[i] = { t: 0, theta: 0, phi: 0, heading: 0, speed: 0, turretAngle: 0, vTheta: 0, vPhi: 0 };
     }
     this._snapHead = 0;  // next write position
     this._snapCount = 0; // valid entries (0 to _snapCap)
@@ -253,6 +253,11 @@ class RemoteTank {
     snap.heading = serverState.h;
     snap.speed = serverState.s;
     snap.turretAngle = serverState.ta;
+    // Precompute velocity tangent for Hermite interpolation (matches SharedPhysics.moveOnSphere)
+    const sinPhi = Math.sin(serverState.p);
+    const safeSinPhi = Math.abs(sinPhi) < 0.01 ? 0.01 : sinPhi;
+    snap.vPhi = -Math.cos(serverState.h) * serverState.s * 60;
+    snap.vTheta = (-Math.sin(serverState.h) * serverState.s * 60) / safeSinPhi;
     this._snapHead = (this._snapHead + 1) % this._snapCap;
     if (this._snapCount < this._snapCap) this._snapCount++;
   }
@@ -328,10 +333,25 @@ class RemoteTank {
         const rawT = span > 0 ? (renderTime - fromSnap.t) / span : 1;
 
         if (rawT <= 1) {
-          // Normal interpolation between two snapshots
-          // LINEAR for position — constant velocity between ticks (no pulsing)
-          const newPhi = fromSnap.phi + (toSnap.phi - fromSnap.phi) * rawT;
-          const newTheta = MathUtils.lerpAngle2Pi(fromSnap.theta, toSnap.theta, rawT);
+          // Hermite spline for position — uses velocity tangents for curved paths through turns
+          const t2 = rawT * rawT;
+          const t3 = t2 * rawT;
+          const h00 = 2 * t3 - 3 * t2 + 1;
+          const h10 = t3 - 2 * t2 + rawT;
+          const h01 = -2 * t3 + 3 * t2;
+          const h11 = t3 - t2;
+          const spanSec = span / 1000;
+
+          const newPhi = h00 * fromSnap.phi + h10 * fromSnap.vPhi * spanSec
+                       + h01 * toSnap.phi + h11 * toSnap.vPhi * spanSec;
+
+          let thetaDelta = toSnap.theta - fromSnap.theta;
+          if (thetaDelta > Math.PI) thetaDelta -= Math.PI * 2;
+          if (thetaDelta < -Math.PI) thetaDelta += Math.PI * 2;
+          let newTheta = h00 * fromSnap.theta + h10 * fromSnap.vTheta * spanSec
+                       + h01 * (fromSnap.theta + thetaDelta) + h11 * toSnap.vTheta * spanSec;
+          if (newTheta < 0) newTheta += Math.PI * 2;
+          else if (newTheta >= Math.PI * 2) newTheta -= Math.PI * 2;
 
           // SMOOTHSTEP for lean-spring inputs — zero derivative at tick boundaries
           // prevents acceleration spikes that the underdamped lean springs amplify
