@@ -23,7 +23,9 @@
       "Bash(for f:*)",
       "Bash(do echo:*)",
       "Read(//private/tmp/claude-501/-Users-mtkocz-Library-CloudStorage-Dropbox-Personal-ROBOTA-2026-AdLands/2b357097-3d8e-419e-a4fc-5f97ad9061fe/tasks/**)",
-      "Bash(/usr/bin/git log:*)"
+      "Bash(/usr/bin/git log:*)",
+      "Bash(ping -c 10 198.211.110.149)",
+      "Bash(ssh root@adlands \"pm2 logs adlands --lines 30 --nostream 2>/dev/null\")"
     ]
   }
 }
