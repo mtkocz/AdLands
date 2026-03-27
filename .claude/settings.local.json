@@ -16,7 +16,14 @@
       "Bash(git add:*)",
       "Bash(git commit:*)",
       "Bash(git push:*)",
-      "Bash(ssh root@adlands \"cd /root/AdLands && git pull && pm2 restart adlands\")"
+      "Bash(ssh root@adlands \"cd /root/AdLands && git pull && pm2 restart adlands\")",
+      "Bash(ping -c 5 198.211.110.149)",
+      "Bash(traceroute -m 20 198.211.110.149)",
+      "Bash(ssh root@adlands \"cd ~/AdLands && git pull && pm2 restart adlands\")",
+      "Bash(for f:*)",
+      "Bash(do echo:*)",
+      "Read(//private/tmp/claude-501/-Users-mtkocz-Library-CloudStorage-Dropbox-Personal-ROBOTA-2026-AdLands/2b357097-3d8e-419e-a4fc-5f97ad9061fe/tasks/**)",
+      "Bash(/usr/bin/git log:*)"
     ]
   }
 }
