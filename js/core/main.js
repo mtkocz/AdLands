@@ -4118,6 +4118,7 @@
       tank.updateLOD(camera, sharedFrustum, lodOptions);
       // Player's own tank should never show as a LOD dot
       if (tank.lodDot) tank.lodDot.visible = false;
+      if (tank.lodDotOutline) tank.lodDotOutline.visible = false;
     }
 
     // Pass LOD options to botTanks for commander dot mode

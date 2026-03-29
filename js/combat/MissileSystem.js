@@ -468,11 +468,17 @@ class MissileSystem {
         if (bot && bot.id === serverTargetId) { tank = bot; break; }
       }
     }
-    // Flare IDs are numeric — return closest flare as visual target
+    // Flare IDs are numeric — find the specific flare by server ID
     if (!tank && typeof serverTargetId === "number" && window.flareSystem) {
-      const flares = window.flareSystem.getActiveFlares();
-      if (flares.length > 0) {
-        return { tank: null, worldPos: flares[0].position.clone(), isFlare: true };
+      const fs = window.flareSystem;
+      const flareIndex = fs._flareIndex;
+      if (flareIndex) {
+        const flare = flareIndex.get(serverTargetId);
+        if (flare) return { tank: null, worldPos: flare.meshItem.group.position.clone(), isFlare: true };
+      }
+      // Fallback: find closest flare (local flares don't have server IDs yet)
+      if (fs.flares.length > 0) {
+        return { tank: null, worldPos: fs.flares[0].meshItem.group.position.clone(), isFlare: true };
       }
       return null;
     }
@@ -805,6 +811,10 @@ class MissileSystem {
         serverTargetId: mlArr[i + 6] || null,
         shadowBB: null,
       };
+
+      // Set server position on spawn so first-frame interpolation works
+      missile._serverPos = startPos.clone();
+      missile._lastServerSync = performance.now();
 
       // Initialize direction toward target for late-spawned missiles (already cruising)
       if (phase > 0 && missile.serverTargetId) {
@@ -1217,13 +1227,16 @@ class MissileSystem {
       }
 
       if (m._serverPos) {
-        // Smoothly interpolate toward server-authoritative position
-        m.position.lerp(m._serverPos, 0.3);
-        // Derive direction from movement for mesh orientation
-        const delta = this._tempVec2.copy(m._serverPos).sub(m.position);
-        if (delta.lengthSq() > 0.0001) {
-          if (!m.direction) m.direction = new THREE.Vector3();
-          m.direction.copy(delta).normalize();
+        // When a flare is nearby, reduce server lerp so client-side flare steering dominates visually
+        const serverLerp = nearestFlarePos ? 0.08 : 0.3;
+        m.position.lerp(m._serverPos, serverLerp);
+        // Derive direction from movement for mesh orientation (skip when flare overrides)
+        if (!nearestFlarePos) {
+          const delta = this._tempVec2.copy(m._serverPos).sub(m.position);
+          if (delta.lengthSq() > 0.0001) {
+            if (!m.direction) m.direction = new THREE.Vector3();
+            m.direction.copy(delta).normalize();
+          }
         }
       }
       // Steer visually toward target (flares take priority)
@@ -1235,7 +1248,7 @@ class MissileSystem {
         }
         if (targetPos) {
           // Flares get aggressive steering so the visual turn is obvious
-          const steerFactor = nearestFlarePos ? this.config.turnRate * 3 : this.config.turnRate;
+          const steerFactor = nearestFlarePos ? this.config.turnRate * 4 : this.config.turnRate;
           const maxSteer = steerFactor * dt;
           const desired = this._tempVec3.copy(targetPos).sub(m.position).normalize();
           m.direction.lerp(desired, Math.min(maxSteer, 1.0)).normalize();
@@ -1401,29 +1414,27 @@ class MissileSystem {
         if (m.isRemote) {
           if (m.serverTargetId) target = this._resolveServerTarget(m.serverTargetId);
         } else if (m.targetTank && !m.targetTank.isDead) {
-          // Track the specific tank locked during cruise — not just the closest enemy
           const pos = this._getTargetWorldPos(m.targetTank);
           if (pos) target = { tank: m.targetTank, worldPos: pos, distance: pos.distanceTo(m.position) };
         }
         if (!target && !m.isRemote) {
           target = this._findClosestEnemyFromPos(m.position, ownerFaction, null);
         }
+        if (target) diveTarget = target.worldPos;
+      }
 
-        // Flares always override dive target (countermeasure)
-        if (window.flareSystem) {
-          const flares = window.flareSystem.getActiveFlares();
-          let flareDist = Infinity;
-          for (let i = 0; i < flares.length; i++) {
-            const pos = flares[i].position;
-            const dist = pos.distanceTo(m.position);
-            if (dist < flareDist && dist <= this.config.searchRadiusMax) {
-              target = { tank: null, worldPos: pos.clone(), distance: dist, isFlare: true };
-              flareDist = dist;
-            }
+      // Flares always override dive target (countermeasure) — even forced-dive missiles
+      if (window.flareSystem) {
+        const flares = window.flareSystem.getActiveFlares();
+        let flareDist = Infinity;
+        for (let i = 0; i < flares.length; i++) {
+          const pos = flares[i].position;
+          const dist = pos.distanceTo(m.position);
+          if (dist < flareDist && dist <= this.config.searchRadiusMax) {
+            diveTarget = pos.clone();
+            flareDist = dist;
           }
         }
-
-        diveTarget = target ? target.worldPos : m.diveTarget;
       }
       if (!diveTarget) { m.phase = 3; m.isLost = true; m.lostAge = 0; return; }
 

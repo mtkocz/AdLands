@@ -1136,6 +1136,7 @@ class Tank {
         if (distanceToCamera > 200) {
           this.group.visible = true;
           this.lodDot.visible = true;
+          if (this.lodDotOutline) this.lodDotOutline.visible = false;
           if (this.lodMesh) this.lodMesh.visible = false;
           if (this.shadowBlob) this.shadowBlob.visible = false;
           if (this.detailedMeshes) {
@@ -1154,6 +1155,7 @@ class Tank {
         } else {
           this.group.visible = false;
           this.lodDot.visible = false;
+          if (this.lodDotOutline) this.lodDotOutline.visible = false;
         }
       }
       return;

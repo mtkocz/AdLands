@@ -2386,9 +2386,12 @@ class BotTanks {
     bot.state.speed = 0;
     bot.damageState = "dead";
 
-    // Hide lodDot immediately so it's not detected by raycast
+    // Hide lodDot and ring immediately so they're not detected by raycast
     if (bot.lodDot) {
       bot.lodDot.visible = false;
+    }
+    if (bot.lodDotOutline) {
+      bot.lodDotOutline.visible = false;
     }
 
     // Mark as hidden for instanced LOD (won't write box/shadow instances)
