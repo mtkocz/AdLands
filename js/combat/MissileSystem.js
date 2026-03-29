@@ -1598,7 +1598,7 @@ class MissileSystem {
   // ========================
 
   _createAfterburnerSystem() {
-    const max = 300;
+    const max = 1500;
     this._ab = {
       maxParticles: max,
       activeCount: 0,
@@ -1774,7 +1774,7 @@ class MissileSystem {
   // ========================
 
   _createSmokeTrailSystem() {
-    const max = 500;
+    const max = 3000;
     this._smoke = {
       maxParticles: max,
       activeCount: 0,
