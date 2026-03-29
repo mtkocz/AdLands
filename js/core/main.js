@@ -4116,6 +4116,8 @@
     // and backface/screen-space culling would hide the tank before camera arrives
     if (!gameCamera.transitioning || gameCamera.transitionType !== 'toSurface') {
       tank.updateLOD(camera, sharedFrustum, lodOptions);
+      // Player's own tank should never show as a LOD dot
+      if (tank.lodDot) tank.lodDot.visible = false;
     }
 
     // Pass LOD options to botTanks for commander dot mode
