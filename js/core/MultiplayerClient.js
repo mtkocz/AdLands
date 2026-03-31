@@ -459,12 +459,17 @@
         if (window.missileSystem) {
           window.missileSystem.syncFromState(data.ml || [], net.playerId);
         }
+      } catch (e) {
+        console.error("[MP] missile syncFromState error:", e);
+        if (window._syncDiag) window._syncDiag.lastErr = "ml:" + e.message;
+      }
+      try {
         if (window.flareSystem) {
           window.flareSystem.syncFromState(data.fl || [], net.playerId);
         }
       } catch (e) {
-        console.error("[MP] syncFromState error:", e);
-        if (window._syncDiag) window._syncDiag.lastErr = e.message;
+        console.error("[MP] flare syncFromState error:", e);
+        if (window._syncDiag) window._syncDiag.lastErr = "fl:" + e.message;
       }
 
       // Track which bots were seen this tick (for cleanup)

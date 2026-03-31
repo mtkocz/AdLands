@@ -456,36 +456,37 @@ class MissileSystem {
 
   // Resolve server-assigned target ID to a { tank, worldPos } result
   _resolveServerTarget(serverTargetId) {
-    let tank = null;
-    if (serverTargetId === "local" || serverTargetId === window._mpState?.net?.playerId) {
-      tank = this.playerTank;
-    } else if (window._mpState?.remoteTanks) {
-      tank = window._mpState.remoteTanks.get(serverTargetId);
-    }
-    if (!tank && this.botTanks?.bots) {
-      for (let i = 0; i < this.botTanks.bots.length; i++) {
-        const bot = this.botTanks.bots[i];
-        if (bot && bot.id === serverTargetId) { tank = bot; break; }
+    try {
+      let tank = null;
+      if (serverTargetId === "local" || serverTargetId === window._mpState?.net?.playerId) {
+        tank = this.playerTank;
+      } else if (window._mpState?.remoteTanks) {
+        tank = window._mpState.remoteTanks.get(serverTargetId);
       }
-    }
-    // Flare IDs are numeric — find the specific flare by server ID
-    if (!tank && typeof serverTargetId === "number" && window.flareSystem) {
-      const fs = window.flareSystem;
-      const flareIndex = fs._flareIndex;
-      if (flareIndex) {
-        const flare = flareIndex.get(serverTargetId);
-        if (flare) return { tank: null, worldPos: flare.meshItem.group.position.clone(), isFlare: true };
+      if (!tank && this.botTanks?.bots) {
+        for (let i = 0; i < this.botTanks.bots.length; i++) {
+          const bot = this.botTanks.bots[i];
+          if (bot && bot.id === serverTargetId) { tank = bot; break; }
+        }
       }
-      // Fallback: find closest flare (local flares don't have server IDs yet)
-      if (fs.flares.length > 0) {
-        return { tank: null, worldPos: fs.flares[0].meshItem.group.position.clone(), isFlare: true };
+      // Flare IDs are numeric — find the specific flare by server ID
+      if (!tank && typeof serverTargetId === "number" && window.flareSystem) {
+        const fs = window.flareSystem;
+        if (fs._flareIndex) {
+          const flare = fs._flareIndex.get(serverTargetId);
+          if (flare?.meshItem?.group) {
+            return { tank: null, worldPos: flare.meshItem.group.position.clone(), isFlare: true };
+          }
+        }
+        return null;
       }
+      if (!tank || tank.isDead || tank._hidden) return null;
+      const pos = this._getTargetWorldPos(tank);
+      if (!pos) return null;
+      return { tank, worldPos: pos.clone() };
+    } catch (_) {
       return null;
     }
-    if (!tank || tank.isDead || tank._hidden) return null;
-    const pos = this._getTargetWorldPos(tank);
-    if (!pos) return null;
-    return { tank, worldPos: pos.clone() };
   }
 
   // Find closest enemy from a missile's world position (for in-flight retargeting)
@@ -754,9 +755,10 @@ class MissileSystem {
     const FACTIONS = ["rust", "cobalt", "viridian"];
     const STRIDE = 8;
 
-    const diag = window._syncDiag || (window._syncDiag = { mlCalls: 0, mlItems: 0, flCalls: 0, flItems: 0, remoteMissiles: 0, remoteFlares: 0, lastErr: null });
+    const diag = window._syncDiag || (window._syncDiag = { mlCalls: 0, mlItems: 0, flCalls: 0, flItems: 0, remoteMissiles: 0, remoteFlares: 0, mlSpawned: 0, mlSkipped: 0, lastErr: null });
     diag.mlCalls++;
     diag.mlItems = mlArr.length / STRIDE;
+    diag.remoteMissiles = this._missileIndex ? this._missileIndex.size : 0;
 
     if (!this._missileIndex) this._missileIndex = new Map();
 
@@ -786,10 +788,13 @@ class MissileSystem {
       const factionIdx = mlArr[i + 1];
       const faction = FACTIONS[factionIdx] || "rust";
       const poolItem = this._acquirePoolItem(faction);
-      if (!poolItem) continue;
+      if (!poolItem) { diag.mlSkipped++; continue; }
 
       const wx = mlArr[i + 3], wy = mlArr[i + 4], wz = mlArr[i + 5];
+      // Skip missiles with invalid positions (NaN serialized as null → 0,0,0)
+      if (wx == null || wy == null || wz == null) { diag.mlSkipped++; continue; }
       const startPos = new THREE.Vector3(wx, wy, wz);
+      if (startPos.lengthSq() < 100) { diag.mlSkipped++; continue; }
       const surfaceNormal = startPos.clone().normalize();
       const phase = mlArr[i + 2];
 
@@ -827,6 +832,7 @@ class MissileSystem {
       this.missiles.push(missile);
       this._missileIndex.set(id, missile);
       poolItem.group.position.copy(startPos);
+      diag.mlSpawned++;
     }
 
     const now = performance.now();
@@ -1208,6 +1214,10 @@ class MissileSystem {
 
     // Hide mesh when camera is far (orbital view) — simulation still runs
     m.poolItem.group.visible = !farAway;
+    // Defensive: ensure remote missile mesh is in the scene
+    if (m.isRemote && !m.poolItem.group.parent) {
+      this.scene.add(m.poolItem.group);
+    }
 
     // Remote missiles: lightweight visual interpolation toward server position.
     // No terrain queries, no local target finding — server controls lifecycle.

@@ -3997,6 +3997,21 @@
         pingCounter.textContent = "-- ms";
         pingCounter.style.color = "#00bfff";
       }
+      // Missile diagnostic (temporary — remove when remote missiles confirmed working)
+      const sd = window._syncDiag;
+      if (sd) {
+        const ml = missileSystem.missiles.length;
+        const rm = sd.remoteMissiles || 0;
+        const srv = sd.mlItems || 0;
+        const sp = sd.mlSpawned || 0;
+        const sk = sd.mlSkipped || 0;
+        if (srv > 0 || rm > 0 || ml > 0 || sp > 0) {
+          pingCounter.textContent += " | ML:" + ml + " RM:" + rm + " SRV:" + srv + " SP:" + sp + " SK:" + sk;
+        }
+        if (sd.lastErr) {
+          pingCounter.textContent += " ERR:" + sd.lastErr;
+        }
+      }
       frameCount = 0;
       fpsLastTime = now;
       // Refresh player counts once per second to catch quiet despawns
