@@ -847,6 +847,10 @@
             name: formData.name,
             tagline: formData.tagline,
             websiteUrl: formData.websiteUrl,
+            _approvedTagline: formData.tagline,
+            _approvedUrl: formData.websiteUrl,
+            pendingTagline: null,
+            pendingWebsiteUrl: null,
             logoImage: formData.logoImage,
             notes: sponsorForm.getNotes(),
           };
@@ -941,6 +945,12 @@
               title: territoryInfo.title,
               tagline: territoryInfo.tagline,
               websiteUrl: territoryInfo.websiteUrl,
+              _approvedTitle: territoryInfo.title,
+              _approvedTagline: territoryInfo.tagline,
+              _approvedUrl: territoryInfo.websiteUrl,
+              pendingTitle: null,
+              pendingTagline: null,
+              pendingWebsiteUrl: null,
               cluster: { tileIndices: selectedTiles },
               territoryType: territoryType,
               patternImage: formData.patternImage,
@@ -1520,9 +1530,9 @@
               ? `<img src="${textureSrc}" alt="" class="territory-thumb-img">`
               : '<span class="territory-thumb-empty"></span>';
 
-            const infoTitle = s.pendingTitle || s._approvedTitle || s.title || s.name || "";
-            const infoTagline = s.pendingTagline || s._approvedTagline || s.tagline || "";
-            const infoUrl = s.pendingWebsiteUrl || s._approvedUrl || s.websiteUrl || "";
+            const infoTitle = s.title || s._approvedTitle || s.pendingTitle || s.name || "";
+            const infoTagline = s.tagline || s._approvedTagline || s.pendingTagline || "";
+            const infoUrl = s.websiteUrl || s._approvedUrl || s.pendingWebsiteUrl || "";
 
             const titleLine = infoTitle
               ? `<strong>${escapeHtml(infoTitle)}</strong>`
@@ -1621,9 +1631,9 @@
         let playerInfoHtml = "";
         if (hasPlayerTerritory) {
           const pName = escapeHtml(first.ownerEmail || first.ownerUid || "Unknown");
-          const pTitle = first.pendingTitle || first._approvedTitle || first.title || "";
-          const pTagline = first.pendingTagline || first._approvedTagline || first.tagline || "";
-          const pUrl = first.pendingWebsiteUrl || first._approvedUrl || first.websiteUrl || "";
+          const pTitle = first.title || first._approvedTitle || first.pendingTitle || "";
+          const pTagline = first.tagline || first._approvedTagline || first.pendingTagline || "";
+          const pUrl = first.websiteUrl || first._approvedUrl || first.pendingWebsiteUrl || "";
           const titlePart = pTitle ? escapeHtml(pTitle) : "";
           const taglinePart = pTagline ? (titlePart ? " &middot; " : "") + escapeHtml(pTagline) : "";
           const detailLine = (titlePart || taglinePart) ? `<div class="sponsor-card-detail">${titlePart}${taglinePart}</div>` : "";
@@ -1998,6 +2008,12 @@
       updateData.title = territoryInfo.title;
       updateData.tagline = territoryInfo.tagline;
       updateData.websiteUrl = territoryInfo.websiteUrl;
+      updateData._approvedTitle = territoryInfo.title;
+      updateData._approvedTagline = territoryInfo.tagline;
+      updateData._approvedUrl = territoryInfo.websiteUrl;
+      updateData.pendingTitle = null;
+      updateData.pendingTagline = null;
+      updateData.pendingWebsiteUrl = null;
     }
 
     await SponsorStorage.update(id, updateData);

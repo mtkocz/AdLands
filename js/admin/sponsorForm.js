@@ -479,9 +479,9 @@ class SponsorForm {
      * @param {Object} sponsor
      */
     loadTerritoryInfo(sponsor) {
-        this.territoryNameInput.value = sponsor.pendingTitle || sponsor._approvedTitle || sponsor.title || "";
-        this.territoryTaglineInput.value = sponsor.pendingTagline || sponsor._approvedTagline || sponsor.tagline || "";
-        this.territoryWebsiteInput.value = sponsor.pendingWebsiteUrl || sponsor._approvedUrl || sponsor.websiteUrl || "";
+        this.territoryNameInput.value = sponsor.title || sponsor._approvedTitle || sponsor.pendingTitle || "";
+        this.territoryTaglineInput.value = sponsor.tagline || sponsor._approvedTagline || sponsor.pendingTagline || "";
+        this.territoryWebsiteInput.value = sponsor.websiteUrl || sponsor._approvedUrl || sponsor.pendingWebsiteUrl || "";
     }
 
     /** @returns {string} */
