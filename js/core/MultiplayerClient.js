@@ -1226,7 +1226,8 @@
             // which flushes the deferred hit effects queued above.
             let missileImpactPos = null;
             if (data.targetId === net.playerId && tank.group) {
-              missileImpactPos = tank.group.position.clone();
+              missileImpactPos = new THREE.Vector3();
+              tank.group.getWorldPosition(missileImpactPos);
             } else {
               const victim = remoteTanks.get(data.targetId);
               if (victim?.group) {
@@ -1245,15 +1246,14 @@
             }
             const diveStarted = missileImpactPos &&
               window.missileSystem.forceDiveToPoint(data.projectileId, missileImpactPos);
-            if (!diveStarted) {
-              // Missile visual gone (pool recycled or already destroyed) —
-              // flush deferred hit immediately so damage applies without delay
+            if (!diveStarted && !missileImpactPos) {
               window.missileSystem._flushPendingHit(data.projectileId);
             }
           } else {
             let impactPos = null;
             if (data.targetId === net.playerId && tank.group) {
-              impactPos = tank.group.position.clone();
+              impactPos = new THREE.Vector3();
+              tank.group.getWorldPosition(impactPos);
             } else {
               const victim = remoteTanks.get(data.targetId);
               if (victim?.group) {

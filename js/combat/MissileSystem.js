@@ -39,6 +39,7 @@ class MissileSystem {
 
     // Deferred hit effects — wait for missile to visually detonate before showing damage
     this._pendingHits = new Map(); // serverId -> { callback, timeout }
+    this._pendingDiveTargets = new Map(); // serverId -> world-space impact point
 
     // Lock-on state
     this._missileEquipped = false;
@@ -823,9 +824,11 @@ class MissileSystem {
 
     missile._serverPos = startPos.clone();
     missile._lastServerSync = performance.now();
+    this._applyPendingDiveTarget(missile);
 
     this.missiles.push(missile);
     this._missileIndex.set(missile.serverId, missile);
+    this._clearPendingHitTimeout(missile.serverId);
     poolItem.group.position.copy(startPos);
 
     // Dust wave — only if firing tank is visible (avoid effects from empty space)
@@ -876,7 +879,10 @@ class MissileSystem {
         const wx = mlArr[i + 3], wy = mlArr[i + 4], wz = mlArr[i + 5];
         if (!existing._serverPos) existing._serverPos = new THREE.Vector3();
         existing._serverPos.set(wx, wy, wz);
-        existing.phase = mlArr[i + 2];
+        const serverPhase = mlArr[i + 2];
+        if ((existing.phase || 0) < 2) {
+          existing.phase = Math.max(existing.phase || 0, serverPhase);
+        }
         continue;
       }
 
@@ -924,9 +930,11 @@ class MissileSystem {
           missile.direction = tgt.worldPos.clone().sub(startPos).normalize();
         }
       }
+      this._applyPendingDiveTarget(missile);
 
       this.missiles.push(missile);
       this._missileIndex.set(id, missile);
+      this._clearPendingHitTimeout(id);
       poolItem.group.position.copy(startPos);
       diag.mlSpawned++;
     }
@@ -967,10 +975,11 @@ class MissileSystem {
   queueHitEffect(projectileId, callback) {
     const existing = this._pendingHits.get(projectileId);
     if (existing) clearTimeout(existing.timeout);
-    const timeout = setTimeout(() => {
+    const trackedMissile = this.missiles.find((m) => m.serverId === projectileId) || null;
+    const timeout = trackedMissile ? null : setTimeout(() => {
       this._pendingHits.delete(projectileId);
       callback();
-    }, 2000);
+    }, 1500);
     this._pendingHits.set(projectileId, { callback, timeout });
   }
 
@@ -991,6 +1000,27 @@ class MissileSystem {
     }
   }
 
+  _clearPendingHitTimeout(serverId) {
+    const pending = this._pendingHits.get(serverId);
+    if (pending?.timeout) {
+      clearTimeout(pending.timeout);
+      pending.timeout = null;
+    }
+  }
+
+  _applyPendingDiveTarget(missile) {
+    if (missile?.serverId == null) return false;
+    const pendingTarget = this._pendingDiveTargets.get(missile.serverId);
+    if (!pendingTarget) return false;
+    this._clearPendingHitTimeout(missile.serverId);
+    missile.phase = 2;
+    missile.targetTank = null;
+    missile.diveTarget = pendingTarget.clone();
+    missile._forcedDive = true;
+    this._pendingDiveTargets.delete(missile.serverId);
+    return true;
+  }
+
   // Remove a missile by server projectile ID, exploding at impactPos if provided
   removeByServerId(projectileId, impactPos) {
     for (let i = this.missiles.length - 1; i >= 0; i--) {
@@ -999,6 +1029,7 @@ class MissileSystem {
         return;
       }
     }
+    this._pendingDiveTargets.delete(projectileId);
   }
 
   // Force missile into dive toward a specific point (server confirmed hit)
@@ -1006,12 +1037,16 @@ class MissileSystem {
     for (let i = this.missiles.length - 1; i >= 0; i--) {
       const m = this.missiles[i];
       if (m.serverId === projectileId) {
+        this._clearPendingHitTimeout(projectileId);
         m.phase = 2;
         m.targetTank = null;
         m.diveTarget = impactPos.clone();
         m._forcedDive = true;
         return true;
       }
+    }
+    if (impactPos) {
+      this._pendingDiveTargets.set(projectileId, impactPos.clone());
     }
     return false;
   }
@@ -1318,7 +1353,7 @@ class MissileSystem {
 
     // Remote missiles follow the same visual simulation as local missiles.
     // Server state and reliable events only act as soft corrections and phase changes.
-    if (m.isRemote && m._serverPos) {
+    if (m.isRemote && m._serverPos && m.phase < 2) {
       const drift = this._tempVec2.copy(m._serverPos).sub(m.position);
       const driftLenSq = drift.lengthSq();
       if (driftLenSq > 0.000001) {
@@ -1326,7 +1361,7 @@ class MissileSystem {
         if (driftLen > 30) {
           m.position.copy(m._serverPos);
         } else {
-          const correction = m.phase === 0 ? 0.35 : m.phase === 2 ? 0.18 : 0.14;
+          const correction = m.phase === 0 ? 0.35 : 0.14;
           m.position.addScaledVector(drift, correction);
         }
         if ((!m.direction || m.direction.lengthSq() < 0.0001) && driftLen > 0.01) {
@@ -1615,6 +1650,7 @@ class MissileSystem {
     }
 
     if (m.poolItem) this._releasePoolItem(m.poolItem);
+    if (m.serverId != null) this._pendingDiveTargets.delete(m.serverId);
     if (this._missileIndex && m.serverId != null) this._missileIndex.delete(m.serverId);
     this.missiles.splice(index, 1);
   }
