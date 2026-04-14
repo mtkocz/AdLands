@@ -1395,9 +1395,11 @@ class MissileSystem {
       // CRUISE / HOMING: Steer toward target at altitude
       m.phase1Age = (m.phase1Age || 0) + dt;
       const target = this._getVisualTargetForMissile(m, {
-        allowSearch: true,
+        // Remote missiles are server-authoritative for retarget/lost/dive behavior.
+        // Do not run full local target searches for them every frame.
+        allowSearch: !m.isRemote,
         useHemisphere: m.phase1Age > 1.0,
-        includeFlares: true,
+        includeFlares: !m.isRemote,
       });
 
       if (target) {
@@ -1430,6 +1432,10 @@ class MissileSystem {
             m.diveTarget = targetSurface.clone();
           }
         }
+      } else if (m.isRemote) {
+        // Keep current server-guided cruise heading until an explicit missile-lost
+        // or missile-dive event arrives.
+        m.targetTank = null;
       } else if (!m.isLost) {
         // No target — enter wobble phase
         m.phase = 3;
@@ -1477,7 +1483,7 @@ class MissileSystem {
     } else if (m.phase === 2) {
       // TERMINAL DIVE: Steer downward toward ground target (no forward filter — committed to dive)
       let diveTarget = m.diveTarget;
-      if (!m._forcedDive) {
+      if (!m.isRemote && !m._forcedDive) {
         const target = this._getVisualTargetForMissile(m, {
           allowSearch: true,
           useHemisphere: false,
@@ -1519,7 +1525,7 @@ class MissileSystem {
       m.lostAge = (m.lostAge || 0) + dt;
 
       const reLocks = m.reLockCount || 0;
-      const target = reLocks < 2
+      const target = !m.isRemote && reLocks < 2
         ? this._getVisualTargetForMissile(m, {
             allowSearch: true,
             useHemisphere: false,
