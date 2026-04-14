@@ -13,11 +13,7 @@
   const CONFIG = {
     sphereRadius: 480,
     dayNightCycleMinutes: 30,
-    lodBands: {
-      far: 200,   // Band 1: tank meshes, cannon LOD, server viewMode
-      mid: 150,   // Band 2: particle systems (dust, missiles, flares)
-      near: 100,  // Band 3: fine details (headlights, shields, tracks)
-    },
+    lodTransitionDistance: 140, // Switch from orbital-grade simplification to full surface detail
     bloom: {
       strength: 3,
       radius: 1.2,
@@ -3962,7 +3958,6 @@
   const ssChildMats = []; // Preallocated for bloom pass space station material swap
   let bloomMeshCache = null; // Cached mesh references for bloom pass (avoids traverse per frame)
   const _shadowTargetTemp = new THREE.Vector3(); // Reused for orbital shadow target
-  let _lodWarmup = 0; // Time-based LOD warmup after orbital→surface transition
   let _prevCameraDist = 0; // Previous frame camera distance for motion blur velocity
   let _motionBlurIntensity = 0; // Smoothed motion blur intensity
 
@@ -4030,28 +4025,21 @@
     const isOrbitalView =
       gameCamera.mode === "orbital" || gameCamera.mode === "fastTravel" ||
       (gameCamera.transitioning && (gameCamera.transitionType === "toOrbital" || gameCamera.transitionType === "toFastTravel"));
-    // LOD bands with time-based warmup after landing (distance stagger alone is
-    // too narrow — camera sweeps 200→100 units in ~5 frames during smoothstep push)
+    // Binary LOD state: stay in orbital-grade simplification until the camera is
+    // much closer to the surface, then switch all gameplay detail on together.
     const cameraSurfaceDist = camera.position.length() - CONFIG.sphereRadius;
     const isDescending = gameCamera.transitioning && gameCamera.transitionType === "toSurface";
-    if (isDescending) {
-      _lodWarmup = 0.3; // reset warmup timer each frame while descending
-    } else if (_lodWarmup > 0) {
-      _lodWarmup = Math.max(0, _lodWarmup - deltaTime);
-    }
-    const isFarView = isDescending || cameraSurfaceDist > CONFIG.lodBands.far;
-    const isMidView = isFarView || _lodWarmup > 0.2 || cameraSurfaceDist > CONFIG.lodBands.mid;
-    const isNearView = isMidView || _lodWarmup > 0.1 || cameraSurfaceDist > CONFIG.lodBands.near;
+    const isLowDetailView =
+      isDescending || cameraSurfaceDist > CONFIG.lodTransitionDistance;
     if (!fastTravel.active) {
       tank.setControlsEnabled(!isOrbitalView);
     }
 
     // Notify server of view mode transitions so it can skip spatial filtering.
-    // Switch to "ground" early when camera swoops below 200 units (even during
-    // fastTravel→surface transition) so the server starts sending nearby bots
-    // before deployment completes — tanks are visible as the camera arrives.
+    // Use the same binary cutoff as the client LOD path so nearby entities only
+    // come alive once the camera is close enough for full surface detail.
     if (window.networkManager?.connected) {
-      const viewMode = (isOrbitalView && isFarView) ? "orbital" : "ground";
+      const viewMode = (isOrbitalView && isLowDetailView) ? "orbital" : "ground";
       if (viewMode !== window._lastSentViewMode) {
         window._lastSentViewMode = viewMode;
         window.networkManager.sendViewMode(viewMode);
@@ -4103,9 +4091,6 @@
     // invalidates the shadow map, causing a GPU stall from burst rebuilds.
     // Frozen shadows are invisible during fast camera motion (same rationale as frustum cull skip below).
     renderer.shadowMap.autoUpdate = !gameCamera.transitioning;
-    if (!gameCamera.transitioning && _lodWarmup > 0) {
-      renderer.shadowMap.needsUpdate = true;
-    }
 
     // Update terrain visibility culling (hide tiles on far side of planet + frustum cull overlays).
     // During camera transitions (zooming), skip per-tile frustum culling (expensive intersectsObject
@@ -4177,26 +4162,25 @@
     missileSystem.setMissileEquipped(isMissileActive);
 
     // Update cannon charging, projectiles, and combat effects
-    // Band FAR (200 units): tank meshes + cannon effects
-    cannonSystem.isOrbitalView = isFarView;
-    if (!isFarView) {
+    cannonSystem.isOrbitalView = isLowDetailView;
+    if (!isLowDetailView) {
       cannonSystem.updateCharge(deltaTime, tank, playerFaction);
     }
-    cannonSystem.update(deltaTime, sharedFrustum, isFarView);
-    missileSystem.hideReticle = isFarView || !hasSpawnedIn || tank.isDead;
+    cannonSystem.update(deltaTime, sharedFrustum, isLowDetailView);
+    missileSystem.hideReticle = isLowDetailView || !hasSpawnedIn || tank.isDead;
     missileSystem.update(deltaTime, sharedFrustum, camera);
     flareSystem.update(deltaTime, camera);
 
-    // Band MID (150 units): particle systems (own distance culling for cleanup)
+    // Binary LOD: particle systems follow the same cutoff as the rest of the surface detail.
     capturePulse.update(deltaTime, sharedFrustum, camera);
     cryptoVisuals.update(deltaTime);
-    dustShockwave.update(deltaTime, sharedFrustum, isMidView);
+    dustShockwave.update(deltaTime, sharedFrustum, isLowDetailView);
 
-    // Band NEAR (100 units): fine details
+    // Binary LOD: fine details are either fully on or fully off.
     tankHeadlights.update(deltaTime, camera);
-    if (!isNearView) {
-      treadTracks.update(tank, deltaTime, camera, isNearView, sharedFrustum);
-      treadDust.update(deltaTime, camera, isNearView, sharedFrustum);
+    if (!isLowDetailView) {
+      treadTracks.update(tank, deltaTime, camera, isLowDetailView, sharedFrustum);
+      treadDust.update(deltaTime, camera, isLowDetailView, sharedFrustum);
       tankDamageEffects.update(deltaTime, sharedFrustum, camera);
       shieldHolosphere.update(deltaTime);
       tankCollision.update(deltaTime, sharedFrustum, camera);
