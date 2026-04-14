@@ -923,9 +923,10 @@
 
       const remoteTank = remoteTanks.get(data.id);
 
-      // Missiles are synced via state broadcast (syncFromState), not fire events.
-      // Show incoming warning if this missile targets us.
       if (data.type === "missile") {
+        if (window.missileSystem) {
+          window.missileSystem.spawnRemoteMissile?.(data, remoteTank);
+        }
         if (data.targetId === net.playerId && window.missileSystem) {
           window.missileSystem.showIncomingWarning();
         }

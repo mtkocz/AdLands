@@ -703,6 +703,16 @@ class MissileSystem {
 
   // Spawn visual-only missile from remote player
   spawnRemoteMissile(data, remoteTank) {
+    if (!this._missileIndex) this._missileIndex = new Map();
+    const existing = this._missileIndex.get(data.projectileId);
+    if (existing) {
+      existing._lastServerSync = performance.now();
+      if (!existing._serverPos) existing._serverPos = new THREE.Vector3();
+      existing._serverPos.set(data.wx, data.wy, data.wz);
+      if (data.targetId != null) existing.serverTargetId = data.targetId;
+      return true;
+    }
+
     const faction = data.faction || remoteTank?.faction || "rust";
     const poolItem = this._acquirePoolItem(faction);
     if (!poolItem) return false;
@@ -739,7 +749,11 @@ class MissileSystem {
       shadowBB,
     };
 
+    missile._serverPos = startPos.clone();
+    missile._lastServerSync = performance.now();
+
     this.missiles.push(missile);
+    this._missileIndex.set(missile.serverId, missile);
     poolItem.group.position.copy(startPos);
 
     // Dust wave — only if firing tank is visible (avoid effects from empty space)
@@ -773,8 +787,18 @@ class MissileSystem {
       if (existing) {
         existing._lastServerSync = performance.now();
         const newTargetId = mlArr[i + 6] || null;
-        if (newTargetId && newTargetId !== existing.serverTargetId) {
-          existing.serverTargetId = newTargetId;
+        if (newTargetId !== existing.serverTargetId) existing.serverTargetId = newTargetId;
+        const newFaction = FACTIONS[mlArr[i + 1]] || existing.faction || "rust";
+        if (newFaction !== existing.faction) {
+          existing.faction = newFaction;
+          existing.ownerFaction = newFaction;
+          const mat = this._materials[newFaction] || this._materials.rust;
+          existing.poolItem?.group?.traverse((child) => {
+            if (child.isMesh) child.material = mat;
+          });
+          if (existing.poolItem?.light) {
+            existing.poolItem.light.color.setHex(FACTION_COLORS[newFaction]?.hex || 0xff4444);
+          }
         }
         // Update server world position for lightweight interpolation
         const wx = mlArr[i + 3], wy = mlArr[i + 4], wz = mlArr[i + 5];
@@ -1219,69 +1243,24 @@ class MissileSystem {
       this.scene.add(m.poolItem.group);
     }
 
-    // Remote missiles: lightweight visual interpolation toward server position.
-    // No terrain queries, no local target finding — server controls lifecycle.
-    if (m.isRemote && !m._forcedDive) {
-      // Check if a flare is nearby — flares override server position for visual steering
-      let nearestFlarePos = null;
-      if (m.phase >= 1 && window.flareSystem) {
-        const flares = window.flareSystem.getActiveFlares();
-        let flareDist = Infinity;
-        for (let i = 0; i < flares.length; i++) {
-          const dist = flares[i].position.distanceTo(m.position);
-          if (dist < flareDist && dist <= this.config.searchRadiusMax) {
-            nearestFlarePos = flares[i].position;
-            flareDist = dist;
-          }
+    // Remote missiles follow the same visual simulation as local missiles.
+    // Server state and reliable events only act as soft corrections and phase changes.
+    if (m.isRemote && m._serverPos) {
+      const drift = this._tempVec2.copy(m._serverPos).sub(m.position);
+      const driftLenSq = drift.lengthSq();
+      if (driftLenSq > 0.000001) {
+        const driftLen = Math.sqrt(driftLenSq);
+        if (driftLen > 30) {
+          m.position.copy(m._serverPos);
+        } else {
+          const correction = m.phase === 0 ? 0.35 : m.phase === 2 ? 0.18 : 0.14;
+          m.position.addScaledVector(drift, correction);
+        }
+        if ((!m.direction || m.direction.lengthSq() < 0.0001) && driftLen > 0.01) {
+          if (!m.direction) m.direction = new THREE.Vector3();
+          m.direction.copy(drift).normalize();
         }
       }
-
-      if (m._serverPos) {
-        // When a flare is nearby, reduce server lerp so client-side flare steering dominates visually
-        const serverLerp = nearestFlarePos ? 0.08 : 0.3;
-        m.position.lerp(m._serverPos, serverLerp);
-        // Derive direction from movement for mesh orientation (skip when flare overrides)
-        if (!nearestFlarePos) {
-          const delta = this._tempVec2.copy(m._serverPos).sub(m.position);
-          if (delta.lengthSq() > 0.0001) {
-            if (!m.direction) m.direction = new THREE.Vector3();
-            m.direction.copy(delta).normalize();
-          }
-        }
-      }
-      // Steer visually toward target (flares take priority)
-      if (m.phase >= 1 && m.direction) {
-        let targetPos = nearestFlarePos;
-        if (!targetPos && m.serverTargetId) {
-          const tgt = this._resolveServerTarget(m.serverTargetId);
-          if (tgt) targetPos = tgt.worldPos;
-        }
-        if (targetPos) {
-          // Flares get aggressive steering so the visual turn is obvious
-          const steerFactor = nearestFlarePos ? this.config.turnRate * 4 : this.config.turnRate;
-          const maxSteer = steerFactor * dt;
-          const desired = this._tempVec3.copy(targetPos).sub(m.position).normalize();
-          m.direction.lerp(desired, Math.min(maxSteer, 1.0)).normalize();
-        }
-        // Extrapolate between server syncs
-        const speed = m.phase === 2 ? this.config.missileSpeed * 1.2 * dt60
-                    : this.config.missileSpeed * dt60;
-        m.position.addScaledVector(m.direction, speed);
-      } else if (m.phase === 0 && m.surfaceNormal) {
-        m.launchSpeed += 30 * dt;
-        m.position.addScaledVector(m.surfaceNormal, m.launchSpeed * dt);
-      }
-      m.poolItem.group.position.copy(m.position);
-      if (m.direction) {
-        const lookTarget = this._tempVec2.copy(m.position).add(m.direction);
-        m.poolItem.group.lookAt(lookTarget);
-        m.poolItem.group.quaternion.multiply(this._meshOrientQuat);
-      }
-      if (!farAway && m.phase >= 0) {
-        this._emitAfterburner(m);
-        if (m.phase >= 1) this._emitSmoke(m);
-      }
-      return;
     }
 
     if (m.phase === 0) {
