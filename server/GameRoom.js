@@ -4634,7 +4634,12 @@ class GameRoom {
     if (!this._statePayload) this._statePayload = { tick: 0, bg: null, pr: 0, ma: [], sa: [], ba: [], tc: 0, bfc: null, ids: null, names: null, seq: 0, r: 0, rt: 0 };
     const statePayload = this._statePayload;
     statePayload.tick = this.tick;
-    statePayload.ml = mlArr.length > 0 ? mlArr : undefined;
+    // Missiles already emit reliable fire/dive/lost/crash events. The state array is
+    // primarily for correction and late-join recovery, so under heavier missile load
+    // we can safely halve its send rate to cut broadcast pressure.
+    const missileCount = mlArr.length / 8;
+    const sendMissileSync = missileCount === 0 || missileCount <= 12 || (this.tick % 2 === 0);
+    statePayload.ml = sendMissileSync ? mlArr : undefined;
     statePayload.fl = flArr.length > 0 ? flArr : undefined;
     statePayload.bg = this.bodyguardManager.getStatesForBroadcast();
     statePayload.pr = this.planetRotation;
@@ -4971,7 +4976,7 @@ class GameRoom {
     this._payloadEmitCount++;
     if (this._payloadEmitCount % 10 === 0) {
       const entityCount = Object.keys(playerStates).length;
-      const estimatedBytes = entityCount * 80 + (statePayload.missiles ? statePayload.missiles.length * 60 : 0) + (statePayload.flares ? statePayload.flares.length * 40 : 0);
+      const estimatedBytes = entityCount * 80 + (statePayload.ml ? statePayload.ml.length * 8 : 0) + (statePayload.fl ? statePayload.fl.length * 8 : 0);
       this._payloadByteSum += estimatedBytes;
       this._payloadEntitySum += entityCount;
       this._payloadCount++;

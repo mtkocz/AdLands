@@ -456,8 +456,8 @@
       }
 
       try {
-        if (window.missileSystem) {
-          window.missileSystem.syncFromState(data.ml || [], net.playerId);
+        if (window.missileSystem && data.ml !== undefined) {
+          window.missileSystem.syncFromState(data.ml, net.playerId);
         }
       } catch (e) {
         console.error("[MP] missile syncFromState error:", e);
