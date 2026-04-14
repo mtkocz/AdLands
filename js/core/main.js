@@ -13,7 +13,7 @@
   const CONFIG = {
     sphereRadius: 480,
     dayNightCycleMinutes: 30,
-    lodTransitionDistance: 140, // Switch from orbital-grade simplification to full surface detail
+    lodTransitionBuffer: 15, // Switch to full surface detail shortly before the deployment camera finishes settling
     bloom: {
       strength: 3,
       radius: 1.2,
@@ -4029,8 +4029,12 @@
     // much closer to the surface, then switch all gameplay detail on together.
     const cameraSurfaceDist = camera.position.length() - CONFIG.sphereRadius;
     const isDescending = gameCamera.transitioning && gameCamera.transitionType === "toSurface";
+    const deployConfirmationHeight =
+      Math.max(0, gameCamera.surfaceDistance - CONFIG.sphereRadius);
+    const lodTransitionDistance =
+      deployConfirmationHeight + CONFIG.lodTransitionBuffer;
     const isLowDetailView =
-      isDescending || cameraSurfaceDist > CONFIG.lodTransitionDistance;
+      isDescending || cameraSurfaceDist > lodTransitionDistance;
     if (!fastTravel.active) {
       tank.setControlsEnabled(!isOrbitalView);
     }
