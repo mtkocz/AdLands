@@ -913,7 +913,7 @@
         // Assign server projectile ID to our local projectile so it can be
         // removed by removeProjectileByServerId on server-confirmed hits
         if (data.type === "missile") {
-          window.missileSystem?.assignServerIdToLocal?.(data.projectileId);
+          window.missileSystem?.assignServerIdToLocal?.(data.projectileId, data.targetId);
           // Show warning for our own missile targeting us (edge case: reflected)
         } else if (data.projectileId != null) {
           cannonSystem.assignServerIdToLocal?.(data.projectileId);

@@ -489,6 +489,77 @@ class MissileSystem {
     }
   }
 
+  _resolveMissileTrackedTarget(missile) {
+    if (missile.serverTargetId != null) {
+      const serverTarget = this._resolveServerTarget(missile.serverTargetId);
+      if (serverTarget) return serverTarget;
+    }
+
+    if (missile.targetTank && !missile.targetTank.isDead && !missile.targetTank._hidden) {
+      const worldPos = this._getTargetWorldPos(missile.targetTank);
+      if (worldPos) {
+        return {
+          tank: missile.targetTank,
+          worldPos: worldPos.clone(),
+          distance: worldPos.distanceTo(missile.position),
+        };
+      }
+    }
+
+    return null;
+  }
+
+  _findClosestFlareFromPos(missilePos, maxRange) {
+    if (!window.flareSystem) return null;
+
+    const range = maxRange || this.config.searchRadiusMax;
+    const flares = window.flareSystem.getActiveFlares();
+    let flareClosest = null;
+    let flareDist = Infinity;
+
+    for (let i = 0; i < flares.length; i++) {
+      const pos = flares[i].position;
+      const dist = pos.distanceTo(missilePos);
+      if (dist < flareDist && dist <= range) {
+        flareClosest = { tank: null, worldPos: pos.clone(), distance: dist, isFlare: true };
+        flareDist = dist;
+      }
+    }
+
+    return flareClosest;
+  }
+
+  _getVisualTargetForMissile(missile, options = {}) {
+    const {
+      allowSearch = true,
+      useHemisphere = false,
+      searchRange = null,
+      includeFlares = true,
+    } = options;
+
+    const ownerFaction = missile.faction || missile.ownerFaction;
+    let target = this._resolveMissileTrackedTarget(missile);
+
+    if (!target && allowSearch) {
+      target = this._findClosestEnemyFromPos(
+        missile.position,
+        ownerFaction,
+        useHemisphere ? missile.direction : null,
+        searchRange || this.config.searchRadiusMax
+      );
+    }
+
+    if (includeFlares) {
+      const flareTarget = this._findClosestFlareFromPos(
+        missile.position,
+        searchRange || this.config.searchRadiusMax
+      );
+      if (flareTarget) target = flareTarget;
+    }
+
+    return target;
+  }
+
   // Find closest enemy from a missile's world position (for in-flight retargeting)
   // missileDir: current travel direction (if provided, only targets in forward hemisphere)
   // maxRange: maximum distance in world units (default: searchRadiusMax = 120)
@@ -667,6 +738,7 @@ class MissileSystem {
       direction: null,  // Initialized when entering phase 1
       isRemote: false,
       serverId: null,
+      serverTargetId: target?.tank?.id ?? null,
       shadowBB,
     };
 
@@ -881,11 +953,12 @@ class MissileSystem {
     }
   }
 
-  assignServerIdToLocal(serverId) {
+  assignServerIdToLocal(serverId, targetId) {
     for (let i = this.missiles.length - 1; i >= 0; i--) {
       const m = this.missiles[i];
       if (!m.isRemote && m.serverId == null) {
         m.serverId = serverId;
+        if (targetId != null) m.serverTargetId = targetId;
         return;
       }
     }
@@ -1286,38 +1359,11 @@ class MissileSystem {
     } else if (m.phase === 1) {
       // CRUISE / HOMING: Steer toward target at altitude
       m.phase1Age = (m.phase1Age || 0) + dt;
-      const ownerFaction = m.faction || m.ownerFaction;
-
-      // For remote missiles, resolve server's target; for local, find closest enemy
-      let target = null;
-      if (m.isRemote) {
-        if (m.serverTargetId) {
-          target = this._resolveServerTarget(m.serverTargetId);
-        }
-        // Remote missiles don't pick their own tank targets locally —
-        // but flares should still attract them visually
-      } else {
-        const useHemisphere = m.phase1Age > 1.0;
-        target = this._findClosestEnemyFromPos(
-          m.position, ownerFaction, useHemisphere ? m.direction : null
-        );
-      }
-
-      // Flares always override targets within range (countermeasure)
-      if (window.flareSystem) {
-        const flares = window.flareSystem.getActiveFlares();
-        let flareClosest = null;
-        let flareDist = Infinity;
-        for (let i = 0; i < flares.length; i++) {
-          const pos = flares[i].position;
-          const dist = pos.distanceTo(m.position);
-          if (dist < flareDist && dist <= this.config.searchRadiusMax) {
-            flareClosest = { tank: null, worldPos: pos.clone(), distance: dist, isFlare: true };
-            flareDist = dist;
-          }
-        }
-        if (flareClosest) target = flareClosest;
-      }
+      const target = this._getVisualTargetForMissile(m, {
+        allowSearch: true,
+        useHemisphere: m.phase1Age > 1.0,
+        includeFlares: true,
+      });
 
       if (target) {
         m.targetTank = target.tank;
@@ -1349,15 +1395,14 @@ class MissileSystem {
             m.diveTarget = targetSurface.clone();
           }
         }
-      } else if (!m.isRemote && !m.isLost) {
-        // Local missile lost target — enter wobble phase
+      } else if (!m.isLost) {
+        // No target — enter wobble phase
         m.phase = 3;
         m.isLost = true;
         m.lostAge = 0;
         m.targetTank = null;
-      } else if (m.isRemote) {
-        // Remote missile has no target — project direction tangent to surface
-        // so it flies level instead of straight up along surfaceNormal
+      } else {
+        // Keep flight tangent to the surface while targetless
         const normal = this._tempVec.copy(m.position).normalize();
         const dot = m.direction.dot(normal);
         if (dot > 0.1) {
@@ -1398,32 +1443,12 @@ class MissileSystem {
       // TERMINAL DIVE: Steer downward toward ground target (no forward filter — committed to dive)
       let diveTarget = m.diveTarget;
       if (!m._forcedDive) {
-        const ownerFaction = m.faction || m.ownerFaction;
-        let target = null;
-        if (m.isRemote) {
-          if (m.serverTargetId) target = this._resolveServerTarget(m.serverTargetId);
-        } else if (m.targetTank && !m.targetTank.isDead) {
-          const pos = this._getTargetWorldPos(m.targetTank);
-          if (pos) target = { tank: m.targetTank, worldPos: pos, distance: pos.distanceTo(m.position) };
-        }
-        if (!target && !m.isRemote) {
-          target = this._findClosestEnemyFromPos(m.position, ownerFaction, null);
-        }
+        const target = this._getVisualTargetForMissile(m, {
+          allowSearch: true,
+          useHemisphere: false,
+          includeFlares: true,
+        });
         if (target) diveTarget = target.worldPos;
-      }
-
-      // Flares always override dive target (countermeasure) — even forced-dive missiles
-      if (window.flareSystem) {
-        const flares = window.flareSystem.getActiveFlares();
-        let flareDist = Infinity;
-        for (let i = 0; i < flares.length; i++) {
-          const pos = flares[i].position;
-          const dist = pos.distanceTo(m.position);
-          if (dist < flareDist && dist <= this.config.searchRadiusMax) {
-            diveTarget = pos.clone();
-            flareDist = dist;
-          }
-        }
       }
       if (!diveTarget) { m.phase = 3; m.isLost = true; m.lostAge = 0; return; }
 
@@ -1458,25 +1483,26 @@ class MissileSystem {
       // STRAIGHT FLIGHT: No target — fly straight, scan for re-lock, then crash
       m.lostAge = (m.lostAge || 0) + dt;
 
-      // Remote missiles wait for server crash event; local missiles scan for re-lock
-      if (!m.isRemote) {
-        const ownerFaction = m.faction || m.ownerFaction;
-        const reLocks = m.reLockCount || 0;
-        const target = reLocks < 2
-          ? this._findClosestEnemyFromPos(m.position, ownerFaction, null, 30)
-          : null;
-        if (target) {
-          m.phase = 1;
-          m.phase1Age = 0;
-          m.isLost = false;
-          m.lostAge = 0;
-          m.targetTank = target.tank;
-          m.reLockCount = reLocks + 1;
-        } else if (m.lostAge >= 5) {
-          m.phase = 4;
-          const crashNormal = this._tempVec.copy(m.position).normalize();
-          m.diveTarget = crashNormal.multiplyScalar(this.sphereRadius).clone();
-        }
+      const reLocks = m.reLockCount || 0;
+      const target = reLocks < 2
+        ? this._getVisualTargetForMissile(m, {
+            allowSearch: true,
+            useHemisphere: false,
+            searchRange: 30,
+            includeFlares: true,
+          })
+        : null;
+      if (target) {
+        m.phase = 1;
+        m.phase1Age = 0;
+        m.isLost = false;
+        m.lostAge = 0;
+        m.targetTank = target.tank;
+        m.reLockCount = reLocks + 1;
+      } else if (!m.isRemote && m.lostAge >= 5) {
+        m.phase = 4;
+        const crashNormal = this._tempVec.copy(m.position).normalize();
+        m.diveTarget = crashNormal.multiplyScalar(this.sphereRadius).clone();
       }
 
       // Fly straight at full speed
