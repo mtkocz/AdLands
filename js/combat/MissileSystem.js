@@ -458,6 +458,10 @@ class MissileSystem {
   // Resolve server-assigned target ID to a { tank, worldPos } result
   _resolveServerTarget(serverTargetId) {
     try {
+      let flareId = serverTargetId;
+      if (typeof flareId === "string" && flareId !== "" && /^\d+$/.test(flareId)) {
+        flareId = Number(flareId);
+      }
       let tank = null;
       if (serverTargetId === "local" || serverTargetId === window._mpState?.net?.playerId) {
         tank = this.playerTank;
@@ -471,17 +475,17 @@ class MissileSystem {
         }
       }
       // Flare IDs are numeric — find the specific flare by server ID
-      if (!tank && typeof serverTargetId === "number" && window.flareSystem) {
+      if (!tank && typeof flareId === "number" && window.flareSystem) {
         const fs = window.flareSystem;
         if (fs._flareIndex) {
-          const flare = fs._flareIndex.get(serverTargetId);
+          const flare = fs._flareIndex.get(flareId);
           if (flare?.meshItem?.group) {
             return { tank: null, worldPos: flare.meshItem.group.position.clone(), isFlare: true };
           }
         }
         return null;
       }
-      if (!tank || tank.isDead || tank._hidden) return null;
+      if (!tank || tank.isDead) return null;
       const pos = this._getTargetWorldPos(tank);
       if (!pos) return null;
       return { tank, worldPos: pos.clone() };
@@ -496,7 +500,7 @@ class MissileSystem {
       if (serverTarget) return serverTarget;
     }
 
-    if (missile.targetTank && !missile.targetTank.isDead && !missile.targetTank._hidden) {
+    if (missile.targetTank && !missile.targetTank.isDead) {
       const worldPos = this._getTargetWorldPos(missile.targetTank);
       if (worldPos) {
         return {
@@ -507,7 +511,69 @@ class MissileSystem {
       }
     }
 
+    if (missile._serverTargetWorldPos) {
+      return {
+        tank: null,
+        worldPos: missile._serverTargetWorldPos.clone(),
+        distance: missile._serverTargetWorldPos.distanceTo(missile.position),
+        isFlare: !!missile._serverTargetIsFlare,
+      };
+    }
+
     return null;
+  }
+
+  _setMissileSpawnTarget(missile, targetData) {
+    if (!missile || !targetData) return;
+    const resolvedTarget = targetData.targetId != null
+      ? this._resolveServerTarget(targetData.targetId)
+      : null;
+
+    if (resolvedTarget?.tank) {
+      missile.targetTank = resolvedTarget.tank;
+      missile.targetFaction = resolvedTarget.tank.faction || null;
+      missile._serverTargetWorldPos = resolvedTarget.worldPos.clone();
+      missile._serverTargetIsFlare = !!resolvedTarget.isFlare;
+      return;
+    }
+
+    if (resolvedTarget?.worldPos) {
+      missile._serverTargetWorldPos = resolvedTarget.worldPos.clone();
+      missile._serverTargetIsFlare = !!resolvedTarget.isFlare;
+      missile.targetTank = null;
+      missile.targetFaction = null;
+      return;
+    }
+
+    if (targetData.targetTheta !== undefined && targetData.targetPhi !== undefined) {
+      const sp = Math.sin(targetData.targetPhi);
+      const cp = Math.cos(targetData.targetPhi);
+      const st = Math.sin(targetData.targetTheta);
+      const ct = Math.cos(targetData.targetTheta);
+      const targetSurfaceR = this.sphereRadius;
+      const lx = targetSurfaceR * sp * st;
+      const lz = targetSurfaceR * sp * ct;
+      const pr = this.planet?.hexGroup?.rotation.y || 0;
+      const cpr = Math.cos(pr);
+      const spr = Math.sin(pr);
+      missile._serverTargetWorldPos = new THREE.Vector3(
+        lx * cpr + lz * spr,
+        targetSurfaceR * cp,
+        -lx * spr + lz * cpr,
+      );
+      missile._serverTargetIsFlare = !!targetData.targetIsFlare;
+    }
+  }
+
+  _setMissileInitialDirection(missile) {
+    if (!missile) return;
+    const tracked = this._resolveMissileTrackedTarget(missile);
+    if (tracked?.worldPos) {
+      if (!missile.direction) missile.direction = new THREE.Vector3();
+      missile.direction.copy(tracked.worldPos).sub(missile.position).normalize();
+      return;
+    }
+    missile.direction = missile.surfaceNormal.clone();
   }
 
   _findClosestFlareFromPos(missilePos, maxRange) {
@@ -703,8 +769,6 @@ class MissileSystem {
       if (stats.totalCrypto < this.config.cost) return;
     }
 
-    this._lastFireTime = now;
-
     // Spawn local visual missile
     const tankPos =
       tank.group._cachedWorldPos || tank.group.position;
@@ -716,6 +780,7 @@ class MissileSystem {
 
     const poolItem = this._acquirePoolItem(faction);
     if (!poolItem) return;
+    this._lastFireTime = now;
 
     // Shadow billboard at launch point
     let shadowBB = null;
@@ -822,6 +887,7 @@ class MissileSystem {
       shadowBB,
     };
 
+    this._setMissileSpawnTarget(missile, data);
     missile._serverPos = startPos.clone();
     missile._lastServerSync = performance.now();
     this._applyPendingDiveTarget(missile);
@@ -862,7 +928,12 @@ class MissileSystem {
       if (existing) {
         existing._lastServerSync = performance.now();
         const newTargetId = mlArr[i + 6] || null;
-        if (newTargetId !== existing.serverTargetId) existing.serverTargetId = newTargetId;
+        if (newTargetId !== existing.serverTargetId) {
+          existing.serverTargetId = newTargetId;
+          existing._serverTargetWorldPos = null;
+          existing._serverTargetIsFlare = false;
+          this._setMissileSpawnTarget(existing, { targetId: newTargetId });
+        }
         const newFaction = FACTIONS[mlArr[i + 1]] || existing.faction || "rust";
         if (newFaction !== existing.faction) {
           existing.faction = newFaction;
@@ -922,13 +993,11 @@ class MissileSystem {
       // Set server position on spawn so first-frame interpolation works
       missile._serverPos = startPos.clone();
       missile._lastServerSync = performance.now();
+      this._setMissileSpawnTarget(missile, { targetId: missile.serverTargetId });
 
       // Initialize direction toward target for late-spawned missiles (already cruising)
       if (phase > 0 && missile.serverTargetId) {
-        const tgt = this._resolveServerTarget(missile.serverTargetId);
-        if (tgt) {
-          missile.direction = tgt.worldPos.clone().sub(startPos).normalize();
-        }
+        this._setMissileInitialDirection(missile);
       }
       this._applyPendingDiveTarget(missile);
 
@@ -945,7 +1014,7 @@ class MissileSystem {
       if (!m.isRemote || m.serverId == null) continue;
       if (!serverIds.has(m.serverId)) {
         if (!m._serverGone) { m._serverGone = now; continue; }
-        if (now - m._serverGone < 500) continue;
+        if (now - m._serverGone < 1500) continue;
         if (m._forcedDive) continue;
         if (m.poolItem) this._releasePoolItem(m.poolItem);
         if (m.serverId != null) this._cancelPendingHit(m.serverId);
@@ -966,7 +1035,10 @@ class MissileSystem {
       const m = this.missiles[i];
       if (!m.isRemote && m.serverId == null) {
         m.serverId = serverId;
-        if (targetId != null) m.serverTargetId = targetId;
+        if (targetId != null) {
+          m.serverTargetId = targetId;
+          this._setMissileSpawnTarget(m, { targetId });
+        }
         return;
       }
     }
@@ -1057,6 +1129,7 @@ class MissileSystem {
       const m = this.missiles[i];
       if (m.serverId === missileId && m.isRemote) {
         m.serverTargetId = "local";
+        this._setMissileSpawnTarget(m, { targetId: "local" });
         return true;
       }
     }
@@ -1089,9 +1162,12 @@ class MissileSystem {
       const m = this.missiles[i];
       if (m.serverId === projectileId && m.isRemote && m.phase < 2) {
         const target = this._resolveServerTarget(targetId);
+        m.serverTargetId = targetId;
         m.phase = 2;
         if (target) {
           m.diveTarget = target.worldPos.clone();
+          m._serverTargetWorldPos = target.worldPos.clone();
+          m._serverTargetIsFlare = !!target.isFlare;
         } else {
           // Target already gone — dive toward ground below missile
           const normal = this._tempVec.copy(m.position).normalize();
@@ -1337,11 +1413,7 @@ class MissileSystem {
     // Skip if missile was forced to a post-launch phase before direction was initialized
     if (m.phase > 0 && !m.direction) {
       if (!m.surfaceNormal) return;
-      // Use tangent direction (not straight up) so missile flies level
-      const normal = m.surfaceNormal;
-      m.direction = new THREE.Vector3().crossVectors(normal, this._upVec);
-      if (m.direction.lengthSq() < 0.001) m.direction.crossVectors(normal, this._tempVec.set(1, 0, 0));
-      m.direction.normalize();
+      this._setMissileInitialDirection(m);
     }
 
     // Hide mesh when camera is far (orbital view) — simulation still runs
@@ -1404,6 +1476,10 @@ class MissileSystem {
 
       if (target) {
         m.targetTank = target.tank;
+        if (target.worldPos) {
+          m._serverTargetWorldPos = target.worldPos.clone();
+          m._serverTargetIsFlare = !!target.isFlare;
+        }
 
         // Compute elevated target position (same altitude as missile)
         const targetSurface = target.worldPos;
@@ -1489,7 +1565,11 @@ class MissileSystem {
           useHemisphere: false,
           includeFlares: true,
         });
-        if (target) diveTarget = target.worldPos;
+        if (target) {
+          diveTarget = target.worldPos;
+          m._serverTargetWorldPos = target.worldPos.clone();
+          m._serverTargetIsFlare = !!target.isFlare;
+        }
       }
       if (!diveTarget) { m.phase = 3; m.isLost = true; m.lostAge = 0; return; }
 
