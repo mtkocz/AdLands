@@ -43,6 +43,7 @@ class CannonSystem {
     this.sphereRadius = sphereRadius;
     this.projectiles = [];
     this.lastFireTime = 0;
+    this._effectsSuspended = false;
     this.gameCamera = null;
     this.playerTank = null;
     this.botTanks = null; // Reference to BotTanks system for collision
@@ -244,7 +245,13 @@ class CannonSystem {
   }
 
   _spawnImpactDecal(position, sizeScale = 1) {
-    if (!this.impactDecalTexture || !this.planet || this.isOrbitalView) {
+    if (
+      this._effectsSuspended ||
+      document.hidden ||
+      !this.impactDecalTexture ||
+      !this.planet ||
+      this.isOrbitalView
+    ) {
       return;
     }
 
@@ -489,7 +496,7 @@ class CannonSystem {
    * @param {THREE.Vector3} position - World position of the dead tank
    */
   spawnOilPuddle(position) {
-    if (!this.planet || this.isOrbitalView) return;
+    if (this._effectsSuspended || document.hidden || !this.planet || this.isOrbitalView) return;
 
     const cfg = this.oilPuddleConfig;
 
@@ -1294,6 +1301,7 @@ void main() {
    * @param {Object} remoteTank - RemoteTank instance with group/faction
    */
   spawnRemoteProjectile(data, remoteTank) {
+    if (this._effectsSuspended || document.hidden) return;
     if (!remoteTank || !remoteTank.group || remoteTank.isDead) return;
 
     const faction = remoteTank.faction;
@@ -1389,6 +1397,8 @@ void main() {
    * @param {string} faction - Firing tank's faction (for projectile color)
    */
   spawnProjectileFromServer(data, faction) {
+    if (this._effectsSuspended || document.hidden) return;
+
     const chargePower = data.power || 0;
     const chargeRatio = chargePower / 10;
     const speed =
@@ -1436,7 +1446,7 @@ void main() {
   }
 
   _spawnExplosion(position, faction, sizeScale = 1, clipCenter = null) {
-    if (document.hidden) return;
+    if (this._effectsSuspended || document.hidden) return;
 
     // Don't spawn if no planet reference
     if (!this.planet) {
@@ -1602,6 +1612,8 @@ void main() {
   }
 
   _spawnMuzzleFlare(position, direction, faction, sizeScale = 1) {
+    if (this._effectsSuspended || document.hidden) return;
+
     const cfg = this.muzzleFlareConfig;
 
     // Create flare sprite - elongated in firing direction
@@ -2157,6 +2169,52 @@ void main() {
     this._updateMuzzleEffects(deltaTime, frustum);
     this._updateImpactDecals(deltaTime, frustum);
     this._updateOilPuddles(deltaTime, frustum);
+  }
+
+  setEffectsSuspended(suspended) {
+    this._effectsSuspended = !!suspended;
+    if (this._effectsSuspended) {
+      this.clearTransientVisuals();
+    }
+  }
+
+  clearTransientVisuals() {
+    for (let i = this.projectiles.length - 1; i >= 0; i--) {
+      const p = this.projectiles[i];
+      if (p.poolItem) {
+        this.objectPools.releaseProjectile(p.poolItem);
+      } else if (p.mesh?.parent) {
+        p.mesh.parent.remove(p.mesh);
+      }
+    }
+    this.projectiles.length = 0;
+
+    for (let i = this.explosions.length - 1; i >= 0; i--) {
+      const exp = this.explosions[i];
+      this.scene.remove(exp.sprite);
+      exp.material.dispose();
+      if (exp.light) {
+        this.scene.remove(exp.light);
+        exp.light.dispose();
+      }
+    }
+    this.explosions.length = 0;
+
+    for (let i = this.lodExplosions.length - 1; i >= 0; i--) {
+      const exp = this.lodExplosions[i];
+      if (this.planet) {
+        this.planet.hexGroup.remove(exp.sprite);
+      }
+      exp.material.dispose();
+    }
+    this.lodExplosions.length = 0;
+
+    for (let i = this.muzzleFlares.length - 1; i >= 0; i--) {
+      const flare = this.muzzleFlares[i];
+      this.scene.remove(flare.sprite);
+      flare.sprite.material.dispose();
+    }
+    this.muzzleFlares.length = 0;
   }
 
   // ========================

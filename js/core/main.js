@@ -3930,6 +3930,18 @@
   let lastFrameTime = performance.now();
   let frameCount = 0;
 
+  function handleDocumentVisibilityChange() {
+    const hidden = document.hidden;
+    lastFrameTime = performance.now();
+    cannonSystem.setEffectsSuspended?.(hidden);
+    dustShockwave.setEffectsSuspended?.(hidden);
+    missileSystem.setEffectsSuspended?.(hidden);
+    flareSystem.setEffectsSuspended?.(hidden);
+  }
+
+  document.addEventListener("visibilitychange", handleDocumentVisibilityChange);
+  handleDocumentVisibilityChange();
+
   // Loading screen management
   const loadingScreen = document.getElementById("loading-screen");
   const loadingContent = loadingScreen?.querySelector(".loading-content");

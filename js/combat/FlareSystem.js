@@ -10,6 +10,7 @@ class FlareSystem {
   constructor(scene, sphereRadius) {
     this.scene = scene;
     this.R = sphereRadius || 480;
+    this._effectsSuspended = false;
 
     this.flares = [];
     this.lastFireTime = 0;
@@ -338,6 +339,7 @@ class FlareSystem {
   // ---- Fire a flare (local player) ----
 
   fire(tank, faction) {
+    if (this._effectsSuspended || document.hidden) return false;
     const now = performance.now() / 1000;
     if (now - this.lastFireTime < this.cooldown) return false;
     if (this.flares.some(f => f.isLocal)) return false;
@@ -382,6 +384,8 @@ class FlareSystem {
   // State-driven sync: spawn/remove remote flares based on server state broadcast.
   // Flat array: [id, factionIdx, wx, wy, wz, ownerId], repeating.
   syncFromState(flArr, localPlayerId) {
+    if (this._effectsSuspended || document.hidden) return;
+
     const FACTIONS = ["rust", "cobalt", "viridian"];
     const STRIDE = 6;
 
@@ -431,6 +435,8 @@ class FlareSystem {
   // ---- Spawn a remote flare ----
 
   spawnRemoteFlare(data) {
+    if (this._effectsSuspended || document.hidden) return;
+
     const R = this.R + 2;
     const sp = Math.sin(data.phi), cp = Math.cos(data.phi);
     const st = Math.sin(data.theta), ct = Math.cos(data.theta);
@@ -570,6 +576,42 @@ class FlareSystem {
       this._smokePoints.visible = true;
       this._updateParticles(this._smoke, this._smokePoints, dt, camera);
     } else {
+      this._smokePoints.visible = false;
+      this._smokePoints.geometry.setDrawRange(0, 0);
+    }
+  }
+
+  setEffectsSuspended(suspended) {
+    this._effectsSuspended = !!suspended;
+    if (this._effectsSuspended) {
+      this.clearTransientVisuals();
+    }
+  }
+
+  clearTransientVisuals() {
+    for (const f of this.flares) {
+      this._releaseMesh(f.meshItem);
+      if (f.shadowBB) {
+        this._releaseShadowBillboard(f.shadowBB);
+      }
+    }
+    this.flares.length = 0;
+    if (this._flareIndex) {
+      this._flareIndex.clear();
+    }
+
+    for (const bb of this._orphanedShadows) {
+      this._releaseShadowBillboard(bb);
+    }
+    this._orphanedShadows.length = 0;
+
+    if (this._fire) this._fire.activeCount = 0;
+    if (this._smoke) this._smoke.activeCount = 0;
+    if (this._firePoints) {
+      this._firePoints.visible = false;
+      this._firePoints.geometry.setDrawRange(0, 0);
+    }
+    if (this._smokePoints) {
       this._smokePoints.visible = false;
       this._smokePoints.geometry.setDrawRange(0, 0);
     }

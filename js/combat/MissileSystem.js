@@ -10,6 +10,7 @@ class MissileSystem {
   constructor(scene, sphereRadius) {
     this.scene = scene;
     this.sphereRadius = sphereRadius;
+    this._effectsSuspended = false;
 
     // References (set from main.js)
     this.playerTank = null;
@@ -761,6 +762,7 @@ class MissileSystem {
   }
 
   _fire(tank, faction, target) {
+    if (this._effectsSuspended || document.hidden) return;
     const now = performance.now() / 1000;
 
     // Economy check
@@ -841,6 +843,7 @@ class MissileSystem {
 
   // Spawn visual-only missile from remote player
   spawnRemoteMissile(data, remoteTank) {
+    if (this._effectsSuspended || document.hidden) return false;
     if (!this._missileIndex) this._missileIndex = new Map();
     const existing = this._missileIndex.get(data.projectileId);
     if (existing) {
@@ -907,6 +910,8 @@ class MissileSystem {
   // State-driven sync: spawn/remove remote missiles based on server state broadcast.
   // Flat array: [id, factionIdx, phase, wx, wy, wz, targetId, ownerId], repeating.
   syncFromState(mlArr, localPlayerId) {
+    if (this._effectsSuspended || document.hidden) return;
+
     const FACTIONS = ["rust", "cobalt", "viridian"];
     const STRIDE = 8;
 
@@ -1302,6 +1307,56 @@ class MissileSystem {
     const particlesVisible = camSurfDist <= 150;
     if (this._abPoints) this._abPoints.visible = particlesVisible;
     if (this._smokePoints) this._smokePoints.visible = particlesVisible;
+  }
+
+  setEffectsSuspended(suspended) {
+    this._effectsSuspended = !!suspended;
+    if (this._effectsSuspended) {
+      this.clearTransientVisuals();
+    }
+  }
+
+  clearTransientVisuals() {
+    for (const m of this.missiles) {
+      if (m.poolItem) {
+        this._releasePoolItem(m.poolItem);
+      }
+      if (m.shadowBB && this.flareSystem?._releaseShadowBillboard) {
+        this.flareSystem._releaseShadowBillboard(m.shadowBB);
+      }
+    }
+    this.missiles.length = 0;
+    if (this._missileIndex) {
+      this._missileIndex.clear();
+    }
+
+    if (this._ab) this._ab.activeCount = 0;
+    if (this._smoke) this._smoke.activeCount = 0;
+    if (this._abPoints) {
+      this._abPoints.visible = false;
+      this._abPoints.geometry.setDrawRange(0, 0);
+    }
+    if (this._smokePoints) {
+      this._smokePoints.visible = false;
+      this._smokePoints.geometry.setDrawRange(0, 0);
+    }
+
+    this._incomingMissileCount = 0;
+    if (this._incomingWarning) {
+      this._incomingWarning.style.display = "none";
+    }
+    this._locking = false;
+    this._lockedTarget = null;
+    this._lastLockedTank = null;
+    if (this.gameCamera) {
+      this.gameCamera.setChargePullback(0);
+    }
+    if (this.lockOnReticle) {
+      this.lockOnReticle.style.display = "none";
+    }
+    for (const el of this._trackingReticles) {
+      el.style.display = "none";
+    }
   }
 
   _updateLockOnSearch(deltaTime, camera) {

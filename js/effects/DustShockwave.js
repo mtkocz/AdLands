@@ -30,6 +30,7 @@ class DustShockwave {
     this.sphereRadius = sphereRadius;
     this.shockwaves = [];
     this._isOrbitalView = false;
+    this._effectsSuspended = false;
 
     // Configuration
     this.config = {
@@ -486,7 +487,7 @@ class DustShockwave {
    * @param {THREE.Object3D} parent - Optional parent to attach shockwave to (e.g., tank group)
    */
   emit(position, scale = 1, parent = null, clipCenter = null) {
-    if (document.hidden) return;
+    if (this._effectsSuspended || document.hidden) return;
     if (!this.shockwaveTexture) return;
 
     const cfg = this.config;
@@ -716,6 +717,7 @@ class DustShockwave {
    * @param {number} scale - Size multiplier
    */
   emitMuzzleSmoke(position, direction, scale = 1) {
+    if (this._effectsSuspended || document.hidden) return;
     if (!this.muzzleSmokeTexture) return;
 
     const cfg = this.muzzleSmokeConfig;
@@ -924,6 +926,57 @@ class DustShockwave {
 
     // Update muzzle smoke sprite animations
     this._updateMuzzleSmokeSprites(deltaTime, frustum);
+  }
+
+  setEffectsSuspended(suspended) {
+    this._effectsSuspended = !!suspended;
+    if (this._effectsSuspended) {
+      this.clearTransientVisuals();
+    }
+  }
+
+  clearTransientVisuals() {
+    for (const sw of this.shockwaves) {
+      if (sw.parent) {
+        sw.parent.remove(sw.mesh);
+      } else {
+        this.scene.remove(sw.mesh);
+      }
+      sw.material.dispose();
+    }
+    this.shockwaves = [];
+
+    for (const sprite of this.dustwaveSprites) {
+      if (sprite.parent) {
+        sprite.parent.remove(sprite.sprite);
+      } else {
+        this.scene.remove(sprite.sprite);
+      }
+      this._dustwaveMaterialPool.push(sprite.material);
+
+      if (sprite.shadowSprite) {
+        this.scene.remove(sprite.shadowSprite);
+        if (sprite.shadowTexture) {
+          sprite.shadowTexture.dispose();
+        }
+        sprite.shadowSprite.material.dispose();
+      }
+    }
+    this.dustwaveSprites = [];
+
+    for (const sprite of this.muzzleSmokeSprites) {
+      this.scene.remove(sprite.sprite);
+      this._muzzleSmokeMaterialPool.push(sprite.material);
+
+      if (sprite.shadowSprite) {
+        this.scene.remove(sprite.shadowSprite);
+        if (sprite.shadowTexture) {
+          sprite.shadowTexture.dispose();
+        }
+        sprite.shadowSprite.material.dispose();
+      }
+    }
+    this.muzzleSmokeSprites = [];
   }
 
   /**
