@@ -4036,6 +4036,8 @@
     const isDescending = gameCamera.transitioning && gameCamera.transitionType === "toSurface";
     const isLowDetailView =
       isDescending || cameraSurfaceDist > CONFIG.lodTransitionSurfaceDistance;
+    const crossedLodRevealThreshold =
+      isDescending && cameraSurfaceDist <= CONFIG.lodTransitionSurfaceDistance;
     if (!fastTravel.active) {
       tank.setControlsEnabled(!isOrbitalView);
     }
@@ -4116,11 +4118,16 @@
       commanderSystem,
     };
 
+    if (crossedLodRevealThreshold && tank._hidden && !tank.isDead) {
+      tank._setCommanderTrimVisible?.(false);
+      tank.setVisible(true);
+    }
+
     // Update tank LOD after camera update so distance is current frame's position.
     // During the early orbital portion of the descent, keep the player out of the
     // normal culling path; once the camera crosses the same low-detail cutoff used
     // by the rest of the scene, let the player tank switch LOD immediately.
-    if (!isDescending || !isLowDetailView) {
+    if (!isDescending || crossedLodRevealThreshold) {
       tank.updateLOD(camera, sharedFrustum, lodOptions);
     }
 
