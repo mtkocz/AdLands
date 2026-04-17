@@ -399,7 +399,9 @@ class MissileSystem {
     }
     // Remote tank
     if (tank.group) {
-      return tank.group._cachedWorldPos || tank.group.position;
+      if (tank.group._cachedWorldPos) return tank.group._cachedWorldPos;
+      tank.group.updateWorldMatrix(true, false);
+      return tank.group.getWorldPosition(this._tempVec2);
     }
     return null;
   }
@@ -858,10 +860,24 @@ class MissileSystem {
     const poolItem = this._acquirePoolItem(faction);
     if (!poolItem) return false;
 
-    // Compute start position from server data
-    const startPos = new THREE.Vector3(data.wx, data.wy, data.wz);
+    // Launch from the owner's actual rendered world position when available so
+    // the missile origin matches the visible tank exactly.
+    let ownerWorldPos = null;
+    if (remoteTank?.group) {
+      ownerWorldPos = remoteTank.group._cachedWorldPos || null;
+      if (!ownerWorldPos) {
+        remoteTank.group.updateWorldMatrix(true, false);
+        ownerWorldPos = remoteTank.group.getWorldPosition(this._tempVec3).clone();
+      }
+    }
+
+    const startPos = ownerWorldPos
+      ? ownerWorldPos.clone().addScaledVector(ownerWorldPos.clone().normalize(), 1.5)
+      : new THREE.Vector3(data.wx, data.wy, data.wz);
     const surfaceNormal = startPos.clone().normalize();
-    const surfacePos = surfaceNormal.clone().multiplyScalar(this.sphereRadius);
+    const surfacePos = ownerWorldPos
+      ? ownerWorldPos.clone()
+      : surfaceNormal.clone().multiplyScalar(this.sphereRadius);
 
     // Shadow billboard at launch point
     let shadowBB = null;
@@ -962,55 +978,10 @@ class MissileSystem {
         continue;
       }
 
-      // Spawn new remote missile visual
-      const factionIdx = mlArr[i + 1];
-      const faction = FACTIONS[factionIdx] || "rust";
-      const poolItem = this._acquirePoolItem(faction);
-      if (!poolItem) { diag.mlSkipped++; continue; }
-
-      const wx = mlArr[i + 3], wy = mlArr[i + 4], wz = mlArr[i + 5];
-      // Skip missiles with invalid positions (NaN serialized as null → 0,0,0)
-      if (wx == null || wy == null || wz == null) { diag.mlSkipped++; continue; }
-      const startPos = new THREE.Vector3(wx, wy, wz);
-      if (startPos.lengthSq() < 100) { diag.mlSkipped++; continue; }
-      const surfaceNormal = startPos.clone().normalize();
-      const phase = mlArr[i + 2];
-
-      const missile = {
-        poolItem,
-        position: startPos.clone(),
-        surfaceNormal,
-        faction,
-        phase: phase,
-        age: phase > 0 ? 1 : 0, // skip launch if already cruising
-        launchSpeed: 5,
-        cruiseAltitude: this.config.cruiseAltitude,
-        targetTank: null,
-        targetFaction: null,
-        direction: null,
-        isRemote: true,
-        ownerFaction: faction,
-        serverId: id,
-        serverTargetId: mlArr[i + 6] || null,
-        shadowBB: null,
-      };
-
-      // Set server position on spawn so first-frame interpolation works
-      missile._serverPos = startPos.clone();
-      missile._lastServerSync = performance.now();
-      this._setMissileSpawnTarget(missile, { targetId: missile.serverTargetId });
-
-      // Initialize direction toward target for late-spawned missiles (already cruising)
-      if (phase > 0 && missile.serverTargetId) {
-        this._setMissileInitialDirection(missile);
-      }
-      this._applyPendingDiveTarget(missile);
-
-      this.missiles.push(missile);
-      this._missileIndex.set(id, missile);
-      this._clearPendingHitTimeout(id);
-      poolItem.group.position.copy(startPos);
-      diag.mlSpawned++;
+      // Don't create brand-new remote missiles from periodic state sync.
+      // Reliable player-fired events should own missile creation; otherwise
+      // missiles can pop into existence mid-flight with no visible owner.
+      diag.mlSkipped++;
     }
 
     const now = performance.now();
