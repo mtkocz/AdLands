@@ -280,6 +280,8 @@ class Tank {
         q: false,
       };
       this.state.speed = 0;
+      this.state.turretTargetAngle = this.state.turretAngle;
+      this.state.turretAngularVelocity = 0;
       // Hide ghost reticle when controls disabled
       if (this.ghostReticle) this.ghostReticle.style.display = "none";
     }
@@ -548,6 +550,12 @@ class Tank {
   }
 
   _updateTurret(camera) {
+    if (!this.controlsEnabled) {
+      this.state.turretTargetAngle = this.state.turretAngle;
+      this.state.turretAngularVelocity = 0;
+      return;
+    }
+
     this.raycaster.setFromCamera(this.mousePosition, camera);
 
     // Use preallocated turret temp objects
@@ -1136,6 +1144,7 @@ class Tank {
         if (distanceToCamera > 200) {
           this.group.visible = true;
           this.lodDot.visible = true;
+          this._setCommanderTrimVisible(false);
           if (this.lodDotOutline) this.lodDotOutline.visible = false;
           if (this.lodMesh) this.lodMesh.visible = false;
           if (this.shadowBlob) this.shadowBlob.visible = false;
@@ -1155,6 +1164,7 @@ class Tank {
         } else {
           this.group.visible = false;
           this.lodDot.visible = false;
+          this._setCommanderTrimVisible(false);
           if (this.lodDotOutline) this.lodDotOutline.visible = false;
         }
       }
@@ -1313,6 +1323,14 @@ class Tank {
       node = node.parent;
     }
     return false;
+  }
+
+  _setCommanderTrimVisible(visible) {
+    this.group.traverse((child) => {
+      if (child.name === "commanderTrim" || child.name === "barrelTrim") {
+        child.visible = visible;
+      }
+    });
   }
 
   _setDeadMaterial() {
@@ -1990,6 +2008,9 @@ Tank.updateTankLOD = function (
     for (const mesh of tank.detailedMeshes) {
       mesh.visible = !useSimplified;
     }
+  }
+  if (typeof tank._setCommanderTrimVisible === "function") {
+    tank._setCommanderTrimVisible(!useSimplified);
   }
 
   // Show blob shadow for LOD box tanks (not for dots)
