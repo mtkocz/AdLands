@@ -4120,13 +4120,7 @@
     // Skip LOD during toSurface transitions — camera is still at orbital height
     // and backface/screen-space culling would hide the tank before camera arrives
     if (!gameCamera.transitioning || gameCamera.transitionType !== 'toSurface') {
-      tank.updateLOD(camera, sharedFrustum, {
-        ...lodOptions,
-        allowDotLOD: false,
-      });
-      // Player's own tank should never show as a LOD dot
-      if (tank.lodDot) tank.lodDot.visible = false;
-      if (tank.lodDotOutline) tank.lodDotOutline.visible = false;
+      tank.updateLOD(camera, sharedFrustum, lodOptions);
     }
 
     // Pass LOD options to botTanks for commander dot mode
