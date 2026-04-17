@@ -13,7 +13,7 @@
   const CONFIG = {
     sphereRadius: 480,
     dayNightCycleMinutes: 30,
-    lodTransitionSurfaceDistance: 65, // Switch between orbital-grade and full surface detail at 65 units above the sphere
+    lodTransitionSurfaceDistance: 71, // Switch between orbital-grade and full surface detail at 71 units above the sphere
     bloom: {
       strength: 3,
       radius: 1.2,
