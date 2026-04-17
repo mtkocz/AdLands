@@ -4116,10 +4116,11 @@
       commanderSystem,
     };
 
-    // Update tank LOD after camera update so distance is current frame's position
-    // Skip LOD during toSurface transitions — camera is still at orbital height
-    // and backface/screen-space culling would hide the tank before camera arrives
-    if (!gameCamera.transitioning || gameCamera.transitionType !== 'toSurface') {
+    // Update tank LOD after camera update so distance is current frame's position.
+    // During the early orbital portion of the descent, keep the player out of the
+    // normal culling path; once the camera crosses the same low-detail cutoff used
+    // by the rest of the scene, let the player tank switch LOD immediately.
+    if (!isDescending || !isLowDetailView) {
       tank.updateLOD(camera, sharedFrustum, lodOptions);
     }
 
