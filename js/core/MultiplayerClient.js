@@ -1353,6 +1353,7 @@
       }
       if (mp.fastTravel) {
         mp.fastTravel._awaitingConfirmation = false;
+        mp.fastTravel._hidePredictedDeployTank?.();
         if (mp.fastTravel.state === 'preview') {
           mp.fastTravel._showPreviewUI();
         }
@@ -1371,8 +1372,8 @@
       // Clear stale prediction inputs accumulated during fast travel
       net.pendingInputs = [];
 
-      tank.teleportTo(data.theta, data.phi);
       tank.state.heading = data.heading;
+      tank.teleportTo(data.theta, data.phi);
 
       // Exit fast travel (shows tank, swoops camera down, enables controls)
       if (mp.fastTravel && mp.fastTravel.active) {

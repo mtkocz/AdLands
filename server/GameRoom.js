@@ -2360,6 +2360,10 @@ class GameRoom {
     const fSp = Math.sin(player.phi), fCp = Math.cos(player.phi);
     const fSt = Math.sin(player.theta), fCt = Math.cos(player.theta);
     const fLift = R + 2;
+    const lx = fLift * fSp * fSt;
+    const lz = fLift * fSp * fCt;
+    const cosPR = Math.cos(this.planetRotation);
+    const sinPR = Math.sin(this.planetRotation);
 
     this._queueRoomEvent("player-fired", {
       id: socketId,
@@ -2373,9 +2377,9 @@ class GameRoom {
       targetPhi: target.phi,
       targetIsFlare: !!target.isFlare,
       faction: player.faction,
-      wx: fLift * fSp * fSt,
+      wx: lx * cosPR + lz * sinPR,
       wy: fLift * fCp,
-      wz: fLift * fSp * fCt,
+      wz: -lx * sinPR + lz * cosPR,
     });
   }
 

@@ -58,6 +58,7 @@ class FastTravel {
 
         // Guard against double-sends while waiting for server confirmation
         this._awaitingConfirmation = false;
+        this._predictedSpawnVisible = false;
 
         // Setup click handler
         this._setupEventListeners();
@@ -151,6 +152,7 @@ class FastTravel {
         if (this.active) return;
 
         this._awaitingConfirmation = false;
+        this._predictedSpawnVisible = false;
 
         // Economy: client-side pre-check for fast travel cost
         const ftCost = 500;
@@ -207,6 +209,7 @@ class FastTravel {
         if (this.active) return;
 
         this._awaitingConfirmation = false;
+        this._predictedSpawnVisible = false;
         this.active = true;
         this.state = 'fastTravel';
         this.isRespawning = false;
@@ -239,6 +242,7 @@ class FastTravel {
         if (this.active) return;
 
         this._awaitingConfirmation = false;
+        this._predictedSpawnVisible = false;
         this.active = true;
         this.state = 'fastTravel';
         this.isRespawning = true;
@@ -304,6 +308,7 @@ class FastTravel {
     _returnToFastTravel() {
         this.state = 'fastTravel';
         this.previewPortalIndex = null;
+        this._hidePredictedDeployTank();
 
         // Clear preview so server stops sending bots for that portal
         if (this.onPreviewPortal) this.onPreviewPortal(null);
@@ -339,12 +344,14 @@ class FastTravel {
             this._awaitingConfirmation = true;
 
             this.onPortalChosen(this.previewPortalIndex);
+            this._showPredictedDeployTank();
             // Hide UI while waiting for server confirmation
             this._hideAllUI();
 
             // Timeout: if server never responds, re-show UI so player can retry
             this._portalTimeout = setTimeout(() => {
                 this._awaitingConfirmation = false;
+                this._hidePredictedDeployTank();
                 if (this.state === 'preview') {
                     this._showPreviewUI();
                 }
@@ -437,12 +444,42 @@ class FastTravel {
         this._executeTravel();
     }
 
+    _showPredictedDeployTank() {
+        if (this.previewPortalIndex === null || this._predictedSpawnVisible) return;
+
+        // During server confirmation latency, show the tank at an approximate
+        // spawn point near the chosen portal. The authoritative position still
+        // comes from the server's portal-confirmed event.
+        if (this.isRespawning) {
+            this.tank.resetForRespawn();
+        }
+
+        const neutralNeighbors = this.planet.getPortalNeutralNeighbors(this.previewPortalIndex);
+        if (neutralNeighbors.length === 0) {
+            this._teleportToTile(this.previewPortalIndex);
+        } else {
+            const targetTile = neutralNeighbors[Math.floor(Math.random() * neutralNeighbors.length)];
+            this._teleportToTile(targetTile);
+        }
+
+        this.tank.setVisible(true);
+        this.tank.setControlsEnabled(false);
+        this._predictedSpawnVisible = true;
+    }
+
+    _hidePredictedDeployTank() {
+        if (!this._predictedSpawnVisible) return;
+        this.tank.setVisible(false);
+        this._predictedSpawnVisible = false;
+    }
+
     _exitFastTravel() {
         this._awaitingConfirmation = false;
         if (this._portalTimeout) {
             clearTimeout(this._portalTimeout);
             this._portalTimeout = null;
         }
+        this._predictedSpawnVisible = false;
 
         // If respawning, reset the tank and notify callback
         const wasRespawning = this.isRespawning;
