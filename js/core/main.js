@@ -13,7 +13,7 @@
   const CONFIG = {
     sphereRadius: 480,
     dayNightCycleMinutes: 30,
-    lodTransitionBuffer: 15, // Switch to full surface detail shortly before the deployment camera finishes settling
+    lodTransitionSurfaceDistance: 65, // Switch between orbital-grade and full surface detail at 65 units above the sphere
     bloom: {
       strength: 3,
       radius: 1.2,
@@ -679,6 +679,7 @@
       title: window.titleSystem?.getTitle() || "Contractor",
     });
     proximityChat.setPlayerDead(false);
+    applyHUDVisibility(uiVisible);
 
     // Notify commander system of respawn (bodyguards respawn too)
     if (window.commanderSystem) {
@@ -3744,17 +3745,71 @@
   // Initialize HUD visibility on page load
   const hudIsVisible = getHUDVisibility();
 
-  // Apply initial state to chat (make it match dashboard)
-  if (chatWindowEl && !hudIsVisible) {
-    chatWindowEl.classList.add("collapsed");
-  }
-
   // Initialize uiVisible to match the HUD state
   let uiVisible = hudIsVisible;
-  visualEffects.hudVisible = hudIsVisible;
-  proximityChat.hudVisible = hudIsVisible;
-  commanderTipSystem.hudVisible = hudIsVisible;
-  if (!hudIsVisible) tuskCommentary.setSuppressed(true);
+
+  function applyHUDVisibility(visible) {
+    uiVisible = visible;
+
+    if (dashboard) {
+      if (uiVisible) {
+        dashboard.show();
+      } else {
+        dashboard.hide();
+      }
+    }
+
+    if (chatWindowEl) {
+      chatWindowEl.classList.toggle("collapsed", !uiVisible);
+    }
+
+    const display = uiVisible ? "" : "none";
+    uiElements.forEach((el) => {
+      if (
+        el &&
+        el.id !== "dashboard-container" &&
+        el.id !== "chat-window" &&
+        el.id !== "territory-ring-container"
+      ) {
+        el.style.display = display;
+      }
+    });
+
+    if (playerTags && playerTags.container) {
+      playerTags.container.style.display = display;
+    }
+
+    // Pause HUD CSS animations when hidden (saves compositing work)
+    document.documentElement.style.setProperty(
+      "--hud-anim-state",
+      uiVisible ? "running" : "paused",
+    );
+
+    // Territory ring — toggle via opacity (rendered in post-processing chain)
+    if (!uiVisible) {
+      ringAnimState.targetOpacity = 0;
+      ringAnimState.isDirty = true;
+    } else {
+      // Restore ring if it should be visible (only when deployed on surface)
+      setTerritoryRingVisible(ringAnimState.lastClusterId !== null);
+    }
+
+    visualEffects.hudVisible = uiVisible;
+    proximityChat.hudVisible = uiVisible;
+    commanderTipSystem.hudVisible = uiVisible;
+
+    // Toggle commander tip budget panel — fade via opacity to match Tusk panel
+    const tipPanel = document.getElementById("commander-tip-panel");
+    if (tipPanel) {
+      tipPanel.style.opacity = uiVisible ? "" : "0";
+      tipPanel.style.pointerEvents = uiVisible ? "" : "none";
+    }
+
+    // Toggle Tusk commentary panel
+    tuskCommentary.setSuppressed(!uiVisible);
+  }
+
+  applyHUDVisibility(hudIsVisible);
 
   document.addEventListener("keydown", (e) => {
     if (window._authScreenInstance?.isVisible) return;
@@ -3764,69 +3819,7 @@
     }
     if (e.key === "h" || e.key === "H") {
       // Toggle everything together - single source of truth
-      uiVisible = !uiVisible;
-
-      // Toggle dashboard visibility (this saves state to localStorage)
-      if (dashboard) {
-        if (uiVisible) {
-          dashboard.show();
-        } else {
-          dashboard.hide();
-        }
-      }
-
-      // Toggle chat window to match
-      if (chatWindowEl) {
-        chatWindowEl.classList.toggle("collapsed", !uiVisible);
-      }
-
-      // Toggle other UI elements
-      const display = uiVisible ? "" : "none";
-      uiElements.forEach((el) => {
-        if (
-          el &&
-          el.id !== "dashboard-container" &&
-          el.id !== "chat-window" &&
-          el.id !== "territory-ring-container"
-        ) {
-          el.style.display = display;
-        }
-      });
-
-      // Pause HUD CSS animations when hidden (saves compositing work)
-      document.documentElement.style.setProperty(
-        "--hud-anim-state",
-        uiVisible ? "running" : "paused",
-      );
-
-      // Territory ring — toggle via opacity (rendered in post-processing chain)
-      if (!uiVisible) {
-        ringAnimState.targetOpacity = 0;
-        ringAnimState.isDirty = true;
-      } else {
-        // Restore ring if it should be visible (only when deployed on surface)
-        setTerritoryRingVisible(ringAnimState.lastClusterId !== null);
-      }
-
-      // Also toggle player tags container if it exists
-      if (playerTags && playerTags.container) {
-        playerTags.container.style.display = display;
-      }
-
-      // Sync HUD state so death sequence, chat bubbles, and tip panel respect it
-      visualEffects.hudVisible = uiVisible;
-      proximityChat.hudVisible = uiVisible;
-      commanderTipSystem.hudVisible = uiVisible;
-
-      // Toggle commander tip budget panel — fade via opacity to match Tusk panel
-      const tipPanel = document.getElementById("commander-tip-panel");
-      if (tipPanel) {
-        tipPanel.style.opacity = uiVisible ? "" : "0";
-        tipPanel.style.pointerEvents = uiVisible ? "" : "none";
-      }
-
-      // Toggle Tusk commentary panel
-      tuskCommentary.setSuppressed(!uiVisible);
+      applyHUDVisibility(!uiVisible);
     }
   });
 
@@ -4041,12 +4034,8 @@
     // much closer to the surface, then switch all gameplay detail on together.
     const cameraSurfaceDist = camera.position.length() - CONFIG.sphereRadius;
     const isDescending = gameCamera.transitioning && gameCamera.transitionType === "toSurface";
-    const deployConfirmationHeight =
-      Math.max(0, gameCamera.surfaceDistance - CONFIG.sphereRadius);
-    const lodTransitionDistance =
-      deployConfirmationHeight + CONFIG.lodTransitionBuffer;
     const isLowDetailView =
-      isDescending || cameraSurfaceDist > lodTransitionDistance;
+      isDescending || cameraSurfaceDist > CONFIG.lodTransitionSurfaceDistance;
     if (!fastTravel.active) {
       tank.setControlsEnabled(!isOrbitalView);
     }
