@@ -1888,7 +1888,12 @@ Tank.updateTankLOD = function (
   frustum = null,
   options = {},
 ) {
-  const { isOrbitalView, isHumanCommander, commanderSystem } = options;
+  const {
+    isOrbitalView,
+    isHumanCommander,
+    commanderSystem,
+    allowDotLOD = true,
+  } = options;
   const temp = Tank._lodTemp;
   const tankWorldPos = temp.tankWorldPos;
   const surfaceNormal = temp.surfaceNormal;
@@ -1946,7 +1951,10 @@ Tank.updateTankLOD = function (
   // LOD switching: 100+ = box, 200+ = dot (when applicable)
   const useLOD = distanceToCamera > LOD_DISTANCE;
   // Dots at 200+: commanders see ALL tanks, others see only friendlies
-  const useDot = distanceToCamera > DOT_DISTANCE && (isHumanCommander || isSameFaction);
+  const useDot =
+    allowDotLOD &&
+    distanceToCamera > DOT_DISTANCE &&
+    (isHumanCommander || isSameFaction);
 
   // Store LOD state for instanced rendering (0=detail, 1=box, 2=dot, -1=hidden)
   const useSimplified = useLOD || useDot;
