@@ -462,9 +462,16 @@ class FastTravel {
             this._teleportToTile(targetTile);
         }
 
-        this.tank.setVisible(true);
-        this.tank.setControlsEnabled(false);
-        this._predictedSpawnVisible = true;
+        if (this.dustShockwave) {
+            this.dustShockwave.emit((this.tank.group._cachedWorldPos || this.tank.group.position).clone(), 0.5);
+        }
+
+        requestAnimationFrame(() => {
+            if (!this._awaitingConfirmation || this.previewPortalIndex === null) return;
+            this.tank.setVisible(true);
+            this.tank.setControlsEnabled(false);
+            this._predictedSpawnVisible = true;
+        });
     }
 
     _hidePredictedDeployTank() {
@@ -520,8 +527,11 @@ class FastTravel {
                 this.tank.setControlsEnabled(true);
             };
         } else {
-            // Normal deploy: show tank immediately
-            this.tank.setVisible(true);
+            // Normal deploy: let the dustwave render first, then reveal the tank.
+            requestAnimationFrame(() => {
+                this.tank._setCommanderTrimVisible?.(true);
+                this.tank.setVisible(true);
+            });
             this.gameCamera.onTransitionComplete = () => {
                 this.tank.setControlsEnabled(true);
             };
