@@ -462,16 +462,10 @@ class FastTravel {
             this._teleportToTile(targetTile);
         }
 
-        if (this.dustShockwave) {
-            this.dustShockwave.emit((this.tank.group._cachedWorldPos || this.tank.group.position).clone(), 0.5);
-        }
-
-        requestAnimationFrame(() => {
-            if (!this._awaitingConfirmation || this.previewPortalIndex === null) return;
-            this.tank.setVisible(true);
-            this.tank.setControlsEnabled(false);
-            this._predictedSpawnVisible = true;
-        });
+        // Keep the tank hidden until the server confirms the deploy and the
+        // camera finishes descending to the surface.
+        this.tank.setVisible(false);
+        this.tank.setControlsEnabled(false);
     }
 
     _hidePredictedDeployTank() {
@@ -512,30 +506,25 @@ class FastTravel {
         // Hide UI
         this._hideAllUI();
 
-        // Emit dust shockwave at spawn point (half size for spawns)
-        if (this.dustShockwave) {
-            this.dustShockwave.emit((this.tank.group._cachedWorldPos || this.tank.group.position).clone(), 0.5);
-        }
-
         const isAborting = this._isAborting;
         this._isAborting = false;
 
-        if (isAborting) {
-            // Abort: tank hidden until camera arrives at surface
-            this.gameCamera.onTransitionComplete = () => {
-                this.tank.setVisible(true);
-                this.tank.setControlsEnabled(true);
-            };
-        } else {
-            // Normal deploy: let the dustwave render first, then reveal the tank.
+        // Keep the tank hidden until the camera reaches the final surface distance.
+        this.tank.setVisible(false);
+        this.tank.setControlsEnabled(false);
+
+        this.gameCamera.onTransitionComplete = () => {
+            if (this.dustShockwave) {
+                this.dustShockwave.emit((this.tank.group._cachedWorldPos || this.tank.group.position).clone(), 0.5);
+            }
+
+            // Spawn after the dustwave has been submitted for rendering.
             requestAnimationFrame(() => {
                 this.tank._setCommanderTrimVisible?.(true);
                 this.tank.setVisible(true);
-            });
-            this.gameCamera.onTransitionComplete = () => {
                 this.tank.setControlsEnabled(true);
-            };
-        }
+            });
+        };
 
         // Exit camera fast travel mode (camera swoops down to meet tank)
         this.gameCamera.exitFastTravel();
