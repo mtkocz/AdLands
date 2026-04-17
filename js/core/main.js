@@ -4030,34 +4030,8 @@
     const isOrbitalView =
       gameCamera.mode === "orbital" || gameCamera.mode === "fastTravel" ||
       (gameCamera.transitioning && (gameCamera.transitionType === "toOrbital" || gameCamera.transitionType === "toFastTravel"));
-    // Binary LOD state: stay in orbital-grade simplification until the camera is
-    // much closer to the surface, then switch all gameplay detail on together.
-    const cameraSurfaceDist = camera.position.length() - CONFIG.sphereRadius;
-    const isDescending = gameCamera.transitioning && gameCamera.transitionType === "toSurface";
-    const isLowDetailView =
-      isDescending || cameraSurfaceDist > CONFIG.lodTransitionSurfaceDistance;
-    const crossedLodRevealThreshold =
-      isDescending && cameraSurfaceDist <= CONFIG.lodTransitionSurfaceDistance;
     if (!fastTravel.active) {
       tank.setControlsEnabled(!isOrbitalView);
-    }
-
-    // Notify server of view mode transitions so it can skip spatial filtering.
-    // Use the same binary cutoff as the client LOD path so nearby entities only
-    // come alive once the camera is close enough for full surface detail.
-    if (window.networkManager?.connected) {
-      const viewMode = (isOrbitalView && isLowDetailView) ? "orbital" : "ground";
-      if (viewMode !== window._lastSentViewMode) {
-        window._lastSentViewMode = viewMode;
-        window.networkManager.sendViewMode(viewMode);
-      }
-    }
-
-    // Scale shadow frustum with camera distance so terrain shadows stay visible
-    // Skip during descent — shadow frustum snaps to final size when transition ends
-    const cameraDistance = gameCamera.getEffectiveDistance();
-    if (!isDescending) {
-      environment.setShadowMode(cameraDistance);
     }
 
     // Update all systems
@@ -4084,6 +4058,33 @@
       : _shadowTargetTemp.copy(camera.position).normalize().multiplyScalar(CONFIG.sphereRadius);
     environment.updateShadowCamera(shadowTarget);
     gameCamera.update(tank.getPosition(), tank.state.speed, deltaTime);
+
+    // Binary LOD state: stay in orbital-grade simplification until the camera is
+    // much closer to the surface, then switch all gameplay detail on together.
+    const cameraSurfaceDist = camera.position.length() - CONFIG.sphereRadius;
+    const isDescending = gameCamera.transitioning && gameCamera.transitionType === "toSurface";
+    const isLowDetailView =
+      isDescending || cameraSurfaceDist > CONFIG.lodTransitionSurfaceDistance;
+    const crossedLodRevealThreshold =
+      isDescending && cameraSurfaceDist <= CONFIG.lodTransitionSurfaceDistance;
+
+    // Notify server of view mode transitions so it can skip spatial filtering.
+    // Use the same binary cutoff as the client LOD path so nearby entities only
+    // come alive once the camera is close enough for full surface detail.
+    if (window.networkManager?.connected) {
+      const viewMode = (isOrbitalView && isLowDetailView) ? "orbital" : "ground";
+      if (viewMode !== window._lastSentViewMode) {
+        window._lastSentViewMode = viewMode;
+        window.networkManager.sendViewMode(viewMode);
+      }
+    }
+
+    // Scale shadow frustum with camera distance so terrain shadows stay visible
+    // Skip during descent — shadow frustum snaps to final size when transition ends
+    const cameraDistance = gameCamera.getEffectiveDistance();
+    if (!isDescending) {
+      environment.setShadowMode(cameraDistance);
+    }
 
     // Update frustum for visibility culling (after camera update)
     camera.updateMatrixWorld();
@@ -4129,6 +4130,7 @@
     // by the rest of the scene, let the player tank switch LOD immediately.
     if (!isDescending || crossedLodRevealThreshold) {
       tank.updateLOD(camera, sharedFrustum, lodOptions);
+      tank._setCommanderTrimVisible?.(tank._lodState === 0);
     }
 
     // Pass LOD options to botTanks for commander dot mode
