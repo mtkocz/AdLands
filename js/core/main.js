@@ -4065,8 +4065,6 @@
     const isDescending = gameCamera.transitioning && gameCamera.transitionType === "toSurface";
     const isLowDetailView =
       isDescending || cameraSurfaceDist > CONFIG.lodTransitionSurfaceDistance;
-    const crossedLodRevealThreshold =
-      isDescending && cameraSurfaceDist <= CONFIG.lodTransitionSurfaceDistance;
 
     // Notify server of view mode transitions so it can skip spatial filtering.
     // Use the same binary cutoff as the client LOD path so nearby entities only
@@ -4119,37 +4117,10 @@
       commanderSystem,
     };
 
-    if (crossedLodRevealThreshold && tank._hidden && !tank.isDead) {
-      tank._setCommanderTrimVisible?.(false);
-      tank.setVisible(true);
-    }
-
     // Update tank LOD after camera update so distance is current frame's position.
-    // During the early orbital portion of the descent, keep the player out of the
-    // normal culling path; once the camera crosses the low-detail cutoff, force the
-    // local tank into full-detail mode immediately instead of waiting for the orbit
-    // portion of the transition to finish.
-    if (isDescending && crossedLodRevealThreshold) {
-      tank.group.visible = true;
-      tank._lodState = 0;
-      if (tank.lodMesh) tank.lodMesh.visible = false;
-      if (tank.lodDot) tank.lodDot.visible = false;
-      if (tank.lodDotOutline) tank.lodDotOutline.visible = false;
-      if (tank.shadowBlob) tank.shadowBlob.visible = false;
-      if (tank.detailedMeshes) {
-        for (const mesh of tank.detailedMeshes) {
-          mesh.visible = true;
-          if (mesh.isMesh) {
-            mesh.castShadow = true;
-          } else if (mesh.isGroup) {
-            mesh.traverse((child) => {
-              if (child.isMesh) child.castShadow = true;
-            });
-          }
-        }
-      }
-      tank._setCommanderTrimVisible?.(isHumanCommander);
-    } else if (!isDescending) {
+    // Skip LOD during toSurface transitions — the tank stays hidden until
+    // FastTravel reveals it after the camera reaches its final surface position.
+    if (!isDescending) {
       tank.updateLOD(camera, sharedFrustum, lodOptions);
       tank._setCommanderTrimVisible?.(tank._lodState === 0);
     }
