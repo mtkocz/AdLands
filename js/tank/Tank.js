@@ -1136,15 +1136,18 @@ class Tank {
     // When tank is hidden (e.g. during fast travel), only show the dot in orbital view
     if (this._hidden) {
       if (this.lodDot && options.isOrbitalView) {
+        const forceHiddenDot = !!options.forceHiddenDot;
         const distanceToCamera = this.group.position.length() > 0
           ? Tank._lodTemp.cameraWorldPos.distanceTo(
               this.group.getWorldPosition(Tank._lodTemp.tankWorldPos)
             )
           : Infinity;
-        if (distanceToCamera > 200) {
+        if (forceHiddenDot || distanceToCamera > 200) {
           this.group.visible = true;
           this.lodDot.visible = true;
+          this._lodState = 2;
           this._setCommanderTrimVisible(false);
+          if (this.lodDotDarkOutline) this.lodDotDarkOutline.visible = true;
           if (this.lodDotOutline) this.lodDotOutline.visible = false;
           if (this.lodMesh) this.lodMesh.visible = false;
           if (this.shadowBlob) this.shadowBlob.visible = false;
@@ -1164,9 +1167,18 @@ class Tank {
         } else {
           this.group.visible = false;
           this.lodDot.visible = false;
+          this._lodState = -1;
           this._setCommanderTrimVisible(false);
+          if (this.lodDotDarkOutline) this.lodDotDarkOutline.visible = false;
           if (this.lodDotOutline) this.lodDotOutline.visible = false;
         }
+      } else {
+        this.group.visible = false;
+        this._lodState = -1;
+        this._setCommanderTrimVisible(false);
+        if (this.lodDot) this.lodDot.visible = false;
+        if (this.lodDotDarkOutline) this.lodDotDarkOutline.visible = false;
+        if (this.lodDotOutline) this.lodDotOutline.visible = false;
       }
       return;
     }

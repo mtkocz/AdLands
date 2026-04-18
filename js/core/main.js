@@ -4064,7 +4064,7 @@
     const cameraSurfaceDist = camera.position.length() - CONFIG.sphereRadius;
     const isDescending = gameCamera.transitioning && gameCamera.transitionType === "toSurface";
     const isLowDetailView =
-      isDescending || cameraSurfaceDist > CONFIG.lodTransitionSurfaceDistance;
+      cameraSurfaceDist > CONFIG.lodTransitionSurfaceDistance;
 
     // Notify server of view mode transitions so it can skip spatial filtering.
     // Use the same binary cutoff as the client LOD path so nearby entities only
@@ -4115,12 +4115,14 @@
       isHumanCommander,
       viewerFaction: playerFaction,
       commanderSystem,
+      forceHiddenDot: isDescending && isLowDetailView,
     };
 
     // Update tank LOD after camera update so distance is current frame's position.
-    // Skip LOD during toSurface transitions — the tank stays hidden until
-    // FastTravel reveals it after the camera reaches its final surface position.
-    if (!isDescending) {
+    // During descent, keep the tank hidden but continue the hidden-dot LOD path
+    // above the 71-unit cutoff. Below that cutoff, keep the tank fully hidden
+    // until FastTravel reveals it at transition completion.
+    if (!isDescending || isLowDetailView) {
       tank.updateLOD(camera, sharedFrustum, lodOptions);
       tank._setCommanderTrimVisible?.(tank._lodState === 0);
     }

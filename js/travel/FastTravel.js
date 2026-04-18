@@ -509,8 +509,8 @@ class FastTravel {
         const isAborting = this._isAborting;
         this._isAborting = false;
 
-        // Keep the tank hidden during the early orbital portion of the descent.
-        // main.js reveals it once the camera crosses the surface-detail cutoff.
+        // Keep the tank hidden for the entire descent. The final reveal happens
+        // only after the camera reaches its surface position.
         this.tank.setVisible(false);
         this.tank.setControlsEnabled(false);
 
@@ -521,6 +521,8 @@ class FastTravel {
 
             // Spawn after the dustwave has been submitted for rendering.
             requestAnimationFrame(() => {
+                const showTrim = !!window.commanderSystem?.isHumanCommander?.();
+                this.tank._setCommanderTrimVisible?.(showTrim);
                 this.tank.setVisible(true);
                 this.tank.setControlsEnabled(true);
             });
