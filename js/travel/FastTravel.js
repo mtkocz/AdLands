@@ -521,7 +521,11 @@ class FastTravel {
 
             // Spawn after the dustwave has been submitted for rendering.
             requestAnimationFrame(() => {
-                const showTrim = !!window.commanderSystem?.isHumanCommander?.();
+                const commanderSystem = window.commanderSystem;
+                const showTrim = !!commanderSystem?.isHumanCommander?.();
+                if (showTrim) {
+                    commanderSystem?.commanderSkin?.applyTrim?.(this.tank);
+                }
                 this.tank._setCommanderTrimVisible?.(showTrim);
                 this.tank.setVisible(true);
                 this.tank.setControlsEnabled(true);
