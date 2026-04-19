@@ -921,7 +921,15 @@
         return;
       }
 
-      const remoteTank = remoteTanks.get(data.id);
+      let remoteTank = remoteTanks.get(data.id);
+      if (!remoteTank && window.botTanks?.bots) {
+        for (const bot of window.botTanks.bots) {
+          if (bot && bot.id === data.id) {
+            remoteTank = bot;
+            break;
+          }
+        }
+      }
 
       if (data.type === "missile") {
         if (window.missileSystem) {

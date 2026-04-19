@@ -1478,7 +1478,7 @@ class ServerBotManager {
         if (dist >= 0.03 && dist < 0.15 && bot.crypto >= 20 && this._activeBotMissiles < 3) {
           bot.lastFireTime = now;
           this._activeBotMissiles++;
-          nextProjectileId = this._fireBotMissile(bot, projectiles, nextProjectileId);
+          nextProjectileId = this._fireBotMissile(bot, projectiles, nextProjectileId, players);
         } else if (dist < 0.08) {
           // Too close for missiles — use cannon
           bot.lastFireTime = now;
@@ -1621,8 +1621,10 @@ class ServerBotManager {
     return nextProjectileId;
   }
 
-  _fireBotMissile(bot, projectiles, nextProjectileId) {
+  _fireBotMissile(bot, projectiles, nextProjectileId, players) {
     if (bot.isDead || !bot.combatTarget) return nextProjectileId;
+    const target = this._getCombatTargetState(bot.combatTarget, players);
+    if (!target || target.isDead || target.waitingForPortal) return nextProjectileId;
 
     bot.crypto -= 20;
 
@@ -1643,8 +1645,11 @@ class ServerBotManager {
       launchDuration: 0.5,
       damage: 38, // 25 * 1.5 missile multiplier
       targetId: bot.combatTarget,
+      _tgtTheta: target.theta,
+      _tgtPhi: target.phi,
+      _tgtIsFlare: false,
       _retargetPhase: 2, // retarget on first tick
-      _hasTarget: false,
+      _hasTarget: true,
     };
 
     if (this._workerMode) {
@@ -1658,6 +1663,10 @@ class ServerBotManager {
     const bSp = Math.sin(bot.phi), bCp = Math.cos(bot.phi);
     const bSt = Math.sin(bot.theta), bCt = Math.cos(bot.theta);
     const bLift = R + 2;
+    const lx = bLift * bSp * bSt;
+    const lz = bLift * bSp * bCt;
+    const cosPR = Math.cos(this._planetRotation);
+    const sinPR = Math.sin(this._planetRotation);
 
     this._emit("player-fired", {
       id: bot.id,
@@ -1667,9 +1676,13 @@ class ServerBotManager {
       phi: bot.phi,
       projectileId: missile.id,
       targetId: bot.combatTarget,
-      wx: bLift * bSp * bSt,
+      targetTheta: target.theta,
+      targetPhi: target.phi,
+      targetIsFlare: false,
+      faction: bot.faction,
+      wx: lx * cosPR + lz * sinPR,
       wy: bLift * bCp,
-      wz: bLift * bSp * bCt,
+      wz: -lx * sinPR + lz * cosPR,
     });
 
     return nextProjectileId;
