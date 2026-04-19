@@ -2349,8 +2349,11 @@ class GameRoom {
       launchDuration: 0.5,
       damage: Math.round(25 * 1.5), // 38 damage (missile multiplier)
       targetId: target.id,
+      _tgtTheta: target.theta,
+      _tgtPhi: target.phi,
+      _tgtIsFlare: !!target.isFlare,
       _retargetPhase: 2, // retarget on first tick
-      _hasTarget: false,
+      _hasTarget: true,
     };
 
     this.projectiles.push(missile);
@@ -4606,7 +4609,8 @@ class GameRoom {
     }
 
     // -- Active missiles & flares (world positions for client sync) --
-    // Flat arrays: missiles = [id, factionIdx, phase, wx, wy, wz, targetId, ownerId], ...
+    // Flat arrays:
+    // missiles = [id, factionIdx, phase, wx, wy, wz, targetId, ownerId, targetTheta, targetPhi, targetFlags], ...
     //              flares   = [id, factionIdx, wx, wy, wz, ownerId], ...
     // Theta/phi are LOCAL sphere coords — rotate by planetRotation (Y-axis) for world space.
     const R = 480;
@@ -4621,9 +4625,12 @@ class GameRoom {
       const st = Math.sin(p.theta), ct = Math.cos(p.theta);
       const lift = R + (p.phase === 0 ? 2 : 8);
       const lx = lift * sp * st, lz = lift * sp * ct;
+      const tgtTheta = p._tgtTheta ?? 0;
+      const tgtPhi = p._tgtPhi ?? 0;
+      const tgtFlags = p._tgtIsFlare ? 1 : 0;
       mlArr.push(p.id, FACTION_IDX[p.ownerFaction] || 0, p.phase,
         lx * cosPR + lz * sinPR, lift * cp, -lx * sinPR + lz * cosPR,
-        p.targetId || "", p.ownerId);
+        p.targetId || "", p.ownerId, tgtTheta, tgtPhi, tgtFlags);
     }
     const flArr = [];
     for (let i = 0; i < this.flares.length; i++) {

@@ -929,7 +929,7 @@ class MissileSystem {
     if (this._effectsSuspended || document.hidden) return;
 
     const FACTIONS = ["rust", "cobalt", "viridian"];
-    const STRIDE = 8;
+    const STRIDE = 11;
 
     const diag = window._syncDiag || (window._syncDiag = { mlCalls: 0, mlItems: 0, flCalls: 0, flItems: 0, remoteMissiles: 0, remoteFlares: 0, mlSpawned: 0, mlSkipped: 0, lastErr: null });
     diag.mlCalls++;
@@ -971,6 +971,17 @@ class MissileSystem {
         const wx = mlArr[i + 3], wy = mlArr[i + 4], wz = mlArr[i + 5];
         if (!existing._serverPos) existing._serverPos = new THREE.Vector3();
         existing._serverPos.set(wx, wy, wz);
+        const targetTheta = mlArr[i + 8];
+        const targetPhi = mlArr[i + 9];
+        const targetFlags = mlArr[i + 10] || 0;
+        if (targetTheta !== undefined && targetPhi !== undefined) {
+          this._setMissileSpawnTarget(existing, {
+            targetId: existing.serverTargetId,
+            targetTheta,
+            targetPhi,
+            targetIsFlare: !!(targetFlags & 1),
+          });
+        }
         const serverPhase = mlArr[i + 2];
         if ((existing.phase || 0) < 2) {
           existing.phase = Math.max(existing.phase || 0, serverPhase);
@@ -1480,8 +1491,8 @@ class MissileSystem {
         m.phase = 1;
         m.cruiseAltitude = altitude;
         m.phase1Age = 0;
-        // Start with surface normal direction — steering will smoothly curve toward target
-        m.direction = m.surfaceNormal.clone();
+        // Start cruise already pointed toward the tracked target when possible.
+        this._setMissileInitialDirection(m);
       }
 
       // Sync mesh position and orient nose (+Y) along surface normal (upward)
