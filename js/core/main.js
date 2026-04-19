@@ -4065,6 +4065,8 @@
     const isDescending = gameCamera.transitioning && gameCamera.transitionType === "toSurface";
     const isLowDetailView =
       cameraSurfaceDist > CONFIG.lodTransitionSurfaceDistance;
+    const showCommanderTrim =
+      cameraSurfaceDist <= CONFIG.lodTransitionSurfaceDistance;
 
     // Notify server of view mode transitions so it can skip spatial filtering.
     // Use the same binary cutoff as the client LOD path so nearby entities only
@@ -4113,6 +4115,7 @@
     const lodOptions = {
       isOrbitalView,
       isHumanCommander,
+      showCommanderTrim,
       viewerFaction: playerFaction,
       commanderSystem,
       forceHiddenDot: isDescending && isLowDetailView,
@@ -4124,7 +4127,6 @@
     // until FastTravel reveals it at transition completion.
     if (!isDescending || isLowDetailView) {
       tank.updateLOD(camera, sharedFrustum, lodOptions);
-      tank._setCommanderTrimVisible?.(tank._lodState === 0);
     }
 
     // Pass LOD options to botTanks for commander dot mode

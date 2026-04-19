@@ -1891,6 +1891,7 @@ Tank._lodTemp = {
  * @param {Object} options - Commander mode options
  * @param {boolean} options.isOrbitalView - Whether camera is in orbital/fast travel mode
  * @param {boolean} options.isHumanCommander - Whether the human player is a commander
+ * @param {boolean} options.showCommanderTrim - Whether commander trim should render at this camera altitude
  * @param {Object} options.commanderSystem - Reference to commanderSystem for checking commanders
  * @returns {boolean} Whether tank is visible
  */
@@ -1900,7 +1901,7 @@ Tank.updateTankLOD = function (
   frustum = null,
   options = {},
 ) {
-  const { isOrbitalView, isHumanCommander, commanderSystem } = options;
+  const { isOrbitalView, isHumanCommander, showCommanderTrim, commanderSystem } = options;
   const temp = Tank._lodTemp;
   const tankWorldPos = temp.tankWorldPos;
   const surfaceNormal = temp.surfaceNormal;
@@ -2022,7 +2023,7 @@ Tank.updateTankLOD = function (
     }
   }
   if (typeof tank._setCommanderTrimVisible === "function") {
-    tank._setCommanderTrimVisible(!useSimplified);
+    tank._setCommanderTrimVisible(!!showCommanderTrim);
   }
 
   // Show blob shadow for LOD box tanks (not for dots)
