@@ -41,6 +41,7 @@ class MissileSystem {
     // Deferred hit effects — wait for missile to visually detonate before showing damage
     this._pendingHits = new Map(); // serverId -> { callback, timeout }
     this._pendingDiveTargets = new Map(); // serverId -> world-space impact point
+    this._latestServerMissileState = new Map(); // serverId -> latest sync snapshot
 
     // Lock-on state
     this._missileEquipped = false;
@@ -512,6 +513,49 @@ class MissileSystem {
     return null;
   }
 
+  _cacheServerMissileState(serverId, snapshot) {
+    if (serverId == null || !snapshot) return;
+    this._latestServerMissileState.set(serverId, snapshot);
+  }
+
+  _ensureRemoteMissileVisual(missile) {
+    if (!missile) return false;
+    if (!missile.poolItem) {
+      const poolItem = this._acquirePoolItem(missile.faction || missile.ownerFaction || "rust");
+      if (!poolItem) return false;
+      missile.poolItem = poolItem;
+      poolItem.group.position.copy(missile.position);
+    }
+    missile.poolItem.group.visible = true;
+    if (!missile.poolItem.group.parent) {
+      this.scene.add(missile.poolItem.group);
+    }
+    return true;
+  }
+
+  _spawnRemoteMissileFromSnapshot(projectileId, overrides = {}) {
+    const snapshot = this._latestServerMissileState.get(projectileId);
+    if (!snapshot) return null;
+    const owner = this._resolveRemoteMissileOwner(snapshot.ownerId);
+    const spawned = this.spawnRemoteMissile({
+      projectileId,
+      faction: snapshot.faction,
+      targetId: overrides.targetId ?? snapshot.targetId,
+      targetTheta: overrides.targetTheta ?? snapshot.targetTheta,
+      targetPhi: overrides.targetPhi ?? snapshot.targetPhi,
+      targetIsFlare: overrides.targetIsFlare ?? snapshot.targetIsFlare,
+      wx: overrides.wx ?? snapshot.wx,
+      wy: overrides.wy ?? snapshot.wy,
+      wz: overrides.wz ?? snapshot.wz,
+      _startFromServerPos: true,
+      _initialPhase: overrides.initialPhase ?? snapshot.phase,
+    }, owner);
+    if (!spawned) return null;
+    const missile = this._missileIndex?.get(projectileId) || null;
+    if (missile) this._ensureRemoteMissileVisual(missile);
+    return missile;
+  }
+
   _resolveMissileTrackedTarget(missile) {
     if (missile.serverTargetId != null) {
       const serverTarget = this._resolveServerTarget(missile.serverTargetId);
@@ -921,6 +965,7 @@ class MissileSystem {
       ownerFaction: faction,
       serverId: data.projectileId,
       serverTargetId: data.targetId || null,
+      _alwaysVisible: data.targetId === "local",
       shadowBB,
     };
 
@@ -972,18 +1017,36 @@ class MissileSystem {
       const ownerId = mlArr[i + 7];
       if (ownerId === localPlayerId) continue;
       serverIds.add(id);
+      const targetId = mlArr[i + 6] || null;
+      const targetTheta = mlArr[i + 8];
+      const targetPhi = mlArr[i + 9];
+      const targetFlags = mlArr[i + 10] || 0;
+      const faction = FACTIONS[mlArr[i + 1]] || "rust";
+      const serverPhase = mlArr[i + 2] || 0;
+      this._cacheServerMissileState(id, {
+        ownerId,
+        faction,
+        phase: serverPhase,
+        wx: mlArr[i + 3],
+        wy: mlArr[i + 4],
+        wz: mlArr[i + 5],
+        targetId,
+        targetTheta,
+        targetPhi,
+        targetIsFlare: !!(targetFlags & 1),
+      });
 
       const existing = this._missileIndex.get(id) || null;
       if (existing) {
         existing._lastServerSync = performance.now();
-        const newTargetId = mlArr[i + 6] || null;
+        const newTargetId = targetId;
         if (newTargetId !== existing.serverTargetId) {
           existing.serverTargetId = newTargetId;
           existing._serverTargetWorldPos = null;
           existing._serverTargetIsFlare = false;
           this._setMissileSpawnTarget(existing, { targetId: newTargetId });
         }
-        const newFaction = FACTIONS[mlArr[i + 1]] || existing.faction || "rust";
+        const newFaction = faction || existing.faction || "rust";
         if (newFaction !== existing.faction) {
           existing.faction = newFaction;
           existing.ownerFaction = newFaction;
@@ -999,9 +1062,6 @@ class MissileSystem {
         const wx = mlArr[i + 3], wy = mlArr[i + 4], wz = mlArr[i + 5];
         if (!existing._serverPos) existing._serverPos = new THREE.Vector3();
         existing._serverPos.set(wx, wy, wz);
-        const targetTheta = mlArr[i + 8];
-        const targetPhi = mlArr[i + 9];
-        const targetFlags = mlArr[i + 10] || 0;
         if (targetTheta !== undefined && targetPhi !== undefined) {
           this._setMissileSpawnTarget(existing, {
             targetId: existing.serverTargetId,
@@ -1010,18 +1070,12 @@ class MissileSystem {
             targetIsFlare: !!(targetFlags & 1),
           });
         }
-        const serverPhase = mlArr[i + 2];
         if ((existing.phase || 0) < 2) {
           existing.phase = Math.max(existing.phase || 0, serverPhase);
         }
         continue;
       }
 
-      const serverPhase = mlArr[i + 2] || 0;
-      const targetId = mlArr[i + 6] || null;
-      const targetTheta = mlArr[i + 8];
-      const targetPhi = mlArr[i + 9];
-      const targetFlags = mlArr[i + 10] || 0;
       const owner = this._resolveRemoteMissileOwner(ownerId);
       const shouldLateSpawn =
         serverPhase <= 2 ||
@@ -1030,7 +1084,7 @@ class MissileSystem {
       if (shouldLateSpawn) {
         const spawned = this.spawnRemoteMissile({
           projectileId: id,
-          faction: FACTIONS[mlArr[i + 1]] || "rust",
+          faction,
           targetId,
           targetTheta,
           targetPhi,
@@ -1062,6 +1116,7 @@ class MissileSystem {
         if (m._forcedDive) continue;
         if (m.poolItem) this._releasePoolItem(m.poolItem);
         if (m.serverId != null) this._cancelPendingHit(m.serverId);
+        if (m.serverId != null) this._latestServerMissileState.delete(m.serverId);
         if (m.shadowBB && this.flareSystem) {
           m.shadowBB.age = m.age;
           this.flareSystem._orphanedShadows.push(m.shadowBB);
@@ -1172,10 +1227,19 @@ class MissileSystem {
     for (let i = this.missiles.length - 1; i >= 0; i--) {
       const m = this.missiles[i];
       if (m.serverId === missileId && m.isRemote) {
+        if (!this._ensureRemoteMissileVisual(m)) return false;
         m.serverTargetId = "local";
+        m._alwaysVisible = true;
         this._setMissileSpawnTarget(m, { targetId: "local" });
         return true;
       }
+    }
+    const spawned = this._spawnRemoteMissileFromSnapshot(missileId, { targetId: "local" });
+    if (spawned) {
+      spawned.serverTargetId = "local";
+      spawned._alwaysVisible = true;
+      this._setMissileSpawnTarget(spawned, { targetId: "local" });
+      return true;
     }
     return false;
   }
@@ -1205,8 +1269,10 @@ class MissileSystem {
     for (let i = this.missiles.length - 1; i >= 0; i--) {
       const m = this.missiles[i];
       if (m.serverId === projectileId && m.isRemote && m.phase < 2) {
+        this._ensureRemoteMissileVisual(m);
         const target = this._resolveServerTarget(targetId);
         m.serverTargetId = targetId;
+        m._alwaysVisible = m._alwaysVisible || targetId === "local";
         m.phase = 2;
         if (target) {
           m.diveTarget = target.worldPos.clone();
@@ -1219,6 +1285,13 @@ class MissileSystem {
         }
         return;
       }
+    }
+    const spawned = this._spawnRemoteMissileFromSnapshot(projectileId, {
+      targetId,
+      initialPhase: 2,
+    });
+    if (spawned) {
+      this.diveByServerId(projectileId, targetId);
     }
   }
 
@@ -1502,7 +1575,7 @@ class MissileSystem {
 
   _updateMissile(m, dt) {
     const dt60 = dt * 60;
-    const farAway = m._camDist > 400;
+    const farAway = m._camDist > 400 && !m._alwaysVisible;
 
     // Skip if missile was forced to a post-launch phase before direction was initialized
     if (m.phase > 0 && !m.direction) {
@@ -1831,6 +1904,7 @@ class MissileSystem {
 
     if (m.poolItem) this._releasePoolItem(m.poolItem);
     if (m.serverId != null) this._pendingDiveTargets.delete(m.serverId);
+    if (m.serverId != null) this._latestServerMissileState.delete(m.serverId);
     if (this._missileIndex && m.serverId != null) this._missileIndex.delete(m.serverId);
     this.missiles.splice(index, 1);
   }
