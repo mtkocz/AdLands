@@ -86,6 +86,8 @@ class MissileSystem {
     this._tempVec = new THREE.Vector3();
     this._tempVec2 = new THREE.Vector3();
     this._tempVec3 = new THREE.Vector3();
+    this._tempVec4 = new THREE.Vector3();
+    this._tempVec5 = new THREE.Vector3();
     this._tempQuat = new THREE.Quaternion();
     this._tempQuat2 = new THREE.Quaternion();
     this._upVec = new THREE.Vector3(0, 1, 0);
@@ -822,6 +824,76 @@ class MissileSystem {
     this.lockOnReticle.style.display = "none";
   }
 
+  _createMissileVisual({
+    startPos,
+    surfacePos,
+    surfaceNormal,
+    faction,
+    isRemote = false,
+    serverId = null,
+    serverTargetId = null,
+    targetTank = null,
+    targetFaction = null,
+    targetData = null,
+    initialPhase = 0,
+    alwaysVisible = false,
+  }) {
+    const poolItem = this._acquirePoolItem(faction);
+    if (!poolItem) return null;
+
+    let shadowBB = null;
+    if (this.flareSystem) {
+      shadowBB = this.flareSystem._acquireShadowBillboard(
+        surfacePos.clone(),
+        surfaceNormal.clone(),
+        this.config.cruiseAltitude
+      );
+    }
+
+    const missile = {
+      poolItem,
+      position: startPos.clone(),
+      surfaceNormal: surfaceNormal.clone(),
+      faction,
+      phase: Math.min(2, Math.max(0, initialPhase || 0)),
+      age: initialPhase > 0 ? this.config.launchDuration : 0,
+      launchSpeed: 5,
+      cruiseAltitude: this.config.cruiseAltitude,
+      targetTank,
+      targetFaction,
+      direction: null,
+      isRemote,
+      ownerFaction: faction,
+      serverId,
+      serverTargetId,
+      _alwaysVisible: !!alwaysVisible,
+      shadowBB,
+    };
+
+    if (targetData) {
+      this._setMissileSpawnTarget(missile, targetData);
+    }
+    if (missile.phase > 0) {
+      missile.phase1Age = 1.0;
+      this._setMissileInitialDirection(missile);
+      if (missile.phase >= 2) {
+        const tracked = this._resolveMissileTrackedTarget(missile);
+        if (tracked?.worldPos) {
+          missile.diveTarget = tracked.worldPos.clone();
+        }
+      }
+    }
+
+    this.missiles.push(missile);
+    if (serverId != null) {
+      if (!this._missileIndex) this._missileIndex = new Map();
+      this._missileIndex.set(serverId, missile);
+      this._clearPendingHitTimeout(serverId);
+    }
+    poolItem.group.position.copy(startPos);
+    return missile;
+  }
+
   _fire(tank, faction, target) {
     if (this._effectsSuspended || document.hidden) return;
     const now = performance.now() / 1000;
@@ -840,39 +912,17 @@ class MissileSystem {
     const startPos = tankPos
       .clone()
       .addScaledVector(surfaceNormal, 1.5); // Start slightly above tank
-
-    const poolItem = this._acquirePoolItem(faction);
-    if (!poolItem) return;
-    this._lastFireTime = now;
-
-    // Shadow billboard at launch point
-    let shadowBB = null;
-    if (this.flareSystem) {
-      shadowBB = this.flareSystem._acquireShadowBillboard(
-        tankPos.clone(), surfaceNormal.clone(), this.config.cruiseAltitude
-      );
-    }
-
-    const missile = {
-      poolItem,
-      position: startPos.clone(),
-      surfaceNormal: surfaceNormal.clone(),
+    const missile = this._createMissileVisual({
+      startPos,
+      surfacePos: tankPos,
+      surfaceNormal,
       faction,
-      phase: 0, // 0=launch, 1=cruise, 2=dive
-      age: 0,
-      launchSpeed: 5,
-      cruiseAltitude: this.config.cruiseAltitude,
       targetTank: target.tank,
       targetFaction: target.tank.faction,
-      direction: null,  // Initialized when entering phase 1
-      isRemote: false,
-      serverId: null,
       serverTargetId: target?.tank?.id ?? null,
-      shadowBB,
-    };
-
-    this.missiles.push(missile);
-    poolItem.group.position.copy(startPos);
+    });
+    if (!missile) return;
+    this._lastFireTime = now;
 
     // Dust wave on launch
     if (this.dustShockwave) {
@@ -909,18 +959,24 @@ class MissileSystem {
     const existing = this._missileIndex.get(data.projectileId);
     if (existing) {
       existing._lastServerSync = performance.now();
-      if (!existing._serverPos) existing._serverPos = new THREE.Vector3();
-      existing._serverPos.set(data.wx, data.wy, data.wz);
-      if (data.targetId != null) existing.serverTargetId = data.targetId;
+      if (data.targetId != null) {
+        existing.serverTargetId = data.targetId;
+        existing._alwaysVisible = existing._alwaysVisible ||
+          data.targetId === "local" ||
+          data.targetId === window._mpState?.net?.playerId;
+      }
+      if (data.wx !== undefined && data.wy !== undefined && data.wz !== undefined) {
+        if (!existing._serverPos) existing._serverPos = new THREE.Vector3();
+        existing._serverPos.set(data.wx, data.wy, data.wz);
+        existing._remoteHasSync = true;
+      }
       return true;
     }
 
-    const faction = data.faction || remoteTank?.faction || "rust";
-    const poolItem = this._acquirePoolItem(faction);
-    if (!poolItem) return false;
     const initialPhase = Math.min(2, Math.max(0, data._initialPhase || 0));
     const useServerStart = !!data._startFromServerPos;
     const serverStartPos = new THREE.Vector3(data.wx, data.wy, data.wz);
+    const faction = data.faction || remoteTank?.faction || "rust";
 
     // Launch from the owner's actual rendered world position when available so
     // the missile origin matches the visible tank exactly.
@@ -940,54 +996,25 @@ class MissileSystem {
     const surfacePos = (!useServerStart && ownerWorldPos)
       ? ownerWorldPos.clone()
       : surfaceNormal.clone().multiplyScalar(this.sphereRadius);
-
-    // Shadow billboard at launch point
-    let shadowBB = null;
-    if (this.flareSystem) {
-      shadowBB = this.flareSystem._acquireShadowBillboard(
-        surfacePos, surfaceNormal, this.config.cruiseAltitude
-      );
-    }
-
-    const missile = {
-      poolItem,
-      position: startPos.clone(),
+    const missile = this._createMissileVisual({
+      startPos,
+      surfacePos,
       surfaceNormal,
       faction,
-      phase: initialPhase,
-      age: initialPhase > 0 ? this.config.launchDuration : 0,
-      launchSpeed: 5,
-      cruiseAltitude: this.config.cruiseAltitude,
-      targetTank: null,
-      targetFaction: null,
-      direction: null,  // Initialized when entering phase 1
       isRemote: true,
-      ownerFaction: faction,
       serverId: data.projectileId,
       serverTargetId: data.targetId || null,
-      _alwaysVisible: data.targetId === "local",
-      shadowBB,
-    };
-
-    this._setMissileSpawnTarget(missile, data);
-    missile._serverPos = startPos.clone();
+      targetData: data,
+      initialPhase,
+      alwaysVisible:
+        data.targetId === "local" ||
+        data.targetId === window._mpState?.net?.playerId,
+    });
+    if (!missile) return false;
+    missile._serverPos = useServerStart ? serverStartPos.clone() : null;
+    missile._remoteHasSync = !!useServerStart;
     missile._lastServerSync = performance.now();
     this._applyPendingDiveTarget(missile);
-    if (initialPhase > 0) {
-      missile.phase1Age = 1.0;
-      this._setMissileInitialDirection(missile);
-      if (initialPhase >= 2) {
-        const tracked = this._resolveMissileTrackedTarget(missile);
-        if (tracked?.worldPos) {
-          missile.diveTarget = tracked.worldPos.clone();
-        }
-      }
-    }
-
-    this.missiles.push(missile);
-    this._missileIndex.set(missile.serverId, missile);
-    this._clearPendingHitTimeout(missile.serverId);
-    poolItem.group.position.copy(startPos);
 
     // Dust wave — only if firing tank is visible (avoid effects from empty space)
     if (this.dustShockwave && remoteTank?.group?.visible) {
@@ -1039,6 +1066,7 @@ class MissileSystem {
       const existing = this._missileIndex.get(id) || null;
       if (existing) {
         existing._lastServerSync = performance.now();
+        existing._remoteHasSync = true;
         const newTargetId = targetId;
         if (newTargetId !== existing.serverTargetId) {
           existing.serverTargetId = newTargetId;
@@ -1046,6 +1074,9 @@ class MissileSystem {
           existing._serverTargetIsFlare = false;
           this._setMissileSpawnTarget(existing, { targetId: newTargetId });
         }
+        existing._alwaysVisible = existing._alwaysVisible ||
+          newTargetId === "local" ||
+          newTargetId === window._mpState?.net?.playerId;
         const newFaction = faction || existing.faction || "rust";
         if (newFaction !== existing.faction) {
           existing.faction = newFaction;
@@ -1069,6 +1100,9 @@ class MissileSystem {
             targetPhi,
             targetIsFlare: !!(targetFlags & 1),
           });
+        }
+        if (existing._alwaysVisible && !existing.poolItem) {
+          this._ensureRemoteMissileVisual(existing);
         }
         if ((existing.phase || 0) < 2) {
           existing.phase = Math.max(existing.phase || 0, serverPhase);
@@ -1441,6 +1475,7 @@ class MissileSystem {
     if (this._missileIndex) {
       this._missileIndex.clear();
     }
+    this._latestServerMissileState.clear();
 
     if (this._ab) this._ab.activeCount = 0;
     if (this._smoke) this._smoke.activeCount = 0;
@@ -1569,6 +1604,56 @@ class MissileSystem {
     return this.sphereRadius + elevation * this.planet.terrainElevation.config.EXTRUSION_HEIGHT;
   }
 
+  _stabilizeCruiseAltitude(m) {
+    const surfaceR = this._getSurfaceRadius(m.position);
+    const currentNormal = this._tempVec.copy(m.position).normalize();
+    const currentAlt = m.position.length() - surfaceR;
+    if (currentAlt < m.cruiseAltitude - 0.5) {
+      const correctedAlt = MathUtils.lerp(currentAlt, m.cruiseAltitude, 0.25);
+      m.position.copy(currentNormal).multiplyScalar(surfaceR + correctedAlt);
+    } else if (currentAlt > m.cruiseAltitude + 0.5) {
+      const correctedAlt = MathUtils.lerp(currentAlt, m.cruiseAltitude, 0.18);
+      m.position.copy(currentNormal).multiplyScalar(surfaceR + correctedAlt);
+    }
+  }
+
+  _updateRemoteCruise(m, dt, dt60) {
+    const prevPos = this._tempVec4.copy(m.position);
+
+    if (m._remoteHasSync && m._serverPos) {
+      const toServer = this._tempVec5.copy(m._serverPos).sub(m.position);
+      const dist = toServer.length();
+      if (dist > 40) {
+        m.position.copy(m._serverPos);
+      } else if (dist > 0.0001) {
+        m.position.addScaledVector(toServer, Math.min(1, dt * 12));
+      }
+    } else if (m.direction && m.direction.lengthSq() > 0.0001) {
+      m.position.addScaledVector(m.direction, this.config.missileSpeed * dt60);
+      this._stabilizeCruiseAltitude(m);
+    }
+
+    const travelDelta = this._tempVec5.copy(m.position).sub(prevPos);
+    if (travelDelta.lengthSq() > 0.000001) {
+      if (!m.direction) m.direction = new THREE.Vector3();
+      m.direction.copy(travelDelta).normalize();
+    } else {
+      const tracked = this._resolveMissileTrackedTarget(m);
+      if (tracked?.worldPos) {
+        if (!m.direction) m.direction = new THREE.Vector3();
+        m.direction.copy(tracked.worldPos).sub(m.position).normalize();
+      } else if ((!m.direction || m.direction.lengthSq() < 0.0001) && m.surfaceNormal) {
+        m.direction = m.surfaceNormal.clone();
+      }
+    }
+
+    this._stabilizeCruiseAltitude(m);
+    const lookTarget = this._tempVec2.copy(m.position).add(m.direction || m.surfaceNormal);
+    m.poolItem.group.position.copy(m.position);
+    m.poolItem.group.lookAt(lookTarget);
+    m.poolItem.group.quaternion.multiply(this._meshOrientQuat);
+  }
+
   // ========================
   // MISSILE TRAJECTORY
   // ========================
@@ -1592,7 +1677,7 @@ class MissileSystem {
 
     // Remote missiles follow the same visual simulation as local missiles.
     // Server state and reliable events only act as soft corrections and phase changes.
-    if (m.isRemote && m._serverPos && m.phase < 2) {
+    if (m.isRemote && m._serverPos && m.phase === 0 && m._remoteHasSync) {
       const drift = this._tempVec2.copy(m._serverPos).sub(m.position);
       const driftLenSq = drift.lengthSq();
       if (driftLenSq > 0.000001) {
@@ -1631,14 +1716,17 @@ class MissileSystem {
       upQuat.setFromUnitVectors(this._upVec, m.surfaceNormal);
       m.poolItem.group.quaternion.copy(upQuat);
     } else if (m.phase === 1) {
+      if (m.isRemote) {
+        this._updateRemoteCruise(m, dt, dt60);
+        return;
+      }
+
       // CRUISE / HOMING: Steer toward target at altitude
       m.phase1Age = (m.phase1Age || 0) + dt;
       const target = this._getVisualTargetForMissile(m, {
-        // Remote missiles are server-authoritative for retarget/lost/dive behavior.
-        // Do not run full local target searches for them every frame.
-        allowSearch: !m.isRemote,
+        allowSearch: true,
         useHemisphere: m.phase1Age > 1.0,
-        includeFlares: !m.isRemote,
+        includeFlares: true,
       });
 
       if (target) {
@@ -1675,10 +1763,6 @@ class MissileSystem {
             m.diveTarget = targetSurface.clone();
           }
         }
-      } else if (m.isRemote) {
-        // Keep current server-guided cruise heading until an explicit missile-lost
-        // or missile-dive event arrives.
-        m.targetTank = null;
       } else if (!m.isLost) {
         // No target — enter wobble phase
         m.phase = 3;
