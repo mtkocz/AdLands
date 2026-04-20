@@ -497,6 +497,21 @@ class MissileSystem {
     }
   }
 
+  _resolveRemoteMissileOwner(ownerId) {
+    if (!ownerId) return null;
+    if (window._mpState?.remoteTanks) {
+      const remoteTank = window._mpState.remoteTanks.get(ownerId);
+      if (remoteTank) return remoteTank;
+    }
+    if (this.botTanks?.bots) {
+      for (let i = 0; i < this.botTanks.bots.length; i++) {
+        const bot = this.botTanks.bots[i];
+        if (bot && bot.id === ownerId) return bot;
+      }
+    }
+    return null;
+  }
+
   _resolveMissileTrackedTarget(missile) {
     if (missile.serverTargetId != null) {
       const serverTarget = this._resolveServerTarget(missile.serverTargetId);
@@ -859,6 +874,9 @@ class MissileSystem {
     const faction = data.faction || remoteTank?.faction || "rust";
     const poolItem = this._acquirePoolItem(faction);
     if (!poolItem) return false;
+    const initialPhase = Math.min(2, Math.max(0, data._initialPhase || 0));
+    const useServerStart = !!data._startFromServerPos;
+    const serverStartPos = new THREE.Vector3(data.wx, data.wy, data.wz);
 
     // Launch from the owner's actual rendered world position when available so
     // the missile origin matches the visible tank exactly.
@@ -871,11 +889,11 @@ class MissileSystem {
       }
     }
 
-    const startPos = ownerWorldPos
+    const startPos = (!useServerStart && ownerWorldPos)
       ? ownerWorldPos.clone().addScaledVector(ownerWorldPos.clone().normalize(), 1.5)
-      : new THREE.Vector3(data.wx, data.wy, data.wz);
+      : serverStartPos.clone();
     const surfaceNormal = startPos.clone().normalize();
-    const surfacePos = ownerWorldPos
+    const surfacePos = (!useServerStart && ownerWorldPos)
       ? ownerWorldPos.clone()
       : surfaceNormal.clone().multiplyScalar(this.sphereRadius);
 
@@ -892,8 +910,8 @@ class MissileSystem {
       position: startPos.clone(),
       surfaceNormal,
       faction,
-      phase: 0,
-      age: 0,
+      phase: initialPhase,
+      age: initialPhase > 0 ? this.config.launchDuration : 0,
       launchSpeed: 5,
       cruiseAltitude: this.config.cruiseAltitude,
       targetTank: null,
@@ -910,6 +928,16 @@ class MissileSystem {
     missile._serverPos = startPos.clone();
     missile._lastServerSync = performance.now();
     this._applyPendingDiveTarget(missile);
+    if (initialPhase > 0) {
+      missile.phase1Age = 1.0;
+      this._setMissileInitialDirection(missile);
+      if (initialPhase >= 2) {
+        const tracked = this._resolveMissileTrackedTarget(missile);
+        if (tracked?.worldPos) {
+          missile.diveTarget = tracked.worldPos.clone();
+        }
+      }
+    }
 
     this.missiles.push(missile);
     this._missileIndex.set(missile.serverId, missile);
@@ -989,9 +1017,38 @@ class MissileSystem {
         continue;
       }
 
-      // Don't create brand-new remote missiles from periodic state sync.
-      // Reliable player-fired events should own missile creation; otherwise
-      // missiles can pop into existence mid-flight with no visible owner.
+      const serverPhase = mlArr[i + 2] || 0;
+      const targetId = mlArr[i + 6] || null;
+      const targetTheta = mlArr[i + 8];
+      const targetPhi = mlArr[i + 9];
+      const targetFlags = mlArr[i + 10] || 0;
+      const owner = this._resolveRemoteMissileOwner(ownerId);
+      const shouldLateSpawn =
+        serverPhase <= 2 ||
+        targetId === "local" ||
+        targetId === window._mpState?.net?.playerId;
+      if (shouldLateSpawn) {
+        const spawned = this.spawnRemoteMissile({
+          projectileId: id,
+          faction: FACTIONS[mlArr[i + 1]] || "rust",
+          targetId,
+          targetTheta,
+          targetPhi,
+          targetIsFlare: !!(targetFlags & 1),
+          wx: mlArr[i + 3],
+          wy: mlArr[i + 4],
+          wz: mlArr[i + 5],
+          _startFromServerPos: true,
+          _initialPhase: serverPhase,
+        }, owner);
+        if (spawned) {
+          diag.mlSpawned++;
+          continue;
+        }
+      }
+
+      // If the original fire event was missed and late-spawn failed, keep
+      // skipping this sync entry instead of fabricating a broken missile.
       diag.mlSkipped++;
     }
 
