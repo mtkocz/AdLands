@@ -2400,6 +2400,87 @@ class GameRoom {
     );
   }
 
+  _resolveMissileLockedTarget(p) {
+    const targetId = p._tgtId || p.targetId;
+    if (targetId == null || targetId === "") return null;
+
+    if (p._tgtIsFlare) {
+      let flareIndex = p._tgtFlareIndex ?? -1;
+      let fl = flareIndex >= 0 ? this.flares[flareIndex] : null;
+      if (!fl || fl.id !== targetId) {
+        fl = null;
+        for (let i = 0; i < this.flares.length; i++) {
+          if (this.flares[i].id === targetId) {
+            fl = this.flares[i];
+            flareIndex = i;
+            break;
+          }
+        }
+      }
+      if (!fl || fl.ownerId === p.ownerId) return null;
+      return {
+        id: fl.id,
+        theta: fl.theta,
+        phi: fl.phi,
+        faction: null,
+        isFlare: true,
+        flareIndex,
+        ownerId: fl.ownerId,
+      };
+    }
+
+    const player = this.players.get(targetId);
+    if (
+      player &&
+      !player.isDead &&
+      !this._isUndeployed(player) &&
+      !(player._portalImmuneTicks > 0) &&
+      player.faction !== p.ownerFaction &&
+      targetId !== p.ownerId
+    ) {
+      return {
+        id: targetId,
+        theta: player.theta,
+        phi: player.phi,
+        faction: player.faction,
+        isFlare: false,
+        flareIndex: -1,
+        ownerId: null,
+      };
+    }
+
+    const bot = this.botBridge.getBot(targetId);
+    if (
+      bot &&
+      bot.d !== 1 &&
+      bot.f !== p.ownerFaction &&
+      targetId !== p.ownerId
+    ) {
+      return {
+        id: targetId,
+        theta: bot.t,
+        phi: bot.p,
+        faction: bot.f,
+        isFlare: false,
+        flareIndex: -1,
+        ownerId: null,
+      };
+    }
+
+    return null;
+  }
+
+  _setMissileLockedTarget(p, target) {
+    p._tgtId = target.id;
+    p._tgtTheta = target.theta;
+    p._tgtPhi = target.phi;
+    p._tgtFaction = target.faction;
+    p._tgtIsFlare = !!target.isFlare;
+    p._tgtFlareIndex = target.flareIndex ?? -1;
+    p._tgtOwnerId = target.ownerId || null;
+    p._hasTarget = true;
+  }
+
   _updateMissileProjectile(p, dt, i, projs) {
     // Phase 0: Launch (no movement on sphere, client shows vertical ascent)
     if (p.phase === 0) {
@@ -2410,22 +2491,17 @@ class GameRoom {
     }
 
     // Phase 1: Cruise/Homing
-    // Retarget every tick so server missiles visibly hold target and react to flares quickly.
+    // Match the old local missile behavior: hold the locked tank, let flares
+    // steal lock, and only search for a new tank when the current target is gone.
     const maxRetargetRad = 0.25;
-
-    const found = this._targetHash.findNearest(
+    const currentTarget = this._resolveMissileLockedTarget(p);
+    const nearbyTarget = this._targetHash.findNearest(
       p.theta, p.phi, p.ownerFaction, p.ownerId, maxRetargetRad, true
     );
+    const found = nearbyTarget?.isFlare ? nearbyTarget : (currentTarget || nearbyTarget);
     if (found) {
       // Copy fields onto missile — pool entries get overwritten on next rebuild()
-      p._tgtId = found.id;
-      p._tgtTheta = found.theta;
-      p._tgtPhi = found.phi;
-      p._tgtFaction = found.faction;
-      p._tgtIsFlare = found.isFlare;
-      p._tgtFlareIndex = found.flareIndex;
-      p._tgtOwnerId = found.ownerId;
-      p._hasTarget = true;
+      this._setMissileLockedTarget(p, found);
     } else {
       p._hasTarget = false;
     }

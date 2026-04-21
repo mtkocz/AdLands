@@ -763,15 +763,6 @@ class MissileSystem {
   }
 
   _resolveMissileTrackedTarget(missile) {
-    if (missile.isRemote && missile._serverTargetWorldPos) {
-      return {
-        tank: missile.targetTank || null,
-        worldPos: missile._serverTargetWorldPos.clone(),
-        distance: missile._serverTargetWorldPos.distanceTo(missile.position),
-        isFlare: !!missile._serverTargetIsFlare,
-      };
-    }
-
     if (missile.serverTargetId != null) {
       const serverTarget = this._resolveServerTarget(missile.serverTargetId);
       if (serverTarget) return serverTarget;
@@ -801,6 +792,9 @@ class MissileSystem {
   }
 
   _setMissileTargetFromServerCoords(missile, targetData) {
+    if (targetData?.targetId == null || targetData.targetId === "") {
+      return false;
+    }
     if (
       !Number.isFinite(targetData?.targetTheta) ||
       !Number.isFinite(targetData?.targetPhi)
@@ -1982,16 +1976,7 @@ class MissileSystem {
       m.direction.copy(m.surfaceNormal || this._upVec);
     }
 
-    let target = m._serverTargetWorldPos
-      ? {
-          tank: m.targetTank || null,
-          worldPos: m._serverTargetWorldPos,
-          isFlare: !!m._serverTargetIsFlare,
-        }
-      : this._getVisualTargetForMissile(m, {
-          allowSearch: false,
-          includeFlares: false,
-        });
+    const target = this._resolveMissileTrackedTarget(m);
 
     if (target?.worldPos) {
       m.targetTank = target.tank;
@@ -2049,10 +2034,10 @@ class MissileSystem {
         } else if (shouldPullToSync && dist > 0.0001) {
           m.position.addScaledVector(toServer, Math.min(1, dt * 16));
         }
-      } else if (dist > 60) {
+      } else if (dist > 90) {
         m.position.copy(m._serverPos);
-      } else if (dist > 0.25) {
-        m.position.addScaledVector(toServer, Math.min(0.22, dt * 2));
+      } else if (dist > 10 && syncAgeMs <= 220) {
+        m.position.addScaledVector(toServer, Math.min(0.05, dt * 0.5));
       }
     }
 
