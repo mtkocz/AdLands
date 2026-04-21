@@ -1645,9 +1645,13 @@ class ServerBotManager {
       launchDuration: 0.5,
       damage: 38, // 25 * 1.5 missile multiplier
       targetId: bot.combatTarget,
+      _tgtId: bot.combatTarget,
       _tgtTheta: target.theta,
       _tgtPhi: target.phi,
+      _tgtFaction: target.faction || null,
       _tgtIsFlare: false,
+      _tgtFlareIndex: -1,
+      _tgtOwnerId: target.id || null,
       _retargetPhase: 2, // retarget on first tick
       _hasTarget: true,
     };

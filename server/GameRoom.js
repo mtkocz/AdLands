@@ -2349,9 +2349,13 @@ class GameRoom {
       launchDuration: 0.5,
       damage: Math.round(25 * 1.5), // 38 damage (missile multiplier)
       targetId: target.id,
+      _tgtId: target.id,
       _tgtTheta: target.theta,
       _tgtPhi: target.phi,
+      _tgtFaction: target.faction || null,
       _tgtIsFlare: !!target.isFlare,
+      _tgtFlareIndex: target.flareIndex ?? -1,
+      _tgtOwnerId: target.ownerId || null,
       _retargetPhase: 2, // retarget on first tick
       _hasTarget: true,
     };
@@ -2406,29 +2410,24 @@ class GameRoom {
     }
 
     // Phase 1: Cruise/Homing
-    // Retarget every 3rd tick (still ~3.3×/sec at 10 ticks/sec) via spatial hash.
-    // Between retargets, keep flying toward last cached position.
+    // Retarget every tick so server missiles visibly hold target and react to flares quickly.
     const maxRetargetRad = 0.25;
 
-    if (!p._retargetPhase) p._retargetPhase = 0;
-    if (++p._retargetPhase >= 3) {
-      p._retargetPhase = 0;
-      const found = this._targetHash.findNearest(
-        p.theta, p.phi, p.ownerFaction, p.ownerId, maxRetargetRad, true
-      );
-      if (found) {
-        // Copy fields onto missile — pool entries get overwritten on next rebuild()
-        p._tgtId = found.id;
-        p._tgtTheta = found.theta;
-        p._tgtPhi = found.phi;
-        p._tgtFaction = found.faction;
-        p._tgtIsFlare = found.isFlare;
-        p._tgtFlareIndex = found.flareIndex;
-        p._tgtOwnerId = found.ownerId;
-        p._hasTarget = true;
-      } else {
-        p._hasTarget = false;
-      }
+    const found = this._targetHash.findNearest(
+      p.theta, p.phi, p.ownerFaction, p.ownerId, maxRetargetRad, true
+    );
+    if (found) {
+      // Copy fields onto missile — pool entries get overwritten on next rebuild()
+      p._tgtId = found.id;
+      p._tgtTheta = found.theta;
+      p._tgtPhi = found.phi;
+      p._tgtFaction = found.faction;
+      p._tgtIsFlare = found.isFlare;
+      p._tgtFlareIndex = found.flareIndex;
+      p._tgtOwnerId = found.ownerId;
+      p._hasTarget = true;
+    } else {
+      p._hasTarget = false;
     }
 
     if (!p._hasTarget) {
