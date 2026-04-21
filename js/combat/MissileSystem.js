@@ -277,28 +277,45 @@ class MissileSystem {
     this._trackingReticlePool.push(el);
   }
 
+  _getLocalOwnedMissileReticleTarget(missile) {
+    const localPlayerId = this._getLocalPlayerId();
+    const localOwned =
+      missile._pendingLocalFire ||
+      !missile.isRemote ||
+      (localPlayerId && missile.ownerId === localPlayerId);
+    if (!localOwned || !(missile.phase === 1 || missile.phase === 2)) return null;
+
+    const target = this._resolveMissileTrackedTarget(missile);
+    if (!target?.tank) return null;
+    missile.targetTank = target.tank;
+    return target.tank;
+  }
+
   _updateTrackingReticles(camera) {
-    // Collect local missiles that have a target (phases 1 and 2)
-    const activeMissiles = [];
+    // Collect tanks currently tracked by local-owned missiles (phases 1 and 2).
+    const activeTargets = [];
+    const seenTargets = new Set();
     for (let i = 0; i < this.missiles.length; i++) {
       const m = this.missiles[i];
-      if (!m.isRemote && m.targetTank && (m.phase === 1 || m.phase === 2)) {
-        activeMissiles.push(m);
+      const targetTank = this._getLocalOwnedMissileReticleTarget(m);
+      if (targetTank && !seenTargets.has(targetTank)) {
+        seenTargets.add(targetTank);
+        activeTargets.push(targetTank);
       }
     }
 
     // Return excess reticles to pool
-    while (this._trackingReticles.length > activeMissiles.length) {
+    while (this._trackingReticles.length > activeTargets.length) {
       this._releaseTrackingReticle(this._trackingReticles.pop());
     }
     // Acquire more if needed
-    while (this._trackingReticles.length < activeMissiles.length) {
+    while (this._trackingReticles.length < activeTargets.length) {
       this._trackingReticles.push(this._acquireTrackingReticle());
     }
 
     // Update positions
-    for (let i = 0; i < activeMissiles.length; i++) {
-      const m = activeMissiles[i];
+    for (let i = 0; i < activeTargets.length; i++) {
+      const targetTank = activeTargets[i];
       const el = this._trackingReticles[i];
 
       if (this.hideReticle) {
@@ -306,7 +323,7 @@ class MissileSystem {
         continue;
       }
 
-      const worldPos = this._getTargetWorldPos(m.targetTank);
+      const worldPos = this._getTargetWorldPos(targetTank);
       if (!worldPos) {
         el.style.display = "none";
         continue;
@@ -339,17 +356,23 @@ class MissileSystem {
   }
 
   showIncomingWarning() {
-    this._incomingMissileCount++;
+    this._incomingMissileCount = 1;
     if (this._incomingWarning && !this.hideReticle) {
       this._incomingWarning.style.display = "";
     }
   }
 
   hideIncomingWarning() {
-    this._incomingMissileCount = Math.max(0, this._incomingMissileCount - 1);
-    if (this._incomingMissileCount === 0 && this._incomingWarning) {
+    this._incomingMissileCount = 0;
+    if (this._incomingWarning) {
       this._incomingWarning.style.display = "none";
     }
+  }
+
+  _setIncomingWarningActive(active) {
+    this._incomingMissileCount = active ? 1 : 0;
+    if (!this._incomingWarning) return;
+    this._incomingWarning.style.display = active && !this.hideReticle ? "" : "none";
   }
 
   _updateLockOnReticle(camera) {
@@ -1366,6 +1389,7 @@ class MissileSystem {
     if (!this._missileIndex) this._missileIndex = new Map();
 
     const serverIds = new Set();
+    let incomingTargetsLocal = false;
     for (let i = 0; i < mlArr.length; i += STRIDE) {
       const id = mlArr[i];
       const ownerId = mlArr[i + 7];
@@ -1381,6 +1405,9 @@ class MissileSystem {
       const targetFlags = mlArr[i + 10] || 0;
       const faction = FACTIONS[mlArr[i + 1]] || "rust";
       const serverPhase = mlArr[i + 2] || 0;
+      if (targetsLocal && !isLocalOwner && serverPhase < 3) {
+        incomingTargetsLocal = true;
+      }
       this._cacheServerMissileState(id, {
         ownerId,
         faction,
@@ -1532,6 +1559,8 @@ class MissileSystem {
         m._serverGone = null;
       }
     }
+
+    this._setIncomingWarningActive(incomingTargetsLocal);
   }
 
   assignServerIdToLocal(serverId, targetId) {
@@ -2041,11 +2070,8 @@ class MissileSystem {
       m.position.addScaledVector(m.direction, moveSpeed);
       this._stabilizeCruiseAltitude(m);
 
-      const groundDist = m.position.distanceTo(targetSurface);
-      if (groundDist < this.config.diveDistance) {
-        m.phase = 2;
-        m.diveTarget = targetSurface.clone();
-      }
+      // Server missiles enter dive only when the authoritative phase says so.
+      // Letting the client switch early can fight server snapshots and look twitchy.
       targetSteered = true;
     } else if (m._serverTravelDir && m._serverTravelDir.lengthSq() > 0.0001) {
       m.direction.lerp(m._serverTravelDir, Math.min(1, dt * 12)).normalize();
@@ -2067,17 +2093,18 @@ class MissileSystem {
         } else if (shouldPullToSync && dist > 0.0001) {
           m.position.addScaledVector(toServer, Math.min(1, dt * 16));
         }
-      } else if (dist > 90) {
+      } else if (dist > 120) {
         m.position.copy(m._serverPos);
-      } else if (dist > 10 && syncAgeMs <= 220) {
-        m.position.addScaledVector(toServer, Math.min(0.05, dt * 0.5));
+      } else if (dist > 20 && syncAgeMs <= 220) {
+        m.position.addScaledVector(toServer, Math.min(0.02, dt * 0.2));
       }
     }
 
     const travel = this._tempVec3.copy(m.position).sub(prevPos);
     if (travel.lengthSq() > 0.000001) {
       travel.normalize();
-      m.direction.lerp(travel, Math.min(1, dt * 12)).normalize();
+      const travelBlend = targetSteered ? Math.min(0.08, dt * 2) : Math.min(1, dt * 12);
+      m.direction.lerp(travel, travelBlend).normalize();
     }
 
     const lookTarget = this._tempVec2.copy(m.position).add(m.direction || m.surfaceNormal);

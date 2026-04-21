@@ -1028,8 +1028,8 @@
 
     net.onMissileIncoming = (data) => {
       if (window.missileSystem) {
-        const found = window.missileSystem.retargetToPlayerByServerId(data.missileId);
-        if (found) window.missileSystem.showIncomingWarning();
+        window.missileSystem.retargetToPlayerByServerId(data.missileId);
+        window.missileSystem.showIncomingWarning();
       }
     };
 
