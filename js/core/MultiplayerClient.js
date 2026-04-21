@@ -43,6 +43,7 @@
       planet,
       playerTags,
       cannonSystem,
+      turretSystem,
       treadDust,
       treadTracks,
       tankHeadlights,
@@ -261,6 +262,12 @@
       }
     };
 
+    mp.onTurretDeploy = () => {
+      if (net.isMultiplayer) {
+        net.sendTurretDeploy();
+      }
+    };
+
     // ========================
     // SERVER EVENT HANDLERS
     // ========================
@@ -473,6 +480,14 @@
       } catch (e) {
         console.error("[MP] flare syncFromState error:", e);
         if (window._syncDiag) window._syncDiag.lastErr = "fl:" + e.message;
+      }
+      try {
+        if (turretSystem) {
+          turretSystem.syncFromState(data.tu || []);
+        }
+      } catch (e) {
+        console.error("[MP] turret syncFromState error:", e);
+        if (window._syncDiag) window._syncDiag.lastErr = "tu:" + e.message;
       }
 
       // Track which bots were seen this tick (for cleanup)
@@ -990,6 +1005,43 @@
       );
     };
 
+    net.onTurretDeployed = (data) => {
+      turretSystem?.handleDeployed(data);
+    };
+
+    net.onTurretFired = (data) => {
+      turretSystem?.handleFired(data);
+    };
+
+    net.onTurretHit = (data) => {
+      turretSystem?.handleHit(data);
+      if (data.isMissile && window.missileSystem) {
+        const turret = turretSystem?.getTurret(data.id);
+        let impactPos = null;
+        if (turret?.group) {
+          impactPos = new THREE.Vector3();
+          turret.group.getWorldPosition(impactPos);
+        }
+        const diveStarted = impactPos &&
+          window.missileSystem.forceDiveToPoint(data.projectileId, impactPos);
+        if (!diveStarted) {
+          window.missileSystem.removeByServerId(data.projectileId, impactPos);
+        }
+      } else if (data.projectileId != null) {
+        const turret = turretSystem?.getTurret(data.id);
+        let impactPos = null;
+        if (turret?.group) {
+          impactPos = new THREE.Vector3();
+          turret.group.getWorldPosition(impactPos);
+        }
+        cannonSystem.removeProjectileByServerId?.(data.projectileId, impactPos);
+      }
+    };
+
+    net.onTurretDestroyed = (data) => {
+      turretSystem?.handleDestroyed(data);
+    };
+
     // ---- Flare events ----
 
     net.onFlareFired = (data) => {
@@ -1157,6 +1209,11 @@
             if (gameCamera) gameCamera.triggerShake(pos, pos, 0.8, 100);
             if (cannonSystem.onNearbyExplosion) cannonSystem.onNearbyExplosion(1.2);
           }
+          if (data.sourceType === "turret" && window.weldingGunSystem && tank.group) {
+            const pos = new THREE.Vector3();
+            tank.group.getWorldPosition(pos);
+            window.weldingGunSystem.emitImpactSparks(pos, null, 22);
+          }
         };
 
         if (data.isMissile && window.missileSystem) {
@@ -1261,6 +1318,10 @@
                     delete child.userData._hitFlashTimer;
                   }
                 }, 150);
+              }
+
+              if (data.sourceType === "turret" && window.weldingGunSystem) {
+                window.weldingGunSystem.emitImpactSparks(_hitWorldPos, null, 22);
               }
             }
           };

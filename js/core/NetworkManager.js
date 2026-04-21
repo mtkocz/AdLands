@@ -52,6 +52,10 @@ class NetworkManager {
     this.onPlayerLeft = null;       // (playerId) => {}
     this.onStateUpdate = null;      // (stateData) => {}
     this.onPlayerFired = null;      // (fireData) => {}
+    this.onTurretFired = null;      // (fireData) => {}
+    this.onTurretDeployed = null;   // (turretData) => {}
+    this.onTurretHit = null;        // (hitData) => {}
+    this.onTurretDestroyed = null;  // (destroyData) => {}
     this.onPlayerHit = null;        // (hitData) => {}
     this.onFlareFired = null;       // (flareData) => {}
     this.onFlareHit = null;         // (flareHitData) => {}
@@ -309,6 +313,10 @@ class NetworkManager {
           case "player-joined": if (this.onPlayerJoined) this.onPlayerJoined(evt.data); break;
           case "player-left": if (this.onPlayerLeft) this.onPlayerLeft(evt.data); break;
           case "player-fired": if (this.onPlayerFired) this.onPlayerFired(evt.data); break;
+          case "turret-fired": if (this.onTurretFired) this.onTurretFired(evt.data); break;
+          case "turret-deployed": if (this.onTurretDeployed) this.onTurretDeployed(evt.data); break;
+          case "turret-hit": if (this.onTurretHit) this.onTurretHit(evt.data); break;
+          case "turret-destroyed": if (this.onTurretDestroyed) this.onTurretDestroyed(evt.data); break;
           case "player-hit": if (this.onPlayerHit) this.onPlayerHit(evt.data); break;
           case "player-killed": if (this.onPlayerKilled) this.onPlayerKilled(evt.data); break;
           case "player-respawned": if (this.onPlayerRespawned) this.onPlayerRespawned(evt.data); break;
@@ -585,6 +593,11 @@ class NetworkManager {
   sendFlareFire() {
     if (!this.connected) return;
     this.socket.emit("fire", { type: "flare" });
+  }
+
+  sendTurretDeploy() {
+    if (!this.connected) return;
+    this.socket.emit("fire", { type: "turret" });
   }
 
   /**

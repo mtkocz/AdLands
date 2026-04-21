@@ -404,6 +404,8 @@ io.on("connection", (socket) => {
       mainRoom.handleMissileFire(socket.id, data?.turretAngle, data?.searchRadius || 0);
     } else if (data?.type === "flare") {
       mainRoom.handleFlareFire(socket.id);
+    } else if (data?.type === "turret") {
+      mainRoom.handleTurretDeploy(socket.id);
     } else {
       mainRoom.handleFire(socket.id, data?.power || 0, data?.turretAngle);
     }
@@ -951,4 +953,3 @@ async function gracefulShutdown(signal) {
 
 process.on("SIGINT", () => gracefulShutdown("SIGINT"));
 process.on("SIGTERM", () => gracefulShutdown("SIGTERM"));
-

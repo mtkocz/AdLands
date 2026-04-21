@@ -492,6 +492,19 @@ class MissileSystem {
       }
     }
 
+    if (window.turretSystem) {
+      for (const turret of window.turretSystem.getActiveTurrets()) {
+        if (!turret || turret.isDead || turret.faction === playerFaction) continue;
+        const pos = this._getTargetWorldPos(turret);
+        if (!pos) continue;
+        const dist = pos.distanceTo(playerPos);
+        if (dist < closestDist && dist <= searchRadius) {
+          closest = { tank: turret, worldPos: pos.clone(), distance: dist };
+          closestDist = dist;
+        }
+      }
+    }
+
     return closest;
   }
 
@@ -514,6 +527,9 @@ class MissileSystem {
           const bot = this.botTanks.bots[i];
           if (bot && bot.id === serverTargetId) { tank = bot; break; }
         }
+      }
+      if (!tank && window.turretSystem) {
+        tank = window.turretSystem.getTurret(serverTargetId);
       }
       // Flare IDs are numeric — find the specific flare by server ID
       if (!tank && typeof flareId === "number" && window.flareSystem) {
@@ -1022,6 +1038,23 @@ class MissileSystem {
             worldPos: pos.clone(),
             distance: dist,
           };
+          closestDist = dist;
+        }
+      }
+    }
+
+    if (window.turretSystem) {
+      for (const turret of window.turretSystem.getActiveTurrets()) {
+        if (!turret || turret.isDead || turret.faction === ownerFaction) continue;
+        const pos = this._getTargetWorldPos(turret);
+        if (!pos) continue;
+        if (missileDir) {
+          const toTarget = this._tempVec.copy(pos).sub(missilePos);
+          if (toTarget.dot(missileDir) < 0) continue;
+        }
+        const dist = pos.distanceTo(missilePos);
+        if (dist < closestDist && dist <= range) {
+          closest = { tank: turret, worldPos: pos.clone(), distance: dist };
           closestDist = dist;
         }
       }

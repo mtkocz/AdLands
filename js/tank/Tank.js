@@ -1532,6 +1532,14 @@ class Tank {
       // Q → tactical item activation
       const key = e.key.toLowerCase();
       if (key === 'q') {
+        const activeTactical = window.weaponSlotSystem?.getActiveTacticalWeapon();
+        if (activeTactical === "turrets") {
+          if (!e.repeat && window._mp?.onTurretDeploy) {
+            window._mp.onTurretDeploy();
+          }
+          e.preventDefault();
+          return;
+        }
         this.state.keys.tac = true;
         e.preventDefault();
         return;

@@ -1315,7 +1315,7 @@ void main() {
     const range =
       this.config.maxDistance *
       (1 + chargeRatio * (this.config.chargeRangeMultiplier - 1));
-    const sizeScale = 1 + chargeRatio * (this.config.chargeSizeMultiplier - 1);
+    const sizeScale = data.sizeScale || (1 + chargeRatio * (this.config.chargeSizeMultiplier - 1));
 
     // Compute muzzle position using remote tank's world matrix
     // Barrel tip is at local (0, 1.2, -3.2) rotated by turret angle
@@ -1407,7 +1407,7 @@ void main() {
     const range =
       this.config.maxDistance *
       (1 + chargeRatio * (this.config.chargeRangeMultiplier - 1));
-    const sizeScale = 1 + chargeRatio * (this.config.chargeSizeMultiplier - 1);
+    const sizeScale = data.sizeScale || (1 + chargeRatio * (this.config.chargeSizeMultiplier - 1));
 
     _muzzleWorld.set(data.wx, data.wy, data.wz);
     _shotDirWorld.set(data.dvx, data.dvy, data.dvz).normalize();

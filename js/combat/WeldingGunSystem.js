@@ -528,6 +528,19 @@ class WeldingGunSystem {
 
   // ---- Spark particles ----
 
+  emitImpactSparks(targetPos, originPos = null, count = 18) {
+    if (!targetPos) return;
+    const origin = originPos || this._tmpFrom.copy(targetPos).add(this._tmpNormal.copy(targetPos).normalize().multiplyScalar(4));
+    this._sparkPoints.visible = true;
+    for (let i = 0; i < count; i++) {
+      this._emitSpark(targetPos, origin);
+    }
+    this._sparkGeo.attributes.position.needsUpdate = true;
+    this._sparkGeo.attributes.aAge.needsUpdate = true;
+    this._sparkGeo.attributes.aLifetime.needsUpdate = true;
+    this._sparkGeo.attributes.aSize.needsUpdate = true;
+  }
+
   _emitSpark(targetPos, originPos) {
     const i = this._sparkHead;
     this._sparkHead = (this._sparkHead + 1) % this._maxSparks;

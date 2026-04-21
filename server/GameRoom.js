@@ -44,6 +44,36 @@ const FLARE = {
   IMPACT_ALTITUDE: 8,
 };
 
+const TURRET_LEVELS = {
+  1: {
+    hp: 50,
+    damage: 10,
+    rangeWorld: 15,
+    cooldownMs: Math.round(2000 / 1.5),
+    projectileSpeed: 0.004,
+    projectileRangeWorld: 20,
+    projectileSizeScale: 0.5,
+  },
+  2: {
+    hp: 75,
+    damage: 15,
+    rangeWorld: 18,
+    cooldownMs: Math.round(2000 / 1.75),
+    projectileSpeed: 0.004,
+    projectileRangeWorld: 22,
+    projectileSizeScale: 0.5,
+  },
+  3: {
+    hp: 100,
+    damage: 20,
+    rangeWorld: 22,
+    cooldownMs: Math.round(2000 / 2.0),
+    projectileSpeed: 0.004,
+    projectileRangeWorld: 25,
+    projectileSizeScale: 0.5,
+  },
+};
+
 // Shield constants
 const SHIELD = {
   MAX_ENERGY: 1.0,
@@ -93,7 +123,7 @@ class TargetSpatialHash {
   }
 
   /** Rebuild from all targetable entities. Call once per tick. */
-  rebuild(players, botBridge, flares) {
+  rebuild(players, botBridge, flares, turrets) {
     // Reset all cell lengths to 0 (reuse arrays, no allocation)
     this._cellLengths.fill(0);
     this._poolIdx = 0;
@@ -116,6 +146,14 @@ class TargetSpatialHash {
     for (let fi = 0; fi < flares.length; fi++) {
       const fl = flares[fi];
       this._add(fl.id, fl.theta, fl.phi, null, true, fi, fl.ownerId);
+    }
+
+    // Turrets (stationary targetable deployables)
+    if (turrets) {
+      for (const [id, turret] of turrets) {
+        if (!turret || turret.hp <= 0) continue;
+        this._add(id, turret.theta, turret.phi, turret.ownerFaction, false, -1, turret.ownerId);
+      }
     }
   }
 
@@ -258,6 +296,10 @@ class GameRoom {
     // Projectiles in flight
     this.projectiles = [];
     this.nextProjectileId = 1;
+
+    // Stationary deployed turrets: turretId → turret state
+    this.turrets = new Map();
+    this.nextTurretId = 1;
 
     // Flares (missile countermeasures)
     this.flares = [];
@@ -1183,6 +1225,13 @@ class GameRoom {
     for (const proj of this.projectiles) {
       if (proj.ownerId === oldId) {
         proj.ownerId = socket.id;
+      }
+    }
+
+    // Persistent deployables
+    for (const [, turret] of this.turrets) {
+      if (turret.ownerId === oldId) {
+        turret.ownerId = socket.id;
       }
     }
 
@@ -2417,11 +2466,198 @@ class GameRoom {
   _findNearestEnemyForMissile(socketId, player, maxDistRad) {
     // Ensure spatial hash is fresh (may not have been rebuilt if no missiles were in flight)
     if (!this._hasMissiles) {
-      this._targetHash.rebuild(this.players, this.botBridge, this.flares);
+      this._targetHash.rebuild(this.players, this.botBridge, this.flares, this.turrets);
     }
     return this._targetHash.findNearest(
       player.theta, player.phi, player.faction, socketId, maxDistRad
     );
+  }
+
+  // ---- Turret Deployables ----
+
+  handleTurretDeploy(socketId) {
+    const player = this.players.get(socketId);
+    if (!player || this._isUndeployed(player) || player.isDead) return;
+
+    const tacticalSlot = player.activeSlots?.tactical || "tactical-1";
+    const activeTactical = player.loadout?.[tacticalSlot];
+    if (activeTactical !== "turrets") return;
+
+    const level = this._getTurretLevelForPlayer(player);
+    const cfg = TURRET_LEVELS[level] || TURRET_LEVELS[1];
+    const now = Date.now();
+    if (now - (player.lastTurretDeployTime || 0) < 1000) return;
+    player.lastTurretDeployTime = now;
+    player.lastActivityAt = now;
+
+    // One active turret per player. Re-deploying moves/replaces the old turret.
+    for (const [id, turret] of this.turrets) {
+      if (turret.ownerId === socketId) {
+        this.turrets.delete(id);
+      }
+    }
+
+    const turretId = `turret-${this.nextTurretId++}`;
+    const turret = {
+      id: turretId,
+      ownerId: socketId,
+      ownerFaction: player.faction,
+      ownerName: player.name,
+      theta: player.theta,
+      phi: player.phi,
+      heading: player.heading,
+      turretAngle: Math.PI,
+      hp: cfg.hp,
+      maxHp: cfg.hp,
+      level,
+      lastFireAt: 0,
+      createdAt: now,
+    };
+
+    this.turrets.set(turretId, turret);
+    this._queueRoomEvent("turret-deployed", {
+      id: turretId,
+      ownerId: socketId,
+      faction: player.faction,
+      theta: turret.theta,
+      phi: turret.phi,
+      heading: turret.heading,
+      hp: turret.hp,
+      maxHp: turret.maxHp,
+      level,
+    });
+  }
+
+  _getTurretLevelForPlayer(player) {
+    const raw =
+      player?.upgradeLevels?.turrets ??
+      player?.weaponLevels?.turrets ??
+      player?.turretLevel ??
+      1;
+    const level = Math.max(1, Math.min(3, Number(raw) || 1));
+    return TURRET_LEVELS[level] ? level : 1;
+  }
+
+  _findTurretTarget(turret, rangeRad) {
+    let best = null;
+    let bestDist = rangeRad;
+
+    for (const [id, player] of this.players) {
+      if (id === turret.ownerId || this._isUndeployed(player) || player.isDead) continue;
+      if (player.faction === turret.ownerFaction) continue;
+      const dist = sphericalDistance(turret.theta, turret.phi, player.theta, player.phi);
+      if (dist < bestDist) {
+        bestDist = dist;
+        best = { id, theta: player.theta, phi: player.phi, faction: player.faction };
+      }
+    }
+
+    const botStates = this.botBridge.getStatesForBroadcast();
+    for (const botId in botStates) {
+      const bot = botStates[botId];
+      if (!bot || bot.d === 1 || bot.f === turret.ownerFaction) continue;
+      const dist = sphericalDistance(turret.theta, turret.phi, bot.t, bot.p);
+      if (dist < bestDist) {
+        bestDist = dist;
+        best = { id: botId, theta: bot.t, phi: bot.p, faction: bot.f };
+      }
+    }
+
+    return best;
+  }
+
+  _updateTurrets(dt) {
+    const now = Date.now();
+    for (const [, turret] of this.turrets) {
+      if (!turret || turret.hp <= 0) continue;
+
+      const cfg = TURRET_LEVELS[turret.level] || TURRET_LEVELS[1];
+      const target = this._findTurretTarget(turret, cfg.rangeWorld / 480);
+      if (!target) continue;
+
+      const fireHeading = this._computeMissileHeadingTo(
+        turret.theta, turret.phi, target.theta, target.phi
+      );
+      turret.turretAngle = this._normalizeAngle(turret.heading + Math.PI - fireHeading);
+
+      if (now - (turret.lastFireAt || 0) < cfg.cooldownMs) continue;
+      turret.lastFireAt = now;
+      this._fireTurretProjectile(turret, cfg, fireHeading);
+    }
+  }
+
+  _fireTurretProjectile(turret, cfg, fireHeading) {
+    const projectile = {
+      id: this.nextProjectileId++,
+      ownerId: turret.ownerId,
+      ownerFaction: turret.ownerFaction,
+      sourceType: "turret",
+      sourceId: turret.id,
+      theta: turret.theta,
+      phi: turret.phi,
+      startTheta: turret.theta,
+      startPhi: turret.phi,
+      heading: fireHeading,
+      speed: cfg.projectileSpeed,
+      age: 0,
+      maxAge: Math.min((cfg.projectileRangeWorld / 480) / (cfg.projectileSpeed * 60) + 0.5, 5),
+      maxDistanceRad: cfg.projectileRangeWorld / 480,
+      damage: cfg.damage,
+    };
+    this.projectiles.push(projectile);
+
+    const R = 480;
+    const fSp = Math.sin(turret.phi), fCp = Math.cos(turret.phi);
+    const fSt = Math.sin(turret.theta), fCt = Math.cos(turret.theta);
+    const fLift = R + 2;
+    const fSinH = Math.sin(fireHeading), fCosH = Math.cos(fireHeading);
+    this._queueRoomEvent("turret-fired", {
+      id: turret.id,
+      ownerId: turret.ownerId,
+      faction: turret.ownerFaction,
+      turretAngle: turret.turretAngle,
+      theta: turret.theta,
+      phi: turret.phi,
+      projectileId: projectile.id,
+      sizeScale: cfg.projectileSizeScale,
+      wx: fLift * fSp * fSt,
+      wy: fLift * fCp,
+      wz: fLift * fSp * fCt,
+      dvx: fSinH * fCt + fCosH * fCp * fSt,
+      dvy: -fCosH * fSp,
+      dvz: -fSinH * fSt + fCosH * fCp * fCt,
+    });
+  }
+
+  _damageTurret(turretId, damage, attackerId, attackerFaction, projectileId, theta, phi, isMissile = false) {
+    const turret = this.turrets.get(turretId);
+    if (!turret || turret.hp <= 0) return false;
+    if (attackerFaction && attackerFaction === turret.ownerFaction) return false;
+
+    turret.hp -= damage;
+    const hp = Math.max(0, turret.hp);
+    this._queueRoomEvent("turret-hit", {
+      id: turretId,
+      attackerId,
+      damage,
+      hp,
+      theta,
+      phi,
+      projectileId,
+      isMissile,
+    });
+
+    if (turret.hp <= 0) {
+      this.turrets.delete(turretId);
+      this._queueRoomEvent("turret-destroyed", {
+        id: turretId,
+        attackerId,
+        faction: turret.ownerFaction,
+        theta: turret.theta,
+        phi: turret.phi,
+      });
+    }
+    return true;
   }
 
   _sameTargetId(a, b) {
@@ -2551,6 +2787,24 @@ class GameRoom {
         isFlare: false,
         flareIndex: -1,
         ownerId: null,
+      };
+    }
+
+    const turret = this.turrets.get(String(targetId));
+    if (
+      turret &&
+      turret.hp > 0 &&
+      turret.ownerFaction !== p.ownerFaction &&
+      targetId !== p.ownerId
+    ) {
+      return {
+        id: targetId,
+        theta: turret.theta,
+        phi: turret.phi,
+        faction: turret.ownerFaction,
+        isFlare: false,
+        flareIndex: -1,
+        ownerId: turret.ownerId,
       };
     }
 
@@ -2692,6 +2946,21 @@ class GameRoom {
   _detonateMissileOnTarget(p, i, projs) {
     const damage = p.damage || 38;
     const tgtId = p._tgtId;
+    if (typeof tgtId === "string" && tgtId.startsWith("turret-")) {
+      this._damageTurret(
+        tgtId,
+        damage,
+        p.ownerId,
+        p.ownerFaction,
+        p.id,
+        p.theta,
+        p.phi,
+        true
+      );
+      this._removeProjectileAt(projs, i);
+      return;
+    }
+
     const isBot = typeof tgtId === "string" && tgtId.startsWith("bot-");
 
     if (isBot) {
@@ -3359,13 +3628,16 @@ class GameRoom {
     // 1.9. Update welding guns (tactical healing)
     this._updateWeldingGuns(dt);
 
+    // 1.10. Update stationary tactical turrets
+    this._updateTurrets(dt);
+
     // 2. Rebuild target spatial hash only when missiles exist (used by missile retargeting)
     this._hasMissiles = false;
     for (let i = 0; i < this.projectiles.length; i++) {
       if (this.projectiles[i].type === "missile") { this._hasMissiles = true; break; }
     }
     if (this._hasMissiles) {
-      this._targetHash.rebuild(this.players, this.botBridge, this.flares);
+      this._targetHash.rebuild(this.players, this.botBridge, this.flares, this.turrets);
     }
 
     // 2b. Update projectiles (includes shield collision + reflection)
@@ -3976,6 +4248,8 @@ class GameRoom {
             theta: p.theta,
             phi: p.phi,
             projectileId: p.id,
+            sourceType: p.sourceType || "tank",
+            sourceId: p.sourceId || p.ownerId,
           });
 
           if (player.hp <= 0) {
@@ -4028,6 +4302,32 @@ class GameRoom {
           break;
         }
       }
+      // Check turret hits (after player checks, before bots)
+      if (!hitPlayer && this.turrets.size > 0) {
+        const TURRET_HIT_RADIUS = 2.2 / 480;
+        for (const [turretId, turret] of this.turrets) {
+          if (!turret || turret.hp <= 0) continue;
+          if (turretId === p.sourceId) continue;
+          if (turret.ownerFaction === p.ownerFaction) continue;
+          const dist = sphericalDistance(testTheta, testPhi, turret.theta, turret.phi);
+          if (dist > TURRET_HIT_RADIUS) continue;
+
+          const damage = p.damage || 25;
+          this._damageTurret(
+            turretId,
+            damage,
+            p.ownerId,
+            p.ownerFaction,
+            p.id,
+            p.theta,
+            p.phi,
+            false
+          );
+          projs[i] = projs[projs.length - 1]; projs.pop();
+          hitPlayer = true;
+          break;
+        }
+      }
       // Check bot hits (after player checks)
       if (!hitPlayer) {
         const botHit = this.botBridge.checkProjectileHit(testTheta, testPhi, p.ownerFaction, p.ownerId);
@@ -4057,6 +4357,8 @@ class GameRoom {
             theta: p.theta,
             phi: p.phi,
             projectileId: p.id,
+            sourceType: p.sourceType || "tank",
+            sourceId: p.sourceId || p.ownerId,
           });
 
           // Check if this hit likely killed the bot (approximate — worker confirms next tick)
@@ -4102,6 +4404,8 @@ class GameRoom {
             theta: p.theta,
             phi: p.phi,
             projectileId: p.id,
+            sourceType: p.sourceType || "tank",
+            sourceId: p.sourceId || p.ownerId,
           });
 
           if (result.killed) {
@@ -4955,6 +5259,22 @@ class GameRoom {
         flx * cosPR + flz * sinPR, fLift * fcp, -flx * sinPR + flz * cosPR,
         fl.ownerId);
     }
+    const tuArr = [];
+    for (const [id, turret] of this.turrets) {
+      if (!turret || turret.hp <= 0) continue;
+      tuArr.push(
+        id,
+        FACTION_IDX[turret.ownerFaction] || 0,
+        turret.ownerId || "",
+        turret.theta,
+        turret.phi,
+        turret.heading,
+        turret.turretAngle,
+        Math.max(0, Math.round(turret.hp)),
+        turret.maxHp || (TURRET_LEVELS[turret.level] || TURRET_LEVELS[1]).hp,
+        turret.level || 1
+      );
+    }
 
     // -- Celestial data (shared by all clients — computed once) --
     if (!this._statePayload) this._statePayload = { tick: 0, bg: null, pr: 0, ma: [], sa: [], ba: [], tc: 0, bfc: null, ids: null, names: null, seq: 0, r: 0, rt: 0 };
@@ -4967,6 +5287,7 @@ class GameRoom {
     const sendMissileSync = missileCount === 0 || missileCount <= 12 || (this.tick % 2 === 0);
     statePayload.ml = sendMissileSync ? mlArr : undefined;
     statePayload.fl = flArr.length > 0 ? flArr : undefined;
+    statePayload.tu = tuArr.length > 0 ? tuArr : undefined;
     statePayload.bg = this.bodyguardManager.getStatesForBroadcast();
     statePayload.pr = this.planetRotation;
     // Per-faction totals (bots + humans) for chat panel headers

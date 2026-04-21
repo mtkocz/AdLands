@@ -560,6 +560,12 @@
   cannonSystem.shieldHolosphere = shieldHolosphere;
   cannonSystem.setPlanet(planet);
 
+  // Tactical turret deployables
+  const turretSystem = new TurretSystem(scene, CONFIG.sphereRadius, planet.hexGroup);
+  turretSystem.setDustShockwave(dustShockwave);
+  turretSystem.setCannonSystem(cannonSystem);
+  window.turretSystem = turretSystem;
+
   // Weapon Slot System (computes loadout modifiers for combat)
   const weaponSlotSystem = new WeaponSlotSystem();
   cannonSystem.weaponSlotSystem = weaponSlotSystem;
@@ -1571,6 +1577,7 @@
     planet,
     playerTags,
     cannonSystem,
+    turretSystem,
     treadDust,
     treadTracks,
     tankHeadlights,
@@ -4205,6 +4212,7 @@
       cannonSystem.updateCharge(deltaTime, tank, playerFaction);
     }
     cannonSystem.update(deltaTime, sharedFrustum, isLowDetailView);
+    turretSystem.update(deltaTime, sharedFrustum, camera);
     missileSystem.hideReticle = isLowDetailView || !hasSpawnedIn || tank.isDead;
     missileSystem.update(deltaTime, sharedFrustum, camera);
     flareSystem.update(deltaTime, camera);
