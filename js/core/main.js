@@ -4117,6 +4117,7 @@
       isHumanCommander,
       isLocalPlayer: true,
       forceOrbitalDot: isOrbitalView && isLowDetailView,
+      forceSurfaceDetail: isDescending && !isLowDetailView,
       showCommanderTrim,
       viewerFaction: playerFaction,
       commanderSystem,
@@ -4124,12 +4125,13 @@
     };
 
     // Update tank LOD after camera update so distance is current frame's position.
-    // During descent, keep the tank hidden but continue the hidden-dot LOD path
-    // above the 71-unit cutoff. Below that cutoff, keep the tank fully hidden
-    // until FastTravel reveals it at transition completion.
-    if (!isDescending || isLowDetailView) {
-      tank.updateLOD(camera, sharedFrustum, lodOptions);
+    // During descent, keep the orbital dot above the 71-unit cutoff.
+    // The moment the camera drops below that cutoff, reveal the real tank and
+    // switch it to full detail immediately instead of waiting for transition end.
+    if (lodOptions.forceSurfaceDetail && tank._hidden) {
+      tank.setVisible(true);
     }
+    tank.updateLOD(camera, sharedFrustum, lodOptions);
 
     // Pass LOD options to botTanks for commander dot mode
     botTanks.setLODOptions(lodOptions);

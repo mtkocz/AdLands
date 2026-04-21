@@ -527,11 +527,21 @@ class MissileSystem {
     this._latestServerMissileState.set(serverId, snapshot);
   }
 
-  _shouldRepresentServerMissile({ targetId = null, wx, wy, wz } = {}) {
+  _shouldRepresentServerMissile({ targetId = null, ownerId = null, wx, wy, wz } = {}, ownerTank = null) {
     if (targetId === "local" || targetId === window._mpState?.net?.playerId) {
       return true;
     }
-    const playerPos = this.playerTank?.group?._cachedWorldPos || this.playerTank?.group?.position;
+    if (ownerId === window._mpState?.net?.playerId || ownerTank === this.playerTank) {
+      return true;
+    }
+    if (ownerTank?.group?.visible) {
+      return true;
+    }
+    let playerPos = this.playerTank?.group?._cachedWorldPos || null;
+    if (!playerPos && this.playerTank?.group) {
+      this.playerTank.group.updateWorldMatrix(true, false);
+      playerPos = this.playerTank.group.getWorldPosition(this._tempVec4);
+    }
     if (!playerPos) return true;
     if (!Number.isFinite(wx) || !Number.isFinite(wy) || !Number.isFinite(wz)) return true;
     const maxDist = this.config.serverRepresentationDistance || 400;
@@ -543,7 +553,11 @@ class MissileSystem {
 
   playLocalMissileLaunchEffects(tank = this.playerTank) {
     if (this._effectsSuspended || document.hidden || !tank?.group) return;
-    const tankPos = tank.group._cachedWorldPos || tank.group.position;
+    let tankPos = tank.group._cachedWorldPos || null;
+    if (!tankPos) {
+      tank.group.updateWorldMatrix(true, false);
+      tankPos = tank.group.getWorldPosition(this._tempVec);
+    }
     if (!tankPos) return;
 
     if (this.dustShockwave) {
@@ -1039,7 +1053,7 @@ class MissileSystem {
       return true;
     }
 
-    if (!this._shouldRepresentServerMissile(data)) {
+    if (!this._shouldRepresentServerMissile(data, remoteTank)) {
       return false;
     }
 

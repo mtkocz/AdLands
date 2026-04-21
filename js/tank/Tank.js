@@ -1898,6 +1898,7 @@ Tank._lodTemp = {
  * @param {boolean} options.showCommanderTrim - Whether commander trim should render at this camera altitude
  * @param {boolean} options.isLocalPlayer - Whether this tank is the local player's tank
  * @param {boolean} options.forceOrbitalDot - Whether to force the local player's orbital dot on
+ * @param {boolean} options.forceSurfaceDetail - Whether to force the local player's full-detail tank on
  * @param {Object} options.commanderSystem - Reference to commanderSystem for checking commanders
  * @returns {boolean} Whether tank is visible
  */
@@ -1913,6 +1914,7 @@ Tank.updateTankLOD = function (
     showCommanderTrim,
     isLocalPlayer = false,
     forceOrbitalDot = false,
+    forceSurfaceDetail = false,
     commanderSystem,
   } = options;
   const temp = Tank._lodTemp;
@@ -1975,11 +1977,13 @@ Tank.updateTankLOD = function (
   const isFriendlyOrSelf = isSameFaction || isLocalPlayer;
 
   // LOD switching: 100+ = box, 200+ = dot (when applicable)
-  const useLOD = distanceToCamera > LOD_DISTANCE;
+  const useLOD = !forceSurfaceDetail && distanceToCamera > LOD_DISTANCE;
   // Dots at 200+: commanders see ALL tanks, others see only friendlies
   const useDot =
     forceOrbitalDot ||
-    (distanceToCamera > DOT_DISTANCE && (isHumanCommander || isFriendlyOrSelf));
+    (!forceSurfaceDetail &&
+      distanceToCamera > DOT_DISTANCE &&
+      (isHumanCommander || isFriendlyOrSelf));
 
   // Store LOD state for instanced rendering (0=detail, 1=box, 2=dot, -1=hidden)
   const useSimplified = useLOD || useDot;
