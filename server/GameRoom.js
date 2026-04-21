@@ -33,10 +33,15 @@ const MISSILE = {
   LOST_REACQUIRE_TIME: 1.25,
   LOST_MAX_AGE: 5,
   DIVE_START_RAD: 10 / 480,
-  FLARE_HIT_RAD: 2.4 / 480,
+  FLARE_HIT_RAD: 1.0 / 480,
   DESCENT_DELAY: 0.75,
   DIVE_SPEED_MULT: 1.2,
   MAX_AGE: 25,
+};
+
+const FLARE = {
+  LIFETIME: 4,
+  IMPACT_ALTITUDE: 8,
 };
 
 // Shield constants
@@ -2661,12 +2666,23 @@ class GameRoom {
       flareOwner.crypto += this.costs.flareIntercept;
     }
 
+    const hitR = MISSILE.R + FLARE.IMPACT_ALTITUDE;
+    const sp = Math.sin(fl.phi), cp = Math.cos(fl.phi);
+    const st = Math.sin(fl.theta), ct = Math.cos(fl.theta);
+    const lx = hitR * sp * ct;
+    const lz = hitR * sp * st;
+    const cosPR = Math.cos(this.planetRotation);
+    const sinPR = Math.sin(this.planetRotation);
+
     this._queueRoomEvent("flare-hit", {
       flareId: fl.id,
       flareOwnerId: fl.ownerId,
       missileId: p.id,
       theta: fl.theta,
       phi: fl.phi,
+      wx: lx * cosPR + lz * sinPR,
+      wy: hitR * cp,
+      wz: -lx * sinPR + lz * cosPR,
       faction: p.ownerFaction,
     });
     this._removeProjectileAt(projs, i);
@@ -2979,7 +2995,7 @@ class GameRoom {
       theta: player.theta,
       phi: player.phi,
       age: 0,
-      maxAge: 8,
+      maxAge: FLARE.LIFETIME,
       wx: flx * cosPR + flz * sinPR,
       wy: fLift * fCp,
       wz: -flx * sinPR + flz * cosPR,

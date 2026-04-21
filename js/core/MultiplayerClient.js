@@ -1000,29 +1000,55 @@
     net.onFlareHit = (data) => {
       if (window.flareSystem) {
         window.flareSystem.removeFlareById(data.flareId);
-        // Also remove local flare if it was ours
-        window.flareSystem.removeLocalFlare();
+        if (data.flareOwnerId === net.playerId) {
+          window.flareSystem.removeLocalFlare();
+        }
       }
-      // Remove the missile visual + dismiss incoming warning (missile consumed by flare)
-      if (window.missileSystem) {
-        window.missileSystem.removeByServerId(data.missileId);
-        window.missileSystem.hideIncomingWarning();
-      }
-      // Spawn explosion at flare position (harmless, visual only)
-      if (data.theta !== undefined && cannonSystem) {
-        const R = 480 + 8; // Cruise altitude
+
+      let hasImpactPos = false;
+      if (
+        Number.isFinite(data.wx) &&
+        Number.isFinite(data.wy) &&
+        Number.isFinite(data.wz)
+      ) {
+        _hitWorldPos.set(data.wx, data.wy, data.wz);
+        hasImpactPos = true;
+      } else if (data.theta !== undefined) {
+        const R = 480 + 8; // Missile cruise altitude
         const sp = Math.sin(data.phi), cp = Math.cos(data.phi);
         const st = Math.sin(data.theta), ct = Math.cos(data.theta);
         const lx = R * sp * ct, lz = R * sp * st;
         const pr = mp.planet?.hexGroup?.rotation.y || 0;
         const cpr = Math.cos(pr), spr = Math.sin(pr);
         _hitWorldPos.set(lx * cpr + lz * spr, R * cp, -lx * spr + lz * cpr);
-        cannonSystem._spawnExplosion?.(_hitWorldPos, data.faction || "rust", 1.2);
+        hasImpactPos = true;
+      }
+      const flareImpactPos = hasImpactPos ? _hitWorldPos.clone() : null;
+
+      const spawnFlareExplosion = () => {
+        if (!flareImpactPos || !cannonSystem) return;
+        cannonSystem._spawnExplosion?.(flareImpactPos, data.faction || "rust", 1.2);
 
         // Award +10¢ flare intercept bonus to the flare owner (floating green number)
         if (data.flareOwnerId === net.playerId && window.cryptoVisuals) {
-          window.cryptoVisuals._spawnFloatingNumber(10, _hitWorldPos);
+          window.cryptoVisuals._spawnFloatingNumber(10, flareImpactPos);
         }
+      };
+
+      if (window.missileSystem) {
+        window.missileSystem.hideIncomingWarning();
+        if (flareImpactPos && data.missileId != null) {
+          window.missileSystem.queueHitEffect(data.missileId, spawnFlareExplosion);
+          const diveStarted = window.missileSystem.forceDiveToPoint(data.missileId, flareImpactPos);
+          if (!diveStarted) {
+            window.missileSystem._flushPendingHit(data.missileId);
+          }
+        } else {
+          window.missileSystem.removeByServerId(data.missileId);
+          spawnFlareExplosion();
+        }
+      } else {
+        spawnFlareExplosion();
       }
     };
 

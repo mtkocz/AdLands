@@ -641,6 +641,9 @@ class MissileSystem {
 
   _ensureRemoteMissileVisual(missile) {
     if (!missile) return false;
+    if (missile.poolItem && missile.poolItem.inUse === false) {
+      missile.poolItem = null;
+    }
     if (!missile.poolItem) {
       const poolItem = this._acquirePoolItem(missile.faction || missile.ownerFaction || "rust");
       if (!poolItem) return false;
@@ -652,6 +655,16 @@ class MissileSystem {
       this.scene.add(missile.poolItem.group);
     }
     return true;
+  }
+
+  _isVisibilityCriticalMissile(missile) {
+    if (!missile) return false;
+    const localPlayerId = this._getLocalPlayerId();
+    return !!missile?._alwaysVisible ||
+      !!missile?._pendingLocalFire ||
+      (localPlayerId && missile.ownerId === localPlayerId) ||
+      (localPlayerId && missile.serverTargetId === localPlayerId) ||
+      missile.serverTargetId === "local";
   }
 
   _getOwnerMissileLaunchFrame(ownerTank) {
@@ -1786,8 +1799,16 @@ class MissileSystem {
         continue;
       }
 
-      // Remove orphaned missiles (pool item recycled)
-      if (!m.poolItem) {
+      // Restore critical missile visuals if their pool item was recycled.
+      const visibilityCritical = this._isVisibilityCriticalMissile(m);
+      if ((!m.poolItem || m.poolItem.inUse === false) && visibilityCritical) {
+        if (!this._ensureRemoteMissileVisual(m)) {
+          continue;
+        }
+      }
+
+      // Remove orphaned non-critical missiles (pool item recycled)
+      if (!m.poolItem || m.poolItem.inUse === false) {
         // Flush pending hit — mesh was stolen but damage should still apply
         if (m.serverId != null) this._flushPendingHit(m.serverId);
         if (m.shadowBB && this.flareSystem) {

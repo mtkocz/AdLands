@@ -15,6 +15,7 @@ class FlareSystem {
     this.flares = [];
     this.lastFireTime = 0;
     this.cooldown = 5;
+    this.maxAge = 4;
 
     this._tempVec = new THREE.Vector3();
     this._tempVec2 = new THREE.Vector3();
@@ -478,7 +479,7 @@ class FlareSystem {
       targetAltitude,
       launchDuration: 0.4,
       age: 0,
-      maxAge: 8,
+      maxAge: this.maxAge,
       meshItem,
       shadowBB,
       serverId: null,
