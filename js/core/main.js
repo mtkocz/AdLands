@@ -3966,6 +3966,23 @@
   let _prevCameraDist = 0; // Previous frame camera distance for motion blur velocity
   let _motionBlurIntensity = 0; // Smoothed motion blur intensity
 
+  function setPointLightsLowDetail(scene, lowDetail) {
+    scene.traverse((child) => {
+      if (!child.isPointLight) return;
+
+      if (lowDetail) {
+        if (!child.userData._lowDetailPointLightOff) {
+          child.userData._lowDetailPointLightWasVisible = child.visible;
+          child.userData._lowDetailPointLightOff = true;
+        }
+        child.visible = false;
+      } else if (child.userData._lowDetailPointLightOff) {
+        child.visible = child.userData._lowDetailPointLightWasVisible;
+        child.userData._lowDetailPointLightOff = false;
+      }
+    });
+  }
+
   function animate() {
     requestAnimationFrame(animate);
 
@@ -4302,6 +4319,8 @@
       playerFaction,
       proximityChat.playerSquad,
     );
+
+    setPointLightsLowDetail(scene, isLowDetailView);
 
     // Render scene with selective bloom (layer-based)
     // Ensure matrices are updated before rendering to prevent bloom flickering
