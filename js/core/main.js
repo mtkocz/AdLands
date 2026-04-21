@@ -4149,10 +4149,10 @@
     // Update tank LOD after camera update so distance is current frame's position.
     // The 71-unit cutoff is authoritative during normal play, but portal deploy
     // keeps the local tank hidden until the camera transition fully completes.
-    if (!isDescending && !isLowDetailView && tank._hidden && !tank.isDead) {
+    if (!tank._pendingPortalReveal && !isDescending && !isLowDetailView && tank._hidden && !tank.isDead) {
       tank.setVisible(true);
     }
-    if (isDescending && !isLowDetailView) {
+    if (tank._pendingPortalReveal || (isDescending && !isLowDetailView)) {
       tank.setVisible(false);
     } else {
       tank.updateLOD(camera, sharedFrustum, lodOptions);

@@ -511,6 +511,7 @@ class FastTravel {
 
         // Keep the tank hidden for the entire descent. The final reveal happens
         // only after the camera reaches its surface position.
+        this.tank._pendingPortalReveal = true;
         this.tank.setVisible(false);
         this.tank.setControlsEnabled(false);
 
@@ -527,6 +528,7 @@ class FastTravel {
                     commanderSystem?.commanderSkin?.applyTrim?.(this.tank);
                 }
                 this.tank._setCommanderTrimVisible?.(showTrim);
+                this.tank._pendingPortalReveal = false;
                 this.tank.setVisible(true);
                 this.tank.setControlsEnabled(true);
             });
