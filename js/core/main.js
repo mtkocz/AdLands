@@ -700,6 +700,7 @@
 
   // Commander leaves the planet surface — despawn bodyguards
   fastTravel.onEnterFastTravel = () => {
+    hasSpawnedIn = false;
     if (window.badgeSystem) window.badgeSystem.deployed = false;
     commanderBodyguards.onCommanderLeaveSurface();
   };
@@ -4149,7 +4150,7 @@
     // Update tank LOD after camera update so distance is current frame's position.
     // The 71-unit cutoff is authoritative during normal play, but portal deploy
     // keeps the local tank hidden until the camera transition fully completes.
-    if (!tank._pendingPortalReveal && !isDescending && !isLowDetailView && tank._hidden && !tank.isDead) {
+    if (!tank.waitingForPortal && !fastTravel.active && !tank._pendingPortalReveal && !isDescending && !isLowDetailView && tank._hidden && !tank.isDead) {
       tank.setVisible(true);
     }
     if (tank._pendingPortalReveal || (isDescending && !isLowDetailView)) {

@@ -64,6 +64,15 @@ class FastTravel {
         this._setupEventListeners();
     }
 
+    _setTankUndeployed(undeployed) {
+        this.tank.waitingForPortal = undeployed;
+        if (this.tank.state) this.tank.state.waitingForPortal = undeployed;
+        if (undeployed) {
+            this.tank.setVisible(false);
+            this.tank.setControlsEnabled(false);
+        }
+    }
+
     setDustShockwave(dustShockwave) {
         this.dustShockwave = dustShockwave;
     }
@@ -192,8 +201,7 @@ class FastTravel {
         this._showFastTravelUI();
 
         // Disable tank controls and hide tank
-        this.tank.setControlsEnabled(false);
-        this.tank.setVisible(false);
+        this._setTankUndeployed(true);
 
         // Notify that commander has left the planet surface
         if (this.onEnterFastTravel) {
@@ -231,7 +239,7 @@ class FastTravel {
         this._showFastTravelUI();
 
         // Tank controls already disabled and tank hidden by main.js
-        this.tank.setVisible(false);
+        this._setTankUndeployed(true);
     }
 
     /**
@@ -265,6 +273,7 @@ class FastTravel {
         this._showFastTravelUI();
 
         // Tank is already hidden from death fade
+        this._setTankUndeployed(true);
     }
 
     // ========================
@@ -464,12 +473,14 @@ class FastTravel {
 
         // Keep the tank hidden until the server confirms the deploy and the
         // camera finishes descending to the surface.
+        this.tank._pendingPortalReveal = true;
         this.tank.setVisible(false);
         this.tank.setControlsEnabled(false);
     }
 
     _hidePredictedDeployTank() {
-        if (!this._predictedSpawnVisible) return;
+        if (!this._predictedSpawnVisible && !this.tank._pendingPortalReveal) return;
+        this.tank._pendingPortalReveal = false;
         this.tank.setVisible(false);
         this._predictedSpawnVisible = false;
     }
@@ -529,6 +540,7 @@ class FastTravel {
                 }
                 this.tank._setCommanderTrimVisible?.(showTrim);
                 this.tank._pendingPortalReveal = false;
+                this._setTankUndeployed(false);
                 this.tank.setVisible(true);
                 this.tank.setControlsEnabled(true);
             });

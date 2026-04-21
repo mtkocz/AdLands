@@ -29,6 +29,7 @@ class Tank {
     this.hp = 100;
     this.maxHp = 100;
     this.isDead = false;
+    this.waitingForPortal = false;
     this.faction = "cobalt"; // Default faction, set via setFactionColors
     this.lastSpawnTime = Date.now(); // Track spawn time for title system lifespan
 
@@ -55,6 +56,7 @@ class Tank {
 
       // Death state (for tread dust/tracks to check)
       isDead: false,
+      waitingForPortal: false,
 
       // Wiggle animation phase
       wigglePhase: 0,
@@ -290,6 +292,18 @@ class Tank {
   setVisible(visible) {
     this._hidden = !visible;
     this.group.visible = visible;
+    if (!visible) {
+      if (this.lodMesh) this.lodMesh.visible = false;
+      if (this.lodDot) this.lodDot.visible = false;
+      if (this.lodDotDarkOutline) this.lodDotDarkOutline.visible = false;
+      if (this.lodDotOutline) this.lodDotOutline.visible = false;
+      if (this.shadowBlob) this.shadowBlob.visible = false;
+      if (this.detailedMeshes) {
+        for (const mesh of this.detailedMeshes) mesh.visible = false;
+      }
+      this._setCommanderTrimVisible?.(false);
+      this._lodState = -1;
+    }
   }
 
   // Teleport tank to spherical coordinates
@@ -1137,7 +1151,23 @@ class Tank {
 
     camera.getWorldPosition(Tank._lodTemp.cameraWorldPos);
 
-    // When tank is hidden (e.g. during fast travel), only show the dot in orbital view
+    // Undeployed tanks are off the battlefield; do not show any LOD variant.
+    if (this.waitingForPortal) {
+      this.group.visible = false;
+      this._lodState = -1;
+      this._setCommanderTrimVisible(false);
+      if (this.lodDot) this.lodDot.visible = false;
+      if (this.lodDotDarkOutline) this.lodDotDarkOutline.visible = false;
+      if (this.lodDotOutline) this.lodDotOutline.visible = false;
+      if (this.lodMesh) this.lodMesh.visible = false;
+      if (this.shadowBlob) this.shadowBlob.visible = false;
+      if (this.detailedMeshes) {
+        for (const mesh of this.detailedMeshes) mesh.visible = false;
+      }
+      return;
+    }
+
+    // When tank is hidden outside portal selection, only show the dot in orbital view
     if (this._hidden) {
       if (this.lodDot && options.isOrbitalView) {
         const forceHiddenDot = !!options.forceHiddenDot;
