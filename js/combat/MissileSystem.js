@@ -29,7 +29,7 @@ class MissileSystem {
       cost: 5,                 // Crypto cost per missile (same as cannon base)
       damage: 38,              // 25 * 1.5 missile multiplier
       missileSpeed: 0.1536,    // World units per frame (80% of tank top speed: 0.0004 * 480 * 0.8)
-      serverRepresentationDistance: 400, // Only nearby server missiles need full client visuals
+      serverRepresentationDistance: 700, // Only reasonably nearby server missiles need full client visuals
       launchDuration: 0.5,     // Seconds in vertical launch phase
       cruiseAltitude: 8,       // World units above surface
       diveDistance: 10,         // Start dive when within this distance
@@ -1039,6 +1039,7 @@ class MissileSystem {
       if (data.targetId != null) {
         existing.serverTargetId = data.targetId;
         existing._alwaysVisible = existing._alwaysVisible ||
+          remoteTank === this.playerTank ||
           data.targetId === "local" ||
           data.targetId === window._mpState?.net?.playerId;
         if (data.targetTheta !== undefined && data.targetPhi !== undefined) {
@@ -1091,6 +1092,7 @@ class MissileSystem {
       targetData: data,
       initialPhase,
       alwaysVisible:
+        remoteTank === this.playerTank ||
         data.targetId === "local" ||
         data.targetId === window._mpState?.net?.playerId,
     });
@@ -1158,6 +1160,7 @@ class MissileSystem {
           this._setMissileSpawnTarget(existing, { targetId: newTargetId });
         }
         existing._alwaysVisible = existing._alwaysVisible ||
+          ownerId === localPlayerId ||
           newTargetId === "local" ||
           newTargetId === window._mpState?.net?.playerId;
         const newFaction = faction || existing.faction || "rust";
@@ -1196,7 +1199,13 @@ class MissileSystem {
             targetIsFlare: !!(targetFlags & 1),
           });
         }
-        if (existing._alwaysVisible && !existing.poolItem) {
+        if (this._shouldRepresentServerMissile({
+          ownerId,
+          targetId: newTargetId,
+          wx,
+          wy,
+          wz,
+        }, this._resolveRemoteMissileOwner(ownerId)) && !existing.poolItem) {
           this._ensureRemoteMissileVisual(existing);
         }
         if ((existing.phase || 0) < 2) {
@@ -1770,25 +1779,6 @@ class MissileSystem {
     // Defensive: ensure remote missile mesh is in the scene
     if (m.isRemote && !m.poolItem.group.parent) {
       this.scene.add(m.poolItem.group);
-    }
-
-    // Remote missiles share local launch/dive visuals, but cruise is server playback.
-    if (m.isRemote && m._serverPos && m.phase === 0 && m._remoteHasSync) {
-      const drift = this._tempVec2.copy(m._serverPos).sub(m.position);
-      const driftLenSq = drift.lengthSq();
-      if (driftLenSq > 0.000001) {
-        const driftLen = Math.sqrt(driftLenSq);
-        if (driftLen > 30) {
-          m.position.copy(m._serverPos);
-        } else {
-          const correction = m.phase === 0 ? 0.35 : 0.14;
-          m.position.addScaledVector(drift, correction);
-        }
-        if ((!m.direction || m.direction.lengthSq() < 0.0001) && driftLen > 0.01) {
-          if (!m.direction) m.direction = new THREE.Vector3();
-          m.direction.copy(drift).normalize();
-        }
-      }
     }
 
     if (m.phase === 0) {
