@@ -1641,7 +1641,7 @@ class ServerBotManager {
       speed: 0.00032, // 80% of tank top speed
       age: 0,
       maxAge: 60,
-      phase: 0, // 0=launch, 1=cruise
+      phase: 0, // 0=launch, 1=cruise, 2=dive, 3=lost
       launchDuration: 0.5,
       damage: 38, // 25 * 1.5 missile multiplier
       targetId: bot.combatTarget,
@@ -1652,8 +1652,9 @@ class ServerBotManager {
       _tgtIsFlare: false,
       _tgtFlareIndex: -1,
       _tgtOwnerId: target.id || null,
-      _retargetPhase: 2, // retarget on first tick
       _hasTarget: true,
+      _reLockCount: 0,
+      _phaseAge: 0,
     };
 
     if (this._workerMode) {
@@ -1667,8 +1668,8 @@ class ServerBotManager {
     const bSp = Math.sin(bot.phi), bCp = Math.cos(bot.phi);
     const bSt = Math.sin(bot.theta), bCt = Math.cos(bot.theta);
     const bLift = R + 2;
-    const lx = bLift * bSp * bSt;
-    const lz = bLift * bSp * bCt;
+    const lx = bLift * bSp * bCt;
+    const lz = bLift * bSp * bSt;
     const cosPR = Math.cos(this._planetRotation);
     const sinPR = Math.sin(this._planetRotation);
 

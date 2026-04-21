@@ -807,8 +807,8 @@ class MissileSystem {
     const st = Math.sin(targetData.targetTheta);
     const ct = Math.cos(targetData.targetTheta);
     const targetSurfaceR = this.sphereRadius;
-    const lx = targetSurfaceR * sp * st;
-    const lz = targetSurfaceR * sp * ct;
+    const lx = targetSurfaceR * sp * ct;
+    const lz = targetSurfaceR * sp * st;
     const pr = this.planet?.hexGroup?.rotation.y || 0;
     const cpr = Math.cos(pr);
     const spr = Math.sin(pr);
@@ -1094,7 +1094,7 @@ class MissileSystem {
       position: startPos.clone(),
       surfaceNormal: surfaceNormal.clone(),
       faction,
-      phase: Math.min(2, Math.max(0, initialPhase || 0)),
+      phase: Math.min(4, Math.max(0, initialPhase || 0)),
       age: initialPhase > 0 ? this.config.launchDuration : 0,
       launchSpeed: 5,
       cruiseAltitude: this.config.cruiseAltitude,
@@ -1266,7 +1266,7 @@ class MissileSystem {
       return false;
     }
 
-    const initialPhase = Math.min(2, Math.max(0, data._initialPhase || 0));
+    const initialPhase = Math.min(4, Math.max(0, data._initialPhase || 0));
     const useServerStart = !!data._startFromServerPos;
     const serverStartPos = new THREE.Vector3(data.wx, data.wy, data.wz);
     const faction = data.faction || remoteTank?.faction || "rust";
@@ -1311,6 +1311,40 @@ class MissileSystem {
       this.dustShockwave.emit(startPos, 0.4);
     }
     return true;
+  }
+
+  _applyServerMissilePhase(missile, serverPhase, targetIsFlare = false) {
+    if (!missile) return;
+    const nextPhase = Math.min(4, Math.max(0, serverPhase || 0));
+    const currentPhase = missile.phase || 0;
+    if (nextPhase === currentPhase) return;
+    if (nextPhase === 0 && currentPhase > 0) return;
+
+    const canReturnToCruise =
+      nextPhase === 1 &&
+      (currentPhase === 3 || (currentPhase === 2 && targetIsFlare));
+    if (nextPhase < currentPhase && !canReturnToCruise) return;
+
+    missile.phase = nextPhase;
+    if (nextPhase === 1) {
+      missile.isLost = false;
+      missile.lostAge = 0;
+      missile._forcedDive = false;
+      missile.diveTarget = null;
+      missile.phase1Age = 0;
+      this._setMissileCruiseEntryDirection(missile);
+    } else if (nextPhase === 2) {
+      const tracked = this._resolveMissileTrackedTarget(missile);
+      if (tracked?.worldPos) {
+        missile.diveTarget = tracked.worldPos.clone();
+      }
+    } else if (nextPhase === 3) {
+      missile.isLost = true;
+      missile.lostAge = 0;
+      missile.targetTank = null;
+      missile._serverTargetWorldPos = null;
+      missile._serverTargetIsFlare = false;
+    }
   }
 
   // State-driven sync: spawn/remove remote missiles based on server state broadcast.
@@ -1412,6 +1446,7 @@ class MissileSystem {
             targetIsFlare: !!(targetFlags & 1),
           });
         }
+        this._applyServerMissilePhase(existing, serverPhase, !!(targetFlags & 1));
         if (this._shouldRepresentServerMissile({
           ownerId,
           targetId: newTargetId,
@@ -1421,9 +1456,6 @@ class MissileSystem {
           _forceRepresent: forceRepresent,
         }, this._resolveRemoteMissileOwner(ownerId)) && !existing.poolItem) {
           this._ensureRemoteMissileVisual(existing);
-        }
-        if ((existing.phase || 0) < 2) {
-          existing.phase = Math.max(existing.phase || 0, serverPhase);
         }
         continue;
       }
@@ -1443,6 +1475,7 @@ class MissileSystem {
           wz: mlArr[i + 5],
         }, owner);
         if (bound) {
+          this._applyServerMissilePhase(bound, serverPhase, !!(targetFlags & 1));
           diag.mlSpawned++;
           continue;
         }
@@ -1627,7 +1660,7 @@ class MissileSystem {
         const sp = Math.sin(phi), cp = Math.cos(phi);
         const st = Math.sin(theta), ct = Math.cos(theta);
         const R = this.sphereRadius;
-        const lx = R * sp * st, lz = R * sp * ct;
+        const lx = R * sp * ct, lz = R * sp * st;
         const pr = this.planet?.hexGroup?.rotation.y || 0;
         const cpr = Math.cos(pr), spr = Math.sin(pr);
         m.diveTarget = new THREE.Vector3(lx * cpr + lz * spr, R * cp, -lx * spr + lz * cpr);
@@ -2193,12 +2226,14 @@ class MissileSystem {
     } else if (m.phase === 2) {
       // TERMINAL DIVE: Steer downward toward ground target (no forward filter — committed to dive)
       let diveTarget = m.diveTarget;
-      if (!m.isRemote && !m._forcedDive) {
-        const target = this._getVisualTargetForMissile(m, {
-          allowSearch: true,
-          useHemisphere: false,
-          includeFlares: true,
-        });
+      if (!m._forcedDive) {
+        const target = m.isRemote
+          ? this._resolveMissileTrackedTarget(m)
+          : this._getVisualTargetForMissile(m, {
+              allowSearch: true,
+              useHemisphere: false,
+              includeFlares: true,
+            });
         if (target) {
           diveTarget = target.worldPos;
           m._serverTargetWorldPos = target.worldPos.clone();

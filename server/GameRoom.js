@@ -21,6 +21,24 @@ const BotWorkerBridge = require("./BotWorkerBridge");
 const BinaryStateProtocol = require("./shared/BinaryStateProtocol");
 const DEBUG_LOG = process.env.DEBUG_LOG === "1";
 
+const MISSILE = {
+  R: 480,
+  SPEED: 0.00032, // 0.00032 * 60 * 480 = 9.216 world units/sec
+  LAUNCH_DURATION: 0.5,
+  TURN_RATE: 1.5,
+  CRUISE_ENTRY_TIME: 0.3,
+  CRUISE_ENTRY_TURN_SCALE: 0.45,
+  SEARCH_RADIUS_RAD: 120 / 480,
+  LOST_REACQUIRE_RADIUS_RAD: 30 / 480,
+  LOST_REACQUIRE_TIME: 1.25,
+  LOST_MAX_AGE: 5,
+  DIVE_START_RAD: 10 / 480,
+  FLARE_HIT_RAD: 2.4 / 480,
+  DESCENT_DELAY: 0.75,
+  DIVE_SPEED_MULT: 1.2,
+  MAX_AGE: 25,
+};
+
 // Shield constants
 const SHIELD = {
   MAX_ENERGY: 1.0,
@@ -2343,10 +2361,10 @@ class GameRoom {
       startTheta: player.theta,
       startPhi: player.phi,
       heading: 0,
-      speed: 0.00032, // 80% of tank top speed (0.0004 * 0.8)
+      speed: MISSILE.SPEED,
       age: 0,
-      phase: 0, // 0=launch, 1=cruise
-      launchDuration: 0.5,
+      phase: 0, // 0=launch, 1=cruise, 2=dive, 3=lost
+      launchDuration: MISSILE.LAUNCH_DURATION,
       damage: Math.round(25 * 1.5), // 38 damage (missile multiplier)
       targetId: target.id,
       _tgtId: target.id,
@@ -2356,8 +2374,9 @@ class GameRoom {
       _tgtIsFlare: !!target.isFlare,
       _tgtFlareIndex: target.flareIndex ?? -1,
       _tgtOwnerId: target.ownerId || null,
-      _retargetPhase: 2, // retarget on first tick
       _hasTarget: true,
+      _reLockCount: 0,
+      _phaseAge: 0,
     };
 
     this.projectiles.push(missile);
@@ -2367,8 +2386,8 @@ class GameRoom {
     const fSp = Math.sin(player.phi), fCp = Math.cos(player.phi);
     const fSt = Math.sin(player.theta), fCt = Math.cos(player.theta);
     const fLift = R + 2;
-    const lx = fLift * fSp * fSt;
-    const lz = fLift * fSp * fCt;
+    const lx = fLift * fSp * fCt;
+    const lz = fLift * fSp * fSt;
     const cosPR = Math.cos(this.planetRotation);
     const sinPR = Math.sin(this.planetRotation);
 
@@ -2400,6 +2419,65 @@ class GameRoom {
     );
   }
 
+  _sameTargetId(a, b) {
+    if (a == null || a === "") return b == null || b === "";
+    if (b == null || b === "") return false;
+    return String(a) === String(b);
+  }
+
+  _normalizeAngle(a) {
+    while (a < 0) a += Math.PI * 2;
+    while (a >= Math.PI * 2) a -= Math.PI * 2;
+    return a;
+  }
+
+  _angleDelta(target, current) {
+    let d = target - current;
+    while (d > Math.PI) d -= Math.PI * 2;
+    while (d < -Math.PI) d += Math.PI * 2;
+    return d;
+  }
+
+  _computeMissileHeadingTo(theta, phi, targetTheta, targetPhi) {
+    const sinPhi = Math.sin(phi);
+    const safeSin = Math.abs(sinPhi) < 0.01 ? 0.01 * Math.sign(sinPhi || 1) : sinPhi;
+    let dTheta = targetTheta - theta;
+    while (dTheta > Math.PI) dTheta -= Math.PI * 2;
+    while (dTheta < -Math.PI) dTheta += Math.PI * 2;
+    const dPhi = targetPhi - phi;
+    const northOff = -dPhi;
+    const eastOff = dTheta * safeSin;
+    return this._normalizeAngle(Math.atan2(-eastOff, northOff));
+  }
+
+  _normalizeMissileProjectile(p) {
+    if (p._missileRebuilt) return;
+    p._missileRebuilt = true;
+    p.speed = MISSILE.SPEED;
+    p.launchDuration = p.launchDuration ?? MISSILE.LAUNCH_DURATION;
+    p.phase = Math.max(0, Math.min(3, p.phase || 0));
+    p._phaseAge = p._phaseAge || 0;
+    p.phase1Age = p.phase1Age || 0;
+    p.lostAge = p.lostAge || 0;
+    p._diveAge = p._diveAge || 0;
+    p._reLockCount = p._reLockCount || 0;
+    p._hasTarget = !!(p._tgtId || p.targetId);
+    if (p._hasTarget) p.targetId = p._tgtId || p.targetId;
+    if (!Number.isFinite(p.heading)) p.heading = 0;
+  }
+
+  _clearMissileTarget(p) {
+    p.targetId = "";
+    p._tgtId = "";
+    p._tgtTheta = 0;
+    p._tgtPhi = 0;
+    p._tgtFaction = null;
+    p._tgtIsFlare = false;
+    p._tgtFlareIndex = -1;
+    p._tgtOwnerId = null;
+    p._hasTarget = false;
+  }
+
   _resolveMissileLockedTarget(p) {
     const targetId = p._tgtId || p.targetId;
     if (targetId == null || targetId === "") return null;
@@ -2407,10 +2485,10 @@ class GameRoom {
     if (p._tgtIsFlare) {
       let flareIndex = p._tgtFlareIndex ?? -1;
       let fl = flareIndex >= 0 ? this.flares[flareIndex] : null;
-      if (!fl || fl.id !== targetId) {
+      if (!fl || !this._sameTargetId(fl.id, targetId)) {
         fl = null;
         for (let i = 0; i < this.flares.length; i++) {
-          if (this.flares[i].id === targetId) {
+          if (this._sameTargetId(this.flares[i].id, targetId)) {
             fl = this.flares[i];
             flareIndex = i;
             break;
@@ -2450,17 +2528,21 @@ class GameRoom {
     }
 
     const bot = this.botBridge.getBot(targetId);
+    const botTheta = bot?.t ?? bot?.theta;
+    const botPhi = bot?.p ?? bot?.phi;
+    const botFaction = bot?.f ?? bot?.faction;
     if (
       bot &&
       bot.d !== 1 &&
-      bot.f !== p.ownerFaction &&
+      !bot.isDead &&
+      botFaction !== p.ownerFaction &&
       targetId !== p.ownerId
     ) {
       return {
         id: targetId,
-        theta: bot.t,
-        phi: bot.p,
-        faction: bot.f,
+        theta: botTheta,
+        phi: botPhi,
+        faction: botFaction,
         isFlare: false,
         flareIndex: -1,
         ownerId: null,
@@ -2471,6 +2553,7 @@ class GameRoom {
   }
 
   _setMissileLockedTarget(p, target) {
+    const previousTargetId = p.targetId;
     p._tgtId = target.id;
     p._tgtTheta = target.theta;
     p._tgtPhi = target.phi;
@@ -2479,256 +2562,379 @@ class GameRoom {
     p._tgtFlareIndex = target.flareIndex ?? -1;
     p._tgtOwnerId = target.ownerId || null;
     p._hasTarget = true;
+    p.targetId = target.id;
+    return !this._sameTargetId(previousTargetId, p.targetId);
   }
 
-  _updateMissileProjectile(p, dt, i, projs) {
-    // Phase 0: Launch (no movement on sphere, client shows vertical ascent)
-    if (p.phase === 0) {
-      if (p.age >= p.launchDuration) {
-        p.phase = 1;
-      }
-      return; // No collision during launch
-    }
-
-    // Phase 1: Cruise/Homing
-    // Match the old local missile behavior: hold the locked tank, let flares
-    // steal lock, and only search for a new tank when the current target is gone.
-    const maxRetargetRad = 0.25;
-    const currentTarget = this._resolveMissileLockedTarget(p);
-    const nearbyTarget = this._targetHash.findNearest(
-      p.theta, p.phi, p.ownerFaction, p.ownerId, maxRetargetRad, true
+  _findMissileFlareOverride(p, radius = MISSILE.SEARCH_RADIUS_RAD) {
+    const found = this._targetHash.findNearest(
+      p.theta, p.phi, p.ownerFaction, p.ownerId, radius, true
     );
-    const found = nearbyTarget?.isFlare ? nearbyTarget : (currentTarget || nearbyTarget);
-    if (found) {
-      // Copy fields onto missile — pool entries get overwritten on next rebuild()
-      this._setMissileLockedTarget(p, found);
-    } else {
-      p._hasTarget = false;
+    return found?.isFlare ? found : null;
+  }
+
+  _findMissileReacquireTarget(p) {
+    return this._targetHash.findNearest(
+      p.theta,
+      p.phi,
+      p.ownerFaction,
+      p.ownerId,
+      MISSILE.LOST_REACQUIRE_RADIUS_RAD,
+      true
+    );
+  }
+
+  _emitMissileIncomingIfNeeded(p, targetChanged) {
+    if (!targetChanged || p._tgtIsFlare) return;
+    if (this.players.has(p.targetId)) {
+      this._emitToSocket(p.targetId, "missile-incoming", { missileId: p.id });
     }
+  }
 
-    if (!p._hasTarget) {
-      p.targetId = "";
-      p._tgtId = "";
-      p._tgtIsFlare = false;
-      p._tgtFlareIndex = -1;
-      p._tgtOwnerId = null;
-      // No targets in range — start or continue wobble timer
-      p.lostAge = (p.lostAge || 0) + dt;
-      if (p.lostAge >= 5) {
-        // Wobble expired — missile crashes to ground (no damage)
-        this._queueRoomEvent("missile-crash", {
-          missileId: p.id,
-          theta: p.theta,
-          phi: p.phi,
-        });
-        projs[i] = projs[projs.length - 1]; projs.pop();
-        return;
-      }
-      // Emit wobble event once (when first losing target)
-      if (!p.isLost) {
-        p.isLost = true;
-        p._diving = false;
-        p._impactLocked = false;
-        this._queueRoomEvent("missile-lost", {
-          missileId: p.id,
-        });
-      }
-      // Keep moving in current heading (no re-targeting)
-      moveOnSphere(p, dt);
-      return;
-    }
+  _guideMissileOnSphere(p, dt, target, turnScale = 1, speedMult = 1) {
+    const desiredHeading = this._computeMissileHeadingTo(
+      p.theta, p.phi, target.theta, target.phi
+    );
+    const maxTurn = MISSILE.TURN_RATE * turnScale * dt;
+    const delta = this._angleDelta(desiredHeading, p.heading);
+    const clamped = Math.max(-maxTurn, Math.min(maxTurn, delta));
+    p.heading = this._normalizeAngle(p.heading + clamped);
 
-    // Target found — reset lost state if recovering
-    if (p.isLost) {
-      p.isLost = false;
-      p.lostAge = 0;
-      p._diving = false;
-      p._impactLocked = false;
-    }
-
-    const prevTarget = p.targetId;
-    p.targetId = p._tgtId;
-
-    // Reset dive when retargeting to a different tank (must dive again for new target)
-    if (p.targetId !== prevTarget) {
-      p._diving = false;
-      p._impactLocked = false;
-      if (!p._tgtIsFlare && this.players.has(p.targetId)) {
-        this._emitToSocket(p.targetId, "missile-incoming", { missileId: p.id });
-      }
-    }
-
-    // Compute heading toward target on sphere
-    const sinPhi = Math.sin(p.phi);
-    const safeSin = Math.abs(sinPhi) < 0.01 ? 0.01 * Math.sign(sinPhi || 1) : sinPhi;
-    let dTheta = p._tgtTheta - p.theta;
-    while (dTheta > Math.PI) dTheta -= Math.PI * 2;
-    while (dTheta < -Math.PI) dTheta += Math.PI * 2;
-    const dPhi = p._tgtPhi - p.phi;
-    const northOff = -dPhi;
-    const eastOff = dTheta * safeSin;
-    p.heading = Math.atan2(-eastOff, northOff);
-
-    // Move missile on sphere
+    const prevSpeed = p.speed;
+    p.speed = MISSILE.SPEED * speedMult;
     moveOnSphere(p, dt);
+    p.speed = prevSpeed;
+  }
 
-    // Check distance to target
-    const arrivalDist = sphericalDistance(p.theta, p.phi, p._tgtTheta, p._tgtPhi);
-    const DIVE_START_DIST = 0.021; // ~10 world units on R=480 — tells client to start visual dive
-    const ARRIVAL_THRESHOLD = 0.005; // ~2.4 world units on R=480 — missile is "over" the target
-    const DESCENT_DELAY = 0.75; // Seconds for client's visual descent from cruise altitude to surface
+  _moveMissileStraight(p, dt, speedMult = 1) {
+    const prevSpeed = p.speed;
+    p.speed = MISSILE.SPEED * speedMult;
+    moveOnSphere(p, dt);
+    p.speed = prevSpeed;
+  }
 
-    // Flares can be hit during any phase (countermeasure — no dive needed)
-    if (arrivalDist < ARRIVAL_THRESHOLD && p._tgtIsFlare) {
-      const fl = this.flares[p._tgtFlareIndex];
-      if (fl) {
-        const flareOwner = this.players.get(fl.ownerId);
-        if (flareOwner) {
-          flareOwner.crypto += this.costs.flareIntercept;
+  _enterMissileLost(p) {
+    if (!p.isLost) {
+      this._queueRoomEvent("missile-lost", { missileId: p.id });
+    }
+    p.phase = 3;
+    p.isLost = true;
+    p.lostAge = 0;
+    p._phaseAge = 0;
+    p._diveAge = 0;
+    p._diving = false;
+    p._impactLocked = false;
+    this._clearMissileTarget(p);
+  }
+
+  _removeProjectileAt(projs, i) {
+    projs[i] = projs[projs.length - 1];
+    projs.pop();
+  }
+
+  _removeFlareByTarget(target) {
+    const targetId = target?.id;
+    let idx = target?.flareIndex ?? -1;
+    let fl = idx >= 0 ? this.flares[idx] : null;
+    if (!fl || !this._sameTargetId(fl.id, targetId)) {
+      fl = null;
+      for (let i = 0; i < this.flares.length; i++) {
+        if (this._sameTargetId(this.flares[i].id, targetId)) {
+          fl = this.flares[i];
+          idx = i;
+          break;
+        }
+      }
+    }
+    if (!fl || idx < 0) return null;
+    this.flares[idx] = this.flares[this.flares.length - 1];
+    this.flares.pop();
+    return fl;
+  }
+
+  _handleMissileFlareHit(p, target, i, projs) {
+    const fl = this._removeFlareByTarget(target);
+    if (!fl) return false;
+
+    const flareOwner = this.players.get(fl.ownerId);
+    if (flareOwner) {
+      flareOwner.crypto += this.costs.flareIntercept;
+    }
+
+    this._queueRoomEvent("flare-hit", {
+      flareId: fl.id,
+      flareOwnerId: fl.ownerId,
+      missileId: p.id,
+      theta: fl.theta,
+      phi: fl.phi,
+      faction: p.ownerFaction,
+    });
+    this._removeProjectileAt(projs, i);
+    return true;
+  }
+
+  _detonateMissileOnTarget(p, i, projs) {
+    const damage = p.damage || 38;
+    const tgtId = p._tgtId;
+    const isBot = typeof tgtId === "string" && tgtId.startsWith("bot-");
+
+    if (isBot) {
+      const botState = this.botBridge.getBot(tgtId);
+      const botHp = botState ? (botState.hp ?? 100) : 100;
+      const botFaction = botState ? (botState.f ?? botState.faction ?? "rust") : "rust";
+      const botName = this.botBridge.getBotName(tgtId) || "Bot";
+
+      const attacker = this.players.get(p.ownerId);
+      const attackerName = attacker ? attacker.name : "Unknown";
+      if (botState) {
+        this.botBridge.applyDamage(tgtId, damage, p.ownerId, attackerName);
+      }
+
+      if (attacker) {
+        attacker.crypto += Math.floor(damage);
+      }
+
+      this._queueRoomEvent("player-hit", {
+        targetId: tgtId,
+        attackerId: p.ownerId,
+        damage,
+        hp: Math.max(0, botHp - damage),
+        theta: p.theta,
+        phi: p.phi,
+        projectileId: p.id,
+        isMissile: true,
+      });
+
+      if (botHp - damage <= 0) {
+        this._queueRoomEvent("player-killed", {
+          victimId: tgtId,
+          killerId: p.ownerId,
+          victimFaction: botFaction,
+          killerFaction: p.ownerFaction,
+          victimName: botName,
+          killerName: attackerName,
+        });
+        if (attacker) {
+          attacker.crypto += 500;
+          attacker.killStreak = (attacker.killStreak || 0) + 1;
+          attacker.totalKills = (attacker.totalKills || 0) + 1;
+        }
+      }
+    } else {
+      const hitPlayer = this.players.get(tgtId);
+      if (hitPlayer && !hitPlayer.isDead && !hitPlayer.waitingForPortal && !(hitPlayer._portalImmuneTicks > 0)) {
+        hitPlayer.hp -= damage;
+
+        const attacker = this.players.get(p.ownerId);
+        if (attacker) {
+          const isTargetCommander = this.commanders[hitPlayer.faction]?.id === tgtId;
+          attacker.crypto += Math.floor(damage * (isTargetCommander ? 10 : 1));
         }
 
-        this._queueRoomEvent("flare-hit", {
-          flareId: fl.id,
-          flareOwnerId: fl.ownerId,
-          missileId: p.id,
-          theta: fl.theta,
-          phi: fl.phi,
-          faction: p.faction,
+        this._queueRoomEvent("player-hit", {
+          targetId: tgtId,
+          attackerId: p.ownerId,
+          damage,
+          hp: hitPlayer.hp,
+          theta: p.theta,
+          phi: p.phi,
+          projectileId: p.id,
+          isMissile: true,
         });
-        this.flares[p._tgtFlareIndex] = this.flares[this.flares.length - 1];
-        this.flares.pop();
+
+        if (hitPlayer.hp <= 0) {
+          hitPlayer.hp = 0;
+          hitPlayer.isDead = true;
+          hitPlayer.speed = 0;
+          hitPlayer._lastTicCluster = undefined;
+          hitPlayer._lastTicCryptoTics = undefined;
+
+          const killer = this.players.get(p.ownerId);
+          const killerName = killer ? killer.name : "Unknown";
+          const victimName = hitPlayer.name;
+
+          this._queueRoomEvent("player-killed", {
+            victimId: tgtId,
+            killerId: p.ownerId,
+            victimFaction: hitPlayer.faction,
+            killerFaction: p.ownerFaction,
+            victimName,
+            killerName,
+          });
+
+          this._processKillStreaks(killer, killerName, hitPlayer, victimName, p.ownerFaction, p.ownerId, tgtId);
+
+          for (const faction of FACTIONS) {
+            if (this.commanders[faction]?.id === tgtId) {
+              this.bodyguardManager.killAllForFaction(faction);
+              break;
+            }
+          }
+
+          this._markRanksDirty();
+          hitPlayer.waitingForPortal = true;
+          hitPlayer._portalReason = 'respawn';
+          setTimeout(() => this._respawnPlayer(tgtId), 10300);
+        }
       }
-      projs[i] = projs[projs.length - 1]; projs.pop();
+    }
+
+    this._removeProjectileAt(projs, i);
+  }
+
+  _updateMissileCruise(p, dt, i, projs) {
+    p.phase1Age = (p.phase1Age || 0) + dt;
+    p._phaseAge = (p._phaseAge || 0) + dt;
+
+    const flareTarget = this._findMissileFlareOverride(p);
+    const lockedTarget = this._resolveMissileLockedTarget(p);
+    const target = flareTarget || lockedTarget;
+
+    if (!target) {
+      this._enterMissileLost(p);
+      this._moveMissileStraight(p, dt);
       return;
     }
 
-    // Tell client to start visual dive when entering dive range (not for flares — they're hit instantly)
-    if (!p._diving && !p._tgtIsFlare && arrivalDist < DIVE_START_DIST) {
+    const targetChanged = this._setMissileLockedTarget(p, target);
+    this._emitMissileIncomingIfNeeded(p, targetChanged);
+
+    const entryRatio = Math.min((p.phase1Age || 0) / MISSILE.CRUISE_ENTRY_TIME, 1);
+    const turnScale = MISSILE.CRUISE_ENTRY_TURN_SCALE +
+      (1 - MISSILE.CRUISE_ENTRY_TURN_SCALE) * entryRatio;
+    this._guideMissileOnSphere(p, dt, target, turnScale, 1);
+
+    const arrivalDist = sphericalDistance(p.theta, p.phi, p._tgtTheta, p._tgtPhi);
+    if (p._tgtIsFlare) {
+      if (arrivalDist < MISSILE.FLARE_HIT_RAD) {
+        if (!this._handleMissileFlareHit(p, target, i, projs)) {
+          this._enterMissileLost(p);
+        }
+      }
+      return;
+    }
+
+    if (arrivalDist < MISSILE.DIVE_START_RAD) {
+      p.phase = 2;
+      p._phaseAge = 0;
+      p._diveAge = 0;
       p._diving = true;
+      p._impactLocked = false;
       this._queueRoomEvent("missile-dive", {
         missileId: p.id,
         targetId: p._tgtId,
       });
     }
+  }
 
-    // Lock impact when missile is directly over target — start descent timer
-    if (!p._impactLocked && arrivalDist < ARRIVAL_THRESHOLD) {
-      p._impactLocked = true;
-      p._descentAge = 0;
+  _updateMissileDive(p, dt, i, projs) {
+    p._phaseAge = (p._phaseAge || 0) + dt;
+    p._diveAge = (p._diveAge || 0) + dt;
+
+    const flareTarget = this._findMissileFlareOverride(p);
+    if (flareTarget) {
+      p.phase = 1;
+      p.phase1Age = MISSILE.CRUISE_ENTRY_TIME;
+      p._phaseAge = 0;
+      p._diveAge = 0;
+      p._diving = false;
+      p._impactLocked = false;
+      const targetChanged = this._setMissileLockedTarget(p, flareTarget);
+      this._emitMissileIncomingIfNeeded(p, targetChanged);
+      this._updateMissileCruise(p, dt, i, projs);
+      return;
     }
 
-    // Count descent timer (missile descending from cruise altitude to surface)
-    if (p._impactLocked) {
-      p._descentAge += dt;
+    const target = this._resolveMissileLockedTarget(p);
+    if (!target) {
+      this._enterMissileLost(p);
+      this._moveMissileStraight(p, dt);
+      return;
+    }
 
-      if (p._descentAge >= DESCENT_DELAY) {
-        // Descent complete — detonate and deal damage
-        const damage = p.damage || 38;
-        const tgtId = p._tgtId;
-        const isBot = typeof tgtId === "string" && tgtId.startsWith("bot-");
+    const targetChanged = this._setMissileLockedTarget(p, target);
+    this._emitMissileIncomingIfNeeded(p, targetChanged);
 
-        if (isBot) {
-          const botState = this.botBridge.getBot(tgtId);
-          const botHp = botState ? botState.hp : 100;
-          const botFaction = botState ? botState.f : "rust";
-          const botName = this.botBridge.getBotName(tgtId) || "Bot";
+    const arrivalBefore = sphericalDistance(p.theta, p.phi, p._tgtTheta, p._tgtPhi);
+    const closeTurnScale = arrivalBefore < (5 / MISSILE.R) ? 4 : 2;
+    this._guideMissileOnSphere(p, dt, target, closeTurnScale, MISSILE.DIVE_SPEED_MULT);
 
-          const attacker = this.players.get(p.ownerId);
-          const attackerName = attacker ? attacker.name : "Unknown";
-          this.botBridge.applyDamage(tgtId, damage, p.ownerId, attackerName);
+    const arrivalAfter = sphericalDistance(p.theta, p.phi, p._tgtTheta, p._tgtPhi);
+    if (p._diveAge >= MISSILE.DESCENT_DELAY && arrivalAfter < MISSILE.DIVE_START_RAD) {
+      this._detonateMissileOnTarget(p, i, projs);
+    }
+  }
 
-          if (attacker) {
-            attacker.crypto += Math.floor(damage);
-          }
+  _updateMissileLost(p, dt, i, projs) {
+    p.lostAge = (p.lostAge || 0) + dt;
+    p._phaseAge = (p._phaseAge || 0) + dt;
 
-          this._queueRoomEvent("player-hit", {
-            targetId: tgtId,
-            attackerId: p.ownerId,
-            damage,
-            hp: Math.max(0, botHp - damage),
-            theta: p.theta,
-            phi: p.phi,
-            projectileId: p.id,
-            isMissile: true,
-          });
-
-          if (botHp - damage <= 0) {
-            this._queueRoomEvent("player-killed", {
-              victimId: tgtId,
-              killerId: p.ownerId,
-              victimFaction: botFaction,
-              killerFaction: p.ownerFaction,
-              victimName: botName,
-              killerName: attackerName,
-            });
-            if (attacker) {
-              attacker.crypto += 500;
-              attacker.killStreak = (attacker.killStreak || 0) + 1;
-              attacker.totalKills = (attacker.totalKills || 0) + 1;
-            }
-          }
-        } else {
-          const hitPlayer = this.players.get(tgtId);
-          if (hitPlayer && !hitPlayer.isDead && !hitPlayer.waitingForPortal && !(hitPlayer._portalImmuneTicks > 0)) {
-            hitPlayer.hp -= damage;
-
-            const attacker = this.players.get(p.ownerId);
-            if (attacker) {
-              const isTargetCommander = this.commanders[hitPlayer.faction]?.id === tgtId;
-              attacker.crypto += Math.floor(damage * (isTargetCommander ? 10 : 1));
-            }
-
-            this._queueRoomEvent("player-hit", {
-              targetId: tgtId,
-              attackerId: p.ownerId,
-              damage,
-              hp: hitPlayer.hp,
-              theta: p.theta,
-              phi: p.phi,
-              projectileId: p.id,
-              isMissile: true,
-            });
-
-            if (hitPlayer.hp <= 0) {
-              hitPlayer.hp = 0;
-              hitPlayer.isDead = true;
-              hitPlayer.speed = 0;
-              hitPlayer._lastTicCluster = undefined;
-              hitPlayer._lastTicCryptoTics = undefined;
-
-              const killer = this.players.get(p.ownerId);
-              const killerName = killer ? killer.name : "Unknown";
-              const victimName = hitPlayer.name;
-
-              this._queueRoomEvent("player-killed", {
-                victimId: tgtId,
-                killerId: p.ownerId,
-                victimFaction: hitPlayer.faction,
-                killerFaction: p.ownerFaction,
-                victimName,
-                killerName,
-              });
-
-              this._processKillStreaks(killer, killerName, hitPlayer, victimName, p.ownerFaction, p.ownerId, tgtId);
-
-              for (const faction of FACTIONS) {
-                if (this.commanders[faction]?.id === tgtId) {
-                  this.bodyguardManager.killAllForFaction(faction);
-                  break;
-                }
-              }
-
-              this._markRanksDirty();
-              hitPlayer.waitingForPortal = true;
-              hitPlayer._portalReason = 'respawn';
-              setTimeout(() => this._respawnPlayer(tgtId), 10300);
-            }
-          }
-        }
-
-        projs[i] = projs[projs.length - 1]; projs.pop();
+    if ((p._reLockCount || 0) < 1 && p.lostAge <= MISSILE.LOST_REACQUIRE_TIME) {
+      const target = this._findMissileReacquireTarget(p);
+      if (target) {
+        p._reLockCount = (p._reLockCount || 0) + 1;
+        p.phase = 1;
+        p.phase1Age = 0;
+        p._phaseAge = 0;
+        p.isLost = false;
+        p.lostAge = 0;
+        const targetChanged = this._setMissileLockedTarget(p, target);
+        this._emitMissileIncomingIfNeeded(p, targetChanged);
+        this._updateMissileCruise(p, dt, i, projs);
+        return;
       }
     }
+
+    this._moveMissileStraight(p, dt);
+
+    if (p.lostAge >= MISSILE.LOST_MAX_AGE) {
+      this._queueRoomEvent("missile-crash", {
+        missileId: p.id,
+        theta: p.theta,
+        phi: p.phi,
+      });
+      this._removeProjectileAt(projs, i);
+    }
+  }
+
+  _updateMissileProjectile(p, dt, i, projs) {
+    this._normalizeMissileProjectile(p);
+
+    if (p.age >= MISSILE.MAX_AGE) {
+      this._queueRoomEvent("missile-crash", {
+        missileId: p.id,
+        theta: p.theta,
+        phi: p.phi,
+      });
+      this._removeProjectileAt(projs, i);
+      return;
+    }
+
+    if (p.phase === 0) {
+      if (p.age >= p.launchDuration) {
+        p.phase = 1;
+        p.phase1Age = 0;
+        p._phaseAge = 0;
+        const target = this._resolveMissileLockedTarget(p);
+        if (target) {
+          this._setMissileLockedTarget(p, target);
+          p.heading = this._computeMissileHeadingTo(p.theta, p.phi, target.theta, target.phi);
+        }
+      }
+      return;
+    }
+
+    if (p.phase === 1) {
+      this._updateMissileCruise(p, dt, i, projs);
+      return;
+    }
+
+    if (p.phase === 2) {
+      this._updateMissileDive(p, dt, i, projs);
+      return;
+    }
+
+    this._updateMissileLost(p, dt, i, projs);
   }
 
   // ---- Flare countermeasure system ----
@@ -2761,6 +2967,10 @@ class GameRoom {
     const fSp = Math.sin(player.phi), fCp = Math.cos(player.phi);
     const fSt = Math.sin(player.theta), fCt = Math.cos(player.theta);
     const fLift = R + 2;
+    const flx = fLift * fSp * fCt;
+    const flz = fLift * fSp * fSt;
+    const cosPR = Math.cos(this.planetRotation);
+    const sinPR = Math.sin(this.planetRotation);
 
     const flare = {
       id: this.nextFlareId++,
@@ -2770,9 +2980,9 @@ class GameRoom {
       phi: player.phi,
       age: 0,
       maxAge: 8,
-      wx: fLift * fSp * fSt,
+      wx: flx * cosPR + flz * sinPR,
       wy: fLift * fCp,
-      wz: fLift * fSp * fCt,
+      wz: -flx * sinPR + flz * cosPR,
     };
 
     this.flares.push(flare);
@@ -4705,8 +4915,11 @@ class GameRoom {
       if (p.type !== "missile") continue;
       const sp = Math.sin(p.phi), cp = Math.cos(p.phi);
       const st = Math.sin(p.theta), ct = Math.cos(p.theta);
-      const lift = R + (p.phase === 0 ? 2 : 8);
-      const lx = lift * sp * st, lz = lift * sp * ct;
+      const diveRatio = p.phase === 2
+        ? Math.min(1, Math.max(0, (p._diveAge || 0) / MISSILE.DESCENT_DELAY))
+        : 0;
+      const lift = p.phase === 0 ? R + 2 : R + 8 * (1 - diveRatio);
+      const lx = lift * sp * ct, lz = lift * sp * st;
       const hasTarget = !!p._hasTarget && !!p._tgtId;
       const tgtTheta = hasTarget ? (p._tgtTheta ?? 0) : 0;
       const tgtPhi = hasTarget ? (p._tgtPhi ?? 0) : 0;
@@ -4721,7 +4934,7 @@ class GameRoom {
       const fsp = Math.sin(fl.phi), fcp = Math.cos(fl.phi);
       const fst = Math.sin(fl.theta), fct = Math.cos(fl.theta);
       const fLift = R + 2;
-      const flx = fLift * fsp * fst, flz = fLift * fsp * fct;
+      const flx = fLift * fsp * fct, flz = fLift * fsp * fst;
       flArr.push(fl.id, FACTION_IDX[fl.ownerFaction] || 0,
         flx * cosPR + flz * sinPR, fLift * fcp, -flx * sinPR + flz * cosPR,
         fl.ownerId);

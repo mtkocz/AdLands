@@ -437,10 +437,19 @@ class FlareSystem {
   spawnRemoteFlare(data) {
     if (this._effectsSuspended || document.hidden) return;
 
-    const R = this.R + 2;
-    const sp = Math.sin(data.phi), cp = Math.cos(data.phi);
-    const st = Math.sin(data.theta), ct = Math.cos(data.theta);
-    const pos = new THREE.Vector3(R * sp * st, R * cp, R * sp * ct);
+    let pos;
+    if (
+      Number.isFinite(data?.wx) &&
+      Number.isFinite(data?.wy) &&
+      Number.isFinite(data?.wz)
+    ) {
+      pos = new THREE.Vector3(data.wx, data.wy, data.wz);
+    } else {
+      const R = this.R + 2;
+      const sp = Math.sin(data.phi), cp = Math.cos(data.phi);
+      const st = Math.sin(data.theta), ct = Math.cos(data.theta);
+      pos = new THREE.Vector3(R * sp * ct, R * cp, R * sp * st);
+    }
     const normal = pos.clone().normalize();
 
     const flare = this._createFlareVisual(pos, normal, data.ownerFaction, false);

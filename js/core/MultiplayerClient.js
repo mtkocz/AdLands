@@ -1013,7 +1013,7 @@
         const R = 480 + 8; // Cruise altitude
         const sp = Math.sin(data.phi), cp = Math.cos(data.phi);
         const st = Math.sin(data.theta), ct = Math.cos(data.theta);
-        const lx = R * sp * st, lz = R * sp * ct;
+        const lx = R * sp * ct, lz = R * sp * st;
         const pr = mp.planet?.hexGroup?.rotation.y || 0;
         const cpr = Math.cos(pr), spr = Math.sin(pr);
         _hitWorldPos.set(lx * cpr + lz * spr, R * cp, -lx * spr + lz * cpr);
