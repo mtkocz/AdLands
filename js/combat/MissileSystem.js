@@ -29,6 +29,7 @@ class MissileSystem {
       cost: 5,                 // Crypto cost per missile (same as cannon base)
       damage: 38,              // 25 * 1.5 missile multiplier
       missileSpeed: 0.1536,    // World units per frame (80% of tank top speed: 0.0004 * 480 * 0.8)
+      serverRepresentationDistance: 400, // Only nearby server missiles need full client visuals
       launchDuration: 0.5,     // Seconds in vertical launch phase
       cruiseAltitude: 8,       // World units above surface
       diveDistance: 10,         // Start dive when within this distance
@@ -505,6 +506,9 @@ class MissileSystem {
 
   _resolveRemoteMissileOwner(ownerId) {
     if (!ownerId) return null;
+    if (ownerId === window._mpState?.net?.playerId) {
+      return this.playerTank;
+    }
     if (window._mpState?.remoteTanks) {
       const remoteTank = window._mpState.remoteTanks.get(ownerId);
       if (remoteTank) return remoteTank;
@@ -521,6 +525,39 @@ class MissileSystem {
   _cacheServerMissileState(serverId, snapshot) {
     if (serverId == null || !snapshot) return;
     this._latestServerMissileState.set(serverId, snapshot);
+  }
+
+  _shouldRepresentServerMissile({ targetId = null, wx, wy, wz } = {}) {
+    if (targetId === "local" || targetId === window._mpState?.net?.playerId) {
+      return true;
+    }
+    const playerPos = this.playerTank?.group?._cachedWorldPos || this.playerTank?.group?.position;
+    if (!playerPos) return true;
+    if (!Number.isFinite(wx) || !Number.isFinite(wy) || !Number.isFinite(wz)) return true;
+    const maxDist = this.config.serverRepresentationDistance || 400;
+    const dx = wx - playerPos.x;
+    const dy = wy - playerPos.y;
+    const dz = wz - playerPos.z;
+    return (dx * dx + dy * dy + dz * dz) <= maxDist * maxDist;
+  }
+
+  playLocalMissileLaunchEffects(tank = this.playerTank) {
+    if (this._effectsSuspended || document.hidden || !tank?.group) return;
+    const tankPos = tank.group._cachedWorldPos || tank.group.position;
+    if (!tankPos) return;
+
+    if (this.dustShockwave) {
+      this.dustShockwave.emit(tankPos, 0.4);
+    }
+    if (this.gameCamera) {
+      this.gameCamera.triggerShake(tankPos, tankPos, 0.3, 100);
+    }
+    if (tank.triggerRecoil) tank.triggerRecoil();
+
+    if (window.cryptoVisuals) {
+      tank.group.getWorldPosition(this._tempVec);
+      window.cryptoVisuals._spawnFloatingNumber(-this.config.cost, this._tempVec);
+    }
   }
 
   _ensureRemoteMissileVisual(missile) {
@@ -919,6 +956,17 @@ class MissileSystem {
       if (stats.totalCrypto < this.config.cost) return;
     }
 
+    if (window.networkManager?.isMultiplayer) {
+      this._lastFireTime = now;
+      if (window._mp?.onMissileFire) {
+        window._mp.onMissileFire(
+          tank.state.turretAngle,
+          this._currentSearchRadius
+        );
+      }
+      return;
+    }
+
     // Spawn local visual missile
     const tankPos =
       tank.group._cachedWorldPos || tank.group.position;
@@ -979,6 +1027,9 @@ class MissileSystem {
         existing._alwaysVisible = existing._alwaysVisible ||
           data.targetId === "local" ||
           data.targetId === window._mpState?.net?.playerId;
+        if (data.targetTheta !== undefined && data.targetPhi !== undefined) {
+          this._setMissileSpawnTarget(existing, data);
+        }
       }
       if (data.wx !== undefined && data.wy !== undefined && data.wz !== undefined) {
         if (!existing._serverPos) existing._serverPos = new THREE.Vector3();
@@ -986,6 +1037,10 @@ class MissileSystem {
         existing._remoteHasSync = true;
       }
       return true;
+    }
+
+    if (!this._shouldRepresentServerMissile(data)) {
+      return false;
     }
 
     const initialPhase = Math.min(2, Math.max(0, data._initialPhase || 0));
@@ -1057,7 +1112,6 @@ class MissileSystem {
     for (let i = 0; i < mlArr.length; i += STRIDE) {
       const id = mlArr[i];
       const ownerId = mlArr[i + 7];
-      if (ownerId === localPlayerId) continue;
       serverIds.add(id);
       const targetId = mlArr[i + 6] || null;
       const targetTheta = mlArr[i + 8];

@@ -908,38 +908,43 @@
 
     };
 
-    net.onPlayerFired = (data) => {
-      if (data.id === net.playerId) {
-        // Assign server projectile ID to our local projectile so it can be
-        // removed by removeProjectileByServerId on server-confirmed hits
-        if (data.type === "missile") {
-          window.missileSystem?.assignServerIdToLocal?.(data.projectileId, data.targetId);
-          // Show warning for our own missile targeting us (edge case: reflected)
-        } else if (data.projectileId != null) {
-          cannonSystem.assignServerIdToLocal?.(data.projectileId);
-        }
-        return;
-      }
-
-      let remoteTank = remoteTanks.get(data.id);
-      if (!remoteTank && window.botTanks?.bots) {
+    const resolveFiringTank = (playerId) => {
+      if (playerId === net.playerId) return tank;
+      let resolvedTank = remoteTanks.get(playerId);
+      if (!resolvedTank && window.botTanks?.bots) {
         for (const bot of window.botTanks.bots) {
-          if (bot && bot.id === data.id) {
-            remoteTank = bot;
+          if (bot && bot.id === playerId) {
+            resolvedTank = bot;
             break;
           }
         }
       }
+      return resolvedTank || null;
+    };
 
+    net.onPlayerFired = (data) => {
       if (data.type === "missile") {
+        const ownerTank = resolveFiringTank(data.id);
+        if (data.id === net.playerId && window.missileSystem) {
+          window.missileSystem.playLocalMissileLaunchEffects?.(tank);
+        }
         if (window.missileSystem) {
-          window.missileSystem.spawnRemoteMissile?.(data, remoteTank);
+          window.missileSystem.spawnRemoteMissile?.(data, ownerTank);
         }
         if (data.targetId === net.playerId && window.missileSystem) {
           window.missileSystem.showIncomingWarning();
         }
         return;
       }
+
+      if (data.id === net.playerId) {
+        if (data.projectileId != null) {
+          cannonSystem.assignServerIdToLocal?.(data.projectileId);
+        }
+        return;
+      }
+
+      const remoteTank = resolveFiringTank(data.id);
 
       // Skip fire effects from tanks not visible on screen: no remoteTank, hidden
       // by LOD/backface/frustum culling, dead, or still fading in from spawn.
@@ -2158,6 +2163,7 @@
       const actionLabels = {
         'fast-travel': 'fast travel',
         'fire': 'firing',
+        'missile': 'firing missile',
         'flare': 'deploying flare',
         'level-up': 'leveling up',
         'unlock-slot': 'unlocking slot',
