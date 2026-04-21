@@ -4005,8 +4005,13 @@
         const srv = sd.mlItems || 0;
         const sp = sd.mlSpawned || 0;
         const sk = sd.mlSkipped || 0;
-        if (srv > 0 || rm > 0 || ml > 0 || sp > 0) {
-          pingCounter.textContent += " | ML:" + ml + " RM:" + rm + " SRV:" + srv + " SP:" + sp + " SK:" + sk;
+        const lr = sd.localMissileFireRequests || 0;
+        const lf = sd.localMissileFireEvents || 0;
+        const ls = sd.localMissileSpawned || 0;
+        const lsf = sd.localMissileSpawnFailed || 0;
+        const np = sd.missileSpawnNoPool || sd.missileCriticalNoPool || 0;
+        if (srv > 0 || rm > 0 || ml > 0 || sp > 0 || lr > 0 || lf > 0 || lsf > 0 || np > 0) {
+          pingCounter.textContent += " | ML:" + ml + " RM:" + rm + " SRV:" + srv + " SP:" + sp + " SK:" + sk + " LR:" + lr + " LF:" + lf + " LS:" + ls + " LSF:" + lsf + " NP:" + np;
         }
         if (sd.lastErr) {
           pingCounter.textContent += " ERR:" + sd.lastErr;
@@ -4117,7 +4122,7 @@
       isHumanCommander,
       isLocalPlayer: true,
       forceOrbitalDot: isOrbitalView && isLowDetailView,
-      forceSurfaceDetail: isDescending && !isLowDetailView,
+      forceSurfaceDetail: !isDescending && !isLowDetailView,
       showCommanderTrim,
       viewerFaction: playerFaction,
       commanderSystem,
@@ -4125,13 +4130,13 @@
     };
 
     // Update tank LOD after camera update so distance is current frame's position.
-    // During descent, keep the orbital dot above the 71-unit cutoff.
-    // The moment the camera drops below that cutoff, reveal the real tank and
-    // switch it to full detail immediately instead of waiting for transition end.
-    if (lodOptions.forceSurfaceDetail && tank._hidden) {
-      tank.setVisible(true);
+    // During descent, keep the orbital dot above the 71-unit cutoff, then keep
+    // the local tank fully hidden until FastTravel reveals it at final height.
+    if (isDescending && !isLowDetailView) {
+      tank.setVisible(false);
+    } else {
+      tank.updateLOD(camera, sharedFrustum, lodOptions);
     }
-    tank.updateLOD(camera, sharedFrustum, lodOptions);
 
     // Pass LOD options to botTanks for commander dot mode
     botTanks.setLODOptions(lodOptions);

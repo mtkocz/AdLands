@@ -29,7 +29,7 @@ class MissileSystem {
       cost: 5,                 // Crypto cost per missile (same as cannon base)
       damage: 38,              // 25 * 1.5 missile multiplier
       missileSpeed: 0.1536,    // World units per frame (80% of tank top speed: 0.0004 * 480 * 0.8)
-      serverRepresentationDistance: 700, // Only reasonably nearby server missiles need full client visuals
+      serverRepresentationDistance: 1200, // Broad safety radius; local-owned/targeted missiles are never culled
       launchDuration: 0.5,     // Seconds in vertical launch phase
       cruiseAltitude: 8,       // World units above surface
       diveDistance: 10,         // Start dive when within this distance
@@ -188,12 +188,14 @@ class MissileSystem {
       } else {
         // Recycle the farthest REMOTE missile from camera (least visible)
         // Never recycle local player's own missiles or missiles targeting them
-        const localId = window._mpState?.net?.playerId;
+        const localId = this._getLocalPlayerId();
         let bestDist = -1;
         let bestMissile = null;
         for (const m of this.missiles) {
           if (!m.poolItem) continue;
           if (!m.isRemote) continue;
+          if (m._alwaysVisible) continue;
+          if (localId && m.ownerId === localId) continue;
           if (m.serverTargetId === "local" || (localId && m.serverTargetId === localId)) continue;
           if ((m._camDist || 0) > bestDist) {
             bestDist = m._camDist || 0;
@@ -472,8 +474,9 @@ class MissileSystem {
       if (typeof flareId === "string" && flareId !== "" && /^\d+$/.test(flareId)) {
         flareId = Number(flareId);
       }
+      const localPlayerId = this._getLocalPlayerId();
       let tank = null;
-      if (serverTargetId === "local" || serverTargetId === window._mpState?.net?.playerId) {
+      if (serverTargetId === "local" || serverTargetId === localPlayerId) {
         tank = this.playerTank;
       } else if (window._mpState?.remoteTanks) {
         tank = window._mpState.remoteTanks.get(serverTargetId);
@@ -504,9 +507,37 @@ class MissileSystem {
     }
   }
 
+  _getLocalPlayerId() {
+    return window.networkManager?.playerId || window._mpState?.net?.playerId || null;
+  }
+
+  _getMissileDiag() {
+    if (!window._syncDiag) {
+      window._syncDiag = {
+        mlCalls: 0,
+        mlItems: 0,
+        flCalls: 0,
+        flItems: 0,
+        remoteMissiles: 0,
+        remoteFlares: 0,
+        mlSpawned: 0,
+        mlSkipped: 0,
+        lastErr: null,
+      };
+    }
+    return window._syncDiag;
+  }
+
+  _isLocalMissileVisibilityCritical(ownerId, targetId, ownerTank = null, localPlayerId = this._getLocalPlayerId()) {
+    return ownerTank === this.playerTank ||
+      (localPlayerId && ownerId === localPlayerId) ||
+      targetId === "local" ||
+      (localPlayerId && targetId === localPlayerId);
+  }
+
   _resolveRemoteMissileOwner(ownerId) {
     if (!ownerId) return null;
-    if (ownerId === window._mpState?.net?.playerId) {
+    if (ownerId === this._getLocalPlayerId()) {
       return this.playerTank;
     }
     if (window._mpState?.remoteTanks) {
@@ -527,11 +558,10 @@ class MissileSystem {
     this._latestServerMissileState.set(serverId, snapshot);
   }
 
-  _shouldRepresentServerMissile({ targetId = null, ownerId = null, wx, wy, wz } = {}, ownerTank = null) {
-    if (targetId === "local" || targetId === window._mpState?.net?.playerId) {
-      return true;
-    }
-    if (ownerId === window._mpState?.net?.playerId || ownerTank === this.playerTank) {
+  _shouldRepresentServerMissile({ targetId = null, ownerId = null, wx, wy, wz, _forceRepresent = false } = {}, ownerTank = null) {
+    if (_forceRepresent) return true;
+    const localPlayerId = this._getLocalPlayerId();
+    if (this._isLocalMissileVisibilityCritical(ownerId, targetId, ownerTank, localPlayerId)) {
       return true;
     }
     if (ownerTank?.group?.visible) {
@@ -595,6 +625,7 @@ class MissileSystem {
     const owner = this._resolveRemoteMissileOwner(snapshot.ownerId);
     const spawned = this.spawnRemoteMissile({
       projectileId,
+      ownerId: snapshot.ownerId,
       faction: snapshot.faction,
       targetId: overrides.targetId ?? snapshot.targetId,
       targetTheta: overrides.targetTheta ?? snapshot.targetTheta,
@@ -603,6 +634,7 @@ class MissileSystem {
       wx: overrides.wx ?? snapshot.wx,
       wy: overrides.wy ?? snapshot.wy,
       wz: overrides.wz ?? snapshot.wz,
+      _forceRepresent: overrides._forceRepresent,
       _startFromServerPos: true,
       _initialPhase: overrides.initialPhase ?? snapshot.phase,
     }, owner);
@@ -972,6 +1004,8 @@ class MissileSystem {
 
     if (window.networkManager?.isMultiplayer) {
       this._lastFireTime = now;
+      const diag = this._getMissileDiag();
+      diag.localMissileFireRequests = (diag.localMissileFireRequests || 0) + 1;
       if (window._mp?.onMissileFire) {
         window._mp.onMissileFire(
           tank.state.turretAngle,
@@ -1031,17 +1065,32 @@ class MissileSystem {
 
   // Spawn visual-only missile from remote player
   spawnRemoteMissile(data, remoteTank) {
-    if (this._effectsSuspended || document.hidden) return false;
+    const diag = this._getMissileDiag();
+    diag.missileSpawnAttempts = (diag.missileSpawnAttempts || 0) + 1;
+    if (!data || data.projectileId == null) {
+      diag.missileSpawnInvalid = (diag.missileSpawnInvalid || 0) + 1;
+      return false;
+    }
+    if (this._effectsSuspended || document.hidden) {
+      diag.missileSpawnSuppressed = (diag.missileSpawnSuppressed || 0) + 1;
+      return false;
+    }
     if (!this._missileIndex) this._missileIndex = new Map();
     const existing = this._missileIndex.get(data.projectileId);
+    const localPlayerId = this._getLocalPlayerId();
+    const eventOwnerId = data.ownerId || data.id || null;
+    const visibilityCritical = !!data._forceRepresent ||
+      this._isLocalMissileVisibilityCritical(eventOwnerId, data.targetId, remoteTank, localPlayerId);
+    if (visibilityCritical) {
+      diag.missileCriticalAttempts = (diag.missileCriticalAttempts || 0) + 1;
+    }
     if (existing) {
+      diag.missileSpawnExisting = (diag.missileSpawnExisting || 0) + 1;
       existing._lastServerSync = performance.now();
+      existing.ownerId = eventOwnerId || existing.ownerId || null;
+      existing._alwaysVisible = existing._alwaysVisible || visibilityCritical;
       if (data.targetId != null) {
         existing.serverTargetId = data.targetId;
-        existing._alwaysVisible = existing._alwaysVisible ||
-          remoteTank === this.playerTank ||
-          data.targetId === "local" ||
-          data.targetId === window._mpState?.net?.playerId;
         if (data.targetTheta !== undefined && data.targetPhi !== undefined) {
           this._setMissileSpawnTarget(existing, data);
         }
@@ -1051,10 +1100,16 @@ class MissileSystem {
         existing._serverPos.set(data.wx, data.wy, data.wz);
         existing._remoteHasSync = true;
       }
+      if (visibilityCritical && !this._ensureRemoteMissileVisual(existing)) {
+        diag.missileCriticalNoPool = (diag.missileCriticalNoPool || 0) + 1;
+        return false;
+      }
       return true;
     }
 
     if (!this._shouldRepresentServerMissile(data, remoteTank)) {
+      diag.missileSpawnSkipped = (diag.missileSpawnSkipped || 0) + 1;
+      if (visibilityCritical) diag.missileCriticalSkipped = (diag.missileCriticalSkipped || 0) + 1;
       return false;
     }
 
@@ -1091,12 +1146,16 @@ class MissileSystem {
       serverTargetId: data.targetId || null,
       targetData: data,
       initialPhase,
-      alwaysVisible:
-        remoteTank === this.playerTank ||
-        data.targetId === "local" ||
-        data.targetId === window._mpState?.net?.playerId,
+      alwaysVisible: visibilityCritical,
     });
-    if (!missile) return false;
+    if (!missile) {
+      diag.missileSpawnNoPool = (diag.missileSpawnNoPool || 0) + 1;
+      if (visibilityCritical) diag.missileCriticalNoPool = (diag.missileCriticalNoPool || 0) + 1;
+      return false;
+    }
+    missile.ownerId = eventOwnerId;
+    diag.missileSpawned = (diag.missileSpawned || 0) + 1;
+    if (visibilityCritical) diag.missileCriticalSpawned = (diag.missileCriticalSpawned || 0) + 1;
     missile._serverPos = useServerStart ? serverStartPos.clone() : null;
     missile._remoteHasSync = !!useServerStart;
     missile._lastServerSync = performance.now();
@@ -1116,10 +1175,13 @@ class MissileSystem {
 
     const FACTIONS = ["rust", "cobalt", "viridian"];
     const STRIDE = 11;
+    const effectiveLocalPlayerId = localPlayerId || this._getLocalPlayerId();
 
-    const diag = window._syncDiag || (window._syncDiag = { mlCalls: 0, mlItems: 0, flCalls: 0, flItems: 0, remoteMissiles: 0, remoteFlares: 0, mlSpawned: 0, mlSkipped: 0, lastErr: null });
+    const diag = this._getMissileDiag();
     diag.mlCalls++;
     diag.mlItems = mlArr.length / STRIDE;
+    diag.mlLocalItems = 0;
+    diag.mlTargetingLocal = 0;
     diag.remoteMissiles = this._missileIndex ? this._missileIndex.size : 0;
 
     if (!this._missileIndex) this._missileIndex = new Map();
@@ -1128,8 +1190,13 @@ class MissileSystem {
     for (let i = 0; i < mlArr.length; i += STRIDE) {
       const id = mlArr[i];
       const ownerId = mlArr[i + 7];
+      const isLocalOwner = ownerId === effectiveLocalPlayerId;
       serverIds.add(id);
       const targetId = mlArr[i + 6] || null;
+      const targetsLocal = targetId === "local" || targetId === effectiveLocalPlayerId;
+      const forceRepresent = isLocalOwner || targetsLocal;
+      if (isLocalOwner) diag.mlLocalItems++;
+      if (targetsLocal) diag.mlTargetingLocal++;
       const targetTheta = mlArr[i + 8];
       const targetPhi = mlArr[i + 9];
       const targetFlags = mlArr[i + 10] || 0;
@@ -1152,6 +1219,7 @@ class MissileSystem {
       if (existing) {
         existing._lastServerSync = performance.now();
         existing._remoteHasSync = true;
+        existing.ownerId = ownerId || existing.ownerId || null;
         const newTargetId = targetId;
         if (newTargetId !== existing.serverTargetId) {
           existing.serverTargetId = newTargetId;
@@ -1160,9 +1228,9 @@ class MissileSystem {
           this._setMissileSpawnTarget(existing, { targetId: newTargetId });
         }
         existing._alwaysVisible = existing._alwaysVisible ||
-          ownerId === localPlayerId ||
+          isLocalOwner ||
           newTargetId === "local" ||
-          newTargetId === window._mpState?.net?.playerId;
+          newTargetId === effectiveLocalPlayerId;
         const newFaction = faction || existing.faction || "rust";
         if (newFaction !== existing.faction) {
           existing.faction = newFaction;
@@ -1205,6 +1273,7 @@ class MissileSystem {
           wx,
           wy,
           wz,
+          _forceRepresent: forceRepresent,
         }, this._resolveRemoteMissileOwner(ownerId)) && !existing.poolItem) {
           this._ensureRemoteMissileVisual(existing);
         }
@@ -1217,11 +1286,13 @@ class MissileSystem {
       const owner = this._resolveRemoteMissileOwner(ownerId);
       const shouldLateSpawn =
         serverPhase <= 2 ||
+        isLocalOwner ||
         targetId === "local" ||
-        targetId === window._mpState?.net?.playerId;
+        targetId === effectiveLocalPlayerId;
       if (shouldLateSpawn) {
         const spawned = this.spawnRemoteMissile({
           projectileId: id,
+          ownerId,
           faction,
           targetId,
           targetTheta,
@@ -1230,6 +1301,7 @@ class MissileSystem {
           wx: mlArr[i + 3],
           wy: mlArr[i + 4],
           wz: mlArr[i + 5],
+          _forceRepresent: forceRepresent,
           _startFromServerPos: true,
           _initialPhase: serverPhase,
         }, owner);
@@ -1766,7 +1838,7 @@ class MissileSystem {
 
   _updateMissile(m, dt) {
     const dt60 = dt * 60;
-    const farAway = m._camDist > 400 && !m._alwaysVisible;
+    const farAway = m._camDist > this.config.serverRepresentationDistance && !m._alwaysVisible;
 
     // Skip if missile was forced to a post-launch phase before direction was initialized
     if (m.phase > 0 && !m.direction) {

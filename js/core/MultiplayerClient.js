@@ -925,11 +925,27 @@
     net.onPlayerFired = (data) => {
       if (data.type === "missile") {
         const ownerTank = resolveFiringTank(data.id);
+        const isLocalOwner = data.id === net.playerId;
+        const targetsLocal = data.targetId === net.playerId;
+        const diag = window._syncDiag || (window._syncDiag = {});
+        diag.missileFireEvents = (diag.missileFireEvents || 0) + 1;
+        if (isLocalOwner) diag.localMissileFireEvents = (diag.localMissileFireEvents || 0) + 1;
         if (data.id === net.playerId && window.missileSystem) {
           window.missileSystem.playLocalMissileLaunchEffects?.(tank);
         }
         if (window.missileSystem) {
-          window.missileSystem.spawnRemoteMissile?.(data, ownerTank);
+          const spawned = window.missileSystem.spawnRemoteMissile?.({
+            ...data,
+            ownerId: data.ownerId || data.id,
+            _forceRepresent: isLocalOwner || targetsLocal,
+          }, ownerTank);
+          if (spawned) {
+            diag.missileFireEventSpawned = (diag.missileFireEventSpawned || 0) + 1;
+            if (isLocalOwner) diag.localMissileSpawned = (diag.localMissileSpawned || 0) + 1;
+          } else {
+            diag.missileFireEventSpawnFailed = (diag.missileFireEventSpawnFailed || 0) + 1;
+            if (isLocalOwner) diag.localMissileSpawnFailed = (diag.localMissileSpawnFailed || 0) + 1;
+          }
         }
         if (data.targetId === net.playerId && window.missileSystem) {
           window.missileSystem.showIncomingWarning();
