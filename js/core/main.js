@@ -4115,6 +4115,8 @@
     const lodOptions = {
       isOrbitalView,
       isHumanCommander,
+      isLocalPlayer: true,
+      forceOrbitalDot: isOrbitalView && isLowDetailView,
       showCommanderTrim,
       viewerFaction: playerFaction,
       commanderSystem,

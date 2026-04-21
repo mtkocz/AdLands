@@ -876,6 +876,8 @@ class Tank {
     this.lodDot.visible = false;
     this.lodDot.castShadow = false; // Don't cast shadows
     this.lodDot.receiveShadow = false;
+    this.lodDot.frustumCulled = false; // Billboarded in shader; default bounds culling is unreliable
+    this.lodDot.renderOrder = 10;
     this.group.add(this.lodDot);
 
     // Custom raycast for billboarded dot (shader moves geometry, so use sphere check)
@@ -928,6 +930,8 @@ class Tank {
     this.lodDotOutline.visible = false;
     this.lodDotOutline.castShadow = false;
     this.lodDotOutline.receiveShadow = false;
+    this.lodDotOutline.frustumCulled = false;
+    this.lodDotOutline.renderOrder = 11;
     this.group.add(this.lodDotOutline);
   }
 
@@ -1892,6 +1896,8 @@ Tank._lodTemp = {
  * @param {boolean} options.isOrbitalView - Whether camera is in orbital/fast travel mode
  * @param {boolean} options.isHumanCommander - Whether the human player is a commander
  * @param {boolean} options.showCommanderTrim - Whether commander trim should render at this camera altitude
+ * @param {boolean} options.isLocalPlayer - Whether this tank is the local player's tank
+ * @param {boolean} options.forceOrbitalDot - Whether to force the local player's orbital dot on
  * @param {Object} options.commanderSystem - Reference to commanderSystem for checking commanders
  * @returns {boolean} Whether tank is visible
  */
@@ -1901,7 +1907,14 @@ Tank.updateTankLOD = function (
   frustum = null,
   options = {},
 ) {
-  const { isOrbitalView, isHumanCommander, showCommanderTrim, commanderSystem } = options;
+  const {
+    isOrbitalView,
+    isHumanCommander,
+    showCommanderTrim,
+    isLocalPlayer = false,
+    forceOrbitalDot = false,
+    commanderSystem,
+  } = options;
   const temp = Tank._lodTemp;
   const tankWorldPos = temp.tankWorldPos;
   const surfaceNormal = temp.surfaceNormal;
@@ -1924,14 +1937,14 @@ Tank.updateTankLOD = function (
 
   // Threshold varies: more lenient for close tanks
   const backfaceThreshold = distanceToCamera > LOD_DISTANCE ? 0.15 : 0.3;
-  if (dotProduct > backfaceThreshold) {
+  if (!forceOrbitalDot && dotProduct > backfaceThreshold) {
     tank.group.visible = false;
     tank._lodState = -1;
     return false;
   }
 
   // Frustum culling (if frustum provided)
-  if (frustum) {
+  if (!forceOrbitalDot && frustum) {
     boundingSphere.center.copy(tankWorldPos);
     if (!frustum.intersectsSphere(boundingSphere)) {
       tank.group.visible = false;
@@ -1942,7 +1955,11 @@ Tank.updateTankLOD = function (
 
   // Screen-space size culling for very distant tanks
   const apparentSize = (5 / distanceToCamera) * 1000;
-  if (distanceToCamera > LOD_DISTANCE && apparentSize < MIN_SCREENSPACE) {
+  if (
+    !forceOrbitalDot &&
+    distanceToCamera > LOD_DISTANCE &&
+    apparentSize < MIN_SCREENSPACE
+  ) {
     tank.group.visible = false;
     tank._lodState = -1;
     return false;
@@ -1955,11 +1972,14 @@ Tank.updateTankLOD = function (
   const viewerFaction = options.viewerFaction;
   const isSameFaction =
     tank.faction && viewerFaction && tank.faction === viewerFaction;
+  const isFriendlyOrSelf = isSameFaction || isLocalPlayer;
 
   // LOD switching: 100+ = box, 200+ = dot (when applicable)
   const useLOD = distanceToCamera > LOD_DISTANCE;
   // Dots at 200+: commanders see ALL tanks, others see only friendlies
-  const useDot = distanceToCamera > DOT_DISTANCE && (isHumanCommander || isSameFaction);
+  const useDot =
+    forceOrbitalDot ||
+    (distanceToCamera > DOT_DISTANCE && (isHumanCommander || isFriendlyOrSelf));
 
   // Store LOD state for instanced rendering (0=detail, 1=box, 2=dot, -1=hidden)
   const useSimplified = useLOD || useDot;
