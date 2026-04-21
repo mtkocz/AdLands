@@ -2431,6 +2431,11 @@ class GameRoom {
     }
 
     if (!p._hasTarget) {
+      p.targetId = "";
+      p._tgtId = "";
+      p._tgtIsFlare = false;
+      p._tgtFlareIndex = -1;
+      p._tgtOwnerId = null;
       // No targets in range — start or continue wobble timer
       p.lostAge = (p.lostAge || 0) + dt;
       if (p.lostAge >= 5) {
@@ -2446,6 +2451,8 @@ class GameRoom {
       // Emit wobble event once (when first losing target)
       if (!p.isLost) {
         p.isLost = true;
+        p._diving = false;
+        p._impactLocked = false;
         this._queueRoomEvent("missile-lost", {
           missileId: p.id,
         });
@@ -4624,12 +4631,13 @@ class GameRoom {
       const st = Math.sin(p.theta), ct = Math.cos(p.theta);
       const lift = R + (p.phase === 0 ? 2 : 8);
       const lx = lift * sp * st, lz = lift * sp * ct;
-      const tgtTheta = p._tgtTheta ?? 0;
-      const tgtPhi = p._tgtPhi ?? 0;
-      const tgtFlags = p._tgtIsFlare ? 1 : 0;
+      const hasTarget = !!p._hasTarget && !!p._tgtId;
+      const tgtTheta = hasTarget ? (p._tgtTheta ?? 0) : 0;
+      const tgtPhi = hasTarget ? (p._tgtPhi ?? 0) : 0;
+      const tgtFlags = hasTarget && p._tgtIsFlare ? 1 : 0;
       mlArr.push(p.id, FACTION_IDX[p.ownerFaction] || 0, p.phase,
         lx * cosPR + lz * sinPR, lift * cp, -lx * sinPR + lz * cosPR,
-        p.targetId || "", p.ownerId, tgtTheta, tgtPhi, tgtFlags);
+        hasTarget ? (p.targetId || p._tgtId || "") : "", p.ownerId, tgtTheta, tgtPhi, tgtFlags);
     }
     const flArr = [];
     for (let i = 0; i < this.flares.length; i++) {

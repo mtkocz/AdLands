@@ -690,6 +690,15 @@ class MissileSystem {
   }
 
   _resolveMissileTrackedTarget(missile) {
+    if (missile.isRemote && missile._serverTargetWorldPos) {
+      return {
+        tank: missile.targetTank || null,
+        worldPos: missile._serverTargetWorldPos.clone(),
+        distance: missile._serverTargetWorldPos.distanceTo(missile.position),
+        isFlare: !!missile._serverTargetIsFlare,
+      };
+    }
+
     if (missile.serverTargetId != null) {
       const serverTarget = this._resolveServerTarget(missile.serverTargetId);
       if (serverTarget) return serverTarget;
@@ -718,8 +727,45 @@ class MissileSystem {
     return null;
   }
 
+  _setMissileTargetFromServerCoords(missile, targetData) {
+    if (
+      !Number.isFinite(targetData?.targetTheta) ||
+      !Number.isFinite(targetData?.targetPhi)
+    ) {
+      return false;
+    }
+
+    const sp = Math.sin(targetData.targetPhi);
+    const cp = Math.cos(targetData.targetPhi);
+    const st = Math.sin(targetData.targetTheta);
+    const ct = Math.cos(targetData.targetTheta);
+    const targetSurfaceR = this.sphereRadius;
+    const lx = targetSurfaceR * sp * st;
+    const lz = targetSurfaceR * sp * ct;
+    const pr = this.planet?.hexGroup?.rotation.y || 0;
+    const cpr = Math.cos(pr);
+    const spr = Math.sin(pr);
+    missile._serverTargetWorldPos = new THREE.Vector3(
+      lx * cpr + lz * spr,
+      targetSurfaceR * cp,
+      -lx * spr + lz * cpr,
+    );
+    missile._serverTargetIsFlare = !!targetData.targetIsFlare;
+
+    const resolvedTarget = targetData.targetId != null
+      ? this._resolveServerTarget(targetData.targetId)
+      : null;
+    missile.targetTank = resolvedTarget?.tank || null;
+    missile.targetFaction = resolvedTarget?.tank?.faction || null;
+    return true;
+  }
+
   _setMissileSpawnTarget(missile, targetData) {
     if (!missile || !targetData) return;
+    if (missile.isRemote && this._setMissileTargetFromServerCoords(missile, targetData)) {
+      return;
+    }
+
     const resolvedTarget = targetData.targetId != null
       ? this._resolveServerTarget(targetData.targetId)
       : null;
@@ -740,24 +786,7 @@ class MissileSystem {
       return;
     }
 
-    if (targetData.targetTheta !== undefined && targetData.targetPhi !== undefined) {
-      const sp = Math.sin(targetData.targetPhi);
-      const cp = Math.cos(targetData.targetPhi);
-      const st = Math.sin(targetData.targetTheta);
-      const ct = Math.cos(targetData.targetTheta);
-      const targetSurfaceR = this.sphereRadius;
-      const lx = targetSurfaceR * sp * st;
-      const lz = targetSurfaceR * sp * ct;
-      const pr = this.planet?.hexGroup?.rotation.y || 0;
-      const cpr = Math.cos(pr);
-      const spr = Math.sin(pr);
-      missile._serverTargetWorldPos = new THREE.Vector3(
-        lx * cpr + lz * spr,
-        targetSurfaceR * cp,
-        -lx * spr + lz * cpr,
-      );
-      missile._serverTargetIsFlare = !!targetData.targetIsFlare;
-    }
+    this._setMissileTargetFromServerCoords(missile, targetData);
   }
 
   _setMissileInitialDirection(missile) {
