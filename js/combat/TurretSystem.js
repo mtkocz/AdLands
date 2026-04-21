@@ -330,7 +330,17 @@ class TurretSystem {
     if (!this.dustShockwave || !turret?.group) return;
     turret.group.updateWorldMatrix(true, false);
     turret.group.getWorldPosition(this._target);
-    this.dustShockwave.emit(this._target, 0.9);
+    this.dustShockwave.emit(this._target.clone(), 0.5);
+    const sprites = this.dustShockwave.dustwaveSprites;
+    if (sprites.length > 0) {
+      const last = sprites[sprites.length - 1];
+      const half = last.baseSize * 0.5;
+      last.sprite.scale.set(half, half, 1);
+      last.baseSize = half;
+      if (last.shadowSprite) {
+        last.shadowSprite.scale.multiplyScalar(0.5);
+      }
+    }
   }
 
   _emitImpactEffect(turret, scale) {

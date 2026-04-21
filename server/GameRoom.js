@@ -2563,6 +2563,17 @@ class GameRoom {
       }
     }
 
+    const bodyguardStates = this.bodyguardManager.getStatesForBroadcast();
+    for (const bgId in bodyguardStates) {
+      const bg = bodyguardStates[bgId];
+      if (!bg || bg.d === 1 || bg.f === turret.ownerFaction) continue;
+      const dist = sphericalDistance(turret.theta, turret.phi, bg.t, bg.p);
+      if (dist < bestDist) {
+        bestDist = dist;
+        best = { id: bgId, theta: bg.t, phi: bg.p, faction: bg.f };
+      }
+    }
+
     return best;
   }
 
