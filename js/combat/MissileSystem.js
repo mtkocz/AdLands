@@ -179,7 +179,7 @@ class MissileSystem {
     return { group, bodyMesh, noseMesh, light, inUse: false };
   }
 
-  _acquirePoolItem(faction) {
+  _acquirePoolItem(faction, options = {}) {
     let item = this._pool.find((p) => !p.inUse);
     if (!item) {
       if (this._pool.length < this._poolMax) {
@@ -208,6 +208,11 @@ class MissileSystem {
           this._releasePoolItem(item);
         }
       }
+    }
+    if (!item && options.allowOverflow) {
+      item = this._createPoolItem();
+      item._overflow = true;
+      this._pool.push(item);
     }
     if (!item) return null;
 
@@ -645,7 +650,10 @@ class MissileSystem {
       missile.poolItem = null;
     }
     if (!missile.poolItem) {
-      const poolItem = this._acquirePoolItem(missile.faction || missile.ownerFaction || "rust");
+      const poolItem = this._acquirePoolItem(
+        missile.faction || missile.ownerFaction || "rust",
+        { allowOverflow: this._isVisibilityCriticalMissile(missile) }
+      );
       if (!poolItem) return false;
       missile.poolItem = poolItem;
       poolItem.group.position.copy(missile.position);
@@ -1113,7 +1121,7 @@ class MissileSystem {
     initialPhase = 0,
     alwaysVisible = false,
   }) {
-    const poolItem = this._acquirePoolItem(faction);
+    const poolItem = this._acquirePoolItem(faction, { allowOverflow: alwaysVisible });
     if (!poolItem) return null;
 
     let shadowBB = null;
