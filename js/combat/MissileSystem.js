@@ -1087,7 +1087,7 @@ class MissileSystem {
     this._applyPendingDiveTarget(missile);
 
     // Dust wave — only if firing tank is visible (avoid effects from empty space)
-    if (this.dustShockwave && remoteTank?.group?.visible) {
+    if (this.dustShockwave && remoteTank?.group?.visible && remoteTank !== this.playerTank) {
       this.dustShockwave.emit(startPos, 0.4);
     }
     return true;
