@@ -738,6 +738,9 @@ class MissileSystem {
     missile._lastServerSync = performance.now();
     missile._spawnedFromOwner = true;
     missile._spawnedFromServerSnapshot = false;
+    if (ownerTank === this.playerTank || (localPlayerId && missile.ownerId === localPlayerId)) {
+      this._lastFireTime = Math.max(this._lastFireTime, performance.now() / 1000);
+    }
     this._missileIndex.set(data.projectileId, missile);
     this._clearPendingHitTimeout(data.projectileId);
 
@@ -1063,6 +1066,7 @@ class MissileSystem {
   startLockOn() {
     const now = performance.now() / 1000;
     if (now - this._lastFireTime < this.config.cooldown) return;
+    if (this.playerTank?.shieldActive || this.playerTank?.weldingActive) return;
 
     this._locking = true;
     this._lockStartTime = now;
@@ -1177,19 +1181,55 @@ class MissileSystem {
     return missile;
   }
 
+  _validateFireTarget(tank, target) {
+    if (!tank || tank.isDead || !target) return null;
+    const searchRadius = Math.min(
+      this.config.searchRadiusMax,
+      Math.max(
+        this.config.searchRadiusMin,
+        this._currentSearchRadius || this.config.searchRadiusMax
+      )
+    );
+
+    // Re-sample at release time so the optimistic client fire matches the
+    // server's nearest-enemy validation instead of using a stale lock target.
+    const refreshedTarget = this._findClosestEnemyTank(searchRadius);
+    if (refreshedTarget) return refreshedTarget;
+
+    const targetPos = target.worldPos || (target.tank ? this._getTargetWorldPos(target.tank) : null);
+    const tankPos = tank.group?._cachedWorldPos || tank.group?.position || null;
+    if (!targetPos || !tankPos) return null;
+
+    const distance = targetPos.distanceTo(tankPos);
+    if (distance > searchRadius + 0.5) return null;
+    return {
+      ...target,
+      worldPos: targetPos.clone ? targetPos.clone() : targetPos,
+      distance,
+    };
+  }
+
   _fire(tank, faction, target) {
     if (this._effectsSuspended || document.hidden) return;
+    if (!tank || tank.isDead || tank.shieldActive || tank.weldingActive) return;
     const now = performance.now() / 1000;
+    if (now - this._lastFireTime < this.config.cooldown) return;
+
+    const fireTarget = this._validateFireTarget(tank, target);
+    if (!fireTarget) return;
 
     // Economy check
     if (this.cryptoSystem) {
       const stats = this.cryptoSystem.stats;
-      if (stats.totalCrypto < this.config.cost) return;
+      const balance = (window.dashboard && window.dashboard._lastServerCrypto !== undefined)
+        ? window.dashboard._lastServerCrypto
+        : stats.totalCrypto;
+      if (balance < this.config.cost) return;
     }
 
     if (window.networkManager?.isMultiplayer) {
       this._lastFireTime = now;
-      this._spawnPendingLocalServerMissile(tank, faction, target);
+      this._spawnPendingLocalServerMissile(tank, faction, fireTarget);
       const diag = this._getMissileDiag();
       diag.localMissileFireRequests = (diag.localMissileFireRequests || 0) + 1;
       if (window._mp?.onMissileFire) {
@@ -1214,9 +1254,9 @@ class MissileSystem {
       surfacePos: tankPos,
       surfaceNormal,
       faction,
-      targetTank: target.tank,
-      targetFaction: target.tank.faction,
-      serverTargetId: target?.tank?.id ?? null,
+      targetTank: fireTarget.tank,
+      targetFaction: fireTarget.tank?.faction || null,
+      serverTargetId: fireTarget.tank?.id ?? null,
     });
     if (!missile) return;
     this._lastFireTime = now;

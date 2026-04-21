@@ -87,12 +87,17 @@ class RemoteTank {
 
     // Spawn scale-in animation (prevents "appearing out of thin air")
     // Start at 0.3 so the tank is always visible (never truly invisible while active)
-    this._spawnProgress = 0;
-    this._isSpawning = true;
-    this.group.scale.set(0.3, 0.3, 0.3);
+    this.restartSpawnReveal();
 
     // Set faction colors
     this._setFactionColors();
+  }
+
+  restartSpawnReveal() {
+    if (!this.group) return;
+    this._spawnProgress = 0;
+    this._isSpawning = true;
+    this.group.scale.set(0.3, 0.3, 0.3);
   }
 
   _buildMesh() {
@@ -617,9 +622,7 @@ class RemoteTank {
     this._restoreMaterials();
     this.group.visible = true;
     // Re-trigger spawn scale-in on respawn
-    this._spawnProgress = 0;
-    this._isSpawning = true;
-    this.group.scale.set(0.3, 0.3, 0.3);
+    this.restartSpawnReveal();
   }
 
   setVisible(visible) {
@@ -671,10 +674,10 @@ class RemoteTank {
    * Delegates to Tank.updateTankLOD() which handles all tank types.
    */
   updateLOD(camera, frustum, options) {
-    if (!this.group || !camera) return;
-    if (this._hidden) return;
+    if (!this.group || !camera) return false;
+    if (this._hidden) return false;
     camera.getWorldPosition(RemoteTank._cameraWorldPos);
-    Tank.updateTankLOD(
+    return Tank.updateTankLOD(
       {
         group: this.group,
         lodMesh: this.lodMesh,

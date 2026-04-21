@@ -128,27 +128,30 @@
 
       // Update all remote tanks (interpolation + LOD + death fade)
       for (const [id, remoteTank] of remoteTanks) {
+        const wasRenderCulled = !!remoteTank._renderCulled;
         remoteTank.update(deltaTime);
         remoteTank.updateFade();
-
-        // Animate spawn scale-in for lazy-spawned bots
-        if (remoteTank._spawnScale !== undefined && remoteTank._spawnScale < 1) {
-          remoteTank._spawnScale = Math.min(1, remoteTank._spawnScale + deltaTime * 4);
-          remoteTank.group.scale.setScalar(remoteTank._spawnScale);
-          if (remoteTank._spawnScale >= 1) delete remoteTank._spawnScale;
-        }
 
         // Player-distance culling: hide tanks far from player (skip in orbital view)
         if (!isOrbital && remoteTank.group) {
           remoteTank.group.getWorldPosition(_remoteWorldPos);
           if (_remoteWorldPos.distanceToSquared(_playerWorldPos) > PLAYER_RENDER_DIST_SQ) {
             remoteTank.group.visible = false;
+            remoteTank._renderCulled = true;
             continue; // Skip LOD computation for distant tanks
           }
         }
 
         if (camera) {
-          remoteTank.updateLOD(camera, frustum, lodOptions);
+          const visibleByLod = remoteTank.updateLOD(camera, frustum, lodOptions);
+          if (visibleByLod) {
+            if (wasRenderCulled && !remoteTank.isDead && !remoteTank._hidden) {
+              remoteTank.restartSpawnReveal?.();
+            }
+            remoteTank._renderCulled = false;
+          } else {
+            remoteTank._renderCulled = true;
+          }
         }
       }
 
@@ -547,10 +550,6 @@
               isBot: true,
             });
             remoteTank = remoteTanks.get(id);
-            if (remoteTank) {
-              remoteTank._spawnScale = 0;
-              remoteTank.group.scale.setScalar(0);
-            }
             botSpawnsThisTick++;
           } else {
             continue;
@@ -596,6 +595,7 @@
           } else if (state.d === 0 && remoteTank._hidden) {
             // Transition from fast travel (hidden) back to active
             remoteTank.setVisible(true);
+            remoteTank.restartSpawnReveal?.();
             playerTags.createTag?.(id, remoteTank, {
               name: remoteTank.playerName || "Unknown",
               level: 1, rank: remoteTank.rank || 0,
