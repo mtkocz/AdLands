@@ -29,7 +29,7 @@ class MissileSystem {
       cost: 5,                 // Crypto cost per missile (same as cannon base)
       damage: 38,              // 25 * 1.5 missile multiplier
       missileSpeed: 0.1536,    // World units per frame (80% of tank top speed: 0.0004 * 480 * 0.8)
-      serverRepresentationDistance: 1200, // Broad safety radius; local-owned/targeted missiles are never culled
+      serverRepresentationDistance: 420, // Nearby server missiles render; local-owned/targeted missiles are never culled
       launchDuration: 0.5,     // Seconds in vertical launch phase
       cruiseAltitude: 8,       // World units above surface
       diveDistance: 10,         // Start dive when within this distance
@@ -564,17 +564,29 @@ class MissileSystem {
     if (this._isLocalMissileVisibilityCritical(ownerId, targetId, ownerTank, localPlayerId)) {
       return true;
     }
-    if (ownerTank?.group?.visible) {
-      return true;
-    }
     let playerPos = this.playerTank?.group?._cachedWorldPos || null;
     if (!playerPos && this.playerTank?.group) {
       this.playerTank.group.updateWorldMatrix(true, false);
       playerPos = this.playerTank.group.getWorldPosition(this._tempVec4);
     }
     if (!playerPos) return true;
-    if (!Number.isFinite(wx) || !Number.isFinite(wy) || !Number.isFinite(wz)) return true;
     const maxDist = this.config.serverRepresentationDistance || 400;
+    if (ownerTank?.group?.visible) {
+      let ownerPos = ownerTank.group._cachedWorldPos || null;
+      if (!ownerPos) {
+        ownerTank.group.updateWorldMatrix(true, false);
+        ownerPos = ownerTank.group.getWorldPosition(this._tempVec5);
+      }
+      if (ownerPos) {
+        const odx = ownerPos.x - playerPos.x;
+        const ody = ownerPos.y - playerPos.y;
+        const odz = ownerPos.z - playerPos.z;
+        if ((odx * odx + ody * ody + odz * odz) <= maxDist * maxDist) {
+          return true;
+        }
+      }
+    }
+    if (!Number.isFinite(wx) || !Number.isFinite(wy) || !Number.isFinite(wz)) return false;
     const dx = wx - playerPos.x;
     const dy = wy - playerPos.y;
     const dz = wz - playerPos.z;
@@ -615,6 +627,39 @@ class MissileSystem {
     missile.poolItem.group.visible = true;
     if (!missile.poolItem.group.parent) {
       this.scene.add(missile.poolItem.group);
+    }
+    return true;
+  }
+
+  _getOwnerMissileLaunchFrame(ownerTank) {
+    if (!ownerTank?.group) return null;
+    let ownerWorldPos = ownerTank.group._cachedWorldPos || null;
+    if (!ownerWorldPos) {
+      ownerTank.group.updateWorldMatrix(true, false);
+      ownerWorldPos = ownerTank.group.getWorldPosition(this._tempVec3).clone();
+    } else {
+      ownerWorldPos = ownerWorldPos.clone();
+    }
+    const surfaceNormal = ownerWorldPos.clone().normalize();
+    return {
+      startPos: ownerWorldPos.clone().addScaledVector(surfaceNormal, 1.5),
+      surfacePos: ownerWorldPos,
+      surfaceNormal,
+    };
+  }
+
+  _anchorMissileToOwnerLaunch(missile, ownerTank) {
+    if (!missile || missile.phase !== 0) return false;
+    const launchFrame = this._getOwnerMissileLaunchFrame(ownerTank);
+    if (!launchFrame) return false;
+    missile.position.copy(launchFrame.startPos);
+    missile.surfaceNormal.copy(launchFrame.surfaceNormal);
+    missile._serverPos = null;
+    missile._serverTravelDir = null;
+    missile._spawnedFromOwner = true;
+    missile._spawnedFromServerSnapshot = false;
+    if (missile.poolItem) {
+      missile.poolItem.group.position.copy(missile.position);
     }
     return true;
   }
@@ -1079,6 +1124,7 @@ class MissileSystem {
     const existing = this._missileIndex.get(data.projectileId);
     const localPlayerId = this._getLocalPlayerId();
     const eventOwnerId = data.ownerId || data.id || null;
+    const isFireEvent = data.id != null;
     const visibilityCritical = !!data._forceRepresent ||
       this._isLocalMissileVisibilityCritical(eventOwnerId, data.targetId, remoteTank, localPlayerId);
     if (visibilityCritical) {
@@ -1089,13 +1135,16 @@ class MissileSystem {
       existing._lastServerSync = performance.now();
       existing.ownerId = eventOwnerId || existing.ownerId || null;
       existing._alwaysVisible = existing._alwaysVisible || visibilityCritical;
+      if (isFireEvent && existing._spawnedFromServerSnapshot) {
+        this._anchorMissileToOwnerLaunch(existing, remoteTank);
+      }
       if (data.targetId != null) {
         existing.serverTargetId = data.targetId;
         if (data.targetTheta !== undefined && data.targetPhi !== undefined) {
           this._setMissileSpawnTarget(existing, data);
         }
       }
-      if (data.wx !== undefined && data.wy !== undefined && data.wz !== undefined) {
+      if (!isFireEvent && data.wx !== undefined && data.wy !== undefined && data.wz !== undefined) {
         if (!existing._serverPos) existing._serverPos = new THREE.Vector3();
         existing._serverPos.set(data.wx, data.wy, data.wz);
         existing._remoteHasSync = true;
@@ -1118,23 +1167,13 @@ class MissileSystem {
     const serverStartPos = new THREE.Vector3(data.wx, data.wy, data.wz);
     const faction = data.faction || remoteTank?.faction || "rust";
 
-    // Launch from the owner's actual rendered world position when available so
-    // the missile origin matches the visible tank exactly.
-    let ownerWorldPos = null;
-    if (remoteTank?.group) {
-      ownerWorldPos = remoteTank.group._cachedWorldPos || null;
-      if (!ownerWorldPos) {
-        remoteTank.group.updateWorldMatrix(true, false);
-        ownerWorldPos = remoteTank.group.getWorldPosition(this._tempVec3).clone();
-      }
-    }
-
-    const startPos = (!useServerStart && ownerWorldPos)
-      ? ownerWorldPos.clone().addScaledVector(ownerWorldPos.clone().normalize(), 1.5)
-      : serverStartPos.clone();
-    const surfaceNormal = startPos.clone().normalize();
-    const surfacePos = (!useServerStart && ownerWorldPos)
-      ? ownerWorldPos.clone()
+    // Fire events and phase-0 state snapshots should originate from the owner
+    // tank. Mid-flight recovery still starts from the authoritative server pos.
+    const launchFrame = useServerStart ? null : this._getOwnerMissileLaunchFrame(remoteTank);
+    const startPos = launchFrame ? launchFrame.startPos : serverStartPos.clone();
+    const surfaceNormal = launchFrame ? launchFrame.surfaceNormal : startPos.clone().normalize();
+    const surfacePos = launchFrame
+      ? launchFrame.surfacePos
       : surfaceNormal.clone().multiplyScalar(this.sphereRadius);
     const missile = this._createMissileVisual({
       startPos,
@@ -1154,6 +1193,8 @@ class MissileSystem {
       return false;
     }
     missile.ownerId = eventOwnerId;
+    missile._spawnedFromOwner = !!launchFrame;
+    missile._spawnedFromServerSnapshot = useServerStart;
     diag.missileSpawned = (diag.missileSpawned || 0) + 1;
     if (visibilityCritical) diag.missileCriticalSpawned = (diag.missileCriticalSpawned || 0) + 1;
     missile._serverPos = useServerStart ? serverStartPos.clone() : null;
@@ -1284,11 +1325,10 @@ class MissileSystem {
       }
 
       const owner = this._resolveRemoteMissileOwner(ownerId);
+      const spawnFromOwner = !!owner?.group && serverPhase === 0;
       const shouldLateSpawn =
-        serverPhase <= 2 ||
-        isLocalOwner ||
-        targetId === "local" ||
-        targetId === effectiveLocalPlayerId;
+        forceRepresent ||
+        (serverPhase <= 2 && !!owner?.group);
       if (shouldLateSpawn) {
         const spawned = this.spawnRemoteMissile({
           projectileId: id,
@@ -1302,7 +1342,7 @@ class MissileSystem {
           wy: mlArr[i + 4],
           wz: mlArr[i + 5],
           _forceRepresent: forceRepresent,
-          _startFromServerPos: true,
+          _startFromServerPos: !spawnFromOwner,
           _initialPhase: serverPhase,
         }, owner);
         if (spawned) {
@@ -1794,36 +1834,94 @@ class MissileSystem {
   }
 
   _updateRemoteCruise(m, dt, dt60) {
+    m.phase1Age = (m.phase1Age || 0) + dt;
     const syncAgeMs = performance.now() - (m._lastServerSync || 0);
+    const prevPos = this._tempVec4.copy(m.position);
+    let targetSteered = false;
+
+    if (!m.direction || m.direction.lengthSq() < 0.0001) {
+      if (!m.direction) m.direction = new THREE.Vector3();
+      m.direction.copy(m.surfaceNormal || this._upVec);
+    }
+
+    let target = m._serverTargetWorldPos
+      ? {
+          tank: m.targetTank || null,
+          worldPos: m._serverTargetWorldPos,
+          isFlare: !!m._serverTargetIsFlare,
+        }
+      : this._getVisualTargetForMissile(m, {
+          allowSearch: false,
+          includeFlares: false,
+        });
+
+    if (target?.worldPos) {
+      m.targetTank = target.tank;
+      if (target.worldPos !== m._serverTargetWorldPos) {
+        m._serverTargetWorldPos = target.worldPos.clone();
+      }
+      m._serverTargetIsFlare = !!target.isFlare;
+
+      const targetSurface = target.worldPos;
+      const targetNormal = this._tempVec.copy(targetSurface).normalize();
+      const targetSurfaceR = this._getSurfaceRadius(targetSurface);
+      const targetElevated = this._tempVec2
+        .copy(targetNormal)
+        .multiplyScalar(targetSurfaceR + m.cruiseAltitude);
+      const desired = this._tempVec3
+        .copy(targetElevated)
+        .sub(m.position)
+        .normalize();
+      const entryRatio = Math.min((m.phase1Age || 0) / this.config.cruiseEntryTime, 1);
+      const turnScale = MathUtils.lerp(
+        this.config.cruiseEntryTurnScale,
+        1,
+        entryRatio
+      );
+      const maxSteer = this.config.turnRate * turnScale * dt;
+      m.direction.lerp(desired, Math.min(maxSteer, 1.0)).normalize();
+
+      const moveSpeed = this.config.missileSpeed * dt60;
+      m.position.addScaledVector(m.direction, moveSpeed);
+      this._stabilizeCruiseAltitude(m);
+
+      const groundDist = m.position.distanceTo(targetSurface);
+      if (groundDist < this.config.diveDistance) {
+        m.phase = 2;
+        m.diveTarget = targetSurface.clone();
+      }
+      targetSteered = true;
+    } else if (m._serverTravelDir && m._serverTravelDir.lengthSq() > 0.0001) {
+      m.direction.lerp(m._serverTravelDir, Math.min(1, dt * 12)).normalize();
+      m.position.addScaledVector(m.direction, this.config.missileSpeed * dt60);
+      this._stabilizeCruiseAltitude(m);
+    }
+
     if (m._serverPos) {
       const toServer = this._tempVec5.copy(m._serverPos).sub(m.position);
       const dist = toServer.length();
-      const shouldPullToSync =
-        !m._serverTravelDir ||
-        m._serverTravelDir.lengthSq() <= 0.0001 ||
-        syncAgeMs <= 140 ||
-        dist > 8;
-      if (dist > 25) {
+      if (!targetSteered) {
+        const shouldPullToSync =
+          !m._serverTravelDir ||
+          m._serverTravelDir.lengthSq() <= 0.0001 ||
+          syncAgeMs <= 140 ||
+          dist > 8;
+        if (dist > 25) {
+          m.position.copy(m._serverPos);
+        } else if (shouldPullToSync && dist > 0.0001) {
+          m.position.addScaledVector(toServer, Math.min(1, dt * 16));
+        }
+      } else if (dist > 60) {
         m.position.copy(m._serverPos);
-      } else if (shouldPullToSync && dist > 0.0001) {
-        m.position.addScaledVector(toServer, Math.min(1, dt * 16));
-      } else if (m._serverTravelDir && m._serverTravelDir.lengthSq() > 0.0001) {
-        m.position.addScaledVector(m._serverTravelDir, this.config.missileSpeed * dt60);
+      } else if (dist > 0.25) {
+        m.position.addScaledVector(toServer, Math.min(0.22, dt * 2));
       }
-    } else if (m._serverTravelDir && m._serverTravelDir.lengthSq() > 0.0001) {
-      m.position.addScaledVector(m._serverTravelDir, this.config.missileSpeed * dt60);
     }
 
-    if (m._serverTravelDir && m._serverTravelDir.lengthSq() > 0.0001) {
-      if (!m.direction) m.direction = new THREE.Vector3();
-      if (m.direction.lengthSq() > 0.0001) {
-        m.direction.lerp(m._serverTravelDir, Math.min(1, dt * 20)).normalize();
-      } else {
-        m.direction.copy(m._serverTravelDir);
-      }
-    } else if ((!m.direction || m.direction.lengthSq() < 0.0001) && m.surfaceNormal) {
-      if (!m.direction) m.direction = new THREE.Vector3();
-      m.direction.copy(m.surfaceNormal);
+    const travel = this._tempVec3.copy(m.position).sub(prevPos);
+    if (travel.lengthSq() > 0.000001) {
+      travel.normalize();
+      m.direction.lerp(travel, Math.min(1, dt * 12)).normalize();
     }
 
     const lookTarget = this._tempVec2.copy(m.position).add(m.direction || m.surfaceNormal);

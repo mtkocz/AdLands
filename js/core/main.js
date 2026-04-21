@@ -4139,7 +4139,7 @@
       isHumanCommander,
       isLocalPlayer: true,
       forceOrbitalDot: isOrbitalView && isLowDetailView,
-      forceSurfaceDetail: !isLowDetailView,
+      forceSurfaceDetail: !isDescending && !isLowDetailView,
       showCommanderTrim,
       viewerFaction: playerFaction,
       commanderSystem,
@@ -4147,12 +4147,16 @@
     };
 
     // Update tank LOD after camera update so distance is current frame's position.
-    // The 71-unit cutoff is authoritative: once the camera is inside it, clear
-    // any stale hidden state left by travel/transition code and force full detail.
-    if (!isLowDetailView && tank._hidden && !tank.isDead) {
+    // The 71-unit cutoff is authoritative during normal play, but portal deploy
+    // keeps the local tank hidden until the camera transition fully completes.
+    if (!isDescending && !isLowDetailView && tank._hidden && !tank.isDead) {
       tank.setVisible(true);
     }
-    tank.updateLOD(camera, sharedFrustum, lodOptions);
+    if (isDescending && !isLowDetailView) {
+      tank.setVisible(false);
+    } else {
+      tank.updateLOD(camera, sharedFrustum, lodOptions);
+    }
 
     // Pass LOD options to botTanks for commander dot mode
     botTanks.setLODOptions(lodOptions);
