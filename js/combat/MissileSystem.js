@@ -33,6 +33,9 @@ class MissileSystem {
       cruiseAltitude: 8,       // World units above surface
       diveDistance: 10,         // Start dive when within this distance
       turnRate: 1.5,           // Radians/sec — lower = wider turning arc
+      cruiseEntryBlend: 0.2,   // How much the missile tips toward target when leaving vertical launch
+      cruiseEntryTime: 0.3,    // Seconds to ramp from launch arc into full cruise tracking
+      cruiseEntryTurnScale: 0.45, // Initial turn-rate scale during cruise entry ramp
       searchRadiusMin: 20,     // Starting lock-on range (world units)
       searchRadiusMax: 120,    // Max lock-on range (world units)
       searchExpandTime: 3,     // Seconds to reach max range
@@ -638,6 +641,18 @@ class MissileSystem {
       return;
     }
     missile.direction = missile.surfaceNormal.clone();
+  }
+
+  _setMissileCruiseEntryDirection(missile) {
+    if (!missile) return;
+    if (!missile.direction) missile.direction = new THREE.Vector3();
+    missile.direction.copy(missile.surfaceNormal || this._upVec).normalize();
+
+    const tracked = this._resolveMissileTrackedTarget(missile);
+    if (!tracked?.worldPos) return;
+
+    this._tempVec4.copy(tracked.worldPos).sub(missile.position).normalize();
+    missile.direction.lerp(this._tempVec4, this.config.cruiseEntryBlend).normalize();
   }
 
   _findClosestFlareFromPos(missilePos, maxRange) {
@@ -1706,8 +1721,13 @@ class MissileSystem {
         m.phase = 1;
         m.cruiseAltitude = altitude;
         m.phase1Age = 0;
-        // Start cruise already pointed toward the tracked target when possible.
-        this._setMissileInitialDirection(m);
+        // Local missiles leave launch with a short upward-to-tracking blend so
+        // the turn into cruise is less abrupt.
+        if (m.isRemote) {
+          this._setMissileInitialDirection(m);
+        } else {
+          this._setMissileCruiseEntryDirection(m);
+        }
       }
 
       // Sync mesh position and orient nose (+Y) along surface normal (upward)
@@ -1751,7 +1771,16 @@ class MissileSystem {
           .normalize();
 
         // Smoothly steer toward target (limited turn rate)
-        const maxSteer = this.config.turnRate * dt;
+        const entryRatio = Math.min(
+          (m.phase1Age || 0) / this.config.cruiseEntryTime,
+          1
+        );
+        const turnScale = MathUtils.lerp(
+          this.config.cruiseEntryTurnScale,
+          1,
+          entryRatio
+        );
+        const maxSteer = this.config.turnRate * turnScale * dt;
         m.direction.lerp(desired, Math.min(maxSteer, 1.0)).normalize();
 
         // Check if close enough to dive (distance to SURFACE target)
