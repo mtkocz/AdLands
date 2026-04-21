@@ -4651,7 +4651,7 @@ class GameRoom {
     // Missiles already emit reliable fire/dive/lost/crash events. The state array is
     // primarily for correction and late-join recovery, so under heavier missile load
     // we can safely halve its send rate to cut broadcast pressure.
-    const missileCount = mlArr.length / 8;
+    const missileCount = mlArr.length / 11;
     const sendMissileSync = missileCount === 0 || missileCount <= 12 || (this.tick % 2 === 0);
     statePayload.ml = sendMissileSync ? mlArr : undefined;
     statePayload.fl = flArr.length > 0 ? flArr : undefined;

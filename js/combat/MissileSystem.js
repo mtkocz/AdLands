@@ -1106,8 +1106,20 @@ class MissileSystem {
         }
         // Update server world position for lightweight interpolation
         const wx = mlArr[i + 3], wy = mlArr[i + 4], wz = mlArr[i + 5];
-        if (!existing._serverPos) existing._serverPos = new THREE.Vector3();
-        existing._serverPos.set(wx, wy, wz);
+        if (!existing._serverPos) {
+          existing._serverPos = new THREE.Vector3(wx, wy, wz);
+        } else {
+          if (!existing._serverTravelDir) existing._serverTravelDir = new THREE.Vector3();
+          existing._serverTravelDir.set(
+            wx - existing._serverPos.x,
+            wy - existing._serverPos.y,
+            wz - existing._serverPos.z,
+          );
+          if (existing._serverTravelDir.lengthSq() > 0.000001) {
+            existing._serverTravelDir.normalize();
+          }
+          existing._serverPos.set(wx, wy, wz);
+        }
         if (targetTheta !== undefined && targetPhi !== undefined) {
           this._setMissileSpawnTarget(existing, {
             targetId: existing.serverTargetId,
@@ -1633,36 +1645,38 @@ class MissileSystem {
   }
 
   _updateRemoteCruise(m, dt, dt60) {
-    const prevPos = this._tempVec4.copy(m.position);
-
-    if (m._remoteHasSync && m._serverPos) {
+    const syncAgeMs = performance.now() - (m._lastServerSync || 0);
+    if (m._serverPos) {
       const toServer = this._tempVec5.copy(m._serverPos).sub(m.position);
       const dist = toServer.length();
-      if (dist > 40) {
+      const shouldPullToSync =
+        !m._serverTravelDir ||
+        m._serverTravelDir.lengthSq() <= 0.0001 ||
+        syncAgeMs <= 140 ||
+        dist > 8;
+      if (dist > 25) {
         m.position.copy(m._serverPos);
-      } else if (dist > 0.0001) {
-        m.position.addScaledVector(toServer, Math.min(1, dt * 12));
+      } else if (shouldPullToSync && dist > 0.0001) {
+        m.position.addScaledVector(toServer, Math.min(1, dt * 16));
+      } else if (m._serverTravelDir && m._serverTravelDir.lengthSq() > 0.0001) {
+        m.position.addScaledVector(m._serverTravelDir, this.config.missileSpeed * dt60);
       }
-    } else if (m.direction && m.direction.lengthSq() > 0.0001) {
-      m.position.addScaledVector(m.direction, this.config.missileSpeed * dt60);
-      this._stabilizeCruiseAltitude(m);
+    } else if (m._serverTravelDir && m._serverTravelDir.lengthSq() > 0.0001) {
+      m.position.addScaledVector(m._serverTravelDir, this.config.missileSpeed * dt60);
     }
 
-    const travelDelta = this._tempVec5.copy(m.position).sub(prevPos);
-    if (travelDelta.lengthSq() > 0.000001) {
+    if (m._serverTravelDir && m._serverTravelDir.lengthSq() > 0.0001) {
       if (!m.direction) m.direction = new THREE.Vector3();
-      m.direction.copy(travelDelta).normalize();
-    } else {
-      const tracked = this._resolveMissileTrackedTarget(m);
-      if (tracked?.worldPos) {
-        if (!m.direction) m.direction = new THREE.Vector3();
-        m.direction.copy(tracked.worldPos).sub(m.position).normalize();
-      } else if ((!m.direction || m.direction.lengthSq() < 0.0001) && m.surfaceNormal) {
-        m.direction = m.surfaceNormal.clone();
+      if (m.direction.lengthSq() > 0.0001) {
+        m.direction.lerp(m._serverTravelDir, Math.min(1, dt * 20)).normalize();
+      } else {
+        m.direction.copy(m._serverTravelDir);
       }
+    } else if ((!m.direction || m.direction.lengthSq() < 0.0001) && m.surfaceNormal) {
+      if (!m.direction) m.direction = new THREE.Vector3();
+      m.direction.copy(m.surfaceNormal);
     }
 
-    this._stabilizeCruiseAltitude(m);
     const lookTarget = this._tempVec2.copy(m.position).add(m.direction || m.surfaceNormal);
     m.poolItem.group.position.copy(m.position);
     m.poolItem.group.lookAt(lookTarget);
@@ -1690,8 +1704,7 @@ class MissileSystem {
       this.scene.add(m.poolItem.group);
     }
 
-    // Remote missiles follow the same visual simulation as local missiles.
-    // Server state and reliable events only act as soft corrections and phase changes.
+    // Remote missiles share local launch/dive visuals, but cruise is server playback.
     if (m.isRemote && m._serverPos && m.phase === 0 && m._remoteHasSync) {
       const drift = this._tempVec2.copy(m._serverPos).sub(m.position);
       const driftLenSq = drift.lengthSq();
@@ -1721,13 +1734,8 @@ class MissileSystem {
         m.phase = 1;
         m.cruiseAltitude = altitude;
         m.phase1Age = 0;
-        // Local missiles leave launch with a short upward-to-tracking blend so
-        // the turn into cruise is less abrupt.
-        if (m.isRemote) {
-          this._setMissileInitialDirection(m);
-        } else {
-          this._setMissileCruiseEntryDirection(m);
-        }
+        // Use the same launch-to-cruise tip-in for both local and remote visuals.
+        this._setMissileCruiseEntryDirection(m);
       }
 
       // Sync mesh position and orient nose (+Y) along surface normal (upward)
@@ -1738,103 +1746,98 @@ class MissileSystem {
     } else if (m.phase === 1) {
       if (m.isRemote) {
         this._updateRemoteCruise(m, dt, dt60);
-        return;
-      }
+      } else {
+        // CRUISE / HOMING: Steer toward target at altitude
+        m.phase1Age = (m.phase1Age || 0) + dt;
+        const target = this._getVisualTargetForMissile(m, {
+          allowSearch: true,
+          useHemisphere: m.phase1Age > 1.0,
+          includeFlares: true,
+        });
 
-      // CRUISE / HOMING: Steer toward target at altitude
-      m.phase1Age = (m.phase1Age || 0) + dt;
-      const target = this._getVisualTargetForMissile(m, {
-        allowSearch: true,
-        useHemisphere: m.phase1Age > 1.0,
-        includeFlares: true,
-      });
+        if (target) {
+          m.targetTank = target.tank;
+          if (target.worldPos) {
+            m._serverTargetWorldPos = target.worldPos.clone();
+            m._serverTargetIsFlare = !!target.isFlare;
+          }
 
-      if (target) {
-        m.targetTank = target.tank;
-        if (target.worldPos) {
-          m._serverTargetWorldPos = target.worldPos.clone();
-          m._serverTargetIsFlare = !!target.isFlare;
-        }
+          // Compute elevated target position (same altitude as missile)
+          const targetSurface = target.worldPos;
+          const targetNormal = this._tempVec.copy(targetSurface).normalize();
+          const targetSurfaceR = this._getSurfaceRadius(targetSurface);
+          const targetElevated = this._tempVec2
+            .copy(targetNormal)
+            .multiplyScalar(targetSurfaceR + m.cruiseAltitude);
 
-        // Compute elevated target position (same altitude as missile)
-        const targetSurface = target.worldPos;
-        const targetNormal = this._tempVec.copy(targetSurface).normalize();
-        const targetSurfaceR = this._getSurfaceRadius(targetSurface);
-        const targetElevated = this._tempVec2
-          .copy(targetNormal)
-          .multiplyScalar(targetSurfaceR + m.cruiseAltitude);
+          // Desired direction to target
+          const desired = this._tempVec3
+            .copy(targetElevated)
+            .sub(m.position)
+            .normalize();
 
-        // Desired direction to target
-        const desired = this._tempVec3
-          .copy(targetElevated)
-          .sub(m.position)
-          .normalize();
+          // Smoothly steer toward target (limited turn rate)
+          const entryRatio = Math.min(
+            (m.phase1Age || 0) / this.config.cruiseEntryTime,
+            1
+          );
+          const turnScale = MathUtils.lerp(
+            this.config.cruiseEntryTurnScale,
+            1,
+            entryRatio
+          );
+          const maxSteer = this.config.turnRate * turnScale * dt;
+          m.direction.lerp(desired, Math.min(maxSteer, 1.0)).normalize();
 
-        // Smoothly steer toward target (limited turn rate)
-        const entryRatio = Math.min(
-          (m.phase1Age || 0) / this.config.cruiseEntryTime,
-          1
-        );
-        const turnScale = MathUtils.lerp(
-          this.config.cruiseEntryTurnScale,
-          1,
-          entryRatio
-        );
-        const maxSteer = this.config.turnRate * turnScale * dt;
-        m.direction.lerp(desired, Math.min(maxSteer, 1.0)).normalize();
-
-        // Check if close enough to dive (distance to SURFACE target)
-        // Remote missiles only dive on server command (missile-dive event)
-        if (!m.isRemote) {
           const groundDist = m.position.distanceTo(targetSurface);
           if (groundDist < this.config.diveDistance) {
             m.phase = 2;
             m.diveTarget = targetSurface.clone();
           }
+        } else if (!m.isLost) {
+          // No target — enter wobble phase
+          m.phase = 3;
+          m.isLost = true;
+          m.lostAge = 0;
+          m.targetTank = null;
+        } else {
+          // Keep flight tangent to the surface while targetless
+          const normal = this._tempVec.copy(m.position).normalize();
+          const dot = m.direction.dot(normal);
+          if (dot > 0.1) {
+            m.direction.addScaledVector(normal, -dot).normalize();
+          }
         }
-      } else if (!m.isLost) {
-        // No target — enter wobble phase
-        m.phase = 3;
-        m.isLost = true;
-        m.lostAge = 0;
-        m.targetTank = null;
-      } else {
-        // Keep flight tangent to the surface while targetless
-        const normal = this._tempVec.copy(m.position).normalize();
-        const dot = m.direction.dot(normal);
-        if (dot > 0.1) {
-          m.direction.addScaledVector(normal, -dot).normalize();
+
+        // Move along current direction
+        const moveSpeed = this.config.missileSpeed * dt60;
+        m.position.addScaledVector(m.direction, moveSpeed);
+
+        // Maintain altitude above actual terrain (not base sphere)
+        const surfaceR = this._getSurfaceRadius(m.position);
+        const currentNormal = this._tempVec.copy(m.position).normalize();
+        const currentAlt = m.position.length() - surfaceR;
+        if (currentAlt < m.cruiseAltitude - 0.5) {
+          const correctedAlt = MathUtils.lerp(currentAlt, m.cruiseAltitude, Math.min(8 * dt, 1));
+          m.position.copy(currentNormal).multiplyScalar(surfaceR + correctedAlt);
+        } else if (currentAlt > m.cruiseAltitude + 0.5) {
+          const correctedAlt = MathUtils.lerp(currentAlt, m.cruiseAltitude, Math.min(5 * dt, 1));
+          m.position.copy(currentNormal).multiplyScalar(surfaceR + correctedAlt);
         }
-      }
 
-      // Move along current direction
-      const moveSpeed = this.config.missileSpeed * dt60;
-      m.position.addScaledVector(m.direction, moveSpeed);
+        // Orient mesh to face travel direction (lookAt + offset for Y-axis mesh)
+        const lookTarget = this._tempVec2.copy(m.position).add(m.direction);
+        m.poolItem.group.position.copy(m.position);
+        m.poolItem.group.lookAt(lookTarget);
+        m.poolItem.group.quaternion.multiply(this._meshOrientQuat);
 
-      // Maintain altitude above actual terrain (not base sphere)
-      const surfaceR = this._getSurfaceRadius(m.position);
-      const currentNormal = this._tempVec.copy(m.position).normalize();
-      const currentAlt = m.position.length() - surfaceR;
-      if (currentAlt < m.cruiseAltitude - 0.5) {
-        const correctedAlt = MathUtils.lerp(currentAlt, m.cruiseAltitude, Math.min(8 * dt, 1));
-        m.position.copy(currentNormal).multiplyScalar(surfaceR + correctedAlt);
-      } else if (currentAlt > m.cruiseAltitude + 0.5) {
-        const correctedAlt = MathUtils.lerp(currentAlt, m.cruiseAltitude, Math.min(5 * dt, 1));
-        m.position.copy(currentNormal).multiplyScalar(surfaceR + correctedAlt);
-      }
-
-      // Orient mesh to face travel direction (lookAt + offset for Y-axis mesh)
-      const lookTarget = this._tempVec2.copy(m.position).add(m.direction);
-      m.poolItem.group.position.copy(m.position);
-      m.poolItem.group.lookAt(lookTarget);
-      m.poolItem.group.quaternion.multiply(this._meshOrientQuat);
-
-      // Terrain collision check (steep terrain can rise faster than altitude correction)
-      const cruiseAlt = m.position.length() - this._getSurfaceRadius(m.position);
-      if (cruiseAlt < 1.5 && !m.isRemote) {
-        const idx = this.missiles.indexOf(m);
-        if (idx >= 0) this._destroyMissile(idx, m.position);
-        return;
+        // Terrain collision check (steep terrain can rise faster than altitude correction)
+        const cruiseAlt = m.position.length() - this._getSurfaceRadius(m.position);
+        if (cruiseAlt < 1.5) {
+          const idx = this.missiles.indexOf(m);
+          if (idx >= 0) this._destroyMissile(idx, m.position);
+          return;
+        }
       }
     } else if (m.phase === 2) {
       // TERMINAL DIVE: Steer downward toward ground target (no forward filter — committed to dive)
