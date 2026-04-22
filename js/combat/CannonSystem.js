@@ -2029,6 +2029,7 @@ void main() {
               p.sizeScale || 1,
               {
                 emitTurretSparks: p.sourceType === "turret",
+                suppressExplosion: p.sourceType === "turret",
                 showCrypto: tank === this.playerTank,
               }
             );
@@ -2262,7 +2263,9 @@ void main() {
     }
     const impactPosition = _testPos.clone();
 
-    this._spawnExplosion(impactPosition, faction, sizeScale, shieldClip);
+    if (!options.suppressExplosion) {
+      this._spawnExplosion(impactPosition, faction, sizeScale, shieldClip);
+    }
     if (this.dustShockwave) {
       this.dustShockwave.emit(impactPosition, sizeScale, null, shieldClip);
     }

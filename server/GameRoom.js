@@ -47,7 +47,7 @@ const FLARE = {
 const TURRET_LEVELS = {
   1: {
     hp: 50,
-    damage: 10,
+    damage: 5,
     rangeWorld: 35,
     cooldownMs: Math.round(2000 / 2.4),
     projectileSpeed: 0.004,
@@ -56,7 +56,7 @@ const TURRET_LEVELS = {
   },
   2: {
     hp: 75,
-    damage: 15,
+    damage: 7.5,
     rangeWorld: 45,
     cooldownMs: Math.round(2000 / 2.8),
     projectileSpeed: 0.004,
@@ -65,7 +65,7 @@ const TURRET_LEVELS = {
   },
   3: {
     hp: 100,
-    damage: 20,
+    damage: 10,
     rangeWorld: 55,
     cooldownMs: Math.round(2000 / 3.2),
     projectileSpeed: 0.004,

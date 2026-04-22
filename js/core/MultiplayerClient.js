@@ -1186,6 +1186,7 @@
         data.sizeScale || 1,
         {
           emitTurretSparks: data.sourceType === "turret",
+          suppressExplosion: data.sourceType === "turret",
           showCrypto: data.targetId === net.playerId,
         }
       );
