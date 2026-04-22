@@ -1388,6 +1388,9 @@ void main() {
       isRemote: true,
       serverId: data.projectileId,
       sourceType: data.sourceType || null,
+      surfaceGraceTime: Number.isFinite(data.surfaceGraceTime)
+        ? data.surfaceGraceTime
+        : (data.sourceType === "turret" ? 0.25 : 0),
     });
   }
 
@@ -2061,8 +2064,12 @@ void main() {
         if (hitTank) break;
       }
 
+      const isTurretProjectile = p.sourceType === "turret";
+      const inSurfaceGrace =
+        Number.isFinite(p.surfaceGraceTime) && p.age < p.surfaceGraceTime;
+
       // Terrain elevation collision: projectiles hit cliff walls
-      if (!hitTank && this.planet?.terrainElevation) {
+      if (!hitTank && !inSurfaceGrace && this.planet?.terrainElevation) {
         const terrainSteps = Math.max(1, Math.ceil(moveDistance / 0.5));
         for (let step = 0; step <= terrainSteps; step++) {
           const t = step / terrainSteps;
@@ -2097,7 +2104,7 @@ void main() {
 
       // Check removal: max distance, lifetime, or hit surface
       const distance = p.position.distanceTo(p.startPosition);
-      const hitSurface = p.position.length() < this.sphereRadius + 1;
+      const hitSurface = !inSurfaceGrace && p.position.length() < this.sphereRadius + 1;
       const maxDist = p.maxDistance || this.config.maxDistance;
 
       if (
@@ -2108,7 +2115,6 @@ void main() {
         hitSurface
       ) {
         // Shield hits already spawned their own small spark — skip normal explosion
-        const isTurretProjectile = p.sourceType === "turret";
         if (!isTurretProjectile && (!hitTank || shouldExplode)) {
           // Spawn explosion at impact point
           this._spawnExplosion(p.position, p.faction, p.sizeScale || 1);

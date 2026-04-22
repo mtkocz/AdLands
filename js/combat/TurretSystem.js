@@ -353,7 +353,7 @@ class TurretSystem {
     this._muzzleWorld.copy(this._muzzleLocal).applyMatrix4(turret.group.matrixWorld);
 
     this._surfaceNormal.copy(this._muzzleWorld).normalize();
-    this._muzzleWorld.addScaledVector(this._surfaceNormal, 0.35);
+    this._muzzleWorld.addScaledVector(this._surfaceNormal, 2.0);
 
     this._directionLocal.set(0, 0, -1);
     this._directionLocal.applyAxisAngle(this._yAxis, turret.turretAngle);
@@ -374,6 +374,7 @@ class TurretSystem {
         maxDistance: data?.maxDistance,
         projectileId: data?.projectileId,
         sourceType: data?.sourceType || "turret",
+        surfaceGraceTime: 0.25,
       },
       turret.faction
     );
@@ -405,6 +406,7 @@ class TurretSystem {
         dvz: this._directionWorld.z,
         power: 0,
         sizeScale: data.sizeScale || 0.5,
+        surfaceGraceTime: data.surfaceGraceTime || 0.25,
       },
       faction
     );
