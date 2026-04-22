@@ -1425,8 +1425,10 @@ void main() {
 
     // Pool item already has a built-in PointLight (set up in acquireProjectile)
 
-    // Muzzle flare at spawn point
-    this._spawnMuzzleFlare(_muzzleWorld, _shotDirWorld, faction, sizeScale);
+    // Turret shots use their own recoil/projectile visual and should not look like cannon blasts.
+    if (!data.suppressMuzzleFlare) {
+      this._spawnMuzzleFlare(_muzzleWorld, _shotDirWorld, faction, sizeScale);
+    }
 
     const damage = 1 + chargeRatio * (this.config.chargeDamageMultiplier - 1);
 

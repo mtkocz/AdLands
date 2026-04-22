@@ -122,14 +122,18 @@ class TurretSystem {
       if (Number.isFinite(data.turretAngle)) turret.turretAngle = data.turretAngle;
       this._updateTurretTransform(turret);
       this._triggerRecoil(turret);
-      this._emitFiringDustwave(turret);
       this._spawnProjectileFromTurret(turret, data);
       return;
     }
 
     if (this.shouldRenderEffects() && this.cannonSystem && data) {
       this.cannonSystem.spawnProjectileFromServer(
-        { ...data, power: 0, sizeScale: data.sizeScale || 0.5 },
+        {
+          ...data,
+          power: 0,
+          sizeScale: data.sizeScale || 0.5,
+          suppressMuzzleFlare: true,
+        },
         data.faction || "rust"
       );
     }
@@ -309,6 +313,30 @@ class TurretSystem {
 
   _spawnProjectileFromTurret(turret, data) {
     if (!this.shouldRenderEffects() || !this.cannonSystem || !turret?.group) return;
+
+    const hasServerVector = ["wx", "wy", "wz", "dvx", "dvy", "dvz"].every((key) =>
+      Number.isFinite(data?.[key])
+    );
+    if (hasServerVector) {
+      this.cannonSystem.spawnProjectileFromServer(
+        {
+          wx: data.wx,
+          wy: data.wy,
+          wz: data.wz,
+          dvx: data.dvx,
+          dvy: data.dvy,
+          dvz: data.dvz,
+          power: 0,
+          sizeScale: data?.sizeScale || 0.5,
+          maxDistance: data?.maxDistance,
+          projectileId: data?.projectileId,
+          suppressMuzzleFlare: true,
+        },
+        turret.faction
+      );
+      return;
+    }
+
     turret.group.updateWorldMatrix(true, false);
 
     this._muzzleLocal.set(0, 0.55 + 0.22, -2.16);
@@ -336,6 +364,7 @@ class TurretSystem {
         sizeScale: data?.sizeScale || 0.5,
         maxDistance: data?.maxDistance,
         projectileId: data?.projectileId,
+        suppressMuzzleFlare: true,
       },
       turret.faction
     );
