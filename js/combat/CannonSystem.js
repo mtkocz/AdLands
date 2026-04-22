@@ -1425,7 +1425,7 @@ void main() {
 
     // Pool item already has a built-in PointLight (set up in acquireProjectile)
 
-    // Turret shots use their own recoil/projectile visual and should not look like cannon blasts.
+    // Some server-spawned projectiles can opt out of muzzle flashes.
     if (!data.suppressMuzzleFlare) {
       this._spawnMuzzleFlare(_muzzleWorld, _shotDirWorld, faction, sizeScale);
     }
