@@ -558,6 +558,22 @@ class DustShockwave {
     this._emitDustwaveSprite(position, scale, parent, clipCenter);
   }
 
+  emitDustwaveSpriteOnly(position, scale = 1, parent = null, clipCenter = null) {
+    if (this._effectsSuspended || document.hidden) return null;
+    const beforeSpriteCount = this.dustwaveSprites.length;
+    this._emitDustwaveSprite(position, scale, parent, clipCenter);
+    if (this.dustwaveSprites.length <= beforeSpriteCount) return null;
+
+    const spriteData = this.dustwaveSprites[this.dustwaveSprites.length - 1];
+    const scaledSize = spriteData.baseSize * scale;
+    spriteData.sprite.scale.set(scaledSize, scaledSize, 1);
+    spriteData.baseSize = scaledSize;
+    if (spriteData.shadowSprite) {
+      spriteData.shadowSprite.scale.multiplyScalar(scale);
+    }
+    return spriteData;
+  }
+
   /**
    * Emit a dustwave sprite animation at the given position
    * @param {THREE.Vector3} position - World position of the effect

@@ -14,6 +14,8 @@ class TurretSystem {
     this.surfaceVisible = false;
     this._hpReferenceWidth = 128;
     this._hpReferenceHp = 100;
+    this._hpBarSurfaceOffset = 4.2;
+    this._hpBarScreenYOffset = 12;
 
     this._entity = {
       theta: 0,
@@ -367,14 +369,22 @@ class TurretSystem {
     if (!this.shouldRenderEffects() || !turret?.group) return;
     turret.group.updateWorldMatrix(true, false);
     turret.group.getWorldPosition(this._target);
-    this._emitScaledDustwave(this._target, 0.25);
+    this._emitScaledDustwave(this._target, 0.25, true);
   }
 
-  _emitScaledDustwave(position, scale) {
+  _emitScaledDustwave(position, scale, spriteOnly = false) {
     if (!this.dustShockwave || !position) return;
+    if (spriteOnly && typeof this.dustShockwave.emitDustwaveSpriteOnly === "function") {
+      this.dustShockwave.emitDustwaveSpriteOnly(position.clone(), scale);
+      return;
+    }
     const sprites = this.dustShockwave.dustwaveSprites;
     const beforeSpriteCount = sprites ? sprites.length : 0;
-    this.dustShockwave.emit(position.clone(), scale);
+    if (spriteOnly && typeof this.dustShockwave._emitDustwaveSprite === "function") {
+      this.dustShockwave._emitDustwaveSprite(position.clone(), scale);
+    } else {
+      this.dustShockwave.emit(position.clone(), scale);
+    }
     if (sprites && sprites.length > beforeSpriteCount) {
       const last = sprites[sprites.length - 1];
       const scaledSize = last.baseSize * scale;
@@ -479,7 +489,7 @@ class TurretSystem {
       return;
     }
 
-    this._barWorld.addScaledVector(this._surfaceNormal, 3.0);
+    this._barWorld.addScaledVector(this._surfaceNormal, this._hpBarSurfaceOffset);
     this._barProjected.copy(this._barWorld).project(camera);
     if (
       this._barProjected.z < -1 ||
@@ -491,7 +501,9 @@ class TurretSystem {
     }
 
     const x = Math.round((this._barProjected.x * 0.5 + 0.5) * window.innerWidth);
-    const y = Math.round((this._barProjected.y * -0.5 + 0.5) * window.innerHeight);
+    const y =
+      Math.round((this._barProjected.y * -0.5 + 0.5) * window.innerHeight) -
+      this._hpBarScreenYOffset;
     if (x < -40 || x > window.innerWidth + 40 || y < -40 || y > window.innerHeight + 40) {
       this._hideHpBar(turret);
       return;

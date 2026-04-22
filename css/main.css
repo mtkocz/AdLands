@@ -1810,8 +1810,9 @@ body.tip-dragging .chat-mention.tip-highlight {
     left: 0;
     top: 0;
     width: var(--turret-hp-width);
-    height: 6px;
+    height: var(--space-sm);
     display: none;
+    box-sizing: border-box;
     pointer-events: none;
     z-index: 35;
     transform: translate(-50%, -50%);

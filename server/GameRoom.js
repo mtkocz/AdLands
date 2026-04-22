@@ -74,6 +74,8 @@ const TURRET_LEVELS = {
   },
 };
 
+const TURRET_MAX_PER_OWNER = 3;
+
 // Shield constants
 const SHIELD = {
   MAX_ENERGY: 1.0,
@@ -2490,12 +2492,7 @@ class GameRoom {
     player.lastTurretDeployTime = now;
     player.lastActivityAt = now;
 
-    // One active turret per player. Re-deploying moves/replaces the old turret.
-    for (const [id, turret] of this.turrets) {
-      if (turret.ownerId === socketId) {
-        this.turrets.delete(id);
-      }
-    }
+    this._makeRoomForOwnerTurret(socketId);
 
     const turretId = `turret-${this.nextTurretId++}`;
     const turret = {
@@ -2526,6 +2523,71 @@ class GameRoom {
       maxHp: turret.maxHp,
       level,
     });
+  }
+
+  _deployBotTurret(data) {
+    if (!data || !data.ownerId) return;
+    const botState = this.botBridge.getBot(data.ownerId);
+    if (!botState || botState.d === 1) return;
+
+    const level = Math.max(1, Math.min(3, Number(data.level) || 1));
+    const cfg = TURRET_LEVELS[level] || TURRET_LEVELS[1];
+    const ownerFaction = data.faction || botState.f;
+    if (!ownerFaction) return;
+
+    const theta = Number.isFinite(data.theta) ? data.theta : botState.t;
+    const phi = Number.isFinite(data.phi) ? data.phi : botState.p;
+    const heading = Number.isFinite(data.heading) ? data.heading : botState.h;
+    if (!Number.isFinite(theta) || !Number.isFinite(phi) || !Number.isFinite(heading)) return;
+
+    this._makeRoomForOwnerTurret(data.ownerId);
+
+    const now = Date.now();
+    const turretId = `turret-${this.nextTurretId++}`;
+    const turret = {
+      id: turretId,
+      ownerId: data.ownerId,
+      ownerFaction,
+      ownerName: data.ownerName || this.botBridge.getBotName(data.ownerId) || "Bot",
+      theta,
+      phi,
+      heading,
+      turretAngle: Math.PI,
+      hp: cfg.hp,
+      maxHp: cfg.hp,
+      level,
+      lastFireAt: 0,
+      createdAt: now,
+    };
+
+    this.turrets.set(turretId, turret);
+    this._queueRoomEvent("turret-deployed", {
+      id: turretId,
+      ownerId: data.ownerId,
+      faction: ownerFaction,
+      theta,
+      phi,
+      heading,
+      hp: turret.hp,
+      maxHp: turret.maxHp,
+      level,
+    });
+  }
+
+  _makeRoomForOwnerTurret(ownerId) {
+    const owned = [];
+    for (const [id, turret] of this.turrets) {
+      if (turret.ownerId === ownerId) {
+        owned.push({ id, createdAt: turret.createdAt || 0 });
+      }
+    }
+    if (owned.length < TURRET_MAX_PER_OWNER) return;
+
+    owned.sort((a, b) => a.createdAt - b.createdAt);
+    const removeCount = owned.length - TURRET_MAX_PER_OWNER + 1;
+    for (let i = 0; i < removeCount; i++) {
+      this.turrets.delete(owned[i].id);
+    }
   }
 
   _getTurretLevelForPlayer(player) {
@@ -2641,7 +2703,7 @@ class GameRoom {
     });
   }
 
-  _damageTurret(turretId, damage, attackerId, attackerFaction, projectileId, theta, phi, isMissile = false) {
+  _damageTurret(turretId, damage, attackerId, attackerFaction, projectileId, theta, phi, isMissile = false, sourceType = null) {
     const turret = this.turrets.get(turretId);
     if (!turret || turret.hp <= 0) return false;
     if (attackerFaction && attackerFaction === turret.ownerFaction) return false;
@@ -2657,6 +2719,7 @@ class GameRoom {
       phi,
       projectileId,
       isMissile,
+      sourceType: sourceType || (isMissile ? "missile" : "tank"),
     });
 
     if (turret.hp <= 0) {
@@ -2967,7 +3030,8 @@ class GameRoom {
         p.id,
         p.theta,
         p.phi,
-        true
+        true,
+        p.sourceType || "missile"
       );
       this._removeProjectileAt(projs, i);
       return;
@@ -3628,6 +3692,14 @@ class GameRoom {
         player.hp = Math.min(100, player.hp + heal.amount);
       }
     }
+    const deferredBotEvents = [];
+    for (const evt of botResult.events) {
+      if (evt?.type === "turret-deploy-request") {
+        this._deployBotTurret(evt.data);
+      } else {
+        deferredBotEvents.push(evt);
+      }
+    }
 
     const _t3 = Date.now();
     // 1.7. Tank-to-tank collision (player-player + player-bot)
@@ -3670,8 +3742,8 @@ class GameRoom {
 
     // 4b. Merge bot worker events into the tick queue, then flush everything
     // as a single "game-events" emit — one Socket.IO frame instead of dozens
-    for (let i = 0; i < botResult.events.length; i++) {
-      this._tickEventQueue.push(botResult.events[i]);
+    for (let i = 0; i < deferredBotEvents.length; i++) {
+      this._tickEventQueue.push(deferredBotEvents[i]);
     }
     this._flushTickEvents();
 
@@ -4333,7 +4405,8 @@ class GameRoom {
             p.id,
             p.theta,
             p.phi,
-            false
+            false,
+            p.sourceType || "tank"
           );
           projs[i] = projs[projs.length - 1]; projs.pop();
           hitPlayer = true;

@@ -151,6 +151,10 @@ const BOT_COMBAT_SCAN_RADIUS = 0.15; // radians
 const BOT_COMBAT_LOCK_DURATION = 4000; // ms
 const BOT_RESPAWN_TIME_MIN = 8000;
 const BOT_RESPAWN_TIME_MAX = 12000;
+const BOT_TURRET_EQUIP_CHANCE = 0.25;
+const BOT_TURRET_DEPLOY_RANGE = 55 / 480;
+const BOT_TURRET_DEPLOY_COOLDOWN_MIN = 45000;
+const BOT_TURRET_DEPLOY_COOLDOWN_MAX = 90000;
 
 // Hit detection (oriented-box, matches BodyguardManager)
 const BOT_HIT_HALF_LEN = 3.25;
@@ -355,6 +359,8 @@ class ServerBotManager {
     const name = this._pickName();
     const spawn = this._getValidSpawnPosition();
     const personality = Math.random();
+    const level = 1 + Math.floor(Math.random() * 5);
+    const hasTurret = Math.random() < BOT_TURRET_EQUIP_CHANCE;
 
     const bot = {
       id,
@@ -386,7 +392,7 @@ class ServerBotManager {
       personality,
       driftOffset: (Math.random() - 0.5) * 0.3,
       maxSpeed: BOT_MAX_SPEED * (0.85 + Math.random() * 0.30),
-      level: 1 + Math.floor(Math.random() * 5), // 1-5
+      level, // 1-5
       crypto: Math.floor(Math.random() * 5001),  // 0-5000
 
       // Pathfinding
@@ -408,6 +414,9 @@ class ServerBotManager {
 
       // Combat — weapon type fixed at spawn (missile bots ~15%)
       weaponType: Math.random() < 0.15 ? "missile" : "cannon",
+      tacticalType: hasTurret ? "turrets" : null,
+      turretLevel: Math.max(1, Math.min(3, Math.ceil(level / 2))),
+      nextTurretDeployAt: Date.now() + 10000 + Math.random() * BOT_TURRET_DEPLOY_COOLDOWN_MIN,
       lastFireTime: 0,
       combatTarget: null,
       combatScanTimer: 0,
@@ -1472,6 +1481,7 @@ class ServerBotManager {
       if (now - bot.lastFireTime < cooldown) return nextProjectileId;
 
       const dist = this._angularDistance(bot.theta, bot.phi, target.theta, target.phi);
+      this._maybeDeployTurret(bot, dist, now);
 
       if (bot.weaponType === "missile") {
         // Missile bots: prefer missiles at range, fall back to cannon up close
@@ -1494,6 +1504,28 @@ class ServerBotManager {
     }
 
     return nextProjectileId;
+  }
+
+  _maybeDeployTurret(bot, dist, now) {
+    if (bot.tacticalType !== "turrets") return;
+    if (bot.isDead || bot.isDeploying || bot.weldingActive) return;
+    if (dist > BOT_TURRET_DEPLOY_RANGE) return;
+    if (now < (bot.nextTurretDeployAt || 0)) return;
+
+    bot.nextTurretDeployAt =
+      now +
+      BOT_TURRET_DEPLOY_COOLDOWN_MIN +
+      Math.random() * (BOT_TURRET_DEPLOY_COOLDOWN_MAX - BOT_TURRET_DEPLOY_COOLDOWN_MIN);
+
+    this._emit("turret-deploy-request", {
+      ownerId: bot.id,
+      ownerName: bot.name,
+      faction: bot.faction,
+      theta: bot.theta,
+      phi: bot.phi,
+      heading: bot.heading,
+      level: bot.turretLevel || 1,
+    });
   }
 
   _findCombatTarget(bot, players) {
