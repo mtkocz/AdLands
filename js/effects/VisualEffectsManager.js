@@ -361,6 +361,7 @@ class VisualEffectsManager {
     }
     // Hide overlay and reset terminal text/progress
     this._removeTerminalEffectLayers();
+    document.body.classList.remove("signal-lost-active");
     if (this.signalLostOverlay) {
       this.signalLostOverlay.style.display = "none";
       // Move cursor back to terminal container before wiping lines
@@ -683,6 +684,7 @@ class VisualEffectsManager {
   }
 
   _hideUIElements() {
+    document.body.classList.add("signal-lost-active");
     const ids = [
       "player-tags-container",
       "ui-hint",
@@ -703,6 +705,7 @@ class VisualEffectsManager {
   }
 
   _showUIElements() {
+    document.body.classList.remove("signal-lost-active");
     // Don't restore UI elements if HUD is toggled off (H key)
     if (!this.hudVisible) return;
     const ids = [

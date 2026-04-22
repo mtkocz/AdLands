@@ -1804,6 +1804,12 @@ body.tip-dragging .chat-mention.tip-highlight {
     animation: weld-heal-flicker 0.18s ease-in-out infinite;
 }
 
+body.signal-lost-active #player-tags-container,
+body.signal-lost-active .tag-healthbar,
+body.signal-lost-active .turret-hp-bar {
+    display: none !important;
+}
+
 .turret-hp-bar.tag-healthbar {
     --turret-hp-width: 64px;
     position: fixed;
