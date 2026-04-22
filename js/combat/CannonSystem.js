@@ -1387,6 +1387,7 @@ void main() {
       age: 0,
       isRemote: true,
       serverId: data.projectileId,
+      sourceType: data.sourceType || null,
     });
   }
 
@@ -1446,6 +1447,7 @@ void main() {
       age: 0,
       isRemote: true,
       serverId: data.projectileId,
+      sourceType: data.sourceType || null,
     });
   }
 
@@ -2017,29 +2019,19 @@ void main() {
             p.position.copy(_testPos);
             p.mesh.position.copy(p.position);
 
-            // Clip sphere: turret center in world space, shield radius 4.5
-            _clipCenter.set(0, 0.5, 0);
-            tank.turretGroup.localToWorld(_clipCenter);
-            const shieldClip = _clipCenter.clone();
-
-            // Push explosion position outward to shield surface, at tank height
-            _horizontalOffset.copy(p.position).sub(shieldClip).normalize();
-            _testPos.copy(shieldClip).addScaledVector(_horizontalOffset, 4.5);
-            _testPos.normalize().multiplyScalar(_tankWorldPos.length());
-            p.position.copy(_testPos);
-            p.mesh.position.copy(p.position);
-
-            // Full-size explosion + dust wave, clipped by shield sphere
-            this._spawnExplosion(p.position, tank.faction, p.sizeScale || 1, shieldClip);
-            if (this.dustShockwave) {
-              this.dustShockwave.emit(p.position, p.sizeScale || 1, null, shieldClip);
-            }
-            if (this.shieldHolosphere) {
-              this.shieldHolosphere.emit(p.position, tank.faction, tank.turretGroup);
-            }
-            // Shield block earns 10 crypto — floating number at tank position
-            if (tank === this.playerTank && window.cryptoVisuals) {
-              window.cryptoVisuals._spawnFloatingNumber(10, shieldClip);
+            const shieldBlock = this.emitShieldBlockEffect(
+              p.position,
+              tank,
+              tank.faction,
+              p.sizeScale || 1,
+              {
+                emitTurretSparks: p.sourceType === "turret",
+                showCrypto: tank === this.playerTank,
+              }
+            );
+            if (shieldBlock?.impactPosition) {
+              p.position.copy(shieldBlock.impactPosition);
+              p.mesh.position.copy(p.position);
             }
             shouldExplode = false;
             hitTank = true;
@@ -2116,7 +2108,8 @@ void main() {
         hitSurface
       ) {
         // Shield hits already spawned their own small spark — skip normal explosion
-        if (!hitTank || shouldExplode) {
+        const isTurretProjectile = p.sourceType === "turret";
+        if (!isTurretProjectile && (!hitTank || shouldExplode)) {
           // Spawn explosion at impact point
           this._spawnExplosion(p.position, p.faction, p.sizeScale || 1);
 
@@ -2241,15 +2234,55 @@ void main() {
     }
   }
 
+  emitShieldBlockEffect(position, tank, faction, sizeScale = 1, options = {}) {
+    if (!position || !tank) return null;
+    const shieldAnchor = tank.turretGroup || tank.group;
+    if (!shieldAnchor) return null;
+
+    _clipCenter.set(0, 0.5, 0);
+    shieldAnchor.localToWorld(_clipCenter);
+    const shieldClip = _clipCenter.clone();
+
+    _horizontalOffset.copy(position).sub(shieldClip);
+    if (_horizontalOffset.lengthSq() <= 0.0001) {
+      _horizontalOffset.copy(position);
+    }
+    _horizontalOffset.normalize();
+
+    _testPos.copy(shieldClip).addScaledVector(_horizontalOffset, 4.5);
+    if (tank.group) {
+      tank.group.getWorldPosition(_tankWorldPos);
+      _testPos.normalize().multiplyScalar(_tankWorldPos.length());
+    }
+    const impactPosition = _testPos.clone();
+
+    this._spawnExplosion(impactPosition, faction, sizeScale, shieldClip);
+    if (this.dustShockwave) {
+      this.dustShockwave.emit(impactPosition, sizeScale, null, shieldClip);
+    }
+    if (this.shieldHolosphere) {
+      this.shieldHolosphere.emit(impactPosition, faction, shieldAnchor);
+    }
+    if (options.emitTurretSparks && window.weldingGunSystem) {
+      window.weldingGunSystem.emitImpactSparks(impactPosition, null, 24);
+    }
+    if (options.showCrypto && window.cryptoVisuals) {
+      window.cryptoVisuals._spawnFloatingNumber(10, shieldClip);
+    }
+
+    return { impactPosition, shieldClip };
+  }
+
   removeProjectileByServerId(serverId, impactPos, suppressEffects = false) {
-    if (serverId == null) return;
+    if (serverId == null) return false;
     for (let i = this.projectiles.length - 1; i >= 0; i--) {
       const p = this.projectiles[i];
       if (p.serverId === serverId) {
         const explosionPos = impactPos || p.position;
         const sizeScale = p.sizeScale || 1;
+        const suppressAllEffects = suppressEffects || p.sourceType === "turret";
 
-        if (!suppressEffects) {
+        if (!suppressAllEffects) {
           this._spawnExplosion(explosionPos, p.faction, sizeScale);
           this._spawnImpactDecal(explosionPos, sizeScale);
           if (this.dustShockwave) {
@@ -2263,9 +2296,10 @@ void main() {
         }
         this.objectPools.releaseProjectile(p.poolItem);
         this.projectiles.splice(i, 1);
-        return;
+        return true;
       }
     }
+    return false;
   }
 
   /**

@@ -56,6 +56,7 @@ class NetworkManager {
     this.onTurretDeployed = null;   // (turretData) => {}
     this.onTurretHit = null;        // (hitData) => {}
     this.onTurretDestroyed = null;  // (destroyData) => {}
+    this.onShieldBlock = null;      // (blockData) => {}
     this.onPlayerHit = null;        // (hitData) => {}
     this.onFlareFired = null;       // (flareData) => {}
     this.onFlareHit = null;         // (flareHitData) => {}
@@ -317,6 +318,7 @@ class NetworkManager {
           case "turret-deployed": if (this.onTurretDeployed) this.onTurretDeployed(evt.data); break;
           case "turret-hit": if (this.onTurretHit) this.onTurretHit(evt.data); break;
           case "turret-destroyed": if (this.onTurretDestroyed) this.onTurretDestroyed(evt.data); break;
+          case "shield-block": if (this.onShieldBlock) this.onShieldBlock(evt.data); break;
           case "player-hit": if (this.onPlayerHit) this.onPlayerHit(evt.data); break;
           case "player-killed": if (this.onPlayerKilled) this.onPlayerKilled(evt.data); break;
           case "player-respawned": if (this.onPlayerRespawned) this.onPlayerRespawned(evt.data); break;

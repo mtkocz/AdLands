@@ -2688,18 +2688,19 @@ class GameRoom {
       id: turret.id,
       ownerId: turret.ownerId,
       faction: turret.ownerFaction,
+      sourceType: "turret",
       turretAngle: turret.turretAngle,
       theta: turret.theta,
       phi: turret.phi,
       projectileId: projectile.id,
       sizeScale: cfg.projectileSizeScale,
       maxDistance: cfg.projectileRangeWorld,
-      wx: fLift * fSp * fSt,
+      wx: fLift * fSp * fCt,
       wy: fLift * fCp,
-      wz: fLift * fSp * fCt,
-      dvx: fSinH * fCt + fCosH * fCp * fSt,
-      dvy: -fCosH * fSp,
-      dvz: -fSinH * fSt + fCosH * fCp * fCt,
+      wz: fLift * fSp * fSt,
+      dvx: -fCosH * fCp * fCt + fSinH * fSt,
+      dvy: fCosH * fSp,
+      dvz: -fCosH * fCp * fSt - fSinH * fCt,
     });
   }
 
@@ -4252,6 +4253,16 @@ class GameRoom {
           const halfArc = shPlayer.shieldArcAngle / 2 + 0.18; // +10° buffer for turret lag
           if (Math.abs(angleDiff) < halfArc) {
             // Shield hit — destroy projectile, earn 10 crypto per block
+            this._queueRoomEvent("shield-block", {
+              targetId: shId,
+              faction: shPlayer.faction,
+              theta: testTheta,
+              phi: testPhi,
+              projectileId: p.id,
+              sourceType: p.sourceType || "tank",
+              sourceId: p.sourceId || p.ownerId,
+              sizeScale: p.sourceType === "turret" ? 0.5 : 1,
+            });
             projs[i] = projs[projs.length - 1]; projs.pop();
             shPlayer.crypto += 10;
             shieldReflected = true;

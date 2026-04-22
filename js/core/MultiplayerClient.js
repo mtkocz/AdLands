@@ -1140,6 +1140,7 @@
     // Preallocated vectors for hit effects and ping positions
     const _hitWorldPos = new THREE.Vector3();
     const _pingWorldPos = new THREE.Vector3();
+    const _shieldBlockWorldPos = new THREE.Vector3();
 
     const emitTurretImpactSparks = (position, count = 24) => {
       if (
@@ -1149,6 +1150,45 @@
       ) {
         window.weldingGunSystem.emitImpactSparks(position, null, count);
       }
+    };
+
+    const setSphericalWorldPos = (out, theta, phi, lift = 2) => {
+      if (!Number.isFinite(theta) || !Number.isFinite(phi)) return false;
+      const r = (sphereRadius || 480) + lift;
+      const sp = Math.sin(phi);
+      const cp = Math.cos(phi);
+      const st = Math.sin(theta);
+      const ct = Math.cos(theta);
+      out.set(r * sp * ct, r * cp, r * sp * st);
+      if (planet?.hexGroup) {
+        planet.hexGroup.updateWorldMatrix?.(true, false);
+        planet.hexGroup.localToWorld(out);
+      }
+      return true;
+    };
+
+    net.onShieldBlock = (data) => {
+      if (!data || !cannonSystem) return;
+      const shieldTank = data.targetId === net.playerId
+        ? tank
+        : remoteTanks.get(data.targetId);
+      if (!shieldTank) return;
+
+      const hadProjectile = data.projectileId == null ||
+        cannonSystem.removeProjectileByServerId?.(data.projectileId, null, true);
+      if (!hadProjectile) return;
+      if (!setSphericalWorldPos(_shieldBlockWorldPos, data.theta, data.phi, 2)) return;
+
+      cannonSystem.emitShieldBlockEffect?.(
+        _shieldBlockWorldPos,
+        shieldTank,
+        data.faction || shieldTank.faction || "rust",
+        data.sizeScale || 1,
+        {
+          emitTurretSparks: data.sourceType === "turret",
+          showCrypto: data.targetId === net.playerId,
+        }
+      );
     };
 
     net.onPlayerHit = (data) => {
