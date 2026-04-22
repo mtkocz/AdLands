@@ -1312,9 +1312,10 @@ void main() {
     const speed =
       this.config.projectileSpeed *
       (1 + chargeRatio * (this.config.chargeSpeedMultiplier - 1));
-    const range =
-      this.config.maxDistance *
-      (1 + chargeRatio * (this.config.chargeRangeMultiplier - 1));
+    const range = Number.isFinite(data.maxDistance)
+      ? data.maxDistance
+      : this.config.maxDistance *
+        (1 + chargeRatio * (this.config.chargeRangeMultiplier - 1));
     const sizeScale = data.sizeScale || (1 + chargeRatio * (this.config.chargeSizeMultiplier - 1));
 
     // Compute muzzle position using remote tank's world matrix
@@ -1404,9 +1405,10 @@ void main() {
     const speed =
       this.config.projectileSpeed *
       (1 + chargeRatio * (this.config.chargeSpeedMultiplier - 1));
-    const range =
-      this.config.maxDistance *
-      (1 + chargeRatio * (this.config.chargeRangeMultiplier - 1));
+    const range = Number.isFinite(data.maxDistance)
+      ? data.maxDistance
+      : this.config.maxDistance *
+        (1 + chargeRatio * (this.config.chargeRangeMultiplier - 1));
     const sizeScale = data.sizeScale || (1 + chargeRatio * (this.config.chargeSizeMultiplier - 1));
 
     _muzzleWorld.set(data.wx, data.wy, data.wz);
@@ -2237,7 +2239,7 @@ void main() {
     }
   }
 
-  removeProjectileByServerId(serverId, impactPos) {
+  removeProjectileByServerId(serverId, impactPos, suppressEffects = false) {
     if (serverId == null) return;
     for (let i = this.projectiles.length - 1; i >= 0; i--) {
       const p = this.projectiles[i];
@@ -2245,10 +2247,12 @@ void main() {
         const explosionPos = impactPos || p.position;
         const sizeScale = p.sizeScale || 1;
 
-        this._spawnExplosion(explosionPos, p.faction, sizeScale);
-        this._spawnImpactDecal(explosionPos, sizeScale);
-        if (this.dustShockwave) {
-          this.dustShockwave.emit(explosionPos, sizeScale);
+        if (!suppressEffects) {
+          this._spawnExplosion(explosionPos, p.faction, sizeScale);
+          this._spawnImpactDecal(explosionPos, sizeScale);
+          if (this.dustShockwave) {
+            this.dustShockwave.emit(explosionPos, sizeScale);
+          }
         }
 
         if (p.light) {

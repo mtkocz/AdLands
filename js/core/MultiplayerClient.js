@@ -1034,7 +1034,11 @@
           impactPos = new THREE.Vector3();
           turret.group.getWorldPosition(impactPos);
         }
-        cannonSystem.removeProjectileByServerId?.(data.projectileId, impactPos);
+        cannonSystem.removeProjectileByServerId?.(
+          data.projectileId,
+          impactPos,
+          !turretSystem?.shouldRenderEffects?.()
+        );
       }
     };
 
@@ -1209,7 +1213,12 @@
             if (gameCamera) gameCamera.triggerShake(pos, pos, 0.8, 100);
             if (cannonSystem.onNearbyExplosion) cannonSystem.onNearbyExplosion(1.2);
           }
-          if (data.sourceType === "turret" && window.weldingGunSystem && tank.group) {
+          if (
+            data.sourceType === "turret" &&
+            turretSystem?.shouldRenderEffects?.() &&
+            window.weldingGunSystem &&
+            tank.group
+          ) {
             const pos = new THREE.Vector3();
             tank.group.getWorldPosition(pos);
             window.weldingGunSystem.emitImpactSparks(pos, null, 22);
@@ -1272,7 +1281,9 @@
               }
             }
 
-            if (remoteTank.group) {
+            const shouldShowHitEffects =
+              data.sourceType !== "turret" || turretSystem?.shouldRenderEffects?.();
+            if (remoteTank.group && shouldShowHitEffects) {
               remoteTank.group.getWorldPosition(_hitWorldPos);
               const hitLen = _hitWorldPos.length();
               if (hitLen > 0) _hitWorldPos.multiplyScalar((hitLen + 1.0) / hitLen);
@@ -1320,7 +1331,11 @@
                 }, 150);
               }
 
-              if (data.sourceType === "turret" && window.weldingGunSystem) {
+              if (
+                data.sourceType === "turret" &&
+                turretSystem?.shouldRenderEffects?.() &&
+                window.weldingGunSystem
+              ) {
                 window.weldingGunSystem.emitImpactSparks(_hitWorldPos, null, 22);
               }
             }
@@ -1377,7 +1392,13 @@
                 victim.group.getWorldPosition(impactPos);
               }
             }
-            cannonSystem.removeProjectileByServerId?.(data.projectileId, impactPos);
+            const suppressTurretProjectileEffects =
+              data.sourceType === "turret" && !turretSystem?.shouldRenderEffects?.();
+            cannonSystem.removeProjectileByServerId?.(
+              data.projectileId,
+              impactPos,
+              suppressTurretProjectileEffects
+            );
           }
         }
       }

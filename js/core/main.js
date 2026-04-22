@@ -4212,7 +4212,7 @@
       cannonSystem.updateCharge(deltaTime, tank, playerFaction);
     }
     cannonSystem.update(deltaTime, sharedFrustum, isLowDetailView);
-    turretSystem.update(deltaTime, sharedFrustum, camera);
+    turretSystem.update(deltaTime, sharedFrustum, camera, !isLowDetailView);
     missileSystem.hideReticle = isLowDetailView || !hasSpawnedIn || tank.isDead;
     missileSystem.update(deltaTime, sharedFrustum, camera);
     flareSystem.update(deltaTime, camera);

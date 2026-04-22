@@ -1804,6 +1804,46 @@ body.tip-dragging .chat-mention.tip-highlight {
     animation: weld-heal-flicker 0.18s ease-in-out infinite;
 }
 
+.turret-hp-bar {
+    --turret-hp-width: 64px;
+    position: fixed;
+    left: 0;
+    top: 0;
+    width: var(--turret-hp-width);
+    height: 6px;
+    display: none;
+    pointer-events: none;
+    z-index: 35;
+    transform: translate(-50%, -50%);
+    background: rgba(8, 10, 14, 0.85);
+    border: 1px solid rgba(255, 255, 255, 0.35);
+    -webkit-clip-path: var(--clip-rounded-4);
+    clip-path: var(--clip-rounded-4);
+    overflow: hidden;
+    box-shadow: 0 1px 4px rgba(0, 0, 0, 0.45);
+}
+
+.turret-hp-fill {
+    width: 100%;
+    height: 100%;
+    background: #22c55e;
+    transition:
+        width 0.12s ease-out,
+        background 0.2s ease-out;
+}
+
+.turret-hp-fill.hp-high {
+    background: #22c55e;
+}
+
+.turret-hp-fill.hp-medium {
+    background: #facc15;
+}
+
+.turret-hp-fill.hp-low {
+    background: #ef4444;
+}
+
 /* ========================
    PROXIMITY CHAT
    ======================== */

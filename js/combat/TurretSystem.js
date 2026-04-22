@@ -11,6 +11,9 @@ class TurretSystem {
     this.turrets = new Map();
     this.dustShockwave = null;
     this.cannonSystem = null;
+    this.surfaceVisible = false;
+    this._hpReferenceWidth = 128;
+    this._hpReferenceHp = 100;
 
     this._entity = {
       theta: 0,
@@ -33,6 +36,9 @@ class TurretSystem {
     this._directionWorld = new THREE.Vector3();
     this._surfaceNormal = new THREE.Vector3();
     this._target = new THREE.Vector3();
+    this._barWorld = new THREE.Vector3();
+    this._barProjected = new THREE.Vector3();
+    this._cameraToTarget = new THREE.Vector3();
     this._yAxis = new THREE.Vector3(0, 1, 0);
   }
 
@@ -97,6 +103,7 @@ class TurretSystem {
     turret.level = data.level || turret.level || 1;
     turret.isDead = turret.hp <= 0;
     this._applyFactionColors(turret);
+    this._updateHpBarMeter(turret);
     this._updateTurretTransform(turret);
     return turret;
   }
@@ -113,11 +120,12 @@ class TurretSystem {
       if (Number.isFinite(data.turretAngle)) turret.turretAngle = data.turretAngle;
       this._updateTurretTransform(turret);
       this._triggerRecoil(turret);
+      this._emitFiringDustwave(turret);
       this._spawnProjectileFromTurret(turret, data);
       return;
     }
 
-    if (this.cannonSystem && data) {
+    if (this.shouldRenderEffects() && this.cannonSystem && data) {
       this.cannonSystem.spawnProjectileFromServer(
         { ...data, power: 0, sizeScale: data.sizeScale || 0.5 },
         data.faction || "rust"
@@ -129,6 +137,8 @@ class TurretSystem {
     const turret = this.turrets.get(data?.id);
     if (!turret) return;
     if (Number.isFinite(data.hp)) turret.hp = data.hp;
+    turret.isDead = turret.hp <= 0;
+    this._updateHpBarMeter(turret);
     this._flashTurret(turret);
   }
 
@@ -136,20 +146,32 @@ class TurretSystem {
     this._removeTurret(data?.id, true);
   }
 
-  update(deltaTime, frustum, camera) {
+  update(deltaTime, frustum, camera, surfaceVisible = true) {
+    this.surfaceVisible = !!surfaceVisible;
     for (const [, turret] of this.turrets) {
       if (!turret.group) continue;
       this._updateTurretTransform(turret);
       this._updateRecoil(turret, deltaTime);
 
+      if (!this.surfaceVisible) {
+        turret.group.visible = false;
+        this._hideHpBar(turret);
+        continue;
+      }
+
+      let visible = true;
       if (frustum && camera) {
         turret.group.updateWorldMatrix(true, false);
         turret.group.getWorldPosition(this._target);
-        turret.group.visible = frustum.containsPoint(this._target);
-      } else {
-        turret.group.visible = true;
+        visible = frustum.containsPoint(this._target);
       }
+      turret.group.visible = visible;
+      this._updateHpBarPosition(turret, camera, visible);
     }
+  }
+
+  shouldRenderEffects() {
+    return !!this.surfaceVisible;
   }
 
   getTurret(id) {
@@ -162,6 +184,7 @@ class TurretSystem {
 
   _createTurret(data) {
     const group = new THREE.Group();
+    group.visible = this.surfaceVisible;
     const bodyGroup = new THREE.Group();
     const turretGroup = new THREE.Group();
     turretGroup.position.y = 0.55;
@@ -245,11 +268,17 @@ class TurretSystem {
       _recoilTarget: 0,
       _baseBarrelZ: barrel.position.z,
       _baseMuzzleZ: muzzle.position.z,
+      hpBarEl: null,
+      hpFillEl: null,
+      _hpBarWidth: -1,
+      _hpPercent: -1,
     };
     hitbox.userData.tankRef = turret;
     hitbox.userData.type = "turret";
 
+    this._ensureHpBar(turret);
     this._applyFactionColors(turret);
+    this._updateHpBarMeter(turret);
     this._updateTurretTransform(turret);
     return turret;
   }
@@ -277,7 +306,7 @@ class TurretSystem {
   }
 
   _spawnProjectileFromTurret(turret, data) {
-    if (!this.cannonSystem || !turret?.group) return;
+    if (!this.shouldRenderEffects() || !this.cannonSystem || !turret?.group) return;
     turret.group.updateWorldMatrix(true, false);
 
     this._muzzleLocal.set(0, 0.55 + 0.22, -2.16);
@@ -303,6 +332,7 @@ class TurretSystem {
         dvz: this._directionWorld.z,
         power: 0,
         sizeScale: data?.sizeScale || 0.5,
+        maxDistance: data?.maxDistance,
         projectileId: data?.projectileId,
       },
       turret.faction
@@ -327,24 +357,37 @@ class TurretSystem {
   }
 
   _emitDeployEffect(turret) {
-    if (!this.dustShockwave || !turret?.group) return;
+    if (!this.shouldRenderEffects() || !this.dustShockwave || !turret?.group) return;
     turret.group.updateWorldMatrix(true, false);
     turret.group.getWorldPosition(this._target);
-    this.dustShockwave.emit(this._target.clone(), 0.5);
+    this._emitScaledDustwave(this._target, 0.5);
+  }
+
+  _emitFiringDustwave(turret) {
+    if (!this.shouldRenderEffects() || !turret?.group) return;
+    turret.group.updateWorldMatrix(true, false);
+    turret.group.getWorldPosition(this._target);
+    this._emitScaledDustwave(this._target, 0.25);
+  }
+
+  _emitScaledDustwave(position, scale) {
+    if (!this.dustShockwave || !position) return;
     const sprites = this.dustShockwave.dustwaveSprites;
-    if (sprites.length > 0) {
+    const beforeSpriteCount = sprites ? sprites.length : 0;
+    this.dustShockwave.emit(position.clone(), scale);
+    if (sprites && sprites.length > beforeSpriteCount) {
       const last = sprites[sprites.length - 1];
-      const half = last.baseSize * 0.5;
-      last.sprite.scale.set(half, half, 1);
-      last.baseSize = half;
+      const scaledSize = last.baseSize * scale;
+      last.sprite.scale.set(scaledSize, scaledSize, 1);
+      last.baseSize = scaledSize;
       if (last.shadowSprite) {
-        last.shadowSprite.scale.multiplyScalar(0.5);
+        last.shadowSprite.scale.multiplyScalar(scale);
       }
     }
   }
 
   _emitImpactEffect(turret, scale) {
-    if (!turret?.group) return;
+    if (!this.shouldRenderEffects() || !turret?.group) return;
     turret.group.updateWorldMatrix(true, false);
     turret.group.getWorldPosition(this._target);
     this.cannonSystem?._spawnExplosion?.(this._target, turret.faction, scale);
@@ -352,7 +395,7 @@ class TurretSystem {
   }
 
   _flashTurret(turret) {
-    if (!turret?.group) return;
+    if (!this.shouldRenderEffects() || !turret?.group) return;
     const meshes = [];
     turret.group.traverse((child) => {
       if (child.isMesh && child.material?.color && child !== turret.hitbox) {
@@ -375,11 +418,110 @@ class TurretSystem {
     }
   }
 
+  _ensureHpBar(turret) {
+    if (!turret || turret.hpBarEl || typeof document === "undefined") return;
+    const bar = document.createElement("div");
+    bar.className = "turret-hp-bar";
+    const fill = document.createElement("div");
+    fill.className = "turret-hp-fill hp-high";
+    bar.appendChild(fill);
+    document.body.appendChild(bar);
+    turret.hpBarEl = bar;
+    turret.hpFillEl = fill;
+  }
+
+  _updateHpBarMeter(turret) {
+    if (!turret) return;
+    this._ensureHpBar(turret);
+    const maxHpValue = Number(turret.maxHp);
+    const maxHp = Number.isFinite(maxHpValue) && maxHpValue > 0 ? maxHpValue : 50;
+    const hpValue = Number(turret.hp);
+    const hp = Number.isFinite(hpValue) ? Math.max(0, Math.min(maxHp, hpValue)) : 0;
+    const hpPercent = Math.round((hp / maxHp) * 1000) / 10;
+    const barWidth = Math.max(
+      16,
+      Math.round((maxHp / this._hpReferenceHp) * this._hpReferenceWidth)
+    );
+
+    if (turret.hpBarEl && turret._hpBarWidth !== barWidth) {
+      turret.hpBarEl.style.setProperty("--turret-hp-width", `${barWidth}px`);
+      turret._hpBarWidth = barWidth;
+    }
+
+    if (turret.hpFillEl && turret._hpPercent !== hpPercent) {
+      turret.hpFillEl.style.width = `${hpPercent}%`;
+      turret.hpFillEl.classList.remove("hp-high", "hp-medium", "hp-low");
+      if (hpPercent > 50) {
+        turret.hpFillEl.classList.add("hp-high");
+      } else if (hpPercent > 25) {
+        turret.hpFillEl.classList.add("hp-medium");
+      } else {
+        turret.hpFillEl.classList.add("hp-low");
+      }
+      turret._hpPercent = hpPercent;
+    }
+  }
+
+  _updateHpBarPosition(turret, camera, visible) {
+    this._ensureHpBar(turret);
+    if (!turret?.hpBarEl) return;
+    if (!visible || !camera || !this.surfaceVisible || turret.isDead || !turret.group) {
+      this._hideHpBar(turret);
+      return;
+    }
+
+    turret.group.updateWorldMatrix(true, false);
+    turret.group.getWorldPosition(this._barWorld);
+    this._surfaceNormal.copy(this._barWorld).normalize();
+    this._cameraToTarget.copy(this._barWorld).sub(camera.position).normalize();
+    if (this._surfaceNormal.dot(this._cameraToTarget) > 0.2) {
+      this._hideHpBar(turret);
+      return;
+    }
+
+    this._barWorld.addScaledVector(this._surfaceNormal, 3.0);
+    this._barProjected.copy(this._barWorld).project(camera);
+    if (
+      this._barProjected.z < -1 ||
+      this._barProjected.z > 1 ||
+      typeof window === "undefined"
+    ) {
+      this._hideHpBar(turret);
+      return;
+    }
+
+    const x = Math.round((this._barProjected.x * 0.5 + 0.5) * window.innerWidth);
+    const y = Math.round((this._barProjected.y * -0.5 + 0.5) * window.innerHeight);
+    if (x < -40 || x > window.innerWidth + 40 || y < -40 || y > window.innerHeight + 40) {
+      this._hideHpBar(turret);
+      return;
+    }
+
+    turret.hpBarEl.style.display = "block";
+    turret.hpBarEl.style.left = `${x}px`;
+    turret.hpBarEl.style.top = `${y}px`;
+  }
+
+  _hideHpBar(turret) {
+    if (turret?.hpBarEl) {
+      turret.hpBarEl.style.display = "none";
+    }
+  }
+
+  _removeHpBar(turret) {
+    if (turret?.hpBarEl) {
+      turret.hpBarEl.remove();
+      turret.hpBarEl = null;
+      turret.hpFillEl = null;
+    }
+  }
+
   _removeTurret(id, withExplosion) {
     if (!id) return;
     const turret = this.turrets.get(id);
     if (!turret) return;
     if (withExplosion) this._emitImpactEffect(turret, 0.8);
+    this._removeHpBar(turret);
     if (turret.group?.parent) turret.group.parent.remove(turret.group);
     turret.group?.traverse((child) => {
       if (child.geometry) child.geometry.dispose();
