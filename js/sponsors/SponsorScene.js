@@ -114,6 +114,7 @@ class SponsorScene {
     // Raycaster
     this.raycaster = new THREE.Raycaster();
     this.mouse = new THREE.Vector2();
+    this._applyCameraFraming(window.innerWidth, window.innerHeight);
 
     // Build the scene
     this._createSkybox();
@@ -887,6 +888,9 @@ class SponsorScene {
       if (e.touches.length === 2) {
         e.preventDefault();
         this.isDragging = true;
+        this.isPainting = false;
+        this.paintMode = null;
+        this.paintedThisStroke.clear();
         singleTouchMoved = true;
         this.orbitalVelocity.theta = 0;
         this.orbitalVelocity.phi = 0;
@@ -903,6 +907,9 @@ class SponsorScene {
         this.dragStartMouse = { x: touch.clientX, y: touch.clientY };
         lastSingleTouch = { x: touch.clientX, y: touch.clientY };
         singleTouchMoved = false;
+        this.isPainting = false;
+        this.paintMode = "add";
+        this.paintedThisStroke.clear();
         this.lastMoveTime = performance.now();
       }
     }, { passive: false });
@@ -938,27 +945,15 @@ class SponsorScene {
         e.preventDefault();
         this.lastInteractionTime = performance.now();
         const touch = e.touches[0];
-        const dx = touch.clientX - lastSingleTouch.x;
-        const dy = touch.clientY - lastSingleTouch.y;
         const totalDx = Math.abs(touch.clientX - this.dragStartMouse.x);
         const totalDy = Math.abs(touch.clientY - this.dragStartMouse.y);
-        const now = performance.now();
-        const deltaTime = now - this.lastMoveTime;
 
         if (totalDx > 8 || totalDy > 8) {
           singleTouchMoved = true;
-          if (deltaTime > 0 && deltaTime < 100) {
-            this.orbitalVelocity.theta = ((dx * 0.005) / deltaTime) * 16;
-            this.orbitalVelocity.phi = ((-dy * 0.005) / deltaTime) * 16;
-          }
-
-          this.orbitalTheta += dx * 0.005;
-          this.orbitalPhi -= dy * 0.005;
-          this.orbitalPhi = Math.max((10 * Math.PI) / 180, Math.min((170 * Math.PI) / 180, this.orbitalPhi));
-
+          this.isPainting = true;
+          this._paintSelectLine(lastSingleTouch.x, lastSingleTouch.y, touch.clientX, touch.clientY);
           lastSingleTouch = { x: touch.clientX, y: touch.clientY };
-          this.lastMoveTime = now;
-          this._updateCameraPosition();
+          this.lastMoveTime = performance.now();
         }
       }
     }, { passive: false });
@@ -973,6 +968,12 @@ class SponsorScene {
         const touch = e.changedTouches[0];
         const dx = Math.abs(touch.clientX - this.dragStartMouse.x);
         const dy = Math.abs(touch.clientY - this.dragStartMouse.y);
+        if (this.isPainting) {
+          this._paintSelectLine(lastSingleTouch.x, lastSingleTouch.y, touch.clientX, touch.clientY);
+          this.isPainting = false;
+          this.paintMode = null;
+          this.paintedThisStroke.clear();
+        }
         if (!singleTouchMoved && dx < 10 && dy < 10) {
           this._handleClick({ clientX: touch.clientX, clientY: touch.clientY }, { mode: "select" });
         }
@@ -984,6 +985,9 @@ class SponsorScene {
       suppressSyntheticMouse();
       lockTouchSelection();
       this.isDragging = false;
+      this.isPainting = false;
+      this.paintMode = null;
+      this.paintedThisStroke.clear();
       singleTouchMoved = false;
     });
   }
@@ -1104,6 +1108,37 @@ class SponsorScene {
     }
   }
 
+  _paintSelectLine(fromX, fromY, toX, toY) {
+    const dx = toX - fromX;
+    const dy = toY - fromY;
+    const distance = Math.hypot(dx, dy);
+    const steps = Math.max(1, Math.ceil(distance / 10));
+
+    for (let i = 0; i <= steps; i++) {
+      const t = i / steps;
+      this._paintSelectAtScreen(fromX + dx * t, fromY + dy * t);
+    }
+  }
+
+  _paintSelectAtScreen(clientX, clientY) {
+    const rect = this.renderer.domElement.getBoundingClientRect();
+    this.mouse.x = ((clientX - rect.left) / rect.width) * 2 - 1;
+    this.mouse.y = -((clientY - rect.top) / rect.height) * 2 + 1;
+
+    this.raycaster.setFromCamera(this.mouse, this.camera);
+    const intersects = this.raycaster.intersectObjects(this.tileMeshes);
+    if (intersects.length === 0) return;
+
+    const mesh = intersects[0].object;
+    if (mesh.userData.isExcluded) return;
+
+    const tileIndex = mesh.userData.tileIndex;
+    if (this.paintedThisStroke.has(tileIndex)) return;
+
+    this.paintedThisStroke.add(tileIndex);
+    this._setTileSelection(tileIndex, true);
+  }
+
   _toggleTileSelection(tileIndex) {
     this._setTileSelection(tileIndex, !this.selectedTiles.has(tileIndex));
   }
@@ -1208,6 +1243,25 @@ class SponsorScene {
     }
 
     this._needsRender = true;
+  }
+
+  _applyCameraFraming(w = window.innerWidth, h = window.innerHeight) {
+    this.camera.aspect = w / h;
+
+    const isMobile =
+      typeof window !== "undefined" &&
+      window.matchMedia &&
+      window.matchMedia("(max-width: 768px)").matches;
+
+    if (isMobile) {
+      const targetY = document.body.classList.contains("inquiry-open") ? 0.21 : 0.28;
+      const offsetY = Math.round(h * (0.5 - targetY));
+      this.camera.setViewOffset(w, h, 0, offsetY, w, h);
+    } else {
+      this.camera.clearViewOffset();
+    }
+
+    this.camera.updateProjectionMatrix();
   }
 
   _animate() {
@@ -1365,8 +1419,7 @@ class SponsorScene {
   resize() {
     const w = window.innerWidth;
     const h = window.innerHeight;
-    this.camera.aspect = w / h;
-    this.camera.updateProjectionMatrix();
+    this._applyCameraFraming(w, h);
     this.renderer.setSize(w, h);
 
     if (this.bloomCamera) {
@@ -1379,6 +1432,7 @@ class SponsorScene {
     if (this.bloomComposer) this.bloomComposer.setSize(bw, bh);
     if (this.finalComposer) this.finalComposer.setSize(w, h);
 
+    this._updateCameraPosition();
     this._needsRender = true;
   }
 }

@@ -421,11 +421,13 @@
     if (submitBtn) submitBtn.disabled = false;
 
     inquiryModal.classList.remove("hidden");
+    scene.resize();
   }
 
   function hideInquiryModal() {
     document.body.classList.remove("inquiry-open");
     if (inquiryModal) inquiryModal.classList.add("hidden");
+    scene.resize();
   }
 
   function showConfirmation(text) {
