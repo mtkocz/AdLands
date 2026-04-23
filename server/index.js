@@ -168,7 +168,24 @@ const io = new Server(server, {
 app.use("/shared", express.static(path.join(__dirname, "shared"), { maxAge: '1d' }));
 
 // Serve the main game directory (parent of server/)
-app.use(express.static(gameDir, { maxAge: '1d' }));
+app.use(express.static(gameDir, {
+  maxAge: '1d',
+  setHeaders: (res, filePath) => {
+    const relPath = path.relative(gameDir, filePath).replace(/\\/g, "/");
+    const isSponsorPortalAsset =
+      relPath === "sponsors.html" ||
+      relPath === "css/sponsors.css" ||
+      relPath === "js/sponsors/SponsorApp.js" ||
+      relPath === "js/sponsors/SponsorScene.js";
+
+    if (isSponsorPortalAsset) {
+      res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate, proxy-revalidate");
+      res.setHeader("Pragma", "no-cache");
+      res.setHeader("Expires", "0");
+      res.setHeader("Surrogate-Control", "no-store");
+    }
+  },
+}));
 
 // Fallback: serve index.html for root
 app.get("/", (req, res) => {
