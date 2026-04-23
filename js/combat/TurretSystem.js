@@ -43,6 +43,7 @@ class TurretSystem {
     this._barProjected = new THREE.Vector3();
     this._cameraToTarget = new THREE.Vector3();
     this._yAxis = new THREE.Vector3(0, 1, 0);
+    this._sinkTiltAxis = new THREE.Vector3();
   }
 
   setDustShockwave(dustShockwave) {
@@ -79,6 +80,7 @@ class TurretSystem {
 
     for (const [id, turret] of this.turrets) {
       if (!seen.has(id)) {
+        if (turret.isDying) continue;
         this._removeTurret(id, false);
       }
     }
@@ -159,6 +161,7 @@ class TurretSystem {
       this._updateTurretAim(turret, deltaTime);
       this._updateTurretTransform(turret);
       this._updateRecoil(turret, deltaTime);
+      if (this._updateDeathFade(turret)) continue;
 
       if (!this.surfaceVisible) {
         turret.group.visible = false;
@@ -280,6 +283,7 @@ class TurretSystem {
       _recoilTarget: 0,
       _baseBarrelZ: barrel.position.z,
       _baseMuzzleZ: muzzle.position.z,
+      _baseBodyY: bodyGroup.position.y,
       hpBarEl: null,
       hpFillEl: null,
       _hpBarWidth: -1,
@@ -484,6 +488,68 @@ class TurretSystem {
     turret.group.getWorldPosition(this._target);
     this.cannonSystem?._spawnExplosion?.(this._target, turret.faction, scale);
     this.dustShockwave?.emit(this._target, scale * 0.7);
+    this.cannonSystem?.spawnOilPuddle?.(this._target);
+  }
+
+  _startDeathSequence(turret) {
+    if (!turret || turret.isDying) return;
+    turret.isDead = true;
+    turret.isDying = true;
+    turret.hp = 0;
+    turret._recoilTarget = 0;
+    turret._recoil = 0;
+    this._hideHpBar(turret);
+    this._setDeadMaterial(turret);
+    turret.fadeStartTime = performance.now();
+    turret.sinkDelay = 5000;
+    turret.sinkDuration = 5000;
+    turret.sinkDepth = 3;
+    const angle = Math.random() * Math.PI * 2;
+    turret._sinkTiltAxis = new THREE.Vector3(Math.cos(angle), 0, Math.sin(angle)).normalize();
+    turret._sinkTiltMax = (0.3 + Math.random() * 0.4) * (Math.random() < 0.5 ? 1 : -1);
+  }
+
+  _setDeadMaterial(turret) {
+    const charredColor = 0x3a3a3a;
+    turret.group?.traverse((child) => {
+      if (!child.isMesh || !child.material || child === turret.hitbox) return;
+      if (!child.material.color) return;
+      if (child.userData._hitFlashOrigColor !== undefined) {
+        clearTimeout(child.userData._hitFlashTimer);
+        child.material.color.setHex(child.userData._hitFlashOrigColor);
+        delete child.userData._hitFlashOrigColor;
+        delete child.userData._hitFlashTimer;
+      }
+      if (!child.userData.originalMaterial) {
+        child.userData.originalMaterial = child.material;
+        child.material = child.material.clone();
+      }
+      child.material.color.setHex(charredColor);
+    });
+  }
+
+  _updateDeathFade(turret) {
+    if (!turret?.isDying) return false;
+    this._hideHpBar(turret);
+    turret.group.visible = this.surfaceVisible;
+    if (!this.surfaceVisible) return true;
+
+    const elapsed = performance.now() - (turret.fadeStartTime || 0);
+    if (elapsed < turret.sinkDelay) return true;
+
+    const sinkElapsed = elapsed - turret.sinkDelay;
+    const sinkProgress = Math.min(1, sinkElapsed / turret.sinkDuration);
+    if (sinkProgress >= 1) {
+      this._finalizeTurretRemoval(turret);
+      return true;
+    }
+
+    const eased = sinkProgress * sinkProgress;
+    if (turret.bodyGroup) {
+      turret.bodyGroup.position.y = (turret._baseBodyY || 0) - eased * turret.sinkDepth;
+      turret.bodyGroup.quaternion.setFromAxisAngle(turret._sinkTiltAxis, eased * turret._sinkTiltMax);
+    }
+    return true;
   }
 
   _flashTurret(turret) {
@@ -614,7 +680,16 @@ class TurretSystem {
     if (!id) return;
     const turret = this.turrets.get(id);
     if (!turret) return;
-    if (withExplosion) this._emitImpactEffect(turret, 0.8);
+    if (withExplosion) {
+      this._emitImpactEffect(turret, 0.8);
+      this._startDeathSequence(turret);
+      return;
+    }
+    this._finalizeTurretRemoval(turret);
+  }
+
+  _finalizeTurretRemoval(turret) {
+    if (!turret) return;
     this._removeHpBar(turret);
     if (turret.group?.parent) turret.group.parent.remove(turret.group);
     turret.group?.traverse((child) => {
@@ -624,6 +699,6 @@ class TurretSystem {
         else child.material.dispose();
       }
     });
-    this.turrets.delete(id);
+    this.turrets.delete(turret.id);
   }
 }

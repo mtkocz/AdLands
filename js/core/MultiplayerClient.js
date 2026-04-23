@@ -1187,6 +1187,7 @@
         {
           emitTurretSparks: data.sourceType === "turret",
           suppressExplosion: data.sourceType === "turret",
+          dustScale: data.sourceType === "turret" ? (data.sizeScale || 1) * 0.5 : (data.sizeScale || 1),
           showCrypto: data.targetId === net.playerId,
         }
       );
