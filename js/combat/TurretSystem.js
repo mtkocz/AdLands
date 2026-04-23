@@ -159,16 +159,37 @@ class TurretSystem {
   }
 
   handleDestroyed(data) {
-    this._removeTurret(data?.id, true);
+    if (!data?.id) return;
+    if (!this.turrets.has(data.id) && Number.isFinite(data.theta) && Number.isFinite(data.phi)) {
+      const turret = this._createTurret({
+        id: data.id,
+        ownerId: data.ownerId || "",
+        faction: data.faction || "rust",
+        theta: data.theta,
+        phi: data.phi,
+        heading: Number.isFinite(data.heading) ? data.heading : 0,
+        turretAngle: Number.isFinite(data.turretAngle) ? data.turretAngle : Math.PI,
+        hp: 0,
+        maxHp: Number.isFinite(data.maxHp) ? data.maxHp : 50,
+        level: data.level || 1,
+      });
+      this.turrets.set(data.id, turret);
+    }
+    this._removeTurret(data.id, true, data);
   }
 
   update(deltaTime, frustum, camera, surfaceVisible = true) {
     this.surfaceVisible = !!surfaceVisible;
     for (const [, turret] of this.turrets) {
       if (!turret.group) continue;
-      this._updateTurretAim(turret, deltaTime);
+
+      if (!turret.isDying) {
+        this._updateTurretAim(turret, deltaTime);
+      }
       this._updateTurretTransform(turret);
-      this._updateRecoil(turret, deltaTime);
+      if (!turret.isDying) {
+        this._updateRecoil(turret, deltaTime);
+      }
       if (this._updateDeathFade(turret)) continue;
 
       if (!this.surfaceVisible) {
@@ -285,13 +306,13 @@ class TurretSystem {
       id: data.id,
       ownerId: data.ownerId || "",
       faction: data.faction || "rust",
-      theta: data.theta || 0,
-      phi: data.phi || Math.PI / 2,
-      heading: data.heading || 0,
+      theta: Number.isFinite(data.theta) ? data.theta : 0,
+      phi: Number.isFinite(data.phi) ? data.phi : Math.PI / 2,
+      heading: Number.isFinite(data.heading) ? data.heading : 0,
       turretAngle: initialTurretAngle,
       targetTurretAngle: initialTurretAngle,
-      hp: data.hp || 50,
-      maxHp: data.maxHp || 50,
+      hp: Number.isFinite(data.hp) ? data.hp : 50,
+      maxHp: Number.isFinite(data.maxHp) ? data.maxHp : 50,
       level: data.level || 1,
       isDead: false,
       group,
@@ -502,15 +523,53 @@ class TurretSystem {
     }
   }
 
-  _emitImpactEffect(turret, scale) {
-    if (!this.shouldRenderEffects() || !turret?.group) return;
-    turret.group.updateWorldMatrix(true, false);
-    turret.group.getWorldPosition(this._target);
-    const len = this._target.length();
-    if (len > 0) this._target.multiplyScalar((len + 1.0) / len);
-    this.cannonSystem?._spawnExplosion?.(this._target, turret.faction, scale);
-    this.dustShockwave?.emit(this._target, scale);
-    this.cannonSystem?.spawnOilPuddle?.(this._target);
+  _resolveDeathWorldPosition(turret, data, lift = 1.0) {
+    if (
+      Number.isFinite(data?.wx) &&
+      Number.isFinite(data?.wy) &&
+      Number.isFinite(data?.wz)
+    ) {
+      this._target.set(data.wx, data.wy, data.wz);
+      return this._target;
+    }
+
+    if (turret?.group) {
+      turret.group.updateWorldMatrix(true, false);
+      turret.group.getWorldPosition(this._target);
+      const len = this._target.length();
+      if (len > 0) this._target.multiplyScalar((len + lift) / len);
+      return this._target;
+    }
+
+    if (Number.isFinite(data?.theta) && Number.isFinite(data?.phi)) {
+      const radius = this.sphereRadius + lift;
+      const sp = Math.sin(data.phi);
+      const cp = Math.cos(data.phi);
+      const st = Math.sin(data.theta);
+      const ct = Math.cos(data.theta);
+      this._target.set(radius * sp * ct, radius * cp, radius * sp * st);
+      if (this.hexGroup?.localToWorld) {
+        this.hexGroup.updateWorldMatrix?.(true, false);
+        this.hexGroup.localToWorld(this._target);
+      }
+      return this._target;
+    }
+
+    return null;
+  }
+
+  _emitDeathEffects(turret, data, scale) {
+    if (!this.shouldRenderEffects()) return;
+    const pos = this._resolveDeathWorldPosition(turret, data, 1.0);
+    if (!pos) return;
+
+    if (typeof this.cannonSystem?.spawnExplosion === "function") {
+      this.cannonSystem.spawnExplosion(pos, turret.faction, scale);
+    } else {
+      this.cannonSystem?._spawnExplosion?.(pos, turret.faction, scale);
+    }
+    this.dustShockwave?.emit(pos, scale);
+    this.cannonSystem?.spawnOilPuddle?.(pos);
   }
 
   _startDeathSequence(turret) {
@@ -522,6 +581,10 @@ class TurretSystem {
     turret.hp = 0;
     turret._recoilTarget = 0;
     turret._recoil = 0;
+    turret.targetTurretAngle = turret.turretAngle;
+    if (turret.barrelMesh) turret.barrelMesh.position.z = turret._baseBarrelZ;
+    if (turret.muzzleMesh) turret.muzzleMesh.position.z = turret._baseMuzzleZ;
+    if (turret.hitbox) turret.hitbox.visible = false;
     this._hideHpBar(turret);
     this.tankDamageEffects?.setDamageState(turret.id, turret.group, "dead");
     this._setDeadMaterial(turret);
@@ -718,14 +781,14 @@ class TurretSystem {
     }
   }
 
-  _removeTurret(id, withExplosion) {
+  _removeTurret(id, withExplosion, data = null) {
     if (!id) return;
     const turret = this.turrets.get(id);
     if (!turret) return;
     if (withExplosion) {
       if (turret.isDying) return;
-      this._emitImpactEffect(turret, 1.5);
       this._startDeathSequence(turret);
+      this._emitDeathEffects(turret, data, 1.5);
       return;
     }
     this._finalizeTurretRemoval(turret);

@@ -78,6 +78,7 @@ const TURRET_MAX_PER_OWNER = 3;
 const TURRET_HIT_RADIUS_RAD = 2.8 / 480;
 const TURRET_TURN_RATE = Math.PI * 1.5; // radians per second
 const TURRET_FIRE_ALIGNMENT_TOLERANCE = 0.1;
+const TURRET_UPGRADE_LEVELS_ENABLED = false;
 
 // Shield constants
 const SHIELD = {
@@ -2537,7 +2538,7 @@ class GameRoom {
     const botState = this.botBridge.getBot(data.ownerId);
     if (!botState || botState.d === 1) return;
 
-    const level = Math.max(1, Math.min(3, Number(data.level) || 1));
+    const level = this._getTurretLevelFromDeployData(data);
     const cfg = TURRET_LEVELS[level] || TURRET_LEVELS[1];
     const ownerFaction = data.faction || botState.f;
     if (!ownerFaction) return;
@@ -2598,12 +2599,21 @@ class GameRoom {
   }
 
   _getTurretLevelForPlayer(player) {
+    if (!TURRET_UPGRADE_LEVELS_ENABLED) return 1;
+
     const raw =
       player?.upgradeLevels?.turrets ??
       player?.weaponLevels?.turrets ??
       player?.turretLevel ??
       1;
     const level = Math.max(1, Math.min(3, Number(raw) || 1));
+    return TURRET_LEVELS[level] ? level : 1;
+  }
+
+  _getTurretLevelFromDeployData(data) {
+    if (!TURRET_UPGRADE_LEVELS_ENABLED) return 1;
+
+    const level = Math.max(1, Math.min(3, Number(data?.level) || 1));
     return TURRET_LEVELS[level] ? level : 1;
   }
 
@@ -2822,13 +2832,23 @@ class GameRoom {
     });
 
     if (turret.hp <= 0) {
+      const death = this._buildImpactCoords(turret.theta, turret.phi, 1.0);
       this.turrets.delete(turretId);
       this._queueRoomEvent("turret-destroyed", {
         id: turretId,
+        ownerId: turret.ownerId,
         attackerId,
         faction: turret.ownerFaction,
         theta: turret.theta,
         phi: turret.phi,
+        heading: turret.heading,
+        turretAngle: turret.turretAngle,
+        hp: 0,
+        maxHp: turret.maxHp || (TURRET_LEVELS[turret.level] || TURRET_LEVELS[1]).hp,
+        level: turret.level || 1,
+        wx: death.wx,
+        wy: death.wy,
+        wz: death.wz,
       });
     }
     return true;
