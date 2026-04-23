@@ -89,6 +89,7 @@ class SponsorScene {
     // Render state
     this._needsRender = true;
     this.lastFrameTime = performance.now();
+    this._touchSelectionLockUntil = 0;
 
     // Planet day/night rotation
     this.planetRotation = 0;
@@ -721,6 +722,9 @@ class SponsorScene {
       this._suppressMouseUntil = performance.now() + 1500;
     };
     const shouldIgnoreSyntheticMouse = () => performance.now() < this._suppressMouseUntil;
+    const lockTouchSelection = () => {
+      this._touchSelectionLockUntil = performance.now() + 1800;
+    };
     const blockSyntheticMouse = (e) => {
       if (!shouldIgnoreSyntheticMouse()) return;
       e.preventDefault();
@@ -878,6 +882,7 @@ class SponsorScene {
     canvas.addEventListener("touchstart", (e) => {
       e.stopPropagation();
       suppressSyntheticMouse();
+      lockTouchSelection();
       this.lastInteractionTime = performance.now();
       if (e.touches.length === 2) {
         e.preventDefault();
@@ -905,6 +910,7 @@ class SponsorScene {
     canvas.addEventListener("touchmove", (e) => {
       e.stopPropagation();
       suppressSyntheticMouse();
+      lockTouchSelection();
       if (e.touches.length === 2 && this.isDragging) {
         e.preventDefault();
         this.lastInteractionTime = performance.now();
@@ -961,6 +967,7 @@ class SponsorScene {
       e.preventDefault();
       e.stopPropagation();
       suppressSyntheticMouse();
+      lockTouchSelection();
       if (e.touches.length < 2) this.isDragging = false;
       if (e.changedTouches.length === 1 && e.touches.length === 0) {
         const touch = e.changedTouches[0];
@@ -975,6 +982,7 @@ class SponsorScene {
     canvas.addEventListener("touchcancel", (e) => {
       e.stopPropagation();
       suppressSyntheticMouse();
+      lockTouchSelection();
       this.isDragging = false;
       singleTouchMoved = false;
     });
@@ -1086,6 +1094,7 @@ class SponsorScene {
         this._needsRender = true;
         if (this.onSelectionChange) this.onSelectionChange();
       } else if (this.paintMode === "erase" && this.selectedTiles.has(tileIndex)) {
+        if (this._isTouchSelectionLocked()) return;
         this.selectedTiles.delete(tileIndex);
         mesh.material.color.setHex(mesh.userData.originalColor);
         if (mesh.material.emissive) mesh.material.emissive.setHex(0x000000);
@@ -1102,6 +1111,7 @@ class SponsorScene {
   _setTileSelection(tileIndex, selected) {
     const mesh = this.tileIndexToMesh.get(tileIndex);
     if (!mesh) return;
+    if (!selected && this._isTouchSelectionLocked()) return;
     if (this.selectedTiles.has(tileIndex) === selected) return;
 
     if (!selected) {
@@ -1125,6 +1135,7 @@ class SponsorScene {
   _setMoonSelection(moonIndex, selected) {
     const mesh = this.moonMeshes[moonIndex];
     if (!mesh) return;
+    if (!selected && this._isTouchSelectionLocked()) return;
     if (this.selectedMoons.has(moonIndex) === selected) return;
 
     if (!selected) {
@@ -1149,6 +1160,7 @@ class SponsorScene {
     const group = this.billboardGroups[bbIndex];
     const adPanel = group && group.children.find((c) => c.userData.isAdPanel);
     if (!group || !adPanel) return;
+    if (!selected && this._isTouchSelectionLocked()) return;
     if (this.selectedBillboards.has(bbIndex) === selected) return;
 
     if (!selected) {
@@ -1256,6 +1268,10 @@ class SponsorScene {
   getSelectedBillboards() { return Array.from(this.selectedBillboards); }
   getSelectionType() { return null; }
 
+  _isTouchSelectionLocked() {
+    return performance.now() < (this._touchSelectionLockUntil || 0);
+  }
+
   hasSelection() {
     return this.selectedTiles.size > 0 ||
            this.selectedMoons.size > 0 ||
@@ -1281,6 +1297,8 @@ class SponsorScene {
   }
 
   clearSelection() {
+    if (this._isTouchSelectionLocked()) return;
+
     // Clear tiles
     for (const tileIndex of this.selectedTiles) {
       const mesh = this.tileIndexToMesh.get(tileIndex);

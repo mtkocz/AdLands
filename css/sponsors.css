@@ -1051,21 +1051,39 @@ body {
     }
 
     .modal-overlay {
-        align-items: flex-end;
+        top: 42dvh;
+        height: 58dvh;
+        background: transparent;
+        backdrop-filter: none;
+        -webkit-backdrop-filter: none;
+        align-items: stretch;
+        pointer-events: none;
+    }
+
+    body.inquiry-open #top-banner,
+    body.inquiry-open #mobile-toolbar,
+    body.inquiry-open #territory-panel,
+    body.inquiry-open #pricing-panel,
+    body.inquiry-open #sponsor-panel,
+    body.inquiry-open #mobile-panel-backdrop {
+        display: none;
     }
 
     .modal-content {
         width: 100%;
         max-width: 100%;
-        max-height: 100dvh;
+        max-height: 58dvh;
+        height: 58dvh;
+        pointer-events: auto;
         clip-path: none;
         padding-bottom: env(safe-area-inset-bottom);
+        border-left: 0;
+        border-right: 0;
+        border-bottom: 0;
     }
 
     .modal-screenshot {
-        max-height: 220px;
-        object-fit: cover;
-        object-position: center;
+        display: none !important;
     }
 
     .modal-header {

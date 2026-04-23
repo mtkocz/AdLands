@@ -387,12 +387,13 @@
   function showInquiryModal() {
     if (!inquiryModal) return;
     setMobilePanel(null);
+    document.body.classList.add("inquiry-open");
 
     // Capture screenshot
     const screenshot = scene.captureScreenshot();
     if (screenshotPreview) {
       screenshotPreview.src = screenshot;
-      screenshotPreview.style.display = "block";
+      screenshotPreview.style.display = isMobileLayout() ? "none" : "block";
     }
 
     // Show pricing summary in modal
@@ -423,6 +424,7 @@
   }
 
   function hideInquiryModal() {
+    document.body.classList.remove("inquiry-open");
     if (inquiryModal) inquiryModal.classList.add("hidden");
   }
 
