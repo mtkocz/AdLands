@@ -643,7 +643,7 @@ class MissileSystem {
     if (!tankPos) return;
 
     if (this.dustShockwave) {
-      this.dustShockwave.emit(tankPos, 0.4);
+      this.dustShockwave.emit(tankPos, 1.0);
     }
     if (this.gameCamera) {
       this.gameCamera.triggerShake(tankPos, tankPos, 0.3, 100);
@@ -1326,7 +1326,7 @@ class MissileSystem {
 
     // Dust wave on launch
     if (this.dustShockwave) {
-      this.dustShockwave.emit(tankPos, 0.4);
+      this.dustShockwave.emit(tankPos, 1.0);
     }
 
     // Camera shake
@@ -1461,7 +1461,7 @@ class MissileSystem {
 
     // Dust wave — only if firing tank is visible (avoid effects from empty space)
     if (this.dustShockwave && remoteTank?.group?.visible && remoteTank !== this.playerTank) {
-      this.dustShockwave.emit(startPos, 0.4);
+      this.dustShockwave.emit(startPos, 1.0);
     }
     return true;
   }

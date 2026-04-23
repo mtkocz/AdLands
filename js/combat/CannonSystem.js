@@ -1254,10 +1254,9 @@ void main() {
 
     // Spawn dust shockwave at tank's ground position
     if (this.dustShockwave) {
-      // 25% smaller for tank firing: (0.6 + chargeRatio * 0.4) * 0.75
       this.dustShockwave.emit(
         tank.group._cachedWorldPos || tank.group.position,
-        (0.6 + chargeRatio * 0.4) * 0.75,
+        0.6 + chargeRatio * 0.4,
       );
     }
 
@@ -1365,7 +1364,7 @@ void main() {
     if (this.dustShockwave) {
       this.dustShockwave.emit(
         remoteTank.group._cachedWorldPos || remoteTank.group.position,
-        (0.6 + chargeRatio * 0.4) * 0.75,
+        0.6 + chargeRatio * 0.4,
       );
     }
 

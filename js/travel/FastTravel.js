@@ -528,7 +528,7 @@ class FastTravel {
 
         this.gameCamera.onTransitionComplete = () => {
             if (this.dustShockwave) {
-                this.dustShockwave.emit((this.tank.group._cachedWorldPos || this.tank.group.position).clone(), 0.5);
+                this.dustShockwave.emit((this.tank.group._cachedWorldPos || this.tank.group.position).clone(), 1.0);
             }
 
             // Spawn after the dustwave has been submitted for rendering.

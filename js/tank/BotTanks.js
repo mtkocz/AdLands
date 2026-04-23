@@ -959,7 +959,7 @@ class BotTanks {
         if (this._dustShockwave) {
           const worldPos = new THREE.Vector3();
           bot.group.getWorldPosition(worldPos);
-          this._dustShockwave.emit(worldPos, 0.4);
+          this._dustShockwave.emit(worldPos, 1.0);
         }
       }
     }
