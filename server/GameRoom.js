@@ -75,7 +75,7 @@ const TURRET_LEVELS = {
 };
 
 const TURRET_MAX_PER_OWNER = 3;
-const TURRET_HIT_RADIUS_RAD = 2.2 / 480;
+const TURRET_HIT_RADIUS_RAD = 2.8 / 480;
 
 // Shield constants
 const SHIELD = {
@@ -145,10 +145,10 @@ class TargetSpatialHash {
       this._add(botId, bs.t, bs.p, bs.f, false, -1, null);
     }
 
-    // Flares (decoy targets — faction null, attract all enemies)
+    // Flares (decoy targets — only attract missiles from enemy factions)
     for (let fi = 0; fi < flares.length; fi++) {
       const fl = flares[fi];
-      this._add(fl.id, fl.theta, fl.phi, null, true, fi, fl.ownerId);
+      this._add(fl.id, fl.theta, fl.phi, fl.ownerFaction, true, fi, fl.ownerId);
     }
 
     // Turrets (stationary targetable deployables)
@@ -250,8 +250,9 @@ class TargetSpatialHash {
         const e = bucket[i];
         if (e.id === excludeId) continue;
         if (e.isFlare) {
-          // Flares attract all missiles except their owner's
+          // Flares attract enemy missiles only; friendly missiles ignore them.
           if (e.ownerId === excludeId) continue;
+          if (e.faction && e.faction === ownerFaction) continue;
           const dist = sphericalDistance(theta, phi, e.theta, e.phi);
           if (dist < bestFlareDist) {
             bestFlareDist = dist;
@@ -2708,6 +2709,8 @@ class GameRoom {
       projectileId: projectile.id,
       sizeScale: cfg.projectileSizeScale,
       maxDistance: cfg.projectileRangeWorld,
+      visualSpeed: cfg.projectileSpeed * R,
+      minVisibleTime: 0.14,
       wx: fLift * fSp * fCt,
       wy: fLift * fCp,
       wz: fLift * fSp * fSt,
@@ -2720,7 +2723,6 @@ class GameRoom {
   _damageTurret(turretId, damage, attackerId, attackerFaction, projectileId, theta, phi, isMissile = false, sourceType = null) {
     const turret = this.turrets.get(turretId);
     if (!turret || turret.hp <= 0) return false;
-    if (attackerFaction && attackerFaction === turret.ownerFaction) return false;
 
     turret.hp -= damage;
     const hp = Math.max(0, turret.hp);
@@ -4415,7 +4417,6 @@ class GameRoom {
         for (const [turretId, turret] of this.turrets) {
           if (!turret || turret.hp <= 0) continue;
           if (turretId === p.sourceId) continue;
-          if (turret.ownerFaction === p.ownerFaction) continue;
           const dist = sphericalDistance(testTheta, testPhi, turret.theta, turret.phi);
           if (dist > TURRET_HIT_RADIUS_RAD) continue;
 

@@ -942,7 +942,13 @@ class MissileSystem {
     missile.direction.lerp(this._tempVec4, this.config.cruiseEntryBlend).normalize();
   }
 
-  _findClosestFlareFromPos(missilePos, maxRange) {
+  _canFlareDecoyMissile(flare, ownerFaction, ownerId = null) {
+    if (!flare) return false;
+    if (ownerId && flare.ownerId && flare.ownerId === ownerId) return false;
+    return !(ownerFaction && flare.faction && flare.faction === ownerFaction);
+  }
+
+  _findClosestFlareFromPos(missilePos, ownerFaction, ownerId, maxRange) {
     if (!window.flareSystem) return null;
 
     const range = maxRange || this.config.searchRadiusMax;
@@ -951,7 +957,9 @@ class MissileSystem {
     let flareDist = Infinity;
 
     for (let i = 0; i < flares.length; i++) {
-      const pos = flares[i].position;
+      const flare = flares[i];
+      if (!this._canFlareDecoyMissile(flare, ownerFaction, ownerId)) continue;
+      const pos = flare.position;
       const dist = pos.distanceTo(missilePos);
       if (dist < flareDist && dist <= range) {
         flareClosest = { tank: null, worldPos: pos.clone(), distance: dist, isFlare: true };
@@ -978,13 +986,16 @@ class MissileSystem {
         missile.position,
         ownerFaction,
         useHemisphere ? missile.direction : null,
-        searchRange || this.config.searchRadiusMax
+        searchRange || this.config.searchRadiusMax,
+        missile.ownerId
       );
     }
 
     if (includeFlares) {
       const flareTarget = this._findClosestFlareFromPos(
         missile.position,
+        ownerFaction,
+        missile.ownerId,
         searchRange || this.config.searchRadiusMax
       );
       if (flareTarget) target = flareTarget;
@@ -996,7 +1007,7 @@ class MissileSystem {
   // Find closest enemy from a missile's world position (for in-flight retargeting)
   // missileDir: current travel direction (if provided, only targets in forward hemisphere)
   // maxRange: maximum distance in world units (default: searchRadiusMax = 120)
-  _findClosestEnemyFromPos(missilePos, ownerFaction, missileDir, maxRange) {
+  _findClosestEnemyFromPos(missilePos, ownerFaction, missileDir, maxRange, ownerId = null) {
     const range = maxRange || this.config.searchRadiusMax;
     let closest = null;
     let closestDist = Infinity;
@@ -1075,11 +1086,12 @@ class MissileSystem {
       }
     }
 
-    // Flares as decoy targets (attract missiles from any faction)
+    // Flares as decoy targets (enemy missiles only)
     if (window.flareSystem) {
       const flares = window.flareSystem.getActiveFlares();
       for (let i = 0; i < flares.length; i++) {
         const flare = flares[i];
+        if (!this._canFlareDecoyMissile(flare, ownerFaction, ownerId)) continue;
         const pos = flare.position;
         const dist = pos.distanceTo(missilePos);
         if (dist < closestDist && dist <= range) {

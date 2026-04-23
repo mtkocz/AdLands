@@ -1406,8 +1406,10 @@ void main() {
     const chargePower = data.power || 0;
     const chargeRatio = chargePower / 10;
     const speed =
-      this.config.projectileSpeed *
-      (1 + chargeRatio * (this.config.chargeSpeedMultiplier - 1));
+      Number.isFinite(data.visualSpeed)
+        ? data.visualSpeed
+        : this.config.projectileSpeed *
+          (1 + chargeRatio * (this.config.chargeSpeedMultiplier - 1));
     const range = Number.isFinite(data.maxDistance)
       ? data.maxDistance
       : this.config.maxDistance *
@@ -1450,6 +1452,11 @@ void main() {
       isRemote: true,
       serverId: data.projectileId,
       sourceType: data.sourceType || null,
+      surfaceGraceTime: Number.isFinite(data.surfaceGraceTime)
+        ? data.surfaceGraceTime
+        : (data.sourceType === "turret" ? 0.25 : 0),
+      minVisibleTime: Number.isFinite(data.minVisibleTime) ? data.minVisibleTime : 0,
+      serverRemovalPending: false,
     });
   }
 
@@ -1910,6 +1917,22 @@ void main() {
 
       p.age += deltaTime;
 
+      if (p.serverRemovalPending) {
+        if (p.age >= (p.minVisibleTime || 0)) {
+          if (p.light) {
+            p.mesh.remove(p.light);
+            p.light.dispose();
+          }
+          this.objectPools.releaseProjectile(p.poolItem);
+          this.projectiles.splice(i, 1);
+          continue;
+        }
+        p.position.addScaledVector(p.velocity, deltaTime * 60);
+        p.mesh.position.copy(p.position);
+        p.mesh.visible = true;
+        continue;
+      }
+
       // Store previous position for swept collision (use preallocated vector)
       _prevPosition.copy(p.position);
 
@@ -2066,6 +2089,59 @@ void main() {
       }
 
       const isTurretProjectile = p.sourceType === "turret";
+
+      if (!hitTank && !isTurretProjectile && window.turretSystem) {
+        const turrets = window.turretSystem.getActiveTurrets?.() || [];
+        const turretHitRadius = 2.8;
+        const heightTolerance = 3.2;
+        _pathDir.copy(_moveVector).normalize();
+
+        for (const turret of turrets) {
+          if (!turret?.group || turret.isDead) continue;
+          turret.group.updateWorldMatrix(true, false);
+          turret.group.getWorldPosition(_tankWorldPos);
+
+          const turretDistance = _tankWorldPos.length();
+          if (
+            turretDistance < this.sphereRadius * 0.9 ||
+            turretDistance > this.sphereRadius * 1.5
+          ) {
+            continue;
+          }
+
+          _toTank.copy(_tankWorldPos).sub(_prevPosition);
+          const projLength = _toTank.dot(_pathDir);
+          const clampedT = Math.max(0, Math.min(moveDistance, projLength));
+          _closestPoint.copy(_prevPosition).addScaledVector(_pathDir, clampedT);
+          if (_closestPoint.distanceTo(_tankWorldPos) > turretHitRadius + 2.0) continue;
+
+          _tankSurfaceNormal.copy(_tankWorldPos).normalize();
+          const numSteps = Math.max(1, Math.ceil(moveDistance / 0.5));
+          for (let step = 0; step <= numSteps; step++) {
+            const t = step / numSteps;
+            _testPos.copy(_prevPosition).lerp(p.position, t);
+            _projectileToTank.copy(_testPos).sub(_tankWorldPos);
+            const heightDiff = _projectileToTank.dot(_tankSurfaceNormal);
+            _horizontalOffset
+              .copy(_projectileToTank)
+              .addScaledVector(_tankSurfaceNormal, -heightDiff);
+
+            if (
+              _horizontalOffset.length() < turretHitRadius &&
+              Math.abs(heightDiff) < heightTolerance
+            ) {
+              p.position.copy(_testPos);
+              p.mesh.position.copy(p.position);
+              shouldExplode = true;
+              hitTank = true;
+              break;
+            }
+          }
+
+          if (hitTank) break;
+        }
+      }
+
       const inSurfaceGrace =
         Number.isFinite(p.surfaceGraceTime) && p.age < p.surfaceGraceTime;
 
@@ -2288,6 +2364,17 @@ void main() {
     for (let i = this.projectiles.length - 1; i >= 0; i--) {
       const p = this.projectiles[i];
       if (p.serverId === serverId) {
+        if (
+          !p.serverRemovalPending &&
+          Number.isFinite(p.minVisibleTime) &&
+          p.minVisibleTime > 0 &&
+          p.age < p.minVisibleTime
+        ) {
+          p.serverRemovalPending = true;
+          if (p.mesh) p.mesh.visible = true;
+          return true;
+        }
+
         const explosionPos = impactPos || p.position;
         const sizeScale = p.sizeScale || 1;
         const suppressAllEffects = suppressEffects || p.sourceType === "turret";

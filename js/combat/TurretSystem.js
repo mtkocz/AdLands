@@ -12,8 +12,6 @@ class TurretSystem {
     this.dustShockwave = null;
     this.cannonSystem = null;
     this.surfaceVisible = false;
-    this._hpReferenceWidth = 128;
-    this._hpReferenceHp = 100;
     this._hpBarSurfaceOffset = 4.2;
     this._hpBarScreenYOffset = 28;
     this._turretTurnRate = 8;
@@ -401,6 +399,8 @@ class TurretSystem {
         maxDistance: data?.maxDistance,
         projectileId: data?.projectileId,
         sourceType: data?.sourceType || "turret",
+        visualSpeed: data?.visualSpeed,
+        minVisibleTime: data?.minVisibleTime,
         surfaceGraceTime: 0.25,
       },
       turret.faction
@@ -589,13 +589,20 @@ class TurretSystem {
   }
 
   _ensureHpBar(turret) {
-    if (!turret || turret.hpBarEl || typeof document === "undefined") return;
+    if (!turret || typeof document === "undefined") return;
+    const container = document.getElementById("player-tags-container") || document.body;
+    if (turret.hpBarEl) {
+      if (turret.hpBarEl.parentElement !== container) {
+        container.appendChild(turret.hpBarEl);
+      }
+      return;
+    }
     const bar = document.createElement("div");
     bar.className = "turret-hp-bar tag-healthbar";
     const fill = document.createElement("div");
     fill.className = "turret-hp-fill tag-healthbar-fill hp-high";
     bar.appendChild(fill);
-    document.body.appendChild(bar);
+    container.appendChild(bar);
     turret.hpBarEl = bar;
     turret.hpFillEl = fill;
   }
@@ -608,15 +615,6 @@ class TurretSystem {
     const hpValue = Number(turret.hp);
     const hp = Number.isFinite(hpValue) ? Math.max(0, Math.min(maxHp, hpValue)) : 0;
     const hpPercent = Math.round((hp / maxHp) * 1000) / 10;
-    const barWidth = Math.max(
-      16,
-      Math.round((maxHp / this._hpReferenceHp) * this._hpReferenceWidth)
-    );
-
-    if (turret.hpBarEl && turret._hpBarWidth !== barWidth) {
-      turret.hpBarEl.style.setProperty("--turret-hp-width", `${barWidth}px`);
-      turret._hpBarWidth = barWidth;
-    }
 
     if (turret.hpFillEl && turret._hpPercent !== hpPercent) {
       turret.hpFillEl.style.width = `${hpPercent}%`;
