@@ -1157,10 +1157,17 @@
       }
     };
 
-    const emitTurretImpactEffects = (position, count = 24, projectileId = null) => {
+    const emitTurretImpactEffects = (position, count = 24, projectileId = null, options = {}) => {
       if (!position || !turretSystem?.shouldRenderEffects?.()) return;
-      emitTurretImpactSparks(position, count, projectileId);
-      dustShockwave?.emitDustwaveSpriteOnly?.(position, 0.5);
+      const sparkPosition = options.sparkPosition || position;
+      const dustPosition = options.dustPosition || position;
+      emitTurretImpactSparks(sparkPosition, count, projectileId);
+      dustShockwave?.emitDustwaveSpriteOnly?.(
+        dustPosition,
+        0.5,
+        null,
+        options.clipCenter || null
+      );
     };
 
     const setSphericalWorldPos = (out, theta, phi, lift = 2) => {
@@ -1238,27 +1245,60 @@
       return null;
     };
 
+    const resolveTurretImpactPlacement = (
+      data,
+      targetGroup,
+      targetId = data?.targetId,
+      sparkRadius = 2.25,
+      dustClipRadius = 4.5
+    ) => {
+      const eventImpact = resolveImpactPos(data, targetId, 1.0);
+      const fallback = { sparkPosition: eventImpact, dustPosition: eventImpact, clipCenter: null };
+      if (!targetGroup) return fallback;
+
+      const center = cloneLiftedGroupPos(targetGroup, 1.0);
+      if (!center) return fallback;
+
+      const source = getTurretProjectileSourcePos(data, eventImpact || center);
+      if (!source) {
+        return {
+          sparkPosition: eventImpact || center,
+          dustPosition: eventImpact || center,
+          clipCenter: null,
+        };
+      }
+
+      const normal = center.clone().normalize();
+      const toSource = source.clone().sub(center);
+      toSource.addScaledVector(normal, -toSource.dot(normal));
+      if (toSource.lengthSq() <= 0.0001) {
+        return {
+          sparkPosition: eventImpact || center,
+          dustPosition: eventImpact || center,
+          clipCenter: null,
+        };
+      }
+
+      const fromTargetToSource = toSource.normalize();
+      const sparkPosition = center.clone().addScaledVector(fromTargetToSource, sparkRadius);
+      const dustPosition = center.clone().addScaledVector(fromTargetToSource, dustClipRadius);
+      const centerLen = center.length();
+      if (centerLen > 0) dustPosition.normalize().multiplyScalar(centerLen);
+
+      return {
+        sparkPosition,
+        dustPosition,
+        clipCenter: center,
+      };
+    };
+
     const resolveTurretImpactEdgePos = (
       data,
       targetGroup,
       targetId = data?.targetId,
       edgeRadius = 2.25
     ) => {
-      const eventImpact = resolveImpactPos(data, targetId, 1.0);
-      if (!targetGroup) return eventImpact;
-
-      const center = cloneLiftedGroupPos(targetGroup, 1.0);
-      if (!center) return eventImpact;
-
-      const source = getTurretProjectileSourcePos(data, eventImpact || center);
-      if (!source) return eventImpact || center;
-
-      const normal = center.clone().normalize();
-      const toSource = source.clone().sub(center);
-      toSource.addScaledVector(normal, -toSource.dot(normal));
-      if (toSource.lengthSq() <= 0.0001) return eventImpact || center;
-
-      return center.addScaledVector(toSource.normalize(), edgeRadius);
+      return resolveTurretImpactPlacement(data, targetGroup, targetId, edgeRadius).sparkPosition;
     };
 
     net.onShieldBlock = (data) => {
@@ -1310,10 +1350,24 @@
           // Visual hit effect
           if (bg.group) {
             if (data.sourceType === "turret") {
-              const impactPos = resolveTurretImpactEdgePos(data, bg.group, data.targetId, 2.0);
-              emitTurretImpactEffects(impactPos, 24, data.projectileId);
+              const impactPlacement = resolveTurretImpactPlacement(
+                data,
+                bg.group,
+                data.targetId,
+                2.0
+              );
+              emitTurretImpactEffects(
+                impactPlacement.sparkPosition,
+                24,
+                data.projectileId,
+                impactPlacement
+              );
               if (data.projectileId != null && !data.isMissile) {
-                cannonSystem.removeProjectileByServerId?.(data.projectileId, impactPos, true);
+                cannonSystem.removeProjectileByServerId?.(
+                  data.projectileId,
+                  impactPlacement.sparkPosition,
+                  true
+                );
               }
             } else {
               bg.group.getWorldPosition(_hitWorldPos);
@@ -1367,10 +1421,24 @@
             data.sourceType === "turret" &&
             tank.group
           ) {
-            const pos = resolveTurretImpactEdgePos(data, tank.group, data.targetId, 2.25);
-            emitTurretImpactEffects(pos, 24, data.projectileId);
+            const impactPlacement = resolveTurretImpactPlacement(
+              data,
+              tank.group,
+              data.targetId,
+              2.25
+            );
+            emitTurretImpactEffects(
+              impactPlacement.sparkPosition,
+              24,
+              data.projectileId,
+              impactPlacement
+            );
             if (data.projectileId != null && !data.isMissile) {
-              cannonSystem.removeProjectileByServerId?.(data.projectileId, pos, true);
+              cannonSystem.removeProjectileByServerId?.(
+                data.projectileId,
+                impactPlacement.sparkPosition,
+                true
+              );
             }
           }
         };
@@ -1477,13 +1545,18 @@
                 isTurretProjectileHit &&
                 turretSystem?.shouldRenderEffects?.()
               ) {
-                const impactPos = resolveTurretImpactEdgePos(
+                const impactPlacement = resolveTurretImpactPlacement(
                   data,
                   remoteTank.group,
                   data.targetId,
                   2.25
                 );
-                emitTurretImpactEffects(impactPos, 24, data.projectileId);
+                emitTurretImpactEffects(
+                  impactPlacement.sparkPosition,
+                  24,
+                  data.projectileId,
+                  impactPlacement
+                );
               }
             }
           };
