@@ -2030,7 +2030,7 @@ void main() {
               {
                 emitTurretSparks: p.sourceType === "turret",
                 suppressExplosion: p.sourceType === "turret",
-                dustScale: p.sourceType === "turret" ? (p.sizeScale || 1) * 0.5 : (p.sizeScale || 1),
+                dustScale: p.sourceType === "turret" ? 0.5 : (p.sizeScale || 1),
                 showCrypto: tank === this.playerTank,
               }
             );

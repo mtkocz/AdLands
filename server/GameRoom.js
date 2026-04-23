@@ -50,7 +50,7 @@ const TURRET_LEVELS = {
     damage: 5,
     rangeWorld: 35,
     cooldownMs: Math.round(2000 / 2.4),
-    projectileSpeed: 0.004,
+    projectileSpeed: 0.008,
     projectileRangeWorld: 35,
     projectileSizeScale: 0.5,
   },
@@ -59,7 +59,7 @@ const TURRET_LEVELS = {
     damage: 7.5,
     rangeWorld: 45,
     cooldownMs: Math.round(2000 / 2.8),
-    projectileSpeed: 0.004,
+    projectileSpeed: 0.008,
     projectileRangeWorld: 45,
     projectileSizeScale: 0.5,
   },
@@ -68,13 +68,14 @@ const TURRET_LEVELS = {
     damage: 10,
     rangeWorld: 55,
     cooldownMs: Math.round(2000 / 3.2),
-    projectileSpeed: 0.004,
+    projectileSpeed: 0.008,
     projectileRangeWorld: 55,
     projectileSizeScale: 0.5,
   },
 };
 
 const TURRET_MAX_PER_OWNER = 3;
+const TURRET_HIT_RADIUS_RAD = 2.2 / 480;
 
 // Shield constants
 const SHIELD = {
@@ -2340,6 +2341,8 @@ class GameRoom {
       id: this.nextProjectileId++,
       ownerId: socketId,
       ownerFaction: player.faction,
+      sourceType: "tank",
+      sourceId: socketId,
       theta: player.theta,
       phi: player.phi,
       startTheta: player.theta,
@@ -2633,6 +2636,16 @@ class GameRoom {
       if (dist < bestDist) {
         bestDist = dist;
         best = { id: bgId, theta: bg.t, phi: bg.p, faction: bg.f };
+      }
+    }
+
+    for (const [turretId, other] of this.turrets) {
+      if (!other || other.hp <= 0 || turretId === turret.id) continue;
+      if (other.ownerFaction === turret.ownerFaction) continue;
+      const dist = sphericalDistance(turret.theta, turret.phi, other.theta, other.phi);
+      if (dist < bestDist) {
+        bestDist = dist;
+        best = { id: turretId, theta: other.theta, phi: other.phi, faction: other.ownerFaction, type: "turret" };
       }
     }
 
@@ -4399,13 +4412,12 @@ class GameRoom {
       }
       // Check turret hits (after player checks, before bots)
       if (!hitPlayer && this.turrets.size > 0) {
-        const TURRET_HIT_RADIUS = 2.2 / 480;
         for (const [turretId, turret] of this.turrets) {
           if (!turret || turret.hp <= 0) continue;
           if (turretId === p.sourceId) continue;
           if (turret.ownerFaction === p.ownerFaction) continue;
           const dist = sphericalDistance(testTheta, testPhi, turret.theta, turret.phi);
-          if (dist > TURRET_HIT_RADIUS) continue;
+          if (dist > TURRET_HIT_RADIUS_RAD) continue;
 
           const damage = p.damage || 25;
           this._damageTurret(
@@ -4414,8 +4426,8 @@ class GameRoom {
             p.ownerId,
             p.ownerFaction,
             p.id,
-            p.theta,
-            p.phi,
+            testTheta,
+            testPhi,
             false,
             p.sourceType || "tank"
           );

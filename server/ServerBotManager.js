@@ -1609,6 +1609,8 @@ class ServerBotManager {
       id: nextProjectileId++,
       ownerId: bot.id,
       ownerFaction: bot.faction,
+      sourceType: "tank",
+      sourceId: bot.id,
       theta: bot.theta,
       phi: bot.phi,
       startTheta: bot.theta,
