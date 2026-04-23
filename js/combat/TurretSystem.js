@@ -13,7 +13,7 @@ class TurretSystem {
     this.cannonSystem = null;
     this.tankDamageEffects = null;
     this.surfaceVisible = false;
-    this._hpReferenceWidth = 96;
+    this._hpReferenceWidth = 128;
     this._hpReferenceHp = 100;
     this._hpMinWidth = 48;
     this._hpBarSurfaceOffset = 4.2;
