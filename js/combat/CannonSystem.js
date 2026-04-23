@@ -2098,6 +2098,7 @@ void main() {
 
         for (const turret of turrets) {
           if (!turret?.group || turret.isDead) continue;
+          if (turret.faction === p.faction) continue;
           turret.group.updateWorldMatrix(true, false);
           turret.group.getWorldPosition(_tankWorldPos);
 
@@ -2365,6 +2366,7 @@ void main() {
       const p = this.projectiles[i];
       if (p.serverId === serverId) {
         if (
+          p.sourceType !== "turret" &&
           !p.serverRemovalPending &&
           Number.isFinite(p.minVisibleTime) &&
           p.minVisibleTime > 0 &&

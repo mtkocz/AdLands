@@ -2723,6 +2723,7 @@ class GameRoom {
   _damageTurret(turretId, damage, attackerId, attackerFaction, projectileId, theta, phi, isMissile = false, sourceType = null) {
     const turret = this.turrets.get(turretId);
     if (!turret || turret.hp <= 0) return false;
+    if (attackerFaction && attackerFaction === turret.ownerFaction) return false;
 
     turret.hp -= damage;
     const hp = Math.max(0, turret.hp);
@@ -4417,6 +4418,7 @@ class GameRoom {
         for (const [turretId, turret] of this.turrets) {
           if (!turret || turret.hp <= 0) continue;
           if (turretId === p.sourceId) continue;
+          if (turret.ownerFaction === p.ownerFaction) continue;
           const dist = sphericalDistance(testTheta, testPhi, turret.theta, turret.phi);
           if (dist > TURRET_HIT_RADIUS_RAD) continue;
 

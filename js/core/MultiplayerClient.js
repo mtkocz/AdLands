@@ -1035,7 +1035,7 @@
           turret.group.getWorldPosition(impactPos);
         }
         if (data.sourceType === "turret") {
-          emitTurretImpactSparks(impactPos, 24);
+          emitTurretImpactEffects(impactPos, 24);
         }
         cannonSystem.removeProjectileByServerId?.(
           data.projectileId,
@@ -1152,6 +1152,12 @@
       }
     };
 
+    const emitTurretImpactEffects = (position, count = 24) => {
+      if (!position || !turretSystem?.shouldRenderEffects?.()) return;
+      emitTurretImpactSparks(position, count);
+      dustShockwave?.emit(position, 0.5);
+    };
+
     const setSphericalWorldPos = (out, theta, phi, lift = 2) => {
       if (!Number.isFinite(theta) || !Number.isFinite(phi)) return false;
       const r = (sphereRadius || 480) + lift;
@@ -1209,7 +1215,7 @@
           if (bg.group) {
             bg.group.getWorldPosition(_hitWorldPos);
             if (data.sourceType === "turret") {
-              emitTurretImpactSparks(_hitWorldPos, 24);
+              emitTurretImpactEffects(_hitWorldPos, 24);
               if (data.projectileId != null && !data.isMissile) {
                 cannonSystem.removeProjectileByServerId?.(data.projectileId, _hitWorldPos, true);
               }
@@ -1256,13 +1262,11 @@
           }
           if (
             data.sourceType === "turret" &&
-            turretSystem?.shouldRenderEffects?.() &&
-            window.weldingGunSystem &&
             tank.group
           ) {
             const pos = new THREE.Vector3();
             tank.group.getWorldPosition(pos);
-            emitTurretImpactSparks(pos, 24);
+            emitTurretImpactEffects(pos, 24);
             if (data.projectileId != null && !data.isMissile) {
               cannonSystem.removeProjectileByServerId?.(data.projectileId, pos, true);
             }
@@ -1359,7 +1363,7 @@
                 isTurretProjectileHit &&
                 turretSystem?.shouldRenderEffects?.()
               ) {
-                emitTurretImpactSparks(_hitWorldPos, 24);
+                emitTurretImpactEffects(_hitWorldPos, 24);
               }
             }
           };
@@ -1427,7 +1431,7 @@
             const suppressTurretProjectileEffects =
               data.sourceType === "turret";
             if (data.sourceType === "turret" && !remoteTank) {
-              emitTurretImpactSparks(impactPos, 24);
+              emitTurretImpactEffects(impactPos, 24);
             }
             cannonSystem.removeProjectileByServerId?.(
               data.projectileId,
