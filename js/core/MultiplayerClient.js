@@ -1027,7 +1027,7 @@
         const impactPos = resolveImpactPos(data, data.id) ||
           (turret?.group ? cloneLiftedGroupPos(turret.group, 1.0) : null);
         if (data.sourceType === "turret") {
-          emitTurretImpactEffects(impactPos, 24);
+          emitTurretImpactEffects(impactPos, 24, data.projectileId);
         }
         cannonSystem.removeProjectileByServerId?.(
           data.projectileId,
@@ -1076,9 +1076,11 @@
       }
       const flareImpactPos = hasImpactPos ? _hitWorldPos.clone() : null;
 
-      const spawnFlareExplosion = () => {
+      const spawnFlareExplosion = (hit = {}) => {
         if (!flareImpactPos || !cannonSystem) return;
-        cannonSystem._spawnExplosion?.(flareImpactPos, data.faction || "rust", 1.2);
+        if (!hit.visualExplosionPlayed) {
+          cannonSystem._spawnExplosion?.(flareImpactPos, data.faction || "rust", 1.2);
+        }
 
         // Award +10¢ flare intercept bonus to the flare owner (floating green number)
         if (data.flareOwnerId === net.playerId && window.cryptoVisuals) {
@@ -1141,19 +1143,23 @@
     const _pingWorldPos = new THREE.Vector3();
     const _shieldBlockWorldPos = new THREE.Vector3();
 
-    const emitTurretImpactSparks = (position, count = 24) => {
+    const emitTurretImpactSparks = (position, count = 24, projectileId = null) => {
       if (
         position &&
         turretSystem?.shouldRenderEffects?.() &&
         window.weldingGunSystem
       ) {
-        window.weldingGunSystem.emitImpactSparks(position, null, count);
+        const sparkOrigin = cannonSystem?.getProjectileSparkOriginByServerId?.(
+          projectileId,
+          position
+        );
+        window.weldingGunSystem.emitImpactSparks(position, sparkOrigin || null, count);
       }
     };
 
-    const emitTurretImpactEffects = (position, count = 24) => {
+    const emitTurretImpactEffects = (position, count = 24, projectileId = null) => {
       if (!position || !turretSystem?.shouldRenderEffects?.()) return;
-      emitTurretImpactSparks(position, count);
+      emitTurretImpactSparks(position, count, projectileId);
       dustShockwave?.emitDustwaveSpriteOnly?.(position, 0.5);
     };
 
@@ -1224,10 +1230,16 @@
         : remoteTanks.get(data.targetId);
       if (!shieldTank) return;
 
+      if (!setSphericalWorldPos(_shieldBlockWorldPos, data.theta, data.phi, 2)) return;
+      const sparkOrigin = data.sourceType === "turret"
+        ? cannonSystem.getProjectileSparkOriginByServerId?.(
+          data.projectileId,
+          _shieldBlockWorldPos
+        )
+        : null;
       const hadProjectile = data.projectileId == null ||
         cannonSystem.removeProjectileByServerId?.(data.projectileId, null, true);
       if (!hadProjectile) return;
-      if (!setSphericalWorldPos(_shieldBlockWorldPos, data.theta, data.phi, 2)) return;
 
       cannonSystem.emitShieldBlockEffect?.(
         _shieldBlockWorldPos,
@@ -1239,6 +1251,7 @@
           suppressExplosion: data.sourceType === "turret",
           dustSpriteOnly: data.sourceType === "turret",
           dustScale: data.sourceType === "turret" ? 0.5 : (data.sizeScale || 1),
+          sparkOrigin,
           showCrypto: data.targetId === net.playerId,
         }
       );
@@ -1260,7 +1273,7 @@
           if (bg.group) {
             bg.group.getWorldPosition(_hitWorldPos);
             if (data.sourceType === "turret") {
-              emitTurretImpactEffects(_hitWorldPos, 24);
+              emitTurretImpactEffects(_hitWorldPos, 24, data.projectileId);
               if (data.projectileId != null && !data.isMissile) {
                 cannonSystem.removeProjectileByServerId?.(data.projectileId, _hitWorldPos, true);
               }
@@ -1285,7 +1298,7 @@
           ? resolveImpactPos(data, data.targetId)
           : null;
         // Damage effects — defer everything for missiles until visual detonation
-        const applyLocalHitVisuals = () => {
+        const applyLocalHitVisuals = (hit = {}) => {
           tank.hp = data.hp;
           if (tank.onDamage) {
             tank.onDamage(tank.hp, tank.maxHp, data.damage);
@@ -1297,8 +1310,8 @@
               tank.onDamageStateChange(newState);
             }
           }
-          // Missile hit explosion at player position (deferred until visual detonation)
-          if (data.isMissile && tank.group) {
+          // Fallback explosion if the missile visual was unavailable.
+          if (data.isMissile && tank.group && !hit.visualExplosionPlayed) {
             const pos = localMissileImpactPos ||
               cloneLiftedGroupPos(tank.group, 1.0) ||
               tank.group._cachedWorldPos ||
@@ -1317,7 +1330,7 @@
           ) {
             const pos = new THREE.Vector3();
             tank.group.getWorldPosition(pos);
-            emitTurretImpactEffects(pos, 24);
+            emitTurretImpactEffects(pos, 24, data.projectileId);
             if (data.projectileId != null && !data.isMissile) {
               cannonSystem.removeProjectileByServerId?.(data.projectileId, pos, true);
             }
@@ -1343,7 +1356,7 @@
           const remoteMissileImpactPos = data.isMissile
             ? resolveImpactPos(data, data.targetId)
             : null;
-          const applyRemoteHitVisuals = () => {
+          const applyRemoteHitVisuals = (hit = {}) => {
             // Skip visual effects if victim disconnected or is already dead
             if (!remoteTanks.has(data.targetId)) return;
             remoteTank.hp = data.hp;
@@ -1400,10 +1413,10 @@
                 if (hitLen > 0) _hitWorldPos.multiplyScalar((hitLen + 1.0) / hitLen);
               }
               const isSelfDamage = data.attackerId === data.targetId;
-              if (!isSelfDamage && !isTurretProjectileHit) {
+              const isMissileHit = !!data.isMissile;
+              if (!isSelfDamage && !isTurretProjectileHit && !(isMissileHit && hit.visualExplosionPlayed)) {
                 const explosionFaction = weAreAttacker ? tank.faction : remoteTank.faction;
                 // Missiles get a bigger explosion + decal + shake
-                const isMissileHit = !!data.isMissile;
                 const explodeScale = isMissileHit ? 1.2 : 0.6;
                 const dustScale = isMissileHit ? 1.0 : 0.4;
                 cannonSystem._spawnExplosion?.(_hitWorldPos, explosionFaction, explodeScale);
@@ -1426,7 +1439,7 @@
                 isTurretProjectileHit &&
                 turretSystem?.shouldRenderEffects?.()
               ) {
-                emitTurretImpactEffects(_hitWorldPos, 24);
+                emitTurretImpactEffects(_hitWorldPos, 24, data.projectileId);
               }
             }
           };
@@ -1438,7 +1451,8 @@
           }
         } else if (data.isMissile && window.missileSystem) {
           const missileImpactPos = resolveImpactPos(data, data.targetId);
-          const applyUntrackedMissileHitVisuals = () => {
+          const applyUntrackedMissileHitVisuals = (hit = {}) => {
+            if (hit.visualExplosionPlayed) return;
             if (!missileImpactPos || !cannonSystem) return;
             const attackerTank = data.attackerId === net.playerId
               ? tank
@@ -1469,7 +1483,7 @@
             const suppressTurretProjectileEffects =
               data.sourceType === "turret";
             if (data.sourceType === "turret" && !remoteTank) {
-              emitTurretImpactEffects(impactPos, 24);
+              emitTurretImpactEffects(impactPos, 24, data.projectileId);
             }
             cannonSystem.removeProjectileByServerId?.(
               data.projectileId,

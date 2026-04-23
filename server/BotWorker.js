@@ -43,13 +43,20 @@ parentPort.postMessage({ type: "ready", botCount: botManager.bots.size });
 parentPort.on("message", (msg) => {
   switch (msg.type) {
     case "tick-input": {
-      const { dt, planetRotation, tick, nextProjectileId, players } = msg;
+      const { dt, planetRotation, tick, nextProjectileId, players, turrets } = msg;
       const _wt0 = performance.now();
 
       // Build a Map from the player array (ServerBotManager expects Map)
       const playerMap = new Map();
       for (const p of players) {
         playerMap.set(p.id, p);
+      }
+
+      const turretMap = new Map();
+      if (Array.isArray(turrets)) {
+        for (const turret of turrets) {
+          turretMap.set(turret.id, turret);
+        }
       }
 
       // Update capture state if included (every 50 ticks)
@@ -64,7 +71,7 @@ parentPort.on("message", (msg) => {
       // Run full bot update — AI, physics, combat, terrain collision
       // In worker mode, projectiles are buffered internally instead of pushing to shared array
       const updatedNextId = botManager.update(
-        dt, playerMap, [], planetRotation, tick, nextProjectileId
+        dt, playerMap, [], planetRotation, tick, nextProjectileId, turretMap
       );
       const _wt2 = performance.now();
 

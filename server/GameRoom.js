@@ -2605,6 +2605,27 @@ class GameRoom {
     return TURRET_LEVELS[level] ? level : 1;
   }
 
+  _getPlayerOrDisconnectedSession(socketId) {
+    const player = this.players.get(socketId);
+    if (player) return player;
+
+    for (const [, session] of this.disconnectedSessions) {
+      if (session?.player?.id === socketId) return session.player;
+    }
+    return null;
+  }
+
+  _awardTurretDamageCrypto(ownerId, damage) {
+    const amount = Math.floor(Math.max(0, Number(damage) || 0));
+    if (amount <= 0) return 0;
+
+    const owner = this._getPlayerOrDisconnectedSession(ownerId);
+    if (!owner) return 0;
+
+    owner.crypto = (owner.crypto || 0) + amount;
+    return amount;
+  }
+
   _findTurretTarget(turret, rangeRad) {
     let best = null;
     let bestDist = rangeRad;
@@ -2725,6 +2746,11 @@ class GameRoom {
     const turret = this.turrets.get(turretId);
     if (!turret || turret.hp <= 0) return false;
     if (attackerFaction && attackerFaction === turret.ownerFaction) return false;
+
+    const damageApplied = Math.min(Math.max(0, turret.hp), damage);
+    if (sourceType === "turret") {
+      this._awardTurretDamageCrypto(attackerId, damageApplied);
+    }
 
     turret.hp -= damage;
     const hp = Math.max(0, turret.hp);
@@ -3885,7 +3911,15 @@ class GameRoom {
     //    worker has the full inter-tick gap to process. Its output will
     //    be ready at the start of the next tick (no 1-tick stale positions).
     const sendCaptureState = (this.tick % (this.tickRate * 5) === 0) ? this.clusterCaptureState : null;
-    this.botBridge.sendTickInput(dt, this.players, this.planetRotation, this.tick, this.nextProjectileId, sendCaptureState);
+    this.botBridge.sendTickInput(
+      dt,
+      this.players,
+      this.turrets,
+      this.planetRotation,
+      this.tick,
+      this.nextProjectileId,
+      sendCaptureState
+    );
 
     // Log tick duration every 100 ticks (~10s)
     const tickMs = Date.now() - tickStart;
@@ -4376,12 +4410,15 @@ class GameRoom {
           if (Math.abs(localFwd) < HALF_LEN && Math.abs(localRgt) < HALF_WID) {
           // Hit! Use per-projectile damage (scales with charge)
           const damage = p.damage || 25;
+          const damageApplied = Math.min(Math.max(0, player.hp), damage);
           player.hp -= damage;
 
 
           // Award damage crypto to attacker (1¢ per HP, 10x for commander targets)
           const attacker = this.players.get(p.ownerId);
-          if (attacker) {
+          if (p.sourceType === "turret") {
+            this._awardTurretDamageCrypto(p.ownerId, damageApplied);
+          } else if (attacker) {
             const isTargetCommander = this.commanders[player.faction]?.id === id;
             attacker.crypto += Math.floor(damage * (isTargetCommander ? 10 : 1));
           }
@@ -4491,7 +4528,12 @@ class GameRoom {
           this.botBridge.applyDamage(botHit.id, damage, p.ownerId, attackerName);
 
           // Award crypto to human attacker
-          if (attacker) {
+          if (p.sourceType === "turret") {
+            this._awardTurretDamageCrypto(
+              p.ownerId,
+              Math.min(Math.max(0, botHp), damage)
+            );
+          } else if (attacker) {
             attacker.crypto += Math.floor(damage);
           }
 
@@ -4540,7 +4582,12 @@ class GameRoom {
         );
         if (bgHit) {
           const damage = p.damage || 25;
+          const damageApplied = Math.min(Math.max(0, bgHit.hp || 0), damage);
           const result = this.bodyguardManager.applyDamage(bgHit.id, damage);
+
+          if (p.sourceType === "turret") {
+            this._awardTurretDamageCrypto(p.ownerId, damageApplied);
+          }
 
           this._queueRoomEvent("player-hit", {
             targetId: bgHit.id,

@@ -529,9 +529,10 @@ class ServerBotManager {
    * @param {number} planetRotation - Current planet rotation angle
    * @param {number} tick - Current tick number
    * @param {number} nextProjectileId - Next projectile ID from GameRoom
+   * @param {Map} [turrets] - Live deployed turret states
    * @returns {number} Updated nextProjectileId
    */
-  update(dt, players, projectiles, planetRotation, tick, nextProjectileId) {
+  update(dt, players, projectiles, planetRotation, tick, nextProjectileId, turrets = new Map()) {
     const now = Date.now();
     this._pathfindCount = 0; // Reset per-tick pathfind budget
     this._activeBotMissiles = 0; // Reset per-tick missile cap
@@ -606,7 +607,7 @@ class ServerBotManager {
       if (isStagger) {
         const staggerDt = dt * (this._botArray.length / botsPerTick);
         this._updateWelding(bot, players, staggerDt);
-        nextProjectileId = this._updateCombat(bot, dt, players, projectiles, nextProjectileId, now);
+        nextProjectileId = this._updateCombat(bot, dt, players, turrets, projectiles, nextProjectileId, now);
       }
     }
 
@@ -1449,13 +1450,13 @@ class ServerBotManager {
   // COMBAT
   // ========================
 
-  _updateCombat(bot, dt, players, projectiles, nextProjectileId, now) {
+  _updateCombat(bot, dt, players, turrets, projectiles, nextProjectileId, now) {
     // Scan for targets periodically
     bot.combatScanTimer -= dt * 1000;
     if (bot.combatScanTimer <= 0 || !bot.combatTarget) {
       bot.combatScanTimer = BOT_COMBAT_LOCK_DURATION;
       const prevTarget = bot.combatTarget;
-      bot.combatTarget = this._findCombatTarget(bot, players);
+      bot.combatTarget = this._findCombatTarget(bot, players, turrets);
       // Trash talk when locking onto a new target
       if (bot.combatTarget && bot.combatTarget !== prevTarget) {
         this.onBotCombatEngage(bot, bot.combatTarget, players);
@@ -1464,7 +1465,7 @@ class ServerBotManager {
 
     // Validate existing target
     if (bot.combatTarget) {
-      const target = this._getCombatTargetState(bot.combatTarget, players);
+      const target = this._getCombatTargetState(bot.combatTarget, players, turrets);
       if (!target || target.isDead) {
         bot.combatTarget = null;
         return nextProjectileId;
@@ -1488,7 +1489,7 @@ class ServerBotManager {
         if (dist >= 0.03 && dist < 0.15 && bot.crypto >= 20 && this._activeBotMissiles < 3) {
           bot.lastFireTime = now;
           this._activeBotMissiles++;
-          nextProjectileId = this._fireBotMissile(bot, projectiles, nextProjectileId, players);
+          nextProjectileId = this._fireBotMissile(bot, projectiles, nextProjectileId, players, turrets);
         } else if (dist < 0.08) {
           // Too close for missiles — use cannon
           bot.lastFireTime = now;
@@ -1528,7 +1529,7 @@ class ServerBotManager {
     });
   }
 
-  _findCombatTarget(bot, players) {
+  _findCombatTarget(bot, players, turrets = new Map()) {
     let closestId = null;
     let closestDist = BOT_COMBAT_SCAN_RADIUS;
 
@@ -1558,13 +1559,27 @@ class ServerBotManager {
       }
     }
 
+    // Check enemy deployed turrets
+    for (const [id, turret] of turrets) {
+      if (!turret || turret.isDead || turret.hp <= 0) continue;
+      if (turret.faction === bot.faction) continue;
+      if (turret.phi < BOT_POLE_HARD_LIMIT || turret.phi > Math.PI - BOT_POLE_HARD_LIMIT) continue;
+      const dist = this._angularDistance(bot.theta, bot.phi, turret.theta, turret.phi);
+      if (dist < closestDist) {
+        closestDist = dist;
+        closestId = id;
+      }
+    }
+
     return closestId;
   }
 
-  _getCombatTargetState(targetId, players) {
+  _getCombatTargetState(targetId, players, turrets = new Map()) {
     // Check human players first
     const player = players.get(targetId);
     if (player) return player;
+    const turret = turrets.get(targetId);
+    if (turret) return turret;
     // Check bots
     return this.bots.get(targetId) || null;
   }
@@ -1655,9 +1670,9 @@ class ServerBotManager {
     return nextProjectileId;
   }
 
-  _fireBotMissile(bot, projectiles, nextProjectileId, players) {
+  _fireBotMissile(bot, projectiles, nextProjectileId, players, turrets = new Map()) {
     if (bot.isDead || !bot.combatTarget) return nextProjectileId;
-    const target = this._getCombatTargetState(bot.combatTarget, players);
+    const target = this._getCombatTargetState(bot.combatTarget, players, turrets);
     if (!target || target.isDead || target.waitingForPortal) return nextProjectileId;
 
     bot.crypto -= 20;

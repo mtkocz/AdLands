@@ -1719,7 +1719,7 @@ class MissileSystem {
 
   queueHitEffect(projectileId, callback) {
     if (projectileId == null) {
-      callback();
+      callback({ visualExplosionPlayed: false });
       return;
     }
     const existing = this._pendingHits.get(projectileId);
@@ -1727,24 +1727,25 @@ class MissileSystem {
     const timeout = setTimeout(() => {
       const pending = this._pendingHits.get(projectileId);
       if (!pending) return;
-      this._pendingHits.delete(projectileId);
-      callback();
       const idx = this.missiles.findIndex((m) => m.serverId === projectileId);
       if (idx >= 0) {
         const missile = this.missiles[idx];
         missile._forcedDive = true;
         this._destroyMissile(idx, missile.diveTarget || missile.position);
+        return;
       }
+      this._pendingHits.delete(projectileId);
+      pending.callback({ visualExplosionPlayed: false });
     }, 1800);
     this._pendingHits.set(projectileId, { callback, timeout });
   }
 
-  _flushPendingHit(serverId) {
+  _flushPendingHit(serverId, context = { visualExplosionPlayed: false }) {
     const pending = this._pendingHits.get(serverId);
     if (pending) {
       clearTimeout(pending.timeout);
       this._pendingHits.delete(serverId);
-      pending.callback();
+      pending.callback(context);
     }
   }
 
@@ -2568,24 +2569,32 @@ class MissileSystem {
 
   _destroyMissile(index, impactPos) {
     const m = this.missiles[index];
+    const hitImpactPos = impactPos || m.position;
 
-    // Flush deferred damage effects (HP updates, flashes, floating numbers)
-    // Flush deferred hit callback — this handles the explosion + damage visuals
-    // for server-confirmed hits. Do NOT spawn a separate explosion here for hits.
+    // Server-confirmed terminal dives explode here, exactly when the missile
+    // reaches its impact point. Deferred callbacks only apply damage/UI effects.
     const hadPendingHit = m.serverId != null && this._pendingHits.has(m.serverId);
-    if (m.serverId != null) this._flushPendingHit(m.serverId);
+    const serverConfirmedImpact = hadPendingHit || !!m._forcedDive;
+    const visualExplosionPlayed = serverConfirmedImpact
+      ? this._spawnMissileImpactExplosion(m, hitImpactPos)
+      : false;
+    if (m.serverId != null) {
+      this._flushPendingHit(m.serverId, {
+        visualExplosionPlayed,
+        impactPos: hitImpactPos,
+      });
+    }
 
-    // Only spawn local explosion for non-hit destructions. Server-confirmed
-    // hits are handled by their queued callbacks to keep damage/explosion synced.
+    // Non-confirmed destructions still get a smaller local effect.
     const isCrash = m.phase >= 3 || m.age > 14;
-    if (!hadPendingHit && !m._forcedDive) {
+    if (!serverConfirmedImpact) {
       const explosionScale = isCrash ? 0.7 : 0.4;
       const dustScale = isCrash ? 0.6 : 0.3;
       if (this.cannonSystem) {
-        this.cannonSystem._spawnExplosion?.(impactPos, m.faction, explosionScale);
+        this.cannonSystem._spawnExplosion?.(hitImpactPos, m.faction, explosionScale);
       }
       if (this.dustShockwave) {
-        this.dustShockwave.emit(impactPos, dustScale);
+        this.dustShockwave.emit(hitImpactPos, dustScale);
       }
     }
 
@@ -2600,6 +2609,31 @@ class MissileSystem {
     if (m.serverId != null) this._latestServerMissileState.delete(m.serverId);
     if (this._missileIndex && m.serverId != null) this._missileIndex.delete(m.serverId);
     this.missiles.splice(index, 1);
+  }
+
+  _spawnMissileImpactExplosion(missile, impactPos) {
+    if (!impactPos || !this.cannonSystem) return false;
+    const pos = impactPos.clone ? impactPos.clone() : new THREE.Vector3(impactPos.x, impactPos.y, impactPos.z);
+    const faction = missile.faction || missile.ownerFaction || "rust";
+
+    this.cannonSystem._spawnExplosion?.(pos, faction, 1.2);
+    this.cannonSystem._spawnImpactDecal?.(pos, 1.0);
+    this.dustShockwave?.emit(pos, 1.0);
+
+    let playerPos = this.playerTank?.group?._cachedWorldPos || null;
+    if (!playerPos && this.playerTank?.group) {
+      this.playerTank.group.updateWorldMatrix(true, false);
+      playerPos = this.playerTank.group.getWorldPosition(this._tempVec5);
+    }
+    if (playerPos) {
+      this.gameCamera?.triggerShake(pos, playerPos, 0.8, 100);
+      if (this.cannonSystem.onNearbyExplosion) {
+        const d = pos.distanceTo(playerPos);
+        if (d < 80) this.cannonSystem.onNearbyExplosion((1 - d / 80) * 1.2);
+      }
+    }
+
+    return true;
   }
 
   // ========================

@@ -167,12 +167,13 @@ class BotWorkerBridge {
    * Send tick input to the worker. Non-blocking — returns immediately.
    * @param {number} dt
    * @param {Map} players - Human player map
+   * @param {Map} turrets - Live deployed turret map
    * @param {number} planetRotation
    * @param {number} tick
    * @param {number} nextProjectileId
    * @param {Map} [captureState] - Full capture state (sent every 50 ticks)
    */
-  sendTickInput(dt, players, planetRotation, tick, nextProjectileId, captureState) {
+  sendTickInput(dt, players, turrets, planetRotation, tick, nextProjectileId, captureState) {
     if (!this._workerReady) return;
 
     // Serialize players Map to array for structured clone
@@ -192,6 +193,26 @@ class BotWorkerBridge {
       });
     }
 
+    const turretArray = [];
+    if (turrets) {
+      for (const [id, turret] of turrets) {
+        if (!turret || turret.hp <= 0) continue;
+        turretArray.push({
+          id,
+          theta: turret.theta,
+          phi: turret.phi,
+          heading: turret.heading || 0,
+          speed: 0,
+          faction: turret.ownerFaction,
+          isDead: false,
+          waitingForPortal: false,
+          name: turret.ownerName ? `${turret.ownerName}'s turret` : "Turret",
+          hp: turret.hp,
+          isTurret: true,
+        });
+      }
+    }
+
     const msg = {
       type: "tick-input",
       dt,
@@ -199,6 +220,7 @@ class BotWorkerBridge {
       tick,
       nextProjectileId,
       players: playerArray,
+      turrets: turretArray,
     };
 
     // Include capture state periodically

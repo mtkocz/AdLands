@@ -2054,6 +2054,9 @@ void main() {
                 suppressExplosion: p.sourceType === "turret",
                 dustSpriteOnly: p.sourceType === "turret",
                 dustScale: p.sourceType === "turret" ? 0.5 : (p.sizeScale || 1),
+                sparkOrigin: p.sourceType === "turret"
+                  ? this._getProjectileSparkOrigin(p, p.position)
+                  : null,
                 showCrypto: tank === this.playerTank,
               }
             );
@@ -2356,13 +2359,40 @@ void main() {
       this.shieldHolosphere.emit(impactPosition, faction, shieldAnchor);
     }
     if (options.emitTurretSparks && window.weldingGunSystem) {
-      window.weldingGunSystem.emitImpactSparks(impactPosition, null, 24);
+      window.weldingGunSystem.emitImpactSparks(
+        impactPosition,
+        options.sparkOrigin || null,
+        24
+      );
     }
     if (options.showCrypto && window.cryptoVisuals) {
       window.cryptoVisuals._spawnFloatingNumber(10, shieldClip);
     }
 
     return { impactPosition, shieldClip };
+  }
+
+  _getProjectileSparkOrigin(projectile, impactPos = null, distance = 5) {
+    if (!projectile?.velocity) return null;
+    const speedSq = projectile.velocity.lengthSq();
+    if (!Number.isFinite(speedSq) || speedSq <= 0.0001) return null;
+
+    const base = impactPos || projectile.position;
+    if (!base) return null;
+
+    _shotDirWorld.copy(projectile.velocity).normalize();
+    return base.clone().addScaledVector(_shotDirWorld, -distance);
+  }
+
+  getProjectileSparkOriginByServerId(serverId, impactPos = null, distance = 5) {
+    if (serverId == null) return null;
+    for (let i = this.projectiles.length - 1; i >= 0; i--) {
+      const p = this.projectiles[i];
+      if (p.serverId === serverId) {
+        return this._getProjectileSparkOrigin(p, impactPos, distance);
+      }
+    }
+    return null;
   }
 
   removeProjectileByServerId(serverId, impactPos, suppressEffects = false) {
