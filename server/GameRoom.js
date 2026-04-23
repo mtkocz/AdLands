@@ -76,6 +76,8 @@ const TURRET_LEVELS = {
 
 const TURRET_MAX_PER_OWNER = 3;
 const TURRET_HIT_RADIUS_RAD = 2.8 / 480;
+const TURRET_TURN_RATE = Math.PI * 1.5; // radians per second
+const TURRET_FIRE_ALIGNMENT_TOLERANCE = 0.1;
 
 // Shield constants
 const SHIELD = {
@@ -2626,6 +2628,28 @@ class GameRoom {
     return amount;
   }
 
+  _turretAngleForHeading(turret, heading) {
+    return this._normalizeAngle((turret.heading || 0) + Math.PI - heading);
+  }
+
+  _turnTurretToward(turret, targetAngle, dt) {
+    if (!turret || !Number.isFinite(targetAngle)) return Infinity;
+
+    const current = Number.isFinite(turret.turretAngle)
+      ? this._normalizeAngle(turret.turretAngle)
+      : this._normalizeAngle(targetAngle);
+    const delta = this._angleDelta(targetAngle, current);
+    const maxStep = Math.max(0, dt || 0) * TURRET_TURN_RATE;
+
+    if (maxStep <= 0 || Math.abs(delta) <= maxStep) {
+      turret.turretAngle = this._normalizeAngle(targetAngle);
+      return 0;
+    }
+
+    turret.turretAngle = this._normalizeAngle(current + Math.sign(delta) * maxStep);
+    return this._angleDelta(targetAngle, turret.turretAngle);
+  }
+
   _findTurretLookTarget(turret, botStates = null) {
     let best = null;
     let bestDist = Infinity;
@@ -2698,25 +2722,27 @@ class GameRoom {
       if (!turret || turret.hp <= 0) continue;
 
       const cfg = TURRET_LEVELS[turret.level] || TURRET_LEVELS[1];
-      const lookTarget = this._findTurretLookTarget(turret, botStates);
-      if (lookTarget) {
-        const lookHeading = this._computeMissileHeadingTo(
-          turret.theta, turret.phi, lookTarget.theta, lookTarget.phi
+      const target = this._findTurretTarget(turret, cfg.rangeWorld / 480, botStates);
+      const aimTarget = target || this._findTurretLookTarget(turret, botStates);
+      let aimHeading = null;
+      let aimAngle = null;
+
+      if (aimTarget) {
+        aimHeading = this._computeMissileHeadingTo(
+          turret.theta, turret.phi, aimTarget.theta, aimTarget.phi
         );
-        turret.turretAngle = this._normalizeAngle(turret.heading + Math.PI - lookHeading);
+        aimAngle = this._turretAngleForHeading(turret, aimHeading);
+        this._turnTurretToward(turret, aimAngle, dt);
       }
 
-      const target = this._findTurretTarget(turret, cfg.rangeWorld / 480, botStates);
       if (!target) continue;
-
-      const fireHeading = this._computeMissileHeadingTo(
-        turret.theta, turret.phi, target.theta, target.phi
-      );
-
       if (now - (turret.lastFireAt || 0) < cfg.cooldownMs) continue;
-      turret.turretAngle = this._normalizeAngle(turret.heading + Math.PI - fireHeading);
+
+      const alignmentError = Math.abs(this._angleDelta(aimAngle, turret.turretAngle));
+      if (alignmentError > TURRET_FIRE_ALIGNMENT_TOLERANCE) continue;
+
       turret.lastFireAt = now;
-      this._fireTurretProjectile(turret, cfg, fireHeading);
+      this._fireTurretProjectile(turret, cfg, aimHeading);
     }
   }
 

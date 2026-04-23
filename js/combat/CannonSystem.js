@@ -1256,7 +1256,7 @@ void main() {
     if (this.dustShockwave) {
       this.dustShockwave.emit(
         tank.group._cachedWorldPos || tank.group.position,
-        0.6 + chargeRatio * 0.4,
+        1.0,
       );
     }
 
@@ -1364,7 +1364,7 @@ void main() {
     if (this.dustShockwave) {
       this.dustShockwave.emit(
         remoteTank.group._cachedWorldPos || remoteTank.group.position,
-        0.6 + chargeRatio * 0.4,
+        1.0,
       );
     }
 
