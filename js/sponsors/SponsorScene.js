@@ -716,11 +716,11 @@ class SponsorScene {
   _setupControls() {
     const canvas = this.renderer.domElement;
     canvas.addEventListener("contextmenu", (e) => e.preventDefault());
-    let suppressMouseUntil = 0;
+    this._suppressMouseUntil = 0;
     const suppressSyntheticMouse = () => {
-      suppressMouseUntil = performance.now() + 800;
+      this._suppressMouseUntil = performance.now() + 800;
     };
-    const shouldIgnoreSyntheticMouse = () => performance.now() < suppressMouseUntil;
+    const shouldIgnoreSyntheticMouse = () => performance.now() < this._suppressMouseUntil;
 
     // Mouse controls
     canvas.addEventListener("mousedown", (e) => {
@@ -952,7 +952,7 @@ class SponsorScene {
         const dx = Math.abs(touch.clientX - this.dragStartMouse.x);
         const dy = Math.abs(touch.clientY - this.dragStartMouse.y);
         if (!singleTouchMoved && dx < 10 && dy < 10) {
-          this._handleClick({ clientX: touch.clientX, clientY: touch.clientY });
+          this._handleClick({ clientX: touch.clientX, clientY: touch.clientY }, { mode: "select" });
         }
       }
     }, { passive: false });
@@ -1000,7 +1000,11 @@ class SponsorScene {
   // CLICK HANDLING + SELECTION
   // ═══════════════════════════════════════════════════════
 
-  _handleClick(e) {
+  _handleClick(e, options = {}) {
+    let mode = options.mode || "toggle";
+    if (performance.now() < (this._suppressMouseUntil || 0)) {
+      mode = "select";
+    }
     const rect = this.renderer.domElement.getBoundingClientRect();
     this.mouse.x = ((e.clientX - rect.left) / rect.width) * 2 - 1;
     this.mouse.y = -((e.clientY - rect.top) / rect.height) * 2 + 1;
@@ -1012,7 +1016,8 @@ class SponsorScene {
       const bbIntersects = this.raycaster.intersectObjects(this.billboardAdPanels);
       if (bbIntersects.length > 0) {
         const bbIndex = bbIntersects[0].object.userData.billboardIndex;
-        this._toggleBillboardSelection(bbIndex);
+        if (mode === "select") this._setBillboardSelection(bbIndex, true);
+        else this._toggleBillboardSelection(bbIndex);
         return;
       }
     }
@@ -1022,7 +1027,8 @@ class SponsorScene {
       const moonIntersects = this.raycaster.intersectObjects(this.moonMeshes);
       if (moonIntersects.length > 0) {
         const moonIndex = moonIntersects[0].object.userData.moonIndex;
-        this._toggleMoonSelection(moonIndex);
+        if (mode === "select") this._setMoonSelection(moonIndex, true);
+        else this._toggleMoonSelection(moonIndex);
         return;
       }
     }
@@ -1032,7 +1038,8 @@ class SponsorScene {
     if (intersects.length > 0) {
       const mesh = intersects[0].object;
       if (mesh.userData.isExcluded) return;
-      this._toggleTileSelection(mesh.userData.tileIndex);
+      if (mode === "select") this._setTileSelection(mesh.userData.tileIndex, true);
+      else this._toggleTileSelection(mesh.userData.tileIndex);
     }
   }
 
@@ -1073,10 +1080,15 @@ class SponsorScene {
   }
 
   _toggleTileSelection(tileIndex) {
+    this._setTileSelection(tileIndex, !this.selectedTiles.has(tileIndex));
+  }
+
+  _setTileSelection(tileIndex, selected) {
     const mesh = this.tileIndexToMesh.get(tileIndex);
     if (!mesh) return;
+    if (this.selectedTiles.has(tileIndex) === selected) return;
 
-    if (this.selectedTiles.has(tileIndex)) {
+    if (!selected) {
       this.selectedTiles.delete(tileIndex);
       mesh.material.color.setHex(mesh.userData.originalColor);
       if (mesh.material.emissive) mesh.material.emissive.setHex(0x000000);
@@ -1091,10 +1103,15 @@ class SponsorScene {
   }
 
   _toggleMoonSelection(moonIndex) {
+    this._setMoonSelection(moonIndex, !this.selectedMoons.has(moonIndex));
+  }
+
+  _setMoonSelection(moonIndex, selected) {
     const mesh = this.moonMeshes[moonIndex];
     if (!mesh) return;
+    if (this.selectedMoons.has(moonIndex) === selected) return;
 
-    if (this.selectedMoons.has(moonIndex)) {
+    if (!selected) {
       this.selectedMoons.delete(moonIndex);
       mesh.material.color.setHex(mesh.userData.originalColor);
       mesh.material.emissive.setHex(mesh.userData.originalEmissive);
@@ -1109,11 +1126,16 @@ class SponsorScene {
   }
 
   _toggleBillboardSelection(bbIndex) {
+    this._setBillboardSelection(bbIndex, !this.selectedBillboards.has(bbIndex));
+  }
+
+  _setBillboardSelection(bbIndex, selected) {
     const group = this.billboardGroups[bbIndex];
     const adPanel = group && group.children.find((c) => c.userData.isAdPanel);
     if (!group || !adPanel) return;
+    if (this.selectedBillboards.has(bbIndex) === selected) return;
 
-    if (this.selectedBillboards.has(bbIndex)) {
+    if (!selected) {
       this.selectedBillboards.delete(bbIndex);
       adPanel.material.color.setHex(adPanel.userData.originalColor);
       adPanel.material.emissive.setHex(adPanel.userData.originalEmissive);
