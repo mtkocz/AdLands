@@ -908,7 +908,7 @@ class SponsorScene {
         lastSingleTouch = { x: touch.clientX, y: touch.clientY };
         singleTouchMoved = false;
         this.isPainting = false;
-        this.paintMode = "add";
+        this.paintMode = null;
         this.paintedThisStroke.clear();
         this.lastMoveTime = performance.now();
       }
@@ -1135,18 +1135,24 @@ class SponsorScene {
     const tileIndex = mesh.userData.tileIndex;
     if (this.paintedThisStroke.has(tileIndex)) return;
 
+    if (this.paintMode === null) {
+      this.paintMode = this.selectedTiles.has(tileIndex) ? "erase" : "add";
+    }
+
     this.paintedThisStroke.add(tileIndex);
-    this._setTileSelection(tileIndex, true);
+    this._setTileSelection(tileIndex, this.paintMode === "add", {
+      allowDuringTouchLock: true,
+    });
   }
 
   _toggleTileSelection(tileIndex) {
     this._setTileSelection(tileIndex, !this.selectedTiles.has(tileIndex));
   }
 
-  _setTileSelection(tileIndex, selected) {
+  _setTileSelection(tileIndex, selected, options = {}) {
     const mesh = this.tileIndexToMesh.get(tileIndex);
     if (!mesh) return;
-    if (!selected && this._isTouchSelectionLocked()) return;
+    if (!selected && !options.allowDuringTouchLock && this._isTouchSelectionLocked()) return;
     if (this.selectedTiles.has(tileIndex) === selected) return;
 
     if (!selected) {
