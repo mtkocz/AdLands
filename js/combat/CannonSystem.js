@@ -988,8 +988,7 @@ void main() {
     if (tank === this.playerTank) {
       tank.takeDamage(totalDamage, projectile.faction);
     } else if (tank instanceof RemoteTank) {
-      // Remote player — visual hit feedback only, server handles HP + authoritative flash
-      // (server player-hit event triggers the white flash and HP bar update)
+      // Remote player — visual hit feedback only; server handles HP and hit events.
       if (tank.group) {
         // Scale bump (120ms) — instant client-side feedback
         const origScale = tank.group.scale.clone();

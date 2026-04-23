@@ -563,15 +563,7 @@ class DustShockwave {
     const beforeSpriteCount = this.dustwaveSprites.length;
     this._emitDustwaveSprite(position, scale, parent, clipCenter);
     if (this.dustwaveSprites.length <= beforeSpriteCount) return null;
-
-    const spriteData = this.dustwaveSprites[this.dustwaveSprites.length - 1];
-    const scaledSize = spriteData.baseSize * scale;
-    spriteData.sprite.scale.set(scaledSize, scaledSize, 1);
-    spriteData.baseSize = scaledSize;
-    if (spriteData.shadowSprite) {
-      spriteData.shadowSprite.scale.multiplyScalar(scale);
-    }
-    return spriteData;
+    return this.dustwaveSprites[this.dustwaveSprites.length - 1];
   }
 
   /**
@@ -625,10 +617,11 @@ class DustShockwave {
       material.uniforms.uClipSphereRadius.value = 4.5;
     }
 
+    const spriteScale = Number.isFinite(scale) ? Math.max(0.01, scale) : 1;
+
     // Create mesh using shared geometry
     const mesh = new THREE.Mesh(this.geometry, material);
-    // All dustwave sprites spawn at the same size (ignore scale parameter)
-    const planeSize = cfg.baseSize;
+    const planeSize = cfg.baseSize * spriteScale;
     mesh.scale.set(planeSize, planeSize, 1);
     mesh.renderOrder = 10; // Start above overlays (1-2) to avoid faction color tinting
 
@@ -716,7 +709,7 @@ class DustShockwave {
       age: 0,
       duration: cfg.duration,
       currentFrame: 0,
-      sizeScale: scale,
+      sizeScale: spriteScale,
       baseSize: planeSize,
       basePosition: position.clone(), // Store base position for height animation
       surfaceNormal: normal.clone(), // Store surface normal for height animation

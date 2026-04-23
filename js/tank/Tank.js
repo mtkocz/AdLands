@@ -1287,7 +1287,7 @@ class Tank {
     this.hp = Math.max(0, this.hp - amount);
     this._updateDamageState();
 
-    // Flash tank white briefly on hit
+    // Quick scale pulse on hit
     this._flashHit();
     // Notify UI callback
     if (this.onDamage) {

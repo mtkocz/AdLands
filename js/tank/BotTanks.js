@@ -2331,7 +2331,7 @@ class BotTanks {
     bot.hp = Math.max(0, bot.hp - amount);
     this._updateBotDamageState(bot);
 
-    // Flash bot white briefly on hit
+    // Quick scale pulse on hit
     this._flashBotHit(bot);
 
     // Update health bar via playerTags (use stable playerId, not array index)

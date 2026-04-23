@@ -17,6 +17,7 @@ class TurretSystem {
     this._hpBarSurfaceOffset = 4.2;
     this._hpBarScreenYOffset = 28;
     this._turretTurnRate = 8;
+    this._frustumScreenMargin = 0.18;
 
     this._entity = {
       theta: 0,
@@ -41,6 +42,7 @@ class TurretSystem {
     this._target = new THREE.Vector3();
     this._barWorld = new THREE.Vector3();
     this._barProjected = new THREE.Vector3();
+    this._visibilityProjected = new THREE.Vector3();
     this._cameraToTarget = new THREE.Vector3();
     this._yAxis = new THREE.Vector3(0, 1, 0);
     this._sinkTiltAxis = new THREE.Vector3();
@@ -173,7 +175,7 @@ class TurretSystem {
       if (frustum && camera) {
         turret.group.updateWorldMatrix(true, false);
         turret.group.getWorldPosition(this._target);
-        visible = frustum.containsPoint(this._target);
+        visible = this._isWithinGenerousView(this._target, camera);
       }
       turret.group.visible = visible;
       this._updateHpBarPosition(turret, camera, visible);
@@ -182,6 +184,20 @@ class TurretSystem {
 
   shouldRenderEffects() {
     return !!this.surfaceVisible;
+  }
+
+  _isWithinGenerousView(worldPosition, camera) {
+    if (!worldPosition || !camera) return true;
+    this._visibilityProjected.copy(worldPosition).project(camera);
+    const margin = this._frustumScreenMargin;
+    return (
+      this._visibilityProjected.z >= -1 &&
+      this._visibilityProjected.z <= 1 &&
+      this._visibilityProjected.x >= -1 - margin &&
+      this._visibilityProjected.x <= 1 + margin &&
+      this._visibilityProjected.y >= -1 - margin &&
+      this._visibilityProjected.y <= 1 + margin
+    );
   }
 
   getTurret(id) {
@@ -351,19 +367,26 @@ class TurretSystem {
     if (!this.shouldRenderEffects() || !this.cannonSystem || !turret?.group) return;
 
     turret.group.updateWorldMatrix(true, false);
+    turret.turretGroup?.updateWorldMatrix(true, false);
 
-    this._muzzleLocal.set(0, 0.55 + 0.22, -2.16);
-    this._muzzleLocal.applyAxisAngle(this._yAxis, turret.turretAngle);
-    this._muzzleWorld.copy(this._muzzleLocal).applyMatrix4(turret.group.matrixWorld);
+    if (turret.muzzleMesh) {
+      turret.muzzleMesh.updateWorldMatrix(true, false);
+      turret.muzzleMesh.getWorldPosition(this._muzzleWorld);
+    } else {
+      this._muzzleLocal.set(0, 0.55 + 0.22, -2.16);
+      this._muzzleLocal.applyAxisAngle(this._yAxis, turret.turretAngle);
+      this._muzzleWorld.copy(this._muzzleLocal).applyMatrix4(turret.group.matrixWorld);
+    }
+
+    const directionMatrix = turret.turretGroup?.matrixWorld || turret.group.matrixWorld;
+    this._directionLocal.set(0, 0, -1);
+    this._directionWorld.copy(this._directionLocal).transformDirection(directionMatrix).normalize();
 
     this._surfaceNormal.copy(this._muzzleWorld).normalize();
-    this._muzzleWorld.addScaledVector(this._surfaceNormal, 2.0);
-
-    this._directionLocal.set(0, 0, -1);
-    this._directionLocal.applyAxisAngle(this._yAxis, turret.turretAngle);
-    this._directionWorld.copy(this._directionLocal).transformDirection(turret.group.matrixWorld);
     const dot = this._directionWorld.dot(this._surfaceNormal);
     this._directionWorld.addScaledVector(this._surfaceNormal, -dot).normalize();
+    this._muzzleWorld.addScaledVector(this._directionWorld, 0.14);
+    this._muzzleWorld.addScaledVector(this._surfaceNormal, 0.15);
 
     this.cannonSystem.spawnProjectileFromServer(
       {
@@ -464,21 +487,10 @@ class TurretSystem {
       this.dustShockwave.emitDustwaveSpriteOnly(position.clone(), scale);
       return;
     }
-    const sprites = this.dustShockwave.dustwaveSprites;
-    const beforeSpriteCount = sprites ? sprites.length : 0;
     if (spriteOnly && typeof this.dustShockwave._emitDustwaveSprite === "function") {
       this.dustShockwave._emitDustwaveSprite(position.clone(), scale);
     } else {
       this.dustShockwave.emit(position.clone(), scale);
-    }
-    if (sprites && sprites.length > beforeSpriteCount) {
-      const last = sprites[sprites.length - 1];
-      const scaledSize = last.baseSize * scale;
-      last.sprite.scale.set(scaledSize, scaledSize, 1);
-      last.baseSize = scaledSize;
-      if (last.shadowSprite) {
-        last.shadowSprite.scale.multiplyScalar(scale);
-      }
     }
   }
 

@@ -1219,27 +1219,6 @@
               cannonSystem._spawnExplosion?.(_hitWorldPos, explosionFaction, 0.6);
               dustShockwave?.emit(_hitWorldPos, 0.4);
             }
-            // White flash
-            const meshesToFlash = [];
-            bg.group.traverse((child) => {
-              if (child.isMesh && child.material && child.material.color && child !== bg.hitbox) {
-                if (child.userData._hitFlashOrigColor === undefined) {
-                  child.userData._hitFlashOrigColor = child.material.color.getHex();
-                }
-                meshesToFlash.push(child);
-              }
-            });
-            for (const child of meshesToFlash) {
-              child.material.color.setHex(0xffffff);
-              clearTimeout(child.userData._hitFlashTimer);
-              child.userData._hitFlashTimer = setTimeout(() => {
-                if (child.material && child.userData._hitFlashOrigColor !== undefined) {
-                  child.material.color.setHex(child.userData._hitFlashOrigColor);
-                  delete child.userData._hitFlashOrigColor;
-                  delete child.userData._hitFlashTimer;
-                }
-              }, 150);
-            }
           }
         }
         return;
@@ -1374,27 +1353,6 @@
                     if (d < 80) cannonSystem.onNearbyExplosion((1 - d / 80) * 1.2);
                   }
                 }
-              }
-
-              const meshesToFlash = [];
-              remoteTank.group.traverse((child) => {
-                if (child.isMesh && child.material && child.material.color && child !== remoteTank.hitbox) {
-                  if (child.userData._hitFlashOrigColor === undefined) {
-                    child.userData._hitFlashOrigColor = child.material.color.getHex();
-                  }
-                  meshesToFlash.push(child);
-                }
-              });
-              for (const child of meshesToFlash) {
-                child.material.color.setHex(0xffffff);
-                clearTimeout(child.userData._hitFlashTimer);
-                child.userData._hitFlashTimer = setTimeout(() => {
-                  if (child.material && child.userData._hitFlashOrigColor !== undefined) {
-                    child.material.color.setHex(child.userData._hitFlashOrigColor);
-                    delete child.userData._hitFlashOrigColor;
-                    delete child.userData._hitFlashTimer;
-                  }
-                }, 150);
               }
 
               if (
