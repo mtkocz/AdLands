@@ -718,9 +718,21 @@ class SponsorScene {
     canvas.addEventListener("contextmenu", (e) => e.preventDefault());
     this._suppressMouseUntil = 0;
     const suppressSyntheticMouse = () => {
-      this._suppressMouseUntil = performance.now() + 800;
+      this._suppressMouseUntil = performance.now() + 1500;
     };
     const shouldIgnoreSyntheticMouse = () => performance.now() < this._suppressMouseUntil;
+    const blockSyntheticMouse = (e) => {
+      if (!shouldIgnoreSyntheticMouse()) return;
+      e.preventDefault();
+      e.stopPropagation();
+      if (typeof e.stopImmediatePropagation === "function") {
+        e.stopImmediatePropagation();
+      }
+    };
+
+    ["mousedown", "mouseup", "click"].forEach((eventName) => {
+      window.addEventListener(eventName, blockSyntheticMouse, true);
+    });
 
     // Mouse controls
     canvas.addEventListener("mousedown", (e) => {
@@ -864,6 +876,7 @@ class SponsorScene {
     let singleTouchMoved = false;
 
     canvas.addEventListener("touchstart", (e) => {
+      e.stopPropagation();
       suppressSyntheticMouse();
       this.lastInteractionTime = performance.now();
       if (e.touches.length === 2) {
@@ -890,6 +903,7 @@ class SponsorScene {
     }, { passive: false });
 
     canvas.addEventListener("touchmove", (e) => {
+      e.stopPropagation();
       suppressSyntheticMouse();
       if (e.touches.length === 2 && this.isDragging) {
         e.preventDefault();
@@ -945,6 +959,7 @@ class SponsorScene {
 
     canvas.addEventListener("touchend", (e) => {
       e.preventDefault();
+      e.stopPropagation();
       suppressSyntheticMouse();
       if (e.touches.length < 2) this.isDragging = false;
       if (e.changedTouches.length === 1 && e.touches.length === 0) {
@@ -957,7 +972,8 @@ class SponsorScene {
       }
     }, { passive: false });
 
-    canvas.addEventListener("touchcancel", () => {
+    canvas.addEventListener("touchcancel", (e) => {
+      e.stopPropagation();
       suppressSyntheticMouse();
       this.isDragging = false;
       singleTouchMoved = false;
