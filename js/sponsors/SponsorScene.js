@@ -1254,7 +1254,7 @@ class SponsorScene {
       window.matchMedia("(max-width: 768px)").matches;
 
     if (isMobile) {
-      const targetY = document.body.classList.contains("inquiry-open") ? 0.21 : 0.28;
+      const targetY = this._getMobilePreviewCenterY(h);
       const offsetY = Math.round(h * (0.5 - targetY));
       this.camera.setViewOffset(w, h, 0, offsetY, w, h);
     } else {
@@ -1262,6 +1262,48 @@ class SponsorScene {
     }
 
     this.camera.updateProjectionMatrix();
+  }
+
+  _getMobilePreviewCenterY(viewportHeight) {
+    const canvasRect = this.renderer.domElement.getBoundingClientRect();
+    const canvasTop = canvasRect.top || 0;
+    const canvasHeight = canvasRect.height || viewportHeight;
+
+    if (document.body.classList.contains("inquiry-open")) {
+      const modalOverlay = document.querySelector(".modal-overlay:not(.hidden)");
+      const modalTop = modalOverlay
+        ? modalOverlay.getBoundingClientRect().top
+        : viewportHeight * 0.42;
+      return this._clampMobilePreviewCenter((modalTop / 2 - canvasTop) / canvasHeight);
+    }
+
+    const toolbar = document.getElementById("mobile-toolbar");
+    const topBanner = document.getElementById("top-banner");
+    const territoryPanel = document.getElementById("territory-panel");
+
+    const topRect = toolbar?.getBoundingClientRect();
+    const bannerRect = topBanner?.getBoundingClientRect();
+    const panelRect = territoryPanel?.getBoundingClientRect();
+
+    const topEdge = Math.max(
+      0,
+      topRect && topRect.height > 0 ? topRect.bottom : 0,
+      bannerRect && bannerRect.height > 0 ? bannerRect.bottom : 0,
+    );
+    const bottomEdge =
+      panelRect &&
+      panelRect.height > 0 &&
+      panelRect.top > topEdge &&
+      panelRect.top < viewportHeight
+        ? panelRect.top
+        : viewportHeight;
+
+    const centerY = ((topEdge + bottomEdge) / 2 - canvasTop) / canvasHeight;
+    return this._clampMobilePreviewCenter(centerY);
+  }
+
+  _clampMobilePreviewCenter(centerY) {
+    return Math.max(0.12, Math.min(0.88, centerY));
   }
 
   _animate() {
