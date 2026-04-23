@@ -612,6 +612,7 @@
 
   // Tank damage effects (smoke/fire)
   const tankDamageEffects = new TankDamageEffects(scene, CONFIG.sphereRadius);
+  turretSystem.setTankDamageEffects(tankDamageEffects);
 
   // Tread dust particles
   const treadDust = new TreadDust(scene, CONFIG.sphereRadius);

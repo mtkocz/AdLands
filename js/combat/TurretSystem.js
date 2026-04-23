@@ -11,6 +11,7 @@ class TurretSystem {
     this.turrets = new Map();
     this.dustShockwave = null;
     this.cannonSystem = null;
+    this.tankDamageEffects = null;
     this.surfaceVisible = false;
     this._hpBarSurfaceOffset = 4.2;
     this._hpBarScreenYOffset = 28;
@@ -52,6 +53,10 @@ class TurretSystem {
 
   setCannonSystem(cannonSystem) {
     this.cannonSystem = cannonSystem;
+  }
+
+  setTankDamageEffects(tankDamageEffects) {
+    this.tankDamageEffects = tankDamageEffects;
   }
 
   syncFromState(arr) {
@@ -498,6 +503,8 @@ class TurretSystem {
     if (!this.shouldRenderEffects() || !turret?.group) return;
     turret.group.updateWorldMatrix(true, false);
     turret.group.getWorldPosition(this._target);
+    const len = this._target.length();
+    if (len > 0) this._target.multiplyScalar((len + 1.0) / len);
     this.cannonSystem?._spawnExplosion?.(this._target, turret.faction, scale);
     this.dustShockwave?.emit(this._target, scale * 0.7);
     this.cannonSystem?.spawnOilPuddle?.(this._target);
@@ -507,15 +514,19 @@ class TurretSystem {
     if (!turret || turret.isDying) return;
     turret.isDead = true;
     turret.isDying = true;
+    turret.isFading = true;
+    turret.damageState = "dead";
     turret.hp = 0;
     turret._recoilTarget = 0;
     turret._recoil = 0;
     this._hideHpBar(turret);
+    this.tankDamageEffects?.setDamageState(turret.id, turret.group, "dead");
     this._setDeadMaterial(turret);
     turret.fadeStartTime = performance.now();
     turret.sinkDelay = 5000;
     turret.sinkDuration = 5000;
     turret.sinkDepth = 3;
+    turret._smokeFadeDone = false;
     const angle = Math.random() * Math.PI * 2;
     turret._sinkTiltAxis = new THREE.Vector3(Math.cos(angle), 0, Math.sin(angle)).normalize();
     turret._sinkTiltMax = (0.3 + Math.random() * 0.4) * (Math.random() < 0.5 ? 1 : -1);
@@ -543,10 +554,19 @@ class TurretSystem {
   _updateDeathFade(turret) {
     if (!turret?.isDying) return false;
     this._hideHpBar(turret);
+    const elapsed = performance.now() - (turret.fadeStartTime || 0);
+
+    const smokeDuration = 5000;
+    if (elapsed < smokeDuration) {
+      this.tankDamageEffects?.setOpacity(turret.id, 1 - elapsed / smokeDuration);
+    } else if (!turret._smokeFadeDone) {
+      turret._smokeFadeDone = true;
+      this.tankDamageEffects?.setOpacity(turret.id, 0);
+    }
+
     turret.group.visible = this.surfaceVisible;
     if (!this.surfaceVisible) return true;
 
-    const elapsed = performance.now() - (turret.fadeStartTime || 0);
     if (elapsed < turret.sinkDelay) return true;
 
     const sinkElapsed = elapsed - turret.sinkDelay;
@@ -691,6 +711,7 @@ class TurretSystem {
     const turret = this.turrets.get(id);
     if (!turret) return;
     if (withExplosion) {
+      if (turret.isDying) return;
       this._emitImpactEffect(turret, 0.8);
       this._startDeathSequence(turret);
       return;
@@ -700,6 +721,7 @@ class TurretSystem {
 
   _finalizeTurretRemoval(turret) {
     if (!turret) return;
+    this.tankDamageEffects?.removeTank(turret.id);
     this._removeHpBar(turret);
     if (turret.group?.parent) turret.group.parent.remove(turret.group);
     turret.group?.traverse((child) => {
