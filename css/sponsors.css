@@ -37,6 +37,7 @@ body {
     display: block;
     width: 100% !important;
     height: 100% !important;
+    touch-action: none;
 }
 
 /* ========================
@@ -67,6 +68,33 @@ body {
     font-size: var(--font-size-body);
     color: var(--text-secondary);
     margin-top: var(--space-xs);
+}
+
+/* ========================
+   MOBILE PANEL CONTROLS
+   ======================== */
+
+#mobile-toolbar,
+#mobile-panel-backdrop {
+    display: none;
+}
+
+.mobile-panel-btn {
+    min-height: 44px;
+    padding: var(--space-sm) var(--space-md);
+    background: rgba(10, 10, 10, 0.82);
+    color: var(--text-secondary);
+    border: var(--border-width) solid var(--border-dark);
+    font-family: var(--font-small);
+    font-size: var(--font-size-small);
+    cursor: pointer;
+    clip-path: var(--clip-rounded-4);
+}
+
+.mobile-panel-btn[aria-expanded="true"] {
+    color: #000;
+    background: var(--accent-cyan);
+    border-color: var(--accent-cyan);
 }
 
 /* ========================
@@ -321,6 +349,7 @@ body {
     display: flex;
     align-items: center;
     gap: var(--space-sm);
+    min-width: 0;
 }
 
 .pricing-tier-icon {
@@ -333,12 +362,15 @@ body {
     font-family: var(--font-small);
     font-size: var(--font-size-small);
     color: var(--text-secondary);
+    min-width: 0;
+    overflow-wrap: anywhere;
 }
 
 .pricing-tier-subtotal {
     font-family: var(--font-small);
     font-size: var(--font-size-small);
     color: var(--text-secondary);
+    flex-shrink: 0;
 }
 
 .pricing-subtotal-row {
@@ -847,11 +879,57 @@ body {
    ======================== */
 
 @media (max-width: 768px) {
-    #top-banner {
-        display: none;
+    body {
+        min-height: 100dvh;
     }
 
-    #sponsor-panel {
+    #top-banner {
+        top: var(--space-sm);
+        width: calc(100% - var(--space-2xl));
+        padding: var(--space-sm) var(--space-md);
+        background: rgba(10, 10, 10, 0.72);
+        border: var(--border-width) solid rgba(0, 255, 255, 0.25);
+        backdrop-filter: blur(10px);
+        -webkit-backdrop-filter: blur(10px);
+    }
+
+    .banner-headline {
+        font-size: 20px;
+        letter-spacing: 0;
+        padding-top: 8px;
+        white-space: nowrap;
+    }
+
+    .banner-sub {
+        font-size: var(--font-size-small);
+        line-height: 1.35;
+    }
+
+    #mobile-toolbar {
+        position: fixed;
+        top: 88px;
+        left: var(--space-sm);
+        right: var(--space-sm);
+        z-index: 32;
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: var(--space-sm);
+    }
+
+    #mobile-panel-backdrop {
+        position: fixed;
+        inset: 0;
+        display: block;
+        z-index: 24;
+        width: 100%;
+        height: 100%;
+        background: rgba(0, 0, 0, 0.36);
+        border: 0;
+        padding: 0;
+        cursor: pointer;
+    }
+
+    body:not(.mobile-panel-info):not(.mobile-panel-pricing) #mobile-panel-backdrop {
         display: none;
     }
 
@@ -861,18 +939,170 @@ body {
         right: 0;
         left: 0;
         width: 100%;
-        max-height: 50vh;
+        max-height: min(44dvh, 360px);
         transform: none;
+        border-left: 0;
+        border-right: 0;
+        padding-bottom: env(safe-area-inset-bottom);
+        transition: transform 0.2s ease;
+    }
+
+    body.mobile-panel-info #territory-panel,
+    body.mobile-panel-pricing #territory-panel {
+        transform: translateY(110%);
+    }
+
+    #sponsor-panel,
+    #pricing-panel {
+        top: auto;
+        bottom: 0;
+        left: 0;
+        right: 0;
+        width: 100%;
+        max-height: min(78dvh, 680px);
+        transform: translateY(110%);
+        z-index: 30;
+        border-left: 0;
+        border-right: 0;
+        transition: transform 0.22s ease;
+        padding-bottom: env(safe-area-inset-bottom);
     }
 
     #pricing-panel {
-        display: none;
+        padding: var(--space-lg) var(--space-md) calc(var(--space-lg) + env(safe-area-inset-bottom));
+    }
+
+    body.mobile-panel-info #sponsor-panel,
+    body.mobile-panel-pricing #pricing-panel {
+        transform: translateY(0);
+    }
+
+    .sp-header,
+    .sp-pitch,
+    .sp-contact,
+    .sp-pricing,
+    .sp-actions,
+    .modal-body,
+    .modal-header {
+        padding-left: var(--space-md);
+        padding-right: var(--space-md);
+    }
+
+    .sp-header {
+        padding-top: var(--space-md);
+    }
+
+    .sp-logo {
+        font-size: 24px;
+        padding-top: 8px;
+    }
+
+    .sp-logo-sub {
+        display: block;
+        top: 0;
+        margin-top: var(--space-xs);
+    }
+
+    .sp-pitch p {
+        line-height: 1.45;
+    }
+
+    #tier-legend {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: var(--space-md);
+        justify-content: stretch;
+    }
+
+    .tier-group:first-child {
+        grid-column: 1 / -1;
+    }
+
+    .tier-header {
+        flex-wrap: wrap;
+        row-gap: 0;
+        white-space: normal;
+    }
+
+    .discount-grid {
+        grid-template-columns: repeat(4, 1fr);
+    }
+
+    .pricing-row,
+    .pricing-subtotal-row,
+    .pricing-discount-row,
+    .pricing-total-row {
+        gap: var(--space-sm);
+    }
+
+    .pricing-total-row {
+        align-items: flex-start;
+    }
+
+    .pricing-total-value {
+        font-size: 20px;
+    }
+
+    .btn-inquire,
+    .btn-clear,
+    .btn-submit,
+    .btn-cancel {
+        min-height: 44px;
+    }
+
+    .modal-overlay {
+        align-items: flex-end;
     }
 
     .modal-content {
         width: 100%;
         max-width: 100%;
-        max-height: 100vh;
+        max-height: 100dvh;
         clip-path: none;
+        padding-bottom: env(safe-area-inset-bottom);
+    }
+
+    .modal-screenshot {
+        max-height: 220px;
+        object-fit: cover;
+        object-position: center;
+    }
+
+    .modal-header {
+        position: sticky;
+        top: 0;
+        z-index: 1;
+        background: var(--bg-panel);
+    }
+
+    .modal-header h2 {
+        font-size: 20px;
+        padding-top: 8px;
+    }
+
+    .modal-footer {
+        flex-direction: column-reverse;
+    }
+}
+
+@media (max-width: 420px) {
+    .banner-headline {
+        font-size: 18px;
+    }
+
+    #mobile-toolbar {
+        top: 84px;
+    }
+
+    #tier-legend {
+        grid-template-columns: 1fr;
+    }
+
+    .tier-group:first-child {
+        grid-column: auto;
+    }
+
+    .discount-grid {
+        grid-template-columns: repeat(3, 1fr);
     }
 }

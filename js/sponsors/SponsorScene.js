@@ -102,6 +102,7 @@ class SponsorScene {
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
     this.renderer.setClearColor(0x000000, 1);
     this.renderer.shadowMap.enabled = false; // no shadows needed for portal
+    this.renderer.domElement.style.touchAction = "none";
     this.container.appendChild(this.renderer.domElement);
 
     // Camera layers
@@ -840,12 +841,15 @@ class SponsorScene {
     // Touch controls
     let touchStartDistance = 0;
     let lastTouchCenter = { x: 0, y: 0 };
+    let lastSingleTouch = { x: 0, y: 0 };
+    let singleTouchMoved = false;
 
     canvas.addEventListener("touchstart", (e) => {
       this.lastInteractionTime = performance.now();
       if (e.touches.length === 2) {
         e.preventDefault();
         this.isDragging = true;
+        singleTouchMoved = true;
         this.orbitalVelocity.theta = 0;
         this.orbitalVelocity.phi = 0;
         this.lastMoveTime = performance.now();
@@ -853,7 +857,15 @@ class SponsorScene {
         lastTouchCenter = { x: (t1.clientX + t2.clientX) / 2, y: (t1.clientY + t2.clientY) / 2 };
         touchStartDistance = Math.hypot(t2.clientX - t1.clientX, t2.clientY - t1.clientY);
       } else if (e.touches.length === 1) {
-        this.dragStartMouse = { x: e.touches[0].clientX, y: e.touches[0].clientY };
+        e.preventDefault();
+        const touch = e.touches[0];
+        this.isDragging = false;
+        this.orbitalVelocity.theta = 0;
+        this.orbitalVelocity.phi = 0;
+        this.dragStartMouse = { x: touch.clientX, y: touch.clientY };
+        lastSingleTouch = { x: touch.clientX, y: touch.clientY };
+        singleTouchMoved = false;
+        this.lastMoveTime = performance.now();
       }
     }, { passive: false });
 
@@ -881,6 +893,32 @@ class SponsorScene {
         lastTouchCenter = currentCenter;
         this.lastMoveTime = performance.now();
         this._updateCameraPosition();
+      } else if (e.touches.length === 1) {
+        e.preventDefault();
+        this.lastInteractionTime = performance.now();
+        const touch = e.touches[0];
+        const dx = touch.clientX - lastSingleTouch.x;
+        const dy = touch.clientY - lastSingleTouch.y;
+        const totalDx = Math.abs(touch.clientX - this.dragStartMouse.x);
+        const totalDy = Math.abs(touch.clientY - this.dragStartMouse.y);
+        const now = performance.now();
+        const deltaTime = now - this.lastMoveTime;
+
+        if (totalDx > 8 || totalDy > 8) {
+          singleTouchMoved = true;
+          if (deltaTime > 0 && deltaTime < 100) {
+            this.orbitalVelocity.theta = ((dx * 0.005) / deltaTime) * 16;
+            this.orbitalVelocity.phi = ((-dy * 0.005) / deltaTime) * 16;
+          }
+
+          this.orbitalTheta += dx * 0.005;
+          this.orbitalPhi -= dy * 0.005;
+          this.orbitalPhi = Math.max((10 * Math.PI) / 180, Math.min((170 * Math.PI) / 180, this.orbitalPhi));
+
+          lastSingleTouch = { x: touch.clientX, y: touch.clientY };
+          this.lastMoveTime = now;
+          this._updateCameraPosition();
+        }
       }
     }, { passive: false });
 
@@ -890,10 +928,15 @@ class SponsorScene {
         const touch = e.changedTouches[0];
         const dx = Math.abs(touch.clientX - this.dragStartMouse.x);
         const dy = Math.abs(touch.clientY - this.dragStartMouse.y);
-        if (dx < 10 && dy < 10) {
+        if (!singleTouchMoved && dx < 10 && dy < 10) {
           this._handleClick({ clientX: touch.clientX, clientY: touch.clientY });
         }
       }
+    }, { passive: false });
+
+    canvas.addEventListener("touchcancel", () => {
+      this.isDragging = false;
+      singleTouchMoved = false;
     });
   }
 

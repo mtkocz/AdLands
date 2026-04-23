@@ -42,6 +42,42 @@
   const modalPricingSummary = document.getElementById("modal-pricing-summary");
   const formMessage = document.getElementById("form-message");
   const submitBtn = document.getElementById("submit-inquiry-btn");
+  const mobilePanelButtons = document.querySelectorAll("[data-mobile-panel]");
+  const mobilePanelBackdrop = document.getElementById("mobile-panel-backdrop");
+
+  // ========================
+  // MOBILE PANEL SHEETS
+  // ========================
+
+  function isMobileLayout() {
+    return window.matchMedia("(max-width: 768px)").matches;
+  }
+
+  function setMobilePanel(panelName) {
+    document.body.classList.toggle("mobile-panel-info", panelName === "info");
+    document.body.classList.toggle("mobile-panel-pricing", panelName === "pricing");
+
+    mobilePanelButtons.forEach((btn) => {
+      const expanded = btn.dataset.mobilePanel === panelName;
+      btn.setAttribute("aria-expanded", expanded ? "true" : "false");
+    });
+  }
+
+  mobilePanelButtons.forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const panelName = btn.dataset.mobilePanel;
+      const currentPanel = document.body.classList.contains(`mobile-panel-${panelName}`);
+      setMobilePanel(currentPanel ? null : panelName);
+    });
+  });
+
+  if (mobilePanelBackdrop) {
+    mobilePanelBackdrop.addEventListener("click", () => setMobilePanel(null));
+  }
+
+  document.addEventListener("keydown", (e) => {
+    if (e.key === "Escape") setMobilePanel(null);
+  });
 
   // ========================
   // TIER LEGEND
@@ -350,6 +386,7 @@
 
   function showInquiryModal() {
     if (!inquiryModal) return;
+    setMobilePanel(null);
 
     // Capture screenshot
     const screenshot = scene.captureScreenshot();
@@ -538,7 +575,10 @@
   // WINDOW RESIZE
   // ========================
 
-  window.addEventListener("resize", () => scene.resize());
+  window.addEventListener("resize", () => {
+    scene.resize();
+    if (!isMobileLayout()) setMobilePanel(null);
+  });
 
   // Initial pricing render
   updatePricing();
