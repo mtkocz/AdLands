@@ -716,9 +716,18 @@ class SponsorScene {
   _setupControls() {
     const canvas = this.renderer.domElement;
     canvas.addEventListener("contextmenu", (e) => e.preventDefault());
+    let suppressMouseUntil = 0;
+    const suppressSyntheticMouse = () => {
+      suppressMouseUntil = performance.now() + 800;
+    };
+    const shouldIgnoreSyntheticMouse = () => performance.now() < suppressMouseUntil;
 
     // Mouse controls
     canvas.addEventListener("mousedown", (e) => {
+      if (shouldIgnoreSyntheticMouse()) {
+        e.preventDefault();
+        return;
+      }
       this.lastInteractionTime = performance.now();
       if (e.button === 2) {
         this.isDragging = true;
@@ -737,6 +746,10 @@ class SponsorScene {
     });
 
     canvas.addEventListener("mousemove", (e) => {
+      if (shouldIgnoreSyntheticMouse()) {
+        e.preventDefault();
+        return;
+      }
       if (this.isDragging) {
         this.lastInteractionTime = performance.now();
         const dx = e.clientX - this.previousMouse.x;
@@ -771,6 +784,12 @@ class SponsorScene {
     });
 
     canvas.addEventListener("mouseup", (e) => {
+      if (shouldIgnoreSyntheticMouse()) {
+        e.preventDefault();
+        this.isDragging = false;
+        this.isLeftDown = false;
+        return;
+      }
       if (e.button === 2) {
         this.isDragging = false;
       } else if (e.button === 0) {
@@ -845,6 +864,7 @@ class SponsorScene {
     let singleTouchMoved = false;
 
     canvas.addEventListener("touchstart", (e) => {
+      suppressSyntheticMouse();
       this.lastInteractionTime = performance.now();
       if (e.touches.length === 2) {
         e.preventDefault();
@@ -870,6 +890,7 @@ class SponsorScene {
     }, { passive: false });
 
     canvas.addEventListener("touchmove", (e) => {
+      suppressSyntheticMouse();
       if (e.touches.length === 2 && this.isDragging) {
         e.preventDefault();
         this.lastInteractionTime = performance.now();
@@ -923,6 +944,8 @@ class SponsorScene {
     }, { passive: false });
 
     canvas.addEventListener("touchend", (e) => {
+      e.preventDefault();
+      suppressSyntheticMouse();
       if (e.touches.length < 2) this.isDragging = false;
       if (e.changedTouches.length === 1 && e.touches.length === 0) {
         const touch = e.changedTouches[0];
@@ -935,6 +958,7 @@ class SponsorScene {
     }, { passive: false });
 
     canvas.addEventListener("touchcancel", () => {
+      suppressSyntheticMouse();
       this.isDragging = false;
       singleTouchMoved = false;
     });
