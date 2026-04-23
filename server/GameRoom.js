@@ -2626,7 +2626,34 @@ class GameRoom {
     return amount;
   }
 
-  _findTurretTarget(turret, rangeRad) {
+  _findTurretLookTarget(turret, botStates = null) {
+    let best = null;
+    let bestDist = Infinity;
+
+    for (const [id, player] of this.players) {
+      if (this._isUndeployed(player) || player.isDead) continue;
+      const dist = sphericalDistance(turret.theta, turret.phi, player.theta, player.phi);
+      if (dist < bestDist) {
+        bestDist = dist;
+        best = { id, theta: player.theta, phi: player.phi, faction: player.faction, type: "tank" };
+      }
+    }
+
+    const states = botStates || this.botBridge.getStatesForBroadcast();
+    for (const botId in states) {
+      const bot = states[botId];
+      if (!bot || bot.d === 1) continue;
+      const dist = sphericalDistance(turret.theta, turret.phi, bot.t, bot.p);
+      if (dist < bestDist) {
+        bestDist = dist;
+        best = { id: botId, theta: bot.t, phi: bot.p, faction: bot.f, type: "tank" };
+      }
+    }
+
+    return best;
+  }
+
+  _findTurretTarget(turret, rangeRad, botStates = null) {
     let best = null;
     let bestDist = rangeRad;
 
@@ -2640,25 +2667,14 @@ class GameRoom {
       }
     }
 
-    const botStates = this.botBridge.getStatesForBroadcast();
-    for (const botId in botStates) {
-      const bot = botStates[botId];
+    const states = botStates || this.botBridge.getStatesForBroadcast();
+    for (const botId in states) {
+      const bot = states[botId];
       if (!bot || bot.d === 1 || bot.f === turret.ownerFaction) continue;
       const dist = sphericalDistance(turret.theta, turret.phi, bot.t, bot.p);
       if (dist < bestDist) {
         bestDist = dist;
         best = { id: botId, theta: bot.t, phi: bot.p, faction: bot.f };
-      }
-    }
-
-    const bodyguardStates = this.bodyguardManager.getStatesForBroadcast();
-    for (const bgId in bodyguardStates) {
-      const bg = bodyguardStates[bgId];
-      if (!bg || bg.d === 1 || bg.f === turret.ownerFaction) continue;
-      const dist = sphericalDistance(turret.theta, turret.phi, bg.t, bg.p);
-      if (dist < bestDist) {
-        bestDist = dist;
-        best = { id: bgId, theta: bg.t, phi: bg.p, faction: bg.f };
       }
     }
 
@@ -2677,19 +2693,28 @@ class GameRoom {
 
   _updateTurrets(dt) {
     const now = Date.now();
+    const botStates = this.botBridge.getStatesForBroadcast();
     for (const [, turret] of this.turrets) {
       if (!turret || turret.hp <= 0) continue;
 
       const cfg = TURRET_LEVELS[turret.level] || TURRET_LEVELS[1];
-      const target = this._findTurretTarget(turret, cfg.rangeWorld / 480);
+      const lookTarget = this._findTurretLookTarget(turret, botStates);
+      if (lookTarget) {
+        const lookHeading = this._computeMissileHeadingTo(
+          turret.theta, turret.phi, lookTarget.theta, lookTarget.phi
+        );
+        turret.turretAngle = this._normalizeAngle(turret.heading + Math.PI - lookHeading);
+      }
+
+      const target = this._findTurretTarget(turret, cfg.rangeWorld / 480, botStates);
       if (!target) continue;
 
       const fireHeading = this._computeMissileHeadingTo(
         turret.theta, turret.phi, target.theta, target.phi
       );
-      turret.turretAngle = this._normalizeAngle(turret.heading + Math.PI - fireHeading);
 
       if (now - (turret.lastFireAt || 0) < cfg.cooldownMs) continue;
+      turret.turretAngle = this._normalizeAngle(turret.heading + Math.PI - fireHeading);
       turret.lastFireAt = now;
       this._fireTurretProjectile(turret, cfg, fireHeading);
     }

@@ -1223,6 +1223,44 @@
     const resolveImpactPos = (data, targetId = data?.targetId, lift = 1.0) =>
       getEventImpactPos(data, lift) || getTargetImpactPos(targetId, lift);
 
+    const getTurretProjectileSourcePos = (data, fallbackImpactPos = null) => {
+      const sourceTurret = turretSystem?.getTurret?.(data?.sourceId);
+      if (sourceTurret?.group) {
+        return cloneLiftedGroupPos(sourceTurret.group, 1.0);
+      }
+      if (data?.projectileId != null && fallbackImpactPos) {
+        return cannonSystem?.getProjectileSparkOriginByServerId?.(
+          data.projectileId,
+          fallbackImpactPos,
+          8
+        ) || null;
+      }
+      return null;
+    };
+
+    const resolveTurretImpactEdgePos = (
+      data,
+      targetGroup,
+      targetId = data?.targetId,
+      edgeRadius = 2.25
+    ) => {
+      const eventImpact = resolveImpactPos(data, targetId, 1.0);
+      if (!targetGroup) return eventImpact;
+
+      const center = cloneLiftedGroupPos(targetGroup, 1.0);
+      if (!center) return eventImpact;
+
+      const source = getTurretProjectileSourcePos(data, eventImpact || center);
+      if (!source) return eventImpact || center;
+
+      const normal = center.clone().normalize();
+      const toSource = source.clone().sub(center);
+      toSource.addScaledVector(normal, -toSource.dot(normal));
+      if (toSource.lengthSq() <= 0.0001) return eventImpact || center;
+
+      return center.addScaledVector(toSource.normalize(), edgeRadius);
+    };
+
     net.onShieldBlock = (data) => {
       if (!data || !cannonSystem) return;
       const shieldTank = data.targetId === net.playerId
@@ -1271,13 +1309,14 @@
           }
           // Visual hit effect
           if (bg.group) {
-            bg.group.getWorldPosition(_hitWorldPos);
             if (data.sourceType === "turret") {
-              emitTurretImpactEffects(_hitWorldPos, 24, data.projectileId);
+              const impactPos = resolveTurretImpactEdgePos(data, bg.group, data.targetId, 2.0);
+              emitTurretImpactEffects(impactPos, 24, data.projectileId);
               if (data.projectileId != null && !data.isMissile) {
-                cannonSystem.removeProjectileByServerId?.(data.projectileId, _hitWorldPos, true);
+                cannonSystem.removeProjectileByServerId?.(data.projectileId, impactPos, true);
               }
             } else {
+              bg.group.getWorldPosition(_hitWorldPos);
               const weAreAttacker = data.attackerId === net.playerId;
               const explosionFaction = weAreAttacker ? tank.faction : bg.faction;
               cannonSystem._spawnExplosion?.(_hitWorldPos, explosionFaction, 0.6);
@@ -1328,8 +1367,7 @@
             data.sourceType === "turret" &&
             tank.group
           ) {
-            const pos = new THREE.Vector3();
-            tank.group.getWorldPosition(pos);
+            const pos = resolveTurretImpactEdgePos(data, tank.group, data.targetId, 2.25);
             emitTurretImpactEffects(pos, 24, data.projectileId);
             if (data.projectileId != null && !data.isMissile) {
               cannonSystem.removeProjectileByServerId?.(data.projectileId, pos, true);
@@ -1439,7 +1477,13 @@
                 isTurretProjectileHit &&
                 turretSystem?.shouldRenderEffects?.()
               ) {
-                emitTurretImpactEffects(_hitWorldPos, 24, data.projectileId);
+                const impactPos = resolveTurretImpactEdgePos(
+                  data,
+                  remoteTank.group,
+                  data.targetId,
+                  2.25
+                );
+                emitTurretImpactEffects(impactPos, 24, data.projectileId);
               }
             }
           };
