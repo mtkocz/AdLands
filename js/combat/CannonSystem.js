@@ -2367,6 +2367,17 @@ void main() {
     if (options.showCrypto && window.cryptoVisuals) {
       window.cryptoVisuals._spawnFloatingNumber(10, shieldClip);
     }
+    if (this.gameCamera && this.playerTank?.group) {
+      const playerWorldPos = this.playerTank.group._cachedWorldPos || this.playerTank.group.position;
+      const forceScale = Math.max(0.5, Math.min(1.5, Number(sizeScale) || 1));
+      const baseShake = options.emitTurretSparks ? 0.3 : 0.45;
+      this.gameCamera.triggerShake(
+        impactPosition,
+        playerWorldPos,
+        baseShake * forceScale,
+        80,
+      );
+    }
 
     return { impactPosition, shieldClip };
   }

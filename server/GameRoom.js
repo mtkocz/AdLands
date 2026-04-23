@@ -2323,6 +2323,7 @@ class GameRoom {
     // Scale projectile stats with charge (matches client CannonSystem formulas)
     const speed = 0.004 * (1 + chargeRatio); // 2x speed at max charge
     const damage = Math.round(25 * (1 + chargeRatio * 2)); // 25-75 damage (integer)
+    const sizeScale = 1 + chargeRatio * 0.5; // Match client chargeSizeMultiplier (1x-1.5x)
 
     // Range cap: match client visual range (20 base, 3x at max charge = 20-60 world units)
     const rangeWorldUnits = 20 * (1 + chargeRatio * 2);
@@ -2357,6 +2358,7 @@ class GameRoom {
       maxAge: maxAge,
       maxDistanceRad: maxDistanceRad,
       damage: damage,
+      sizeScale: sizeScale,
     };
 
     this.projectiles.push(projectile);
@@ -2773,6 +2775,7 @@ class GameRoom {
       maxAge: Math.min((cfg.projectileRangeWorld / 480) / (cfg.projectileSpeed * 60) + 0.5, 5),
       maxDistanceRad: cfg.projectileRangeWorld / 480,
       damage: cfg.damage,
+      sizeScale: cfg.projectileSizeScale || 0.5,
     };
     this.projectiles.push(projectile);
 
@@ -4417,7 +4420,7 @@ class GameRoom {
               projectileId: p.id,
               sourceType: p.sourceType || "tank",
               sourceId: p.sourceId || p.ownerId,
-              sizeScale: p.sourceType === "turret" ? 0.5 : 1,
+              sizeScale: p.sizeScale || (p.sourceType === "turret" ? 0.5 : 1),
             });
             projs[i] = projs[projs.length - 1]; projs.pop();
             shPlayer.crypto += 10;
