@@ -13,6 +13,9 @@ class TurretSystem {
     this.cannonSystem = null;
     this.tankDamageEffects = null;
     this.surfaceVisible = false;
+    this._hpReferenceWidth = 96;
+    this._hpReferenceHp = 100;
+    this._hpMinWidth = 48;
     this._hpBarSurfaceOffset = 4.2;
     this._hpBarScreenYOffset = 28;
     this._turretTurnRate = 8;
@@ -506,7 +509,7 @@ class TurretSystem {
     const len = this._target.length();
     if (len > 0) this._target.multiplyScalar((len + 1.0) / len);
     this.cannonSystem?._spawnExplosion?.(this._target, turret.faction, scale);
-    this.dustShockwave?.emit(this._target, scale * 0.7);
+    this.dustShockwave?.emit(this._target, scale);
     this.cannonSystem?.spawnOilPuddle?.(this._target);
   }
 
@@ -635,6 +638,15 @@ class TurretSystem {
     const hpValue = Number(turret.hp);
     const hp = Number.isFinite(hpValue) ? Math.max(0, Math.min(maxHp, hpValue)) : 0;
     const hpPercent = Math.round((hp / maxHp) * 1000) / 10;
+    const barWidth = Math.max(
+      this._hpMinWidth,
+      Math.round((maxHp / this._hpReferenceHp) * this._hpReferenceWidth)
+    );
+
+    if (turret.hpBarEl && turret._hpBarWidth !== barWidth) {
+      turret.hpBarEl.style.setProperty("--turret-hp-width", `${barWidth}px`);
+      turret._hpBarWidth = barWidth;
+    }
 
     if (turret.hpFillEl && turret._hpPercent !== hpPercent) {
       turret.hpFillEl.style.width = `${hpPercent}%`;
@@ -712,7 +724,7 @@ class TurretSystem {
     if (!turret) return;
     if (withExplosion) {
       if (turret.isDying) return;
-      this._emitImpactEffect(turret, 0.8);
+      this._emitImpactEffect(turret, 1.5);
       this._startDeathSequence(turret);
       return;
     }

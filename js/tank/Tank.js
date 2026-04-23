@@ -1534,7 +1534,7 @@ class Tank {
       if (key === 'q') {
         const activeTactical = window.weaponSlotSystem?.getActiveTacticalWeapon();
         if (activeTactical === "turrets") {
-          if (!e.repeat && window._mp?.onTurretDeploy) {
+          if (!e.repeat && !this.shieldActive && window._mp?.onTurretDeploy) {
             window._mp.onTurretDeploy();
           }
           e.preventDefault();

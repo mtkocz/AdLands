@@ -2484,6 +2484,7 @@ class GameRoom {
   handleTurretDeploy(socketId) {
     const player = this.players.get(socketId);
     if (!player || this._isUndeployed(player) || player.isDead) return;
+    if (player.shieldActive) return;
 
     const tacticalSlot = player.activeSlots?.tactical || "tactical-1";
     const activeTactical = player.loadout?.[tacticalSlot];
@@ -2727,6 +2728,7 @@ class GameRoom {
 
     turret.hp -= damage;
     const hp = Math.max(0, turret.hp);
+    const impact = this._buildImpactCoords(theta, phi, isMissile ? 1.0 : 0.8);
     this._queueRoomEvent("turret-hit", {
       id: turretId,
       attackerId,
@@ -2734,6 +2736,9 @@ class GameRoom {
       hp,
       theta,
       phi,
+      wx: impact.wx,
+      wy: impact.wy,
+      wz: impact.wz,
       projectileId,
       isMissile,
       sourceType: sourceType || (isMissile ? "missile" : "tank"),
@@ -3003,6 +3008,21 @@ class GameRoom {
     return fl;
   }
 
+  _buildImpactCoords(theta, phi, altitude = 1.0) {
+    const R = MISSILE.R + altitude;
+    const sp = Math.sin(phi), cp = Math.cos(phi);
+    const st = Math.sin(theta), ct = Math.cos(theta);
+    const lx = R * sp * ct;
+    const lz = R * sp * st;
+    const cosPR = Math.cos(this.planetRotation);
+    const sinPR = Math.sin(this.planetRotation);
+    return {
+      wx: lx * cosPR + lz * sinPR,
+      wy: R * cp,
+      wz: -lx * sinPR + lz * cosPR,
+    };
+  }
+
   _handleMissileFlareHit(p, target, i, projs) {
     const fl = this._removeFlareByTarget(target);
     if (!fl) return false;
@@ -3038,6 +3058,7 @@ class GameRoom {
   _detonateMissileOnTarget(p, i, projs) {
     const damage = p.damage || 38;
     const tgtId = p._tgtId;
+    const impact = this._buildImpactCoords(p.theta, p.phi, 1.0);
     if (typeof tgtId === "string" && tgtId.startsWith("turret-")) {
       this._damageTurret(
         tgtId,
@@ -3079,6 +3100,9 @@ class GameRoom {
         hp: Math.max(0, botHp - damage),
         theta: p.theta,
         phi: p.phi,
+        wx: impact.wx,
+        wy: impact.wy,
+        wz: impact.wz,
         projectileId: p.id,
         isMissile: true,
       });
@@ -3116,6 +3140,9 @@ class GameRoom {
           hp: hitPlayer.hp,
           theta: p.theta,
           phi: p.phi,
+          wx: impact.wx,
+          wy: impact.wy,
+          wz: impact.wz,
           projectileId: p.id,
           isMissile: true,
         });
@@ -3266,10 +3293,14 @@ class GameRoom {
     this._moveMissileStraight(p, dt);
 
     if (p.lostAge >= MISSILE.LOST_MAX_AGE) {
+      const impact = this._buildImpactCoords(p.theta, p.phi, 1.0);
       this._queueRoomEvent("missile-crash", {
         missileId: p.id,
         theta: p.theta,
         phi: p.phi,
+        wx: impact.wx,
+        wy: impact.wy,
+        wz: impact.wz,
       });
       this._removeProjectileAt(projs, i);
     }
@@ -3279,10 +3310,14 @@ class GameRoom {
     this._normalizeMissileProjectile(p);
 
     if (p.age >= MISSILE.MAX_AGE) {
+      const impact = this._buildImpactCoords(p.theta, p.phi, 1.0);
       this._queueRoomEvent("missile-crash", {
         missileId: p.id,
         theta: p.theta,
         phi: p.phi,
+        wx: impact.wx,
+        wy: impact.wy,
+        wz: impact.wz,
       });
       this._removeProjectileAt(projs, i);
       return;

@@ -2052,6 +2052,7 @@ void main() {
               {
                 emitTurretSparks: p.sourceType === "turret",
                 suppressExplosion: p.sourceType === "turret",
+                dustSpriteOnly: p.sourceType === "turret",
                 dustScale: p.sourceType === "turret" ? 0.5 : (p.sizeScale || 1),
                 showCrypto: tank === this.playerTank,
               }
@@ -2345,7 +2346,11 @@ void main() {
     }
     const dustScale = Number.isFinite(options.dustScale) ? options.dustScale : sizeScale;
     if (this.dustShockwave && dustScale > 0) {
-      this.dustShockwave.emit(impactPosition, dustScale, null, shieldClip);
+      if (options.dustSpriteOnly) {
+        this.dustShockwave.emitDustwaveSpriteOnly?.(impactPosition, dustScale, null, shieldClip);
+      } else {
+        this.dustShockwave.emit(impactPosition, dustScale, null, shieldClip);
+      }
     }
     if (this.shieldHolosphere) {
       this.shieldHolosphere.emit(impactPosition, faction, shieldAnchor);

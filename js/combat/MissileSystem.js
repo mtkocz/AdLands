@@ -775,7 +775,6 @@ class MissileSystem {
       this._lastFireTime = Math.max(this._lastFireTime, performance.now() / 1000);
     }
     this._missileIndex.set(data.projectileId, missile);
-    this._clearPendingHitTimeout(data.projectileId);
 
     if (data.targetId != null || data.targetTheta !== undefined || data.targetPhi !== undefined) {
       this._setMissileSpawnTarget(missile, data);
@@ -1240,7 +1239,6 @@ class MissileSystem {
     if (serverId != null) {
       if (!this._missileIndex) this._missileIndex = new Map();
       this._missileIndex.set(serverId, missile);
-      this._clearPendingHitTimeout(serverId);
     }
     poolItem.group.position.copy(startPos);
     return missile;
@@ -1720,13 +1718,24 @@ class MissileSystem {
   }
 
   queueHitEffect(projectileId, callback) {
+    if (projectileId == null) {
+      callback();
+      return;
+    }
     const existing = this._pendingHits.get(projectileId);
     if (existing) clearTimeout(existing.timeout);
-    const trackedMissile = this.missiles.find((m) => m.serverId === projectileId) || null;
-    const timeout = trackedMissile ? null : setTimeout(() => {
+    const timeout = setTimeout(() => {
+      const pending = this._pendingHits.get(projectileId);
+      if (!pending) return;
       this._pendingHits.delete(projectileId);
       callback();
-    }, 1500);
+      const idx = this.missiles.findIndex((m) => m.serverId === projectileId);
+      if (idx >= 0) {
+        const missile = this.missiles[idx];
+        missile._forcedDive = true;
+        this._destroyMissile(idx, missile.diveTarget || missile.position);
+      }
+    }, 1800);
     this._pendingHits.set(projectileId, { callback, timeout });
   }
 
@@ -1759,7 +1768,7 @@ class MissileSystem {
     if (missile?.serverId == null) return false;
     const pendingTarget = this._pendingDiveTargets.get(missile.serverId);
     if (!pendingTarget) return false;
-    this._clearPendingHitTimeout(missile.serverId);
+    this._ensureRemoteMissileVisual(missile, { allowOverflow: true });
     missile.phase = 2;
     missile.targetTank = null;
     missile.diveTarget = pendingTarget.clone();
@@ -1784,7 +1793,7 @@ class MissileSystem {
     for (let i = this.missiles.length - 1; i >= 0; i--) {
       const m = this.missiles[i];
       if (m.serverId === projectileId) {
-        this._clearPendingHitTimeout(projectileId);
+        this._ensureRemoteMissileVisual(m, { allowOverflow: true });
         m.phase = 2;
         m.targetTank = null;
         m.diveTarget = impactPos.clone();
@@ -1821,12 +1830,17 @@ class MissileSystem {
   }
 
   // Force a missile into crash-dive (phase 4) by server projectile ID
-  crashByServerId(projectileId, theta, phi) {
+  crashByServerId(projectileId, theta, phi, wx, wy, wz) {
     for (let i = this.missiles.length - 1; i >= 0; i--) {
       const m = this.missiles[i];
       if (m.serverId === projectileId) {
+        this._ensureRemoteMissileVisual(m, { allowOverflow: true });
         m.phase = 4;
         m.targetTank = null;
+        if (Number.isFinite(wx) && Number.isFinite(wy) && Number.isFinite(wz)) {
+          m.diveTarget = new THREE.Vector3(wx, wy, wz);
+          return;
+        }
         // Compute crash point on planet surface — apply planet rotation for world space
         const sp = Math.sin(phi), cp = Math.cos(phi);
         const st = Math.sin(theta), ct = Math.cos(theta);
@@ -2442,7 +2456,8 @@ class MissileSystem {
       if ((!m.isRemote && altAboveTerrain < 1.5) || dist < 1.5) {
         const idx = this.missiles.indexOf(m);
         if (idx >= 0) {
-          this._destroyMissile(idx, m.position);
+          const impactPos = m._forcedDive && m.diveTarget ? m.diveTarget : m.position;
+          this._destroyMissile(idx, impactPos);
         }
         return;
       }
@@ -2530,7 +2545,7 @@ class MissileSystem {
       if ((!m.isRemote && altAboveTerrain < 1.5) || dist < 1.5) {
         const idx = this.missiles.indexOf(m);
         if (idx >= 0) {
-          this._destroyMissile(idx, m.position);
+          this._destroyMissile(idx, m.diveTarget || m.position);
         }
         return;
       }
@@ -2560,19 +2575,18 @@ class MissileSystem {
     const hadPendingHit = m.serverId != null && this._pendingHits.has(m.serverId);
     if (m.serverId != null) this._flushPendingHit(m.serverId);
 
-    // Only spawn local explosion for non-hit destructions (terrain clips, crashes)
+    // Only spawn local explosion for non-hit destructions. Server-confirmed
+    // hits are handled by their queued callbacks to keep damage/explosion synced.
     const isCrash = m.phase >= 3 || m.age > 14;
     if (!hadPendingHit && !m._forcedDive) {
-      if (!isCrash) {
-        // Terrain collision — small puff
-        if (this.cannonSystem) {
-          this.cannonSystem._spawnExplosion?.(impactPos, m.faction, 0.4);
-        }
-        if (this.dustShockwave) {
-          this.dustShockwave.emit(impactPos, 0.3);
-        }
+      const explosionScale = isCrash ? 0.7 : 0.4;
+      const dustScale = isCrash ? 0.6 : 0.3;
+      if (this.cannonSystem) {
+        this.cannonSystem._spawnExplosion?.(impactPos, m.faction, explosionScale);
       }
-      // Crash dives and timeouts: no explosion (silent removal)
+      if (this.dustShockwave) {
+        this.dustShockwave.emit(impactPos, dustScale);
+      }
     }
 
     // Orphan shadow billboard to finish its animation

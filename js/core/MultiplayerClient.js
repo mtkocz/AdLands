@@ -1016,12 +1016,7 @@
     net.onTurretHit = (data) => {
       turretSystem?.handleHit(data);
       if (data.isMissile && window.missileSystem) {
-        const turret = turretSystem?.getTurret(data.id);
-        let impactPos = null;
-        if (turret?.group) {
-          impactPos = new THREE.Vector3();
-          turret.group.getWorldPosition(impactPos);
-        }
+        const impactPos = resolveImpactPos(data, data.id);
         const diveStarted = impactPos &&
           window.missileSystem.forceDiveToPoint(data.projectileId, impactPos);
         if (!diveStarted) {
@@ -1029,11 +1024,8 @@
         }
       } else if (data.projectileId != null) {
         const turret = turretSystem?.getTurret(data.id);
-        let impactPos = null;
-        if (turret?.group) {
-          impactPos = new THREE.Vector3();
-          turret.group.getWorldPosition(impactPos);
-        }
+        const impactPos = resolveImpactPos(data, data.id) ||
+          (turret?.group ? cloneLiftedGroupPos(turret.group, 1.0) : null);
         if (data.sourceType === "turret") {
           emitTurretImpactEffects(impactPos, 24);
         }
@@ -1133,7 +1125,14 @@
 
     net.onMissileCrash = (data) => {
       if (window.missileSystem) {
-        window.missileSystem.crashByServerId(data.missileId, data.theta, data.phi);
+        window.missileSystem.crashByServerId(
+          data.missileId,
+          data.theta,
+          data.phi,
+          data.wx,
+          data.wy,
+          data.wz
+        );
       }
     };
 
@@ -1155,7 +1154,7 @@
     const emitTurretImpactEffects = (position, count = 24) => {
       if (!position || !turretSystem?.shouldRenderEffects?.()) return;
       emitTurretImpactSparks(position, count);
-      dustShockwave?.emit(position, 0.5);
+      dustShockwave?.emitDustwaveSpriteOnly?.(position, 0.5);
     };
 
     const setSphericalWorldPos = (out, theta, phi, lift = 2) => {
@@ -1172,6 +1171,51 @@
       }
       return true;
     };
+
+    const cloneLiftedGroupPos = (group, lift = 1.0) => {
+      if (!group) return null;
+      const pos = new THREE.Vector3();
+      group.getWorldPosition(pos);
+      const len = pos.length();
+      if (len > 0) pos.multiplyScalar((len + lift) / len);
+      return pos;
+    };
+
+    const getEventImpactPos = (data, lift = 1.0) => {
+      if (
+        Number.isFinite(data?.wx) &&
+        Number.isFinite(data?.wy) &&
+        Number.isFinite(data?.wz)
+      ) {
+        return new THREE.Vector3(data.wx, data.wy, data.wz);
+      }
+      if (setSphericalWorldPos(_hitWorldPos, data?.theta, data?.phi, lift)) {
+        return _hitWorldPos.clone();
+      }
+      return null;
+    };
+
+    const getTargetImpactPos = (targetId, lift = 1.0) => {
+      if (targetId === net.playerId) return cloneLiftedGroupPos(tank.group, lift);
+
+      const remoteTank = remoteTanks.get(targetId);
+      if (remoteTank?.group) return cloneLiftedGroupPos(remoteTank.group, lift);
+
+      if (window.botTanks?.bots) {
+        for (const bot of window.botTanks.bots) {
+          if (bot && bot.id === targetId && bot.hitbox) {
+            return cloneLiftedGroupPos(bot.hitbox, lift);
+          }
+        }
+      }
+
+      const turret = turretSystem?.getTurret?.(targetId);
+      if (turret?.group) return cloneLiftedGroupPos(turret.group, lift);
+      return null;
+    };
+
+    const resolveImpactPos = (data, targetId = data?.targetId, lift = 1.0) =>
+      getEventImpactPos(data, lift) || getTargetImpactPos(targetId, lift);
 
     net.onShieldBlock = (data) => {
       if (!data || !cannonSystem) return;
@@ -1193,6 +1237,7 @@
         {
           emitTurretSparks: data.sourceType === "turret",
           suppressExplosion: data.sourceType === "turret",
+          dustSpriteOnly: data.sourceType === "turret",
           dustScale: data.sourceType === "turret" ? 0.5 : (data.sizeScale || 1),
           showCrypto: data.targetId === net.playerId,
         }
@@ -1236,6 +1281,9 @@
       }
 
       if (data.targetId === net.playerId) {
+        const localMissileImpactPos = data.isMissile
+          ? resolveImpactPos(data, data.targetId)
+          : null;
         // Damage effects — defer everything for missiles until visual detonation
         const applyLocalHitVisuals = () => {
           tank.hp = data.hp;
@@ -1251,7 +1299,10 @@
           }
           // Missile hit explosion at player position (deferred until visual detonation)
           if (data.isMissile && tank.group) {
-            const pos = tank.group._cachedWorldPos || tank.group.position;
+            const pos = localMissileImpactPos ||
+              cloneLiftedGroupPos(tank.group, 1.0) ||
+              tank.group._cachedWorldPos ||
+              tank.group.position;
             const attacker = remoteTanks.get(data.attackerId);
             const aFaction = attacker?.faction || "rust";
             cannonSystem._spawnExplosion?.(pos, aFaction, 1.2);
@@ -1275,6 +1326,11 @@
 
         if (data.isMissile && window.missileSystem) {
           window.missileSystem.queueHitEffect(data.projectileId, applyLocalHitVisuals);
+          const diveStarted = localMissileImpactPos &&
+            window.missileSystem.forceDiveToPoint(data.projectileId, localMissileImpactPos);
+          if (!diveStarted && !localMissileImpactPos) {
+            window.missileSystem._flushPendingHit(data.projectileId);
+          }
         } else {
           applyLocalHitVisuals();
         }
@@ -1284,6 +1340,9 @@
         if (remoteTank) {
           // All effects — deferred for missiles until visual detonation
           const weAreAttacker = data.attackerId === net.playerId;
+          const remoteMissileImpactPos = data.isMissile
+            ? resolveImpactPos(data, data.targetId)
+            : null;
           const applyRemoteHitVisuals = () => {
             // Skip visual effects if victim disconnected or is already dead
             if (!remoteTanks.has(data.targetId)) return;
@@ -1333,9 +1392,13 @@
             const shouldShowHitEffects =
               !isTurretProjectileHit || turretSystem?.shouldRenderEffects?.();
             if (remoteTank.group && shouldShowHitEffects) {
-              remoteTank.group.getWorldPosition(_hitWorldPos);
-              const hitLen = _hitWorldPos.length();
-              if (hitLen > 0) _hitWorldPos.multiplyScalar((hitLen + 1.0) / hitLen);
+              if (remoteMissileImpactPos) {
+                _hitWorldPos.copy(remoteMissileImpactPos);
+              } else {
+                remoteTank.group.getWorldPosition(_hitWorldPos);
+                const hitLen = _hitWorldPos.length();
+                if (hitLen > 0) _hitWorldPos.multiplyScalar((hitLen + 1.0) / hitLen);
+              }
               const isSelfDamage = data.attackerId === data.targetId;
               if (!isSelfDamage && !isTurretProjectileHit) {
                 const explosionFaction = weAreAttacker ? tank.faction : remoteTank.faction;
@@ -1373,6 +1436,19 @@
           } else {
             applyRemoteHitVisuals();
           }
+        } else if (data.isMissile && window.missileSystem) {
+          const missileImpactPos = resolveImpactPos(data, data.targetId);
+          const applyUntrackedMissileHitVisuals = () => {
+            if (!missileImpactPos || !cannonSystem) return;
+            const attackerTank = data.attackerId === net.playerId
+              ? tank
+              : remoteTanks.get(data.attackerId);
+            const explosionFaction = attackerTank?.faction || "rust";
+            cannonSystem._spawnExplosion?.(missileImpactPos, explosionFaction, 1.2);
+            cannonSystem._spawnImpactDecal?.(missileImpactPos, 1.0);
+            dustShockwave?.emit(missileImpactPos, 1.0);
+          };
+          window.missileSystem.queueHitEffect(data.projectileId, applyUntrackedMissileHitVisuals);
         }
 
         // Remove the matching projectile visual so it doesn't keep
@@ -1382,52 +1458,14 @@
             // Server confirmed hit — force missile into dive toward impact point.
             // _destroyMissile fires when the missile reaches ground level,
             // which flushes the deferred hit effects queued above.
-            let missileImpactPos = null;
-            if (data.targetId === net.playerId && tank.group) {
-              missileImpactPos = new THREE.Vector3();
-              tank.group.getWorldPosition(missileImpactPos);
-            } else {
-              const victim = remoteTanks.get(data.targetId);
-              if (victim?.group) {
-                missileImpactPos = new THREE.Vector3();
-                victim.group.getWorldPosition(missileImpactPos);
-              }
-            }
-            if (!missileImpactPos && window.botTanks?.bots) {
-              for (const bot of window.botTanks.bots) {
-                if (bot && bot.id === data.targetId && bot.hitbox) {
-                  missileImpactPos = new THREE.Vector3();
-                  bot.hitbox.getWorldPosition(missileImpactPos);
-                  break;
-                }
-              }
-            }
+            const missileImpactPos = resolveImpactPos(data, data.targetId);
             const diveStarted = missileImpactPos &&
               window.missileSystem.forceDiveToPoint(data.projectileId, missileImpactPos);
             if (!diveStarted && !missileImpactPos) {
               window.missileSystem._flushPendingHit(data.projectileId);
             }
           } else {
-            let impactPos = null;
-            if (data.targetId === net.playerId && tank.group) {
-              impactPos = new THREE.Vector3();
-              tank.group.getWorldPosition(impactPos);
-            } else {
-              const victim = remoteTanks.get(data.targetId);
-              if (victim?.group) {
-                impactPos = new THREE.Vector3();
-                victim.group.getWorldPosition(impactPos);
-              }
-            }
-            if (!impactPos && window.botTanks?.bots) {
-              for (const bot of window.botTanks.bots) {
-                if (bot && bot.id === data.targetId && bot.hitbox) {
-                  impactPos = new THREE.Vector3();
-                  bot.hitbox.getWorldPosition(impactPos);
-                  break;
-                }
-              }
-            }
+            const impactPos = resolveImpactPos(data, data.targetId);
             const suppressTurretProjectileEffects =
               data.sourceType === "turret";
             if (data.sourceType === "turret" && !remoteTank) {

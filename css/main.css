@@ -1811,10 +1811,11 @@ body.signal-lost-active .turret-hp-bar {
 }
 
 .turret-hp-bar.tag-healthbar {
+    --turret-hp-width: 64px;
     position: absolute;
     left: 0;
     top: 0;
-    width: calc(var(--grid) * 32); /* Match tank HP bars */
+    width: var(--turret-hp-width);
     height: var(--space-sm);
     display: none;
     box-sizing: border-box;
