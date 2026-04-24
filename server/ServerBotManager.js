@@ -387,6 +387,8 @@ class ServerBotManager {
       stateTimer: 0,
       targetClusterId: null,
       targetPosition: null,
+      targetTileIndex: null,
+      targetSlotIndex: null,
       currentClusterId: null,
       wanderDirection: Math.random() * Math.PI * 2,
       personality,
@@ -399,6 +401,7 @@ class ServerBotManager {
       pathWaypoints: [],
       currentWaypointIdx: 0,
       pathTargetCluster: null,
+      pathTargetTile: null,
       _replanCount: 0,
 
       // Navigation state
@@ -660,12 +663,12 @@ class ServerBotManager {
         // Request path if needed
         if (
           bot.pathWaypoints.length === 0 ||
-          bot.pathTargetCluster !== bot.targetClusterId
+          bot.pathTargetCluster !== bot.targetClusterId ||
+          bot.pathTargetTile !== this._getPathTargetTile(bot)
         ) {
-          this._requestPath(bot);
-          if (bot.pathWaypoints.length === 0) {
-            bot.targetClusterId = null;
-            bot.targetPosition = null;
+          const pathStatus = this._requestPath(bot);
+          if (pathStatus === "failed") {
+            this._clearBotTarget(bot);
             bot.aiState = BOT_STATES.IDLE;
             bot.stateTimer = 0;
             break;
@@ -694,8 +697,7 @@ class ServerBotManager {
             this._teleportToSafety(bot);
             bot._replanCount = 0;
             bot.pathWaypoints = [];
-            bot.targetClusterId = null;
-            bot.targetPosition = null;
+            this._clearBotTarget(bot);
             bot.aiState = BOT_STATES.WANDERING;
             bot.stateTimer = 0;
           } else {
@@ -712,8 +714,7 @@ class ServerBotManager {
         const captureState = this.clusterCaptureState.get(bot.currentClusterId);
         if (captureState && captureState.owner === bot.faction) {
           this.onBotCapture(bot);
-          bot.targetClusterId = null;
-          bot.targetPosition = null;
+          this._clearBotTarget(bot);
           bot.pathWaypoints = [];
           bot.aiState = bot.personality > 0.3 ? BOT_STATES.IDLE : BOT_STATES.WANDERING;
           bot.stateTimer = 0;
@@ -729,8 +730,7 @@ class ServerBotManager {
             }
           }
           if (friendlyCount >= 4) {
-            bot.targetClusterId = null;
-            bot.targetPosition = null;
+            this._clearBotTarget(bot);
             bot.pathWaypoints = [];
             bot.aiState = BOT_STATES.WANDERING;
             bot.wanderDirection = bot.heading + (Math.random() - 0.5) * Math.PI;
@@ -753,8 +753,7 @@ class ServerBotManager {
             this._teleportToSafety(bot);
             bot._replanCount = 0;
             bot.pathWaypoints = [];
-            bot.targetClusterId = null;
-            bot.targetPosition = null;
+            this._clearBotTarget(bot);
             bot.aiState = BOT_STATES.WANDERING;
             bot.stateTimer = 0;
           } else {
@@ -1804,6 +1803,7 @@ class ServerBotManager {
       bot.hp = 0;
       bot.isDead = true;
       bot.speed = 0;
+      this._clearBotTarget(bot);
       bot.respawnTimer = BOT_RESPAWN_TIME_MIN + Math.random() * (BOT_RESPAWN_TIME_MAX - BOT_RESPAWN_TIME_MIN);
       if (killerId) {
         this.onBotDeath(bot, killerId, players);
@@ -1838,8 +1838,7 @@ class ServerBotManager {
     bot.isDead = false;
     bot.aiState = BOT_STATES.IDLE;
     bot.stateTimer = 0;
-    bot.targetClusterId = null;
-    bot.targetPosition = null;
+    this._clearBotTarget(bot);
     bot.pathWaypoints = [];
     bot.currentWaypointIdx = 0;
     bot._stuckCounter = 0;
@@ -1875,14 +1874,14 @@ class ServerBotManager {
   // ========================
 
   _requestPath(bot) {
-    if (!this.pathfinder) return;
-    if (this._pathfindCount >= 1) return; // Budget: max 1 per tick (A* is expensive)
+    if (!this.pathfinder) return "failed";
+    if (this._pathfindCount >= 1) return "pending"; // Budget: max 1 per tick (A* is expensive)
 
     const fromTile = this.pathfinder.getNearestTraversableTile(bot.theta, bot.phi);
-    if (fromTile === -1) return;
+    if (fromTile === -1) return "failed";
 
-    const toTile = this.pathfinder.getClusterCenterTile(bot.targetClusterId);
-    if (toTile === -1) return;
+    const toTile = this._getPathTargetTile(bot);
+    if (toTile === -1) return "failed";
 
     this._pathfindCount++;
     const path = this.pathfinder.findPath(fromTile, toTile);
@@ -1914,12 +1913,36 @@ class ServerBotManager {
       }
       bot.currentWaypointIdx = 0;
       bot.pathTargetCluster = bot.targetClusterId;
+      bot.pathTargetTile = toTile;
       bot._replanCount = 0;
+      return "ok";
     } else {
       bot.pathWaypoints = [];
       bot.currentWaypointIdx = 0;
       bot.pathTargetCluster = null;
+      bot.pathTargetTile = null;
+      return "failed";
     }
+  }
+
+  _getPathTargetTile(bot) {
+    if (!this.pathfinder) return -1;
+    let toTile = Number.isInteger(bot.targetTileIndex)
+      ? bot.targetTileIndex
+      : this.pathfinder.getClusterCenterTile(bot.targetClusterId);
+    if (toTile === -1 || !this.pathfinder.getTileSpherical(toTile)) {
+      toTile = this.pathfinder.getClusterCenterTile(bot.targetClusterId);
+    }
+    return toTile;
+  }
+
+  _clearBotTarget(bot) {
+    bot.targetClusterId = null;
+    bot.targetPosition = null;
+    bot.targetTileIndex = null;
+    bot.targetSlotIndex = null;
+    bot.pathTargetCluster = null;
+    bot.pathTargetTile = null;
   }
 
   _getCurrentWaypoint(bot) {

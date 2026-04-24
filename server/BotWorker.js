@@ -174,10 +174,7 @@ parentPort.on("message", (msg) => {
       }
       // Rebuild coordinator cluster centers with new sponsor clusters
       for (const coord of Object.values(botManager.coordinators)) {
-        coord._clusterCenters.clear();
-        worldGen.clusterData.forEach((cluster) => {
-          coord._clusterCenters.set(cluster.id, coord._computeClusterCenter(cluster));
-        });
+        coord.rebuildClusterCaches();
       }
       // Rebuild pathfinder cluster center tiles
       if (botManager.pathfinder && botManager.pathfinder._clusterCenterTiles) {
