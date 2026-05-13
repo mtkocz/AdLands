@@ -16,6 +16,7 @@ class RemoteTank {
     this.playerName = playerData.name;
     this.faction = playerData.faction;
     this.avatarColor = playerData.avatarColor || null;
+    this.isBot = !!playerData.isBot;
 
     // Current interpolated state (what we render)
     this.state = {
@@ -129,6 +130,7 @@ class RemoteTank {
         playerId: this.playerId,
         faction: this.faction,
         username: this.playerName,
+        isBot: this.isBot,
       };
     }
 
@@ -686,6 +688,7 @@ class RemoteTank {
         shadowBlob: this.shadowBlob,
         detailedMeshes: this.detailedMeshes,
         faction: this.faction,
+        isBot: this.isBot,
       },
       RemoteTank._cameraWorldPos,
       frustum,

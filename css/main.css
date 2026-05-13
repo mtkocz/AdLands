@@ -2150,6 +2150,18 @@ body.signal-lost-active .turret-hp-bar {
     /* font-style: normal - no italics in pixel fonts */
 }
 
+/* Alpha marker: real player tanks use a muted cyan row treatment in chat. */
+.chat-msg.alpha-player {
+    background: rgba(0, 255, 255, 0.08);
+    border-left: 2px solid var(--accent-cyan);
+    padding-left: var(--space-sm);
+    margin-left: -2px;
+}
+
+.chat-msg.alpha-player .msg-name {
+    color: var(--accent-cyan);
+}
+
 /* Commander & Acting Commander chat message highlighting */
 .chat-msg.commander,
 .chat-msg.acting-commander {

@@ -1182,7 +1182,6 @@ class Tank {
           this._lodState = 2;
           this._setCommanderTrimVisible(false);
           if (this.lodDotDarkOutline) this.lodDotDarkOutline.visible = true;
-          if (this.lodDotOutline) this.lodDotOutline.visible = false;
           if (this.lodMesh) this.lodMesh.visible = false;
           if (this.shadowBlob) this.shadowBlob.visible = false;
           if (this.detailedMeshes) {
@@ -1198,6 +1197,11 @@ class Tank {
           localDotOffset.copy(surfaceNormal).multiplyScalar(3);
           localDotOffset.applyQuaternion(inverseQuat);
           this.lodDot.position.copy(localDotOffset);
+          Tank._setLODDotOutline?.(
+            this,
+            Tank._isAlphaPlayerTank?.(this, true),
+            Tank.ALPHA_PLAYER_DOT_RING_COLOR,
+          );
         } else {
           this.group.visible = false;
           this.lodDot.visible = false;
@@ -1227,6 +1231,7 @@ class Tank {
         shadowBlob: this.shadowBlob,
         detailedMeshes: this.detailedMeshes,
         faction: this.faction,
+        isBot: false,
       },
       Tank._lodTemp.cameraWorldPos,
       frustum,
@@ -1940,6 +1945,33 @@ Tank._lodTemp = {
  * @param {Object} options.commanderSystem - Reference to commanderSystem for checking commanders
  * @returns {boolean} Whether tank is visible
  */
+Tank.ALPHA_PLAYER_DOT_RING_COLOR = 0x00ffff;
+Tank.COMMANDER_DOT_RING_COLOR = 0xffd700;
+
+Tank._isAlphaPlayerTank = function (tank, isLocalPlayer = false) {
+  if (isLocalPlayer) return true;
+  const playerId = tank?.lodDot?.userData?.playerId;
+  const isBot =
+    !!tank?.isBot ||
+    !!tank?.lodDot?.userData?.isBot ||
+    (typeof playerId === "string" &&
+      (playerId.startsWith("bot-") || playerId.startsWith("bodyguard-")));
+  return !!playerId && !isBot;
+};
+
+Tank._setLODDotOutline = function (tank, visible, color = Tank.ALPHA_PLAYER_DOT_RING_COLOR) {
+  if (!tank?.lodDotOutline) return;
+  tank.lodDotOutline.visible = !!visible;
+  if (!visible) return;
+
+  if (tank.lodDotOutline.material?.color) {
+    tank.lodDotOutline.material.color.setHex(color);
+  }
+  if (tank.lodDot) {
+    tank.lodDotOutline.position.copy(tank.lodDot.position);
+  }
+};
+
 Tank.updateTankLOD = function (
   tank,
   cameraWorldPos,
@@ -2060,14 +2092,15 @@ Tank.updateTankLOD = function (
 
   // Gold outline for commanders (shown when dot is visible)
   if (tank.lodDotOutline) {
-    if (useDot && commanderSystem) {
+    if (useDot) {
       const playerId = tank.lodDot?.userData?.playerId;
-      const isCommander = commanderSystem.isCommander(playerId);
-      tank.lodDotOutline.visible = isCommander;
-      // Keep outline at same position as dot
-      if (isCommander) {
-        tank.lodDotOutline.position.copy(tank.lodDot.position);
-      }
+      const isCommander = !!commanderSystem?.isCommander?.(playerId);
+      const isAlphaPlayerTank = Tank._isAlphaPlayerTank(tank, isLocalPlayer);
+      const showOutline = isCommander || isAlphaPlayerTank;
+      const outlineColor = isAlphaPlayerTank
+        ? Tank.ALPHA_PLAYER_DOT_RING_COLOR
+        : Tank.COMMANDER_DOT_RING_COLOR;
+      Tank._setLODDotOutline(tank, showOutline, outlineColor);
     } else {
       tank.lodDotOutline.visible = false;
     }

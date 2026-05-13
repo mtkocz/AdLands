@@ -704,6 +704,12 @@ class ChatWindow {
         this._initResizeHandles();
     }
 
+    _isAlphaPlayerTank(tankId, isPlayer = false) {
+        if (isPlayer) return true;
+        if (!tankId || typeof tankId !== 'string') return false;
+        return !tankId.startsWith('bot-') && !tankId.startsWith('bodyguard-');
+    }
+
     /**
      * Initialize resize handles for dragging between sections
      */
@@ -1049,6 +1055,9 @@ class ChatWindow {
     _addToSection(sectionEl, senderName, text, faction, isPlayer, tankId = null) {
         const msgEl = document.createElement('div');
         msgEl.className = 'chat-msg';
+        if (this._isAlphaPlayerTank(tankId, isPlayer)) {
+            msgEl.classList.add('alpha-player');
+        }
 
         // Check if sender is a commander (or acting commander)
         const isCommander = window.commanderSystem && tankId && window.commanderSystem.isCommander(tankId);

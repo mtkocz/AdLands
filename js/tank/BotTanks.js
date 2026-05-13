@@ -775,6 +775,7 @@ class BotTanks {
       username: `Bot ${botIndex}`, // Default, updated when tag is created
       squad: null,
       isCommander: false,
+      isBot: true,
     };
 
     // Gold outline for commanders (3D torus ring)
@@ -3064,6 +3065,7 @@ class BotTanks {
       hoverDot.userData.playerId = pd.botId;
       hoverDot.userData.faction = pd.faction;
       hoverDot.userData.username = pd.botName;
+      hoverDot.userData.isBot = true;
 
       // Register in ProfileCard cache for right-click support
       if (window.profileCard && pd.botId.startsWith("bot-") && !window.profileCard.playerCache.has(pd.botId)) {

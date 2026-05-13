@@ -1937,6 +1937,7 @@
     tank.lodDot.userData.username = playerName;
     tank.lodDot.userData.faction = playerFaction;
     tank.lodDot.userData.playerId = "player";
+    tank.lodDot.userData.isBot = false;
   }
 
   // Register all bot dots and sync names from playerTags

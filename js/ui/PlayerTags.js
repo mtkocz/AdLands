@@ -37,6 +37,12 @@ class PlayerTags {
     return `hsl(${hue}, ${sat}%, ${lit}%)`;
   }
 
+  _isAlphaPlayerTank(tankId, config = {}) {
+    if (config.isPlayer) return true;
+    if (!tankId || typeof tankId !== "string") return false;
+    return !tankId.startsWith("bot-") && !tankId.startsWith("bodyguard-");
+  }
+
   /**
    * Create a name tag for a tank
    * @param {string} tankId - Unique identifier for this tank
@@ -60,6 +66,11 @@ class PlayerTags {
     // Mark player tag for different height offset
     if (config.isPlayer) {
       el.dataset.isPlayer = "true";
+    }
+
+    const isAlphaPlayerTank = this._isAlphaPlayerTank(tankId, config);
+    if (isAlphaPlayerTank) {
+      el.dataset.alphaPlayerTank = "true";
     }
 
     // Build avatar HTML - image for uploaded pic, colored div for bots
@@ -92,7 +103,7 @@ class PlayerTags {
                 <div class="tag-info">
                     <span class="tag-name">${squadPrefix}${config.name}</span>
                 </div>
-                <div class="tag-rank">${config.rank ? "#" + config.rank : ""}</div>
+                ${isAlphaPlayerTank ? `<div class="tag-rank">${config.rank ? "#" + config.rank : ""}</div>` : ""}
             </div>
             <div class="tag-healthbar">
                 <div class="tag-healthbar-fill ${hpPercent > 50 ? 'hp-high' : hpPercent > 25 ? 'hp-medium' : 'hp-low'}" style="width: ${hpPercent}%"></div>
