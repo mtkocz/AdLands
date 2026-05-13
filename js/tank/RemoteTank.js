@@ -679,6 +679,7 @@ class RemoteTank {
     if (!this.group || !camera) return false;
     if (this._hidden) return false;
     camera.getWorldPosition(RemoteTank._cameraWorldPos);
+    const remoteLodOptions = { ...options, isLocalPlayer: false };
     return Tank.updateTankLOD(
       {
         group: this.group,
@@ -692,7 +693,7 @@ class RemoteTank {
       },
       RemoteTank._cameraWorldPos,
       frustum,
-      options
+      remoteLodOptions
     );
   }
 

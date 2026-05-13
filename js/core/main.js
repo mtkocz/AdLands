@@ -4147,7 +4147,7 @@
     const lodOptions = {
       isOrbitalView,
       isHumanCommander,
-      isLocalPlayer: true,
+      isLocalPlayer: false,
       forceOrbitalDot: isOrbitalView && isLowDetailView,
       forceSurfaceDetail: !isDescending && !isLowDetailView,
       showCommanderTrim,
@@ -4155,6 +4155,7 @@
       commanderSystem,
       forceHiddenDot: isDescending && isLowDetailView,
     };
+    const localLodOptions = { ...lodOptions, isLocalPlayer: true };
 
     // Update tank LOD after camera update so distance is current frame's position.
     // The 71-unit cutoff is authoritative during normal play, but portal deploy
@@ -4165,7 +4166,7 @@
     if (tank._pendingPortalReveal || (isDescending && !isLowDetailView)) {
       tank.setVisible(false);
     } else {
-      tank.updateLOD(camera, sharedFrustum, lodOptions);
+      tank.updateLOD(camera, sharedFrustum, localLodOptions);
     }
 
     // Pass LOD options to botTanks for commander dot mode

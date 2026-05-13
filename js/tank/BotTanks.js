@@ -1070,7 +1070,10 @@ class BotTanks {
   _updateBotVisibility(bot, frustum, cameraWorldPos) {
     // Use shared LOD update logic from Tank class
     // Sets bot._lodState: -1=hidden, 0=detail, 1=box, 2=dot
-    Tank.updateTankLOD(bot, cameraWorldPos, frustum, this._lodOptions || {});
+    Tank.updateTankLOD(bot, cameraWorldPos, frustum, {
+      ...(this._lodOptions || {}),
+      isLocalPlayer: false,
+    });
   }
 
 
