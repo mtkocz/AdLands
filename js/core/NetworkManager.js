@@ -847,15 +847,13 @@ class NetworkManager {
       localTank.state.heading = replayHeading;
       localTank.state.speed = replaySpeed;
     } else {
-      // Non-trivial correction — shift visual position by the same delta so
-      // _updateVisual sees no discontinuity. The visual stays continuous while
-      // the simulation state snaps to the corrected position.
-      localTank._visualTheta += dT;
-      localTank._visualPhi += dP;
-      let dH = localTank.state.heading - replayHeading;
-      if (dH > Math.PI) dH -= Math.PI * 2;
-      else if (dH < -Math.PI) dH += Math.PI * 2;
-      localTank._visualHeading += dH;
+      // Non-trivial correction: keep the rendered tank where it was and let
+      // Tank._updateVisual ease toward the corrected predicted state. This
+      // avoids visible single-frame nudges when 10Hz server snapshots arrive.
+      localTank._networkCorrectionTimer = Math.min(
+        0.18,
+        Math.max(0.08, posDrift * 80)
+      );
     }
   }
 

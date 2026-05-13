@@ -140,10 +140,11 @@ class Tank {
 
     // Visual position smoothing — decouples rendered position from physics state
     // to absorb reconciliation micro-corrections without visible jitter.
-    // Normal movement lag is sub-pixel; sudden jumps are smoothed over 2-3 frames.
+    // Normal movement lag is sub-pixel; network corrections get a brief softer blend.
     this._visualTheta = this.state.theta;
     this._visualPhi = this.state.phi;
     this._visualHeading = this.state.heading;
+    this._networkCorrectionTimer = 0;
 
     // Initialize position
     this._updateVisual(0);
@@ -513,7 +514,16 @@ class Tank {
     // enough smoothing to absorb tiny reconciliation micro-corrections (~1px)
     // over a single frame instead of showing a discrete jump.
     if (deltaTime > 0) {
-      const smooth = 1 - Math.pow(0.05, deltaTime * 60);
+      let smooth;
+      if (this._networkCorrectionTimer > 0) {
+        this._networkCorrectionTimer = Math.max(
+          0,
+          this._networkCorrectionTimer - deltaTime
+        );
+        smooth = 1 - Math.exp(-12 * deltaTime);
+      } else {
+        smooth = 1 - Math.pow(0.05, deltaTime * 60);
+      }
 
       // Theta wraps at 2π — find shortest path
       let dTheta = this.state.theta - this._visualTheta;
