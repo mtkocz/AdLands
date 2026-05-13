@@ -12,6 +12,9 @@ const _otherCullSphere = new THREE.Sphere();
 const _trackSegmentMatrix = new THREE.Matrix4();
 const _trackSegmentPos = new THREE.Vector3();
 const _trackWorldPos = new THREE.Vector3();
+const _trackSurfaceNormal = new THREE.Vector3();
+const _trackLocalPos = new THREE.Vector3();
+const _trackSegmentWorldPos = new THREE.Vector3();
 const _trackZeroMatrix = new THREE.Matrix4().makeScale(0, 0, 0);
 const _trackForward = new THREE.Vector3();
 const _trackRight = new THREE.Vector3();
@@ -52,6 +55,7 @@ class TreadTracks {
       midRight: { x: 1.3, z: 0 },
       rearRight: { x: 1.3, z: 1.5 },
     };
+    this._spawnerNames = Object.keys(this.trackSpawners);
 
     // Maximum distance tracks can travel from pickup point (in meters)
     this.maxTrackDistance = 20;
@@ -198,12 +202,15 @@ class TreadTracks {
       group.updateMatrixWorld();
 
       // Process each of the 6 independent spawners
-      for (const [spawnerName, spawnerData] of Object.entries(spawners)) {
+      for (let i = 0; i < this._spawnerNames.length; i++) {
+        const spawnerName = this._spawnerNames[i];
+        const spawnerData = spawners[spawnerName];
         const spawnPoint = this.trackSpawners[spawnerName];
 
         // Get spawner world position
-        const worldPos = new THREE.Vector3(spawnPoint.x, 0, spawnPoint.z);
-        worldPos.applyMatrix4(group.matrixWorld);
+        const worldPos = _trackWorldPos
+          .set(spawnPoint.x, 0, spawnPoint.z)
+          .applyMatrix4(group.matrixWorld);
 
         // Check if THIS SPECIFIC spawner is currently over a puddle
         const puddle = this._getOilPuddleAt(worldPos);
@@ -231,7 +238,8 @@ class TreadTracks {
           if (shouldSpawn && puddleOpacity > 0.05) {
             // Convert to parent group's local space for rendering
             this.parentGroup.updateMatrixWorld();
-            const localPos = this.parentGroup.worldToLocal(worldPos.clone());
+            const localPos = _trackLocalPos.copy(worldPos);
+            this.parentGroup.worldToLocal(localPos);
 
             // Spawn track segment with reference to source puddle
             this._addSegment(
@@ -280,7 +288,8 @@ class TreadTracks {
 
             if (shouldSpawn) {
               this.parentGroup.updateMatrixWorld();
-              const localPos = this.parentGroup.worldToLocal(worldPos.clone());
+              const localPos = _trackLocalPos.copy(worldPos);
+              this.parentGroup.worldToLocal(localPos);
 
               this._addSegment(
                 tankId,
@@ -465,7 +474,7 @@ class TreadTracks {
     const mesh = isPlayer ? this.playerMesh : this.otherMesh;
 
     // Calculate surface normal (direction from planet center in local space)
-    const surfaceNormal = localPos.clone().normalize();
+    const surfaceNormal = _trackSurfaceNormal.copy(localPos).normalize();
 
     // Get tank's forward direction in local space
     _trackForward.set(0, 0, -1);
@@ -492,8 +501,8 @@ class TreadTracks {
     tangentForward.normalize();
 
     // Position just above surface
-    const segmentPos = localPos
-      .clone()
+    const segmentPos = _trackSegmentPos
+      .copy(localPos)
       .normalize()
       .multiplyScalar(this.sphereRadius + this.config.surfaceOffset);
 
@@ -509,7 +518,7 @@ class TreadTracks {
     // Compute distance-based opacity (for segments spawned after leaving puddle)
     let initialDistanceOpacity = 1.0;
     if (spawnerData.pickupPos) {
-      const segWorldPos = localPos.clone();
+      const segWorldPos = _trackSegmentWorldPos.copy(localPos);
       this.parentGroup.localToWorld(segWorldPos);
       const dist = segWorldPos.distanceTo(spawnerData.pickupPos);
       initialDistanceOpacity =

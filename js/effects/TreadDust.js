@@ -71,6 +71,9 @@ class TreadDust {
       left: new THREE.Vector3(-1.3, 0.0, 0),
       right: new THREE.Vector3(1.3, 0.0, 0),
     };
+    this._emitOffset = new THREE.Vector3();
+    this._emitNormal = new THREE.Vector3();
+    this._emitTankRight = new THREE.Vector3();
 
     // Tracked tanks (player and bots)
     this.trackedTanks = new Map(); // tankId -> { group, state }
@@ -460,7 +463,7 @@ class TreadDust {
 
     // Get world position of track
     tankGroup.updateMatrixWorld();
-    const offset = this.trackOffsets[trackSide].clone();
+    const offset = this._emitOffset.copy(this.trackOffsets[trackSide]);
 
     // Add some randomness to spawn position along track length
     offset.z += (Math.random() - 0.5) * cfg.trackSpreadZ;
@@ -469,23 +472,20 @@ class TreadDust {
     offset.applyMatrix4(tankGroup.matrixWorld);
 
     // Push spawn position up from surface to reduce z-fighting
-    const spawnNormal = offset.clone().normalize();
-    offset.addScaledVector(spawnNormal, cfg.spawnOffset);
+    const surfaceNormal = this._emitNormal.copy(offset).normalize();
+    offset.addScaledVector(surfaceNormal, cfg.spawnOffset);
 
     dust.positions[i3] = offset.x;
     dust.positions[i3 + 1] = offset.y;
     dust.positions[i3 + 2] = offset.z;
 
     // Velocity: mostly outward from surface with slight lateral spread
-    const surfaceNormal = offset.clone().normalize();
     const speed =
       cfg.velocityMin + Math.random() * (cfg.velocityMax - cfg.velocityMin);
 
     // Add lateral velocity (kicked to the side)
     const sideDirection = trackSide === "left" ? -1 : 1;
-    const tankRight = new THREE.Vector3(1, 0, 0).transformDirection(
-      tankGroup.matrixWorld,
-    );
+    const tankRight = this._emitTankRight.set(1, 0, 0).transformDirection(tankGroup.matrixWorld);
 
     dust.velocities[i3] =
       surfaceNormal.x * speed +

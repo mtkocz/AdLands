@@ -1987,6 +1987,11 @@
     { faction: "cobalt", count: 0 },
     { faction: "viridian", count: 0 },
   ];
+  const OTHER_FACTIONS_BY_FACTION = {
+    rust: ["cobalt", "viridian"],
+    cobalt: ["rust", "viridian"],
+    viridian: ["rust", "cobalt"],
+  };
 
   function updateTerritoryChart() {
     // Use server-authoritative territory counts when available.
@@ -2153,9 +2158,8 @@
 
     // Build draw order: Player → Other1 → Unclaimed → Other2
     // Same orientation as territory ring: player at top, unclaimed at bottom
-    const otherFactions = ["rust", "cobalt", "viridian"].filter(
-      (f) => f !== playerFaction,
-    );
+    const otherFactions =
+      OTHER_FACTIONS_BY_FACTION[playerFaction] || OTHER_FACTIONS_BY_FACTION.cobalt;
     const order = [
       playerFaction,
       otherFactions[0],
@@ -2713,9 +2717,8 @@
     // Build draw order: Player → Other1 → Unclaimed → Other2
     // This puts player at top, unclaimed at bottom, others flanking on sides
     // Use stable ordering (consistent with original array order) to prevent flickering
-    const otherFactions = ["rust", "cobalt", "viridian"].filter(
-      (f) => f !== playerFaction,
-    );
+    const otherFactions =
+      OTHER_FACTIONS_BY_FACTION[playerFaction] || OTHER_FACTIONS_BY_FACTION.cobalt;
     const drawOrder = [
       playerFaction,
       otherFactions[0],

@@ -1006,14 +1006,15 @@ class BotTanks {
     }
 
     // Update all bots every frame (matching player tank update order exactly)
-    this.bots.forEach((bot) => {
+    for (let i = 0; i < this.bots.length; i++) {
+      const bot = this.bots[i];
       // Skip bots that haven't deployed yet
-      if (bot.isDeploying) return;
+      if (bot.isDeploying) continue;
 
       // Update fade for dead bots
       if (bot.isDead) {
         this._updateBotFade(bot);
-        return; // Skip AI/movement for dead bots
+        continue; // Skip AI/movement for dead bots
       }
 
       // 1. AI decides which virtual keys to press
@@ -1036,22 +1037,6 @@ class BotTanks {
       if (camera && frustum) {
         this._updateBotVisibility(bot, frustum, cameraWorldPos);
       }
-    });
-
-    // DEBUG: log LOD state distribution once per second
-    if (!this._lastLodDebug || now - this._lastLodDebug > 1000) {
-      this._lastLodDebug = now;
-      const counts = { hidden: 0, detail: 0, box: 0, dot: 0, deploying: 0, dead: 0 };
-      for (const bot of this.bots) {
-        if (bot.isDeploying) { counts.deploying++; continue; }
-        if (bot.isDead) { counts.dead++; continue; }
-        if (bot._lodState === -1) counts.hidden++;
-        else if (bot._lodState === 0) counts.detail++;
-        else if (bot._lodState === 1) counts.box++;
-        else if (bot._lodState === 2) counts.dot++;
-      }
-      const opts = this._lodOptions || {};
-      console.log(`[LOD] box=${counts.box} dot=${counts.dot} hidden=${counts.hidden} detail=${counts.detail} deploy=${counts.deploying} dead=${counts.dead} | cmdr=${opts.isHumanCommander} orbital=${opts.isOrbitalView} faction=${opts.viewerFaction}`);
     }
   }
 
@@ -1070,10 +1055,7 @@ class BotTanks {
   _updateBotVisibility(bot, frustum, cameraWorldPos) {
     // Use shared LOD update logic from Tank class
     // Sets bot._lodState: -1=hidden, 0=detail, 1=box, 2=dot
-    Tank.updateTankLOD(bot, cameraWorldPos, frustum, {
-      ...(this._lodOptions || {}),
-      isLocalPlayer: false,
-    });
+    Tank.updateTankLOD(bot, cameraWorldPos, frustum, this._lodOptions || {});
   }
 
 
