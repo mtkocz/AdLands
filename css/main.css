@@ -2200,6 +2200,18 @@ body.signal-lost-active .turret-hp-bar {
     content: "\2605 ";
 }
 
+/* Alpha player marker takes precedence when a real player is also commander/acting. */
+.chat-msg.alpha-player.commander,
+.chat-msg.alpha-player.acting-commander {
+    background: rgba(0, 255, 255, 0.08);
+    border-left-color: var(--accent-cyan);
+}
+
+.chat-msg.alpha-player.commander .msg-name,
+.chat-msg.alpha-player.acting-commander .msg-name {
+    color: var(--accent-cyan);
+}
+
 /* ========================
    CRYPTO SYSTEM VISUALS
    ======================== */
