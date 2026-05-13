@@ -173,6 +173,7 @@ app.use(express.static(gameDir, {
   setHeaders: (res, filePath) => {
     const relPath = path.relative(gameDir, filePath).replace(/\\/g, "/");
     const isSponsorPortalAsset =
+      relPath === "index.html" ||
       relPath === "sponsors.html" ||
       relPath === "css/sponsors.css" ||
       relPath === "js/sponsors/SponsorApp.js" ||
