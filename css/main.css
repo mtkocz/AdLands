@@ -2150,16 +2150,9 @@ body.signal-lost-active .turret-hp-bar {
     /* font-style: normal - no italics in pixel fonts */
 }
 
-/* Alpha marker: real player tanks use a muted cyan row treatment in chat. */
-.chat-msg.alpha-player {
+/* Alpha marker: non-commander player tanks get a muted cyan backdrop only. */
+.chat-msg.alpha-player:not(.commander):not(.acting-commander) {
     background: rgba(0, 255, 255, 0.14);
-    border-left: 2px solid var(--accent-cyan);
-    padding-left: var(--space-sm);
-    margin-left: -2px;
-}
-
-.chat-msg.alpha-player .msg-name {
-    color: var(--accent-cyan);
 }
 
 /* Commander & Acting Commander chat message highlighting */
@@ -2198,18 +2191,6 @@ body.signal-lost-active .turret-hp-bar {
 /* Only full commanders get the star icon */
 .chat-msg.commander .msg-name::before {
     content: "\2605 ";
-}
-
-/* Alpha player marker takes precedence when a real player is also commander/acting. */
-.chat-msg.alpha-player.commander,
-.chat-msg.alpha-player.acting-commander {
-    background: rgba(0, 255, 255, 0.14);
-    border-left-color: var(--accent-cyan);
-}
-
-.chat-msg.alpha-player.commander .msg-name,
-.chat-msg.alpha-player.acting-commander .msg-name {
-    color: var(--accent-cyan);
 }
 
 /* ========================

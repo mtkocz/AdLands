@@ -2097,9 +2097,9 @@ Tank.updateTankLOD = function (
       const isCommander = !!commanderSystem?.isCommander?.(playerId);
       const isAlphaPlayerTank = Tank._isAlphaPlayerTank(tank, isLocalPlayer);
       const showOutline = isCommander || isAlphaPlayerTank;
-      const outlineColor = isAlphaPlayerTank
-        ? Tank.ALPHA_PLAYER_DOT_RING_COLOR
-        : Tank.COMMANDER_DOT_RING_COLOR;
+      const outlineColor = isCommander
+        ? Tank.COMMANDER_DOT_RING_COLOR
+        : Tank.ALPHA_PLAYER_DOT_RING_COLOR;
       Tank._setLODDotOutline(tank, showOutline, outlineColor);
     } else {
       tank.lodDotOutline.visible = false;
