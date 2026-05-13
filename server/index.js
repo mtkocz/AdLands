@@ -12,6 +12,7 @@ let compression;
 try { compression = require("compression"); } catch (_) {}
 const http = require("http");
 const path = require("path");
+const crypto = require("crypto");
 const { Server } = require("socket.io");
 const GameRoom = require("./GameRoom");
 const SponsorStore = require("./SponsorStore");
@@ -43,6 +44,95 @@ stripeService.init();
 
 const app = express();
 if (compression) app.use(compression());
+
+// Lightweight admin gate for the static admin portal and admin-only API actions.
+// Public game/sponsor read paths stay open; admin mutations and review actions require this.
+function requireAdminPassword(req, res, next) {
+  const expectedPassword = process.env.ADMIN_PASSWORD || "";
+  const expectedUsername = process.env.ADMIN_USERNAME || "admin";
+
+  if (!expectedPassword) {
+    return res.status(503).json({ error: "Admin password is not configured" });
+  }
+
+  const auth = req.headers.authorization || "";
+  const match = auth.match(/^Basic\s+(.+)$/i);
+  if (!match) return requestAdminPassword(res);
+
+  let decoded = "";
+  try {
+    decoded = Buffer.from(match[1], "base64").toString("utf8");
+  } catch (_) {
+    return requestAdminPassword(res);
+  }
+
+  const separatorIndex = decoded.indexOf(":");
+  if (separatorIndex === -1) return requestAdminPassword(res);
+
+  const username = decoded.slice(0, separatorIndex);
+  const password = decoded.slice(separatorIndex + 1);
+  if (constantTimeEqual(username, expectedUsername) && constantTimeEqual(password, expectedPassword)) {
+    return next();
+  }
+
+  return requestAdminPassword(res);
+}
+
+function requestAdminPassword(res) {
+  res.set("WWW-Authenticate", 'Basic realm="AdLands Admin", charset="UTF-8"');
+  return res.status(401).send("Authentication required");
+}
+
+function constantTimeEqual(a, b) {
+  const aBuffer = Buffer.from(String(a));
+  const bBuffer = Buffer.from(String(b));
+  if (aBuffer.length !== bBuffer.length) return false;
+  return crypto.timingSafeEqual(aBuffer, bBuffer);
+}
+
+function adminPortalAssetGuard(req, res, next) {
+  const adminOnlyPaths = new Set([
+    "/admin.html",
+    "/css/admin.css",
+    "/js/admin/adminApp.js",
+    "/js/admin/hexSelector.js",
+    "/js/admin/sponsorForm.js",
+    "/js/admin/rewardConfig.js",
+    "/js/admin/billboardSponsorPanel.js",
+    "/js/admin/moonSponsorPanel.js",
+  ]);
+
+  if (adminOnlyPaths.has(req.path)) {
+    return requireAdminPassword(req, res, next);
+  }
+  return next();
+}
+
+function sponsorAdminActionGuard(req, res, next) {
+  const method = req.method.toUpperCase();
+  const path = req.path.replace(/\/+$/, "") || "/";
+
+  const isAdminPost =
+    method === "POST" && (
+      path === "/" ||
+      path === "/import" ||
+      path === "/activate-inquiry-group" ||
+      /\/(review|review-image|activate-inquiry|reject-inquiry|update-territories|remove-tiles)$/.test(path)
+    );
+  const isAdminExport = method === "GET" && path === "/export";
+
+  if (isAdminPost || isAdminExport) {
+    return requireAdminPassword(req, res, next);
+  }
+  return next();
+}
+
+function fixedSlotAdminActionGuard(req, res, next) {
+  if (req.method !== "GET") {
+    return requireAdminPassword(req, res, next);
+  }
+  return next();
+}
 
 // Stripe webhook must be mounted BEFORE express.json() — it needs the raw body for signature verification.
 // The route handler uses express.raw() internally.
@@ -167,6 +257,8 @@ const io = new Server(server, {
 // Serve the shared physics module so the client can use it too
 app.use("/shared", express.static(path.join(__dirname, "shared"), { maxAge: '1d' }));
 
+app.use(adminPortalAssetGuard);
+
 // Serve the main game directory (parent of server/)
 app.use(express.static(gameDir, {
   maxAge: '1d',
@@ -225,7 +317,7 @@ let inquiryRouter;
   const tierMap = wr ? HexTierSystem.buildTierMap(wr.tiles, sphereRadius, wr.adjacencyMap) : new Map();
 
   // Mount sponsor API routes (after GameRoom so live reload can broadcast)
-  app.use("/api/sponsors", createSponsorRoutes(sponsorStore, mainRoom, {
+  app.use("/api/sponsors", sponsorAdminActionGuard, createSponsorRoutes(sponsorStore, mainRoom, {
     imageUrls: sponsorImageUrls,
     contentHashes: sponsorContentHashes,
     gameDir,
@@ -236,13 +328,13 @@ let inquiryRouter;
   }));
 
   // Mount moon sponsor API routes
-  app.use("/api/moon-sponsors", createMoonSponsorRoutes(moonSponsorStore, mainRoom, {
+  app.use("/api/moon-sponsors", fixedSlotAdminActionGuard, createMoonSponsorRoutes(moonSponsorStore, mainRoom, {
     imageUrls: moonSponsorImageUrls,
     gameDir,
   }));
 
   // Mount billboard sponsor API routes
-  app.use("/api/billboard-sponsors", createBillboardSponsorRoutes(billboardSponsorStore, mainRoom, {
+  app.use("/api/billboard-sponsors", fixedSlotAdminActionGuard, createBillboardSponsorRoutes(billboardSponsorStore, mainRoom, {
     imageUrls: billboardSponsorImageUrls,
     gameDir,
   }));
